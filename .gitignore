@@ -1,0 +1,10 @@
+*.pyc
+.DS_Store
+
+*.mha
+*.dict
+
+dicts/
+datasets/
+images/
+volumes/
