@@ -36,11 +36,10 @@ class T1MRF:
             seq.extend(echo)
         self._seq = seq
 
-    def __call__(self, adc_time=False, **kwargs):
+    def __call__(self, adc_time=False, eval=None, args=None, **kwargs):
         """ modify sequence """
         seq = [self.inversion, epg.modify(self._seq, **kwargs)]
-        sim = epg.simulate(seq, adc_time=adc_time)
-        return tuple(np.array(arr) for arr in sim)
+        return epg.simulate(seq, eval=eval, args=args, adc_time=adc_time)
 
 
 #
@@ -58,6 +57,12 @@ values_water = values_water["real"] + 1j * values_water["imag"]
 values_fat = np.asarray(h5["paramDico/dico_fat"]).T
 values_fat = values_fat["real"] + 1j * values_fat["imag"]
 
+wT2 = np.array(h5[h5["paramDico"]["T2"][0][0]]).ravel()
+fT2 = np.array(h5[h5["paramDico"]["T2"][1][0]]).ravel()
+fat_shift = np.array(h5["paramDico"]["FatShift"]).ravel()
+fat_amp = np.array(h5["paramDico"]["FatAmp"]).ravel()
+
+
 # compare EPG sequence and dict
 seq = T1MRF()
 
@@ -68,7 +73,7 @@ def sample_dict_water():
     df_ref = dict_Df[indices[1]]
     att_ref = dict_FA[indices[2]]
     ref = values_water[indices]
-    sim = seq(T1=T1_ref, T2=35, att=att_ref, g=-df_ref / 1000)
+    sim = seq(T1=T1_ref, T2=wT2, att=att_ref, g=-df_ref / 1000)
     sim = [np.mean(sim[i:i + 8]) for i in range(0, nspoke, 8)]
     return (T1_ref, att_ref, df_ref), ref, sim
 
@@ -79,7 +84,9 @@ def sample_dict_fat():
     df_ref = dict_Df[indices[1]]
     att_ref = dict_FA[indices[2]]
     ref = values_fat[indices]
-    sim = seq(T1=T1_ref, T2=120, att=att_ref, g=(-df_ref / 1000 - 0.42))
+    eval = "dot(amps, signal)"
+    args = {"amps": fat_amp}
+    sim = seq(T1=T1_ref, T2=fT2, att=att_ref, g=-(df_ref + fat_shift)/1000, eval=eval, args=args)
     sim = [np.mean(sim[i:i + 8]) for i in range(0, nspoke, 8)]
     return (T1_ref, att_ref, df_ref), ref, sim
 
