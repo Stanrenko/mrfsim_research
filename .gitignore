@@ -3,7 +3,9 @@
 
 *.mha
 *.dict
+*.mat
 
+work/
 dicts/
 datasets/
 images/
