@@ -1,0 +1,16 @@
+t1map:
+  roi: {name: gt, type: gt}
+  inputs:
+    - {name: t1map_mrf, type: t1map}
+  suffix: _MRF
+  variables:
+    - name: NUMPIX
+      action: NPIX
+    - name: T1
+      action: mean(wt1map)
+    - name: FF
+      action: mean(ffmap)
+    - name: B1
+      action: mean(b1map)
+    - name: DF
+      action: mean(dfmap)

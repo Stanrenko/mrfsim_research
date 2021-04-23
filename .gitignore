@@ -5,6 +5,7 @@
 *.dict
 *.mat
 
+gt/
 work/
 dicts/
 datasets/

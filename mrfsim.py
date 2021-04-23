@@ -2,57 +2,69 @@
 import pathlib
 import itertools
 import numpy as np
+
+# matplotlib
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib import pyplot as plt
+
+# misc
 from scipy.io import loadmat
 from epgpy import epg
-from machines import machine, Toolbox, Config, set_parameter, set_output, printer, file_handler
+import finufft
+
+# machines
+from machines import machine, Toolbox, Config, set_parameter, set_output, printer, file_handler, Parameter, RejectException
+
+# mutools
 from mutools import io
 from mutools.optim.dictsearch import dictsearch, groupmatch, utils
+from mutools.toolbox.main import GetResults, handlers_common
 
 DEFAULT_SEQUENCE = "mrf_sequence.json"
-DEFAULT_CONFIG = "mrf_dict_config.json"
+DEFAULT_CONFIG = "mrf_dictconf.json"
 
 # build dictionary
-@machine()
+@machine
 @set_parameter("sequence_config", type=Config, default=DEFAULT_SEQUENCE)
 @set_parameter("dict_config", type=Config, default=DEFAULT_CONFIG)
-@set_parameter("dict_file", str)
-def build_dict(sequence_config, dict_config, dict_file):
-    """ Build MRF-T1map dictionary """
+@set_parameter("window", int, default=None, description="Window size")
+@set_parameter("dictfile", str, description="Dictionary file")
+@set_parameter("overwrite", bool, default=False, description="Overwrite existing dictionary")
+def GenDict(sequence_config, dict_config, window, dictfile, overwrite):
+    """ Generate MRF-T1map dictionary """
+
+    dictfile = pathlib.Path(dictfile)
+    if dictfile.is_file() and not overwrite:
+        raise RejectException(f"File already exists: {dictfile}")
+
     # build sequence
     printer("Build MRF-T1map sequence.")
     seq = T1MRF(**sequence_config)
     lenseq = len(sequence_config["TR"])
 
     # generate signals
-    # 'water_T1', 'water_T2', 'fat_T1', 'fat_T2', 'delta_freqs', 'B1_att', 'fat_amp', 'fat_cshifts
     wT1 = dict_config["water_T1"]
     fT1 = dict_config["fat_T1"]
     wT2 = dict_config["water_T2"]
     fT2 = dict_config["fat_T2"]
-    df = dict_config["delta_freqs"]
-    df = [- value/1000 for value in df] # temp
     att = dict_config["B1_att"]
+    #df = dict_config["delta_freqs"]
+    #df = [- value / 1000 for value in df] # temp
+    df = np.linspace(-0.02, 0.02, 21)
+
     fat_amp = dict_config["fat_amp"]
     fat_cs = dict_config["fat_cshift"]
-    fat_cs = [- value/1000 for value in fat_cs] # temp
+    fat_cs = [- value / 1000 for value in fat_cs] # temp
 
-    # merge spokes
-    nwin = dict_config["window_length"]
-
-    def slidewin(arr, n, axis=0):
-        npad = -(-arr.shape[0] // n) * n - arr.shape[0]
-        padding = [(0, 0)] * arr.ndim
-        padding[axis] = (npad//2, -(-npad // 2))
-        arr = np.pad(arr, padding, mode="edge")
-        # convolve
-        arr = np.moveaxis(arr, axis, -1)
-        conv = np.mean(arr.reshape(arr.shape[:-1] + (-1, n)), axis=-1)
-        return np.moveaxis(conv, -1, axis)
+    # other options
+    if not window:
+        window = dict_config["window_size"]
 
     # water
     printer("Generate water signals.")
     water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
-    water = slidewin(water, nwin, axis=0)
+    water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
 
     # fat
     printer("Generate fat signals.")
@@ -61,7 +73,7 @@ def build_dict(sequence_config, dict_config, dict_file):
     # merge df and fat_cs df to dict
     fatdf = [[cs + f for cs in fat_cs] for f in df]
     fat = seq(T1=[fT1], T2=fT2, att=[[att]], g=[[[fatdf]]], eval=eval, args=args)
-    fat = slidewin(fat, nwin, axis=0)
+    fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
 
     # join water and fat
     printer("Build dictionary.")
@@ -71,55 +83,98 @@ def build_dict(sequence_config, dict_config, dict_file):
 
     printer("Save dictionary.")
     mrfdict = dictsearch.Dictionary(keys, values)
-    mrfdict.save(dict_file)
+    mrfdict.save(dictfile, overwrite=overwrite)
 
 
-
-@machine()
-@set_output("t1map_mrf", type="t1map")
-@set_parameter("path", str, description="Path of input data")
-@set_parameter("dict_file", str, description="Path of dictionary")
-@set_parameter("traj_file", str, description="Path of trajectory file", default=None)
-def search(path, dict_file, traj_file):
+@machine
+@set_output("t1map_mrf")
+@set_parameter("path", str, description="Path of k-space data")
+@set_parameter("dictfile", str, description="Path of dictionary")
+@set_parameter("niter", int, description="Number of iteration", default=0)
+@set_parameter("method", ["brute", "group"], description="Search method")
+@set_parameter("metric", ["ls", "nnls"], description="Cost function")
+@set_parameter("shape", [int, int], description="Image shape", default=[256, 256])
+def SearchMrf(path, dictfile, niter, method, metric, shape):
     """ Estimate parameters """
+    # constants
+    nspoke = 8 # spoke groups
+    shape = tuple(shape)
+
     printer(f"Load input data")
-    data = load_data(path)
+    kdata, traj = load_data(path)
 
-    if traj_file:
-        traj = load_kspace(traj_file)
-    else:
-        traj = None
+    # density compensation
+    npoint = traj.shape[1]
+    density = np.abs(np.linspace(-1, 1, npoint))
 
-    printer(f"Load dictionary: {dict_file}")
+    # printer(f"Load dictionary: {dictfile}")
     mrfdict = dictsearch.Dictionary()
-    mrfdict.load(dict_file)
+    mrfdict.load(dictfile, force=True)
 
-    printer(f"Init solver")
-    solver = groupmatch.GroupMatch()
-    solver.setup(mrfdict.keys, mrfdict.values)
+    printer(f"Init solver ({method})")
+    if method == "brute":
+        solver = dictsearch.DictSearch()
+        setupopts = {"pca": True}
+        searchopts = {"metric": metric, "parallel": True}
+    elif method == "group":
+        solver = groupmatch.GroupMatch()
+        setupopts = {"pca": True, "group_ratio": 0.05}
+        searchopts = {"metric": metric, "parallel": True, "group_threshold": 1e-1}
+    solver.setup(mrfdict.keys, mrfdict.values, **setupopts)
 
-    # auto mask
-    vols = np.asarray(data["volumes"])
-    unique = np.histogram(np.abs(vols), 100)[1]
-    mask = np.mean(np.abs(vols), axis=0) > unique[len(unique) // 10]
+    # group trajectories and kspace
+    traj = np.reshape(groupby(traj, nspoke), (-1, npoint * nspoke))
+    kdata = np.reshape(groupby(kdata * density**0.5, nspoke), (-1, npoint * nspoke))
 
-    printer(f"Search data (first pass)")
-    obs = np.transpose([vol[mask] for vol in vols])
-    res = solver.search(obs)
+    printer(f"Build volumes ({nspoke} groups)")
 
-    # second pass
-    if traj is not None:
-        pred = solver.predict(res)
-        breakpoint()
-        # volumes = [makevol(values, mask) for values in pred]
-        # group spokes into groups of size 8
-        coords = [gp.ravel() for gp in groupby(traj, size=8, mode="constant")]
-        assert len(traj) == len(pred)
-        # compute NUFFT of solution
-        spokes = [
-            finufft.nufft2d2(coords.real, coords.imag, makevol(values, mask))
-            for values, coord in zip(pred, coords)
+    # NUFFT
+    kdata /= np.sum(np.abs(kdata)**2)**0.5 / len(kdata)
+    volumes = [
+        finufft.nufft2d1(t.real, t.imag, s, shape)
+        for t, s in zip(traj, kdata)
+    ]
+
+    # init mask
+    mask = False
+    volumes0 = volumes
+    kdata0 = kdata
+    info = {}
+    for i in range(niter + 1):
+
+        # auto mask
+        unique = np.histogram(np.abs(volumes), 100)[1]
+        mask = mask | (np.mean(np.abs(volumes), axis=0) > unique[len(unique) // 10])
+
+        printer(f"Search data (iteration {i})")
+        obs = np.transpose([vol[mask] for vol in volumes])
+        res = solver.search(obs, **searchopts)
+
+        info[f"iteration {i}"] = solver.info
+
+        if i == niter:
+            break
+
+        # generate prediction volumes
+        pred = np.asarray(solver.predict(res)).T
+
+        # predict spokes
+        kdata = [
+            finufft.nufft2d2(t.real, t.imag, makevol(p, mask))
+            for t, p in zip(traj, pred)
         ]
+        kdatai = [d * np.tile(density, nspoke) for d in kdata]
+
+        # NUFFT
+        kdatai /= np.sum(np.abs(kdatai)**2)**0.5 / len(kdatai)
+        volumesi = [
+            finufft.nufft2d1(t.real, t.imag, s, shape)
+            for t, s in zip(traj, kdatai)
+        ]
+
+        # correct volumes
+        volumes = [2 * vol0 - voli for vol0, voli in zip(volumes0, volumesi)]
+
 
     # make maps
     wt1map = makevol([p[0] for p in res.parameters], mask)
@@ -138,11 +193,21 @@ def search(path, dict_file, traj_file):
         "wmap": wmap,
         "fmap": fmap,
         "ffmap": ffmap,
-        "info": {"search": solver.info, "options": solver.options},
+        "info": {"search": info, "options": solver.options},
     }
 
 
+param_path = Parameter(str, description="Path of ParamMap.mat file")
+@machine(output="refdata", path=param_path)
+def GtMrf(path):
+    """ extract ROI from ParamMap.mat"""
+    data = load_parammap(path)
+    return data
+
+
+#
 # MRF sequence
+
 class T1MRF:
     def __init__(self, FA, TI, TE, TR, B1):
         """ build sequence """
@@ -165,23 +230,35 @@ class T1MRF:
         seq = [self.inversion, epg.modify(self._seq, T1=T1, T2=T2, att=att, g=g)]
         return np.asarray(epg.simulate(seq, **kwargs))
 
-
-# load input data
-def load_data(filename):
-    """ load volumes """
-    filename = pathlib.Path(filename)
-    if filename.suffix == ".mat":
-        vols = np.moveaxis(loadmat(filename)["ImgSeries"], -1, 0)
-    else:
-        raise NotImplementedError(f"Unknown data type: {filename}")
-    return {"volumes": vols}
+#
+# utils
 
 # load kspace data
-def load_kspace(filename):
+def load_data(filename):
     """ load k-space data """
     matobj = loadmat(filename)
-    traj = matobj["KSpaceTraj"].T
-    return traj
+    traj = 2 * np.pi * matobj["KSpaceTraj"].T
+    data = matobj["KSpaceData"].T
+    return data, traj
+
+def load_parammap(filename):
+    matobj = loadmat(filename)["paramMap"]
+    wt1map = matobj["T1"][0, 0]
+    dfmap = matobj["Df"][0, 0]
+    b1map = matobj["B1"][0, 0]
+    ffmap = matobj["FF"][0, 0]
+    mask = wt1map > 0
+    labelset = np.unique(wt1map)
+    roi = np.digitize(wt1map, labelset) - 1
+
+    return {
+        "roi": roi,
+        "wt1map": wt1map,
+        "dfmap": dfmap,
+        "b1map": b1map,
+        "ffmap": ffmap,
+    }
+
 
 def groupby(arr, n, axis=0, mode="edge"):
     """ group array into groups of size 'n' """
@@ -201,9 +278,13 @@ def groupby(arr, n, axis=0, mode="edge"):
 def makevol(values, mask):
     """ fill volume """
     values = np.asarray(values)
-    new = np.zeros(mask.shape, dtype=values.dtypes)
+    new = np.zeros(mask.shape, dtype=values.dtype)
     new[mask] = values
     return new
+
+
+#
+# handlers
 
 # t1map handler
 def t1map_saver(dirname, data):
@@ -218,13 +299,54 @@ def t1map_saver(dirname, data):
     io.write(dirname / "ffmap.mha", data["ffmap"], nan_as=-1)
     io.config.write(dirname / "info.yml", data["info"])
 
-t1map_handler = file_handler(save=t1map_saver)
+def t1map_loader(dirname):
+    dirname = pathlib.Path(dirname)
+    data = {}
+    data["mask"] = io.read(dirname / "mask.mha", astype="uint8")
+    data["wt1map"] = io.read(dirname / "wt1map.mha", nan_as=-1)
+    data["ft1map"] = io.read(dirname / "ft1map.mha", nan_as=-1)
+    data["b1map"] = io.read(dirname / "b1map.mha", nan_as=-1)
+    data["dfmap"] = io.read(dirname / "dfmap.mha", nan_as=-1)
+    data["wmap"] = io.read(dirname / "wmap.mha", nan_as=-1)
+    data["fmap"] = io.read(dirname / "fmap.mha", nan_as=-1)
+    data["ffmap"] = io.read(dirname / "ffmap.mha", nan_as=-1)
+    return data
 
+t1map_handler = file_handler(save=t1map_saver, load=t1map_loader)
+
+
+def gt_saver(dirname, data):
+    dirname = pathlib.Path(dirname)
+    io.write(dirname / "roi.mha", data["roi"].astype("uint8"))
+    io.write(dirname / "wt1map.mha", data["wt1map"], nan_as=-1)
+    io.write(dirname / "b1map.mha", data["b1map"], nan_as=-1)
+    io.write(dirname / "dfmap.mha", data["dfmap"], nan_as=-1)
+    io.write(dirname / "ffmap.mha", data["ffmap"], nan_as=-1)
+
+def gt_loader(dirname):
+    dirname = pathlib.Path(dirname)
+    data = {}
+    data["roi"] = io.read(dirname / "roi.mha", astype="uint8")
+    data["wt1map"] = io.read(dirname / "wt1map.mha", nan_as=-1)
+    data["b1map"] = io.read(dirname / "b1map.mha", nan_as=-1)
+    data["dfmap"] = io.read(dirname / "dfmap.mha", nan_as=-1)
+    data["ffmap"] = io.read(dirname / "ffmap.mha", nan_as=-1)
+    return data
+
+gt_handler = file_handler(save=gt_saver, load=gt_loader)
+
+
+#
+# build toolbox
 
 toolbox = Toolbox("MRF-sim", description="build MRF T1 dict and map T1 volumes")
-toolbox.add_program("build-dict", build_dict)
-toolbox.add_program("search", search)
-toolbox.add_handler("t1map", t1map_handler)
+toolbox.add_program("gendict", GenDict)
+toolbox.add_program("search", SearchMrf)
+toolbox.add_program("getref", GtMrf)
+
+toolbox.add_handler("t1map_mrf", t1map_handler)
+toolbox.add_handler("refdata", gt_handler)
+
 
 
 if __name__ == "__main__":
