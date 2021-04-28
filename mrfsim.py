@@ -9,12 +9,13 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 
 # misc
+import pandas as pd
 from scipy.io import loadmat
 from epgpy import epg
 import finufft
 
 # machines
-from machines import machine, Toolbox, Config, set_parameter, set_output, printer, file_handler, Parameter, RejectException
+from machines import machine, Toolbox, Config, set_parameter, set_output, printer, file_handler, Parameter, RejectException, get_context
 
 # mutools
 from mutools import io
@@ -204,6 +205,60 @@ def GtMrf(path):
     data = load_parammap(path)
     return data
 
+@machine(inputs="t1map::t1map_mrf & refdata", output="results")
+def ResultsInRoi(t1map, refdata):
+    """ Compare results and ground truth """
+    roi = refdata["roi"]
+    labels = refdata["labels"]
+
+    # dynamics
+    T1_DYN = 2000
+    FF_DYN = 1
+
+    table = {}
+    labelset = np.unique(roi[roi > 0])
+    for label in labelset:
+        mask = roi == label
+        ref_wt1 = refdata["wt1map"][mask]
+        est_wt1 = refdata["wt1map"][mask]
+        table["WT1_REF"] = np.mean(ref_wt1)
+        table["WT1_EST"] = np.mean(est_wt1)
+        table["WT1_ERR"] = table["WT1_EST"] - table["WT1_REF"]
+        table["WT1_STD"] = np.std(est_wt1)
+        table["WT1_RMSE"] = np.mean((ref_wt1 - est_wt1)**2)**0.5
+        table["WT1_PSNR"] = 20 * np.log10(T1_DYN / table["WT1_RMSE"])
+
+        ref_ff = refdata["ffmap"][mask]
+        est_ff = refdata["ff1map"][mask]
+        table["FF_REF"] = np.mean(ref_ff)
+        table["FF_EST"] = np.mean(est_ff)
+        table["FF_ERR"] = table["FF_REF"] - table["FF_REF"]
+        table["FF_STD"] = np.std(est_ff)
+        table["FF_RMSE"] = np.mean((ref_ff - est_ff)**2)**0.5
+        table["FF_PSNR"] = 20 * np.log10(T1_DYN / table["FF_RMSE"])
+
+        table["DF_REF"] = np.mean(refdata["dfmap"][mask])
+        table["DF_EST"] = np.mean(t1map["dfmap"][mask])
+        table["B1_REF"] = np.mean(refdata["b1map"][mask])
+        table["B1_EST"] = np.mean(t1map["b1map"][mask])
+
+    # delta T1 and FF ?
+    mask = roi > 0
+    delta_wT1 = (refdata["wt1map"] - t1map["wt1map"]) * roi
+    delta_FF = (refdata["ffmap"] - t1map["ffmap"]) * roi
+
+    table = pd.DataFrame(table)
+    return {
+        "tables": {"results": table},
+        "volumes": {
+            "wt1diff": delta_wT1,
+            "ffdiff": delta_FF,
+        }
+    }
+
+
+
+
 
 #
 # MRF sequence
@@ -336,6 +391,18 @@ def gt_loader(dirname):
 gt_handler = file_handler(save=gt_saver, load=gt_loader)
 
 
+def results_saver(dirname, data):
+    dirname = pathlib.Path(dirname)
+    for name in tables:
+        filename = dirname / name
+        table = data["tables"][name]
+        table.to_excel(filename.with_suffix(".xlsx"), index=False)
+        table.to_csv(filename.with_suffix(".csv"), index=False)
+    for vol in data.get("volumes", {}):
+        io.write(dirname / vol, data["volumes"][vol])
+
+results_handler = file_handler(save=results_saver)
+
 #
 # build toolbox
 
@@ -343,9 +410,11 @@ toolbox = Toolbox("MRF-sim", description="build MRF T1 dict and map T1 volumes")
 toolbox.add_program("gendict", GenDict)
 toolbox.add_program("search", SearchMrf)
 toolbox.add_program("getref", GtMrf)
+toolbox.add_program("getres", ResultsInRoi)
 
 toolbox.add_handler("t1map_mrf", t1map_handler)
 toolbox.add_handler("refdata", gt_handler)
+toolbox.add_handler("results", results_handler)
 
 
 
