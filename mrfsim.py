@@ -2,6 +2,7 @@
 import pathlib
 import itertools
 import numpy as np
+from scipy import ndimage
 
 # matplotlib
 import matplotlib
@@ -49,9 +50,9 @@ def GenDict(sequence_config, dict_config, window, dictfile, overwrite):
     wT2 = dict_config["water_T2"]
     fT2 = dict_config["fat_T2"]
     att = dict_config["B1_att"]
-    #df = dict_config["delta_freqs"]
-    #df = [- value / 1000 for value in df] # temp
-    df = np.linspace(-0.02, 0.02, 21)
+    df = dict_config["delta_freqs"]
+    df = [- value / 1000 for value in df] # temp
+    # df = np.linspace(-0.1, 0.1, 101)
 
     fat_amp = dict_config["fat_amp"]
     fat_cs = dict_config["fat_cshift"]
@@ -145,6 +146,7 @@ def SearchMrf(path, dictfile, niter, method, metric, shape):
         # auto mask
         unique = np.histogram(np.abs(volumes), 100)[1]
         mask = mask | (np.mean(np.abs(volumes), axis=0) > unique[len(unique) // 10])
+        mask = ndimage.binary_closing(mask, iterations=3)
 
         printer(f"Search data (iteration {i})")
         obs = np.transpose([vol[mask] for vol in volumes])
@@ -236,12 +238,14 @@ class T1MRF:
 # load kspace data
 def load_data(filename):
     """ load k-space data """
+    filename = str(pathlib.Path(filename).expanduser().resolve())
     matobj = loadmat(filename)
     traj = 2 * np.pi * matobj["KSpaceTraj"].T
     data = matobj["KSpaceData"].T
     return data, traj
 
 def load_parammap(filename):
+    filename = str(pathlib.Path(filename).expanduser().resolve())
     matobj = loadmat(filename)["paramMap"]
     wt1map = matobj["T1"][0, 0]
     dfmap = matobj["Df"][0, 0]
@@ -339,7 +343,7 @@ gt_handler = file_handler(save=gt_saver, load=gt_loader)
 #
 # build toolbox
 
-toolbox = Toolbox("MRF-sim", description="build MRF T1 dict and map T1 volumes")
+toolbox = Toolbox("mrfsim", description="build MRF T1 dict and map T1 volumes")
 toolbox.add_program("gendict", GenDict)
 toolbox.add_program("search", SearchMrf)
 toolbox.add_program("getref", GtMrf)
