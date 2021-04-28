@@ -4,6 +4,7 @@
 *.mha
 *.dict
 *.mat
+*.out
 
 gt/
 work/
@@ -11,3 +12,4 @@ dicts/
 datasets/
 images/
 volumes/
+simulations
