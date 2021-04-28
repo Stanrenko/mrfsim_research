@@ -20,6 +20,7 @@ from machines import machine, Toolbox, Config, set_parameter, set_output, printe
 
 # mutools
 from mutools import io
+from mutools.tables import aggregate
 from mutools.optim.dictsearch import dictsearch, groupmatch, utils
 from mutools.toolbox.main import GetResults, handlers_common
 
@@ -211,38 +212,44 @@ def GtMrf(path):
 def ResultsInRoi(t1map, refdata):
     """ Compare results and ground truth """
     roi = refdata["roi"]
-    labels = refdata["labels"]
+    labels = refdata.get("labels", {})
 
     # dynamics
     T1_DYN = 2000
     FF_DYN = 1
 
-    table = {}
+    table = []
     labelset = np.unique(roi[roi > 0])
     for label in labelset:
         mask = roi == label
+
+        labelname = labels.get(label, f"label {label}")
+        row = {"label": labelname}
+
         ref_wt1 = refdata["wt1map"][mask]
-        est_wt1 = refdata["wt1map"][mask]
-        table["WT1_REF"] = np.mean(ref_wt1)
-        table["WT1_EST"] = np.mean(est_wt1)
-        table["WT1_ERR"] = table["WT1_EST"] - table["WT1_REF"]
-        table["WT1_STD"] = np.std(est_wt1)
-        table["WT1_RMSE"] = np.mean((ref_wt1 - est_wt1)**2)**0.5
-        table["WT1_PSNR"] = 20 * np.log10(T1_DYN / table["WT1_RMSE"])
+        est_wt1 = t1map["wt1map"][mask]
+        row["WT1_REF"] = np.mean(ref_wt1)
+        row["WT1_EST"] = np.mean(est_wt1)
+        row["WT1_ERR"] = row["WT1_EST"] - row["WT1_REF"]
+        row["WT1_STD"] = np.std(est_wt1)
+        row["WT1_RMSE"] = np.mean((ref_wt1 - est_wt1)**2)**0.5
+        row["WT1_PSNR"] = 20 * np.log10(T1_DYN / row["WT1_RMSE"])
 
         ref_ff = refdata["ffmap"][mask]
-        est_ff = refdata["ff1map"][mask]
-        table["FF_REF"] = np.mean(ref_ff)
-        table["FF_EST"] = np.mean(est_ff)
-        table["FF_ERR"] = table["FF_REF"] - table["FF_REF"]
-        table["FF_STD"] = np.std(est_ff)
-        table["FF_RMSE"] = np.mean((ref_ff - est_ff)**2)**0.5
-        table["FF_PSNR"] = 20 * np.log10(T1_DYN / table["FF_RMSE"])
+        est_ff = t1map["ffmap"][mask]
+        row["FF_REF"] = np.mean(ref_ff)
+        row["FF_EST"] = np.mean(est_ff)
+        row["FF_ERR"] = row["FF_EST"] - row["FF_REF"]
+        row["FF_STD"] = np.std(est_ff)
+        row["FF_RMSE"] = np.mean((ref_ff - est_ff)**2)**0.5
+        row["FF_PSNR"] = 20 * np.log10(T1_DYN / row["FF_RMSE"])
 
-        table["DF_REF"] = np.mean(refdata["dfmap"][mask])
-        table["DF_EST"] = np.mean(t1map["dfmap"][mask])
-        table["B1_REF"] = np.mean(refdata["b1map"][mask])
-        table["B1_EST"] = np.mean(t1map["b1map"][mask])
+        row["DF_REF"] = np.mean(refdata["dfmap"][mask])
+        row["DF_EST"] = - 1000 * np.mean(t1map["dfmap"][mask])
+        row["B1_REF"] = np.mean(refdata["b1map"][mask])
+        row["B1_EST"] = np.mean(t1map["b1map"][mask])
+
+        table.append(row)
 
     # delta T1 and FF ?
     mask = roi > 0
@@ -258,7 +265,20 @@ def ResultsInRoi(t1map, refdata):
         }
     }
 
+@machine(inputs="results", output="output::results", aggregate=True)
+def AggregateResults(results):
+    """ Merge result tables """
+    context = get_context()
+    targets = context.targets["results"]
+    combine = []
+    for target, res in zip(targets, results):
+        table = res["tables"]["results"]
+        table["index"] = str(target.index)
+        table["branch"] = str(target.branch)
+        combine.append(table)
 
+    table = aggregate.combine(combine, on=["index", "branch", "label"])
+    return {"tables": {"results": table}}
 
 
 
@@ -390,6 +410,8 @@ def gt_loader(dirname):
     data["b1map"] = io.read(dirname / "b1map.mha", nan_as=-1)
     data["dfmap"] = io.read(dirname / "dfmap.mha", nan_as=-1)
     data["ffmap"] = io.read(dirname / "ffmap.mha", nan_as=-1)
+    if (dirname / "labels.txt").is_file():
+        data["labels"] = io.read_labels(dirname/"labels.txt")
     return data
 
 gt_handler = file_handler(save=gt_saver, load=gt_loader)
@@ -397,7 +419,7 @@ gt_handler = file_handler(save=gt_saver, load=gt_loader)
 
 def results_saver(dirname, data):
     dirname = pathlib.Path(dirname)
-    for name in tables:
+    for name in data.get("tables", {}):
         filename = dirname / name
         table = data["tables"][name]
         table.to_excel(filename.with_suffix(".xlsx"), index=False)
@@ -405,7 +427,15 @@ def results_saver(dirname, data):
     for vol in data.get("volumes", {}):
         io.write(dirname / vol, data["volumes"][vol])
 
-results_handler = file_handler(save=results_saver)
+def results_loader(dirname):
+    dirname = pathlib.Path(dirname)
+    data = {"tables": {}}
+    for filename in dirname.glob("*.csv"):
+        table = pd.read_csv(filename)
+        data["tables"][filename.stem] = table
+    return data
+
+results_handler = file_handler(save=results_saver, load=results_loader)
 
 #
 # build toolbox
@@ -415,6 +445,7 @@ toolbox.add_program("gendict", GenDict)
 toolbox.add_program("search", SearchMrf)
 toolbox.add_program("getref", GtMrf)
 toolbox.add_program("getres", ResultsInRoi)
+toolbox.add_program("aggres", AggregateResults)
 
 toolbox.add_handler("t1map_mrf", t1map_handler)
 toolbox.add_handler("refdata", gt_handler)
