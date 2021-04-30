@@ -221,7 +221,9 @@ def ResultsInRoi(t1map, refdata):
     table = []
     labelset = np.unique(roi[roi > 0])
     for label in labelset:
-        mask = roi == label
+        mask = (roi == label) * t1map["mask"]
+        if mask.sum() == 0:
+            continue
 
         labelname = labels.get(label, f"label {label}")
         row = {"label": labelname}
@@ -248,6 +250,7 @@ def ResultsInRoi(t1map, refdata):
         row["DF_EST"] = - 1000 * np.mean(t1map["dfmap"][mask])
         row["B1_REF"] = np.mean(refdata["b1map"][mask])
         row["B1_EST"] = np.mean(t1map["b1map"][mask])
+
 
         table.append(row)
 
@@ -381,7 +384,7 @@ def t1map_saver(dirname, data):
 def t1map_loader(dirname):
     dirname = pathlib.Path(dirname)
     data = {}
-    data["mask"] = io.read(dirname / "mask.mha", astype="uint8")
+    data["mask"] = io.read(dirname / "mask.mha", astype=bool)
     data["wt1map"] = io.read(dirname / "wt1map.mha", nan_as=-1)
     data["ft1map"] = io.read(dirname / "ft1map.mha", nan_as=-1)
     data["b1map"] = io.read(dirname / "b1map.mha", nan_as=-1)
