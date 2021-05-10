@@ -1,0 +1,21 @@
+CONFIG:
+  ALIAS:
+    refdata: getref
+    t1map: search
+  PARAMETERS:
+    t1map:
+      shape:
+      - 256
+      - 256
+
+
+test1:
+  t1map:
+    path: data/KSpaceData.mat
+
+
+test2:
+  t1map:
+    path: data/KSpaceData.mat
+  refdata:
+    path: data/paramMap.mat

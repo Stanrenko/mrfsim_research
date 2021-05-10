@@ -97,7 +97,9 @@ def GenDict(sequence_config, dict_config, window, dictfile, overwrite):
 @set_parameter("method", ["brute", "group"], description="Search method")
 @set_parameter("metric", ["ls", "nnls"], description="Cost function")
 @set_parameter("shape", [int, int], description="Image shape", default=[256, 256])
-def SearchMrf(path, dictfile, niter, method, metric, shape):
+@set_parameter("setup_opts", [str], description="Setup options", default=[])
+@set_parameter("search_opts", [str], description="Search options", default=[])
+def SearchMrf(path, dictfile, niter, method, metric, shape, setup_opts, search_opts):
     """ Estimate parameters """
     # constants
     nspoke = 8 # spoke groups
@@ -117,12 +119,12 @@ def SearchMrf(path, dictfile, niter, method, metric, shape):
     printer(f"Init solver ({method})")
     if method == "brute":
         solver = dictsearch.DictSearch()
-        setupopts = {"pca": True}
-        searchopts = {"metric": metric, "parallel": True}
+        setupopts = {"pca": True, **parse_options(setup_opts)}
+        searchopts = {"metric": metric, "parallel": True, **parse_options(search_opts)}
     elif method == "group":
         solver = groupmatch.GroupMatch()
-        setupopts = {"pca": True, "group_ratio": 0.05}
-        searchopts = {"metric": metric, "parallel": True, "group_threshold": 1e-1}
+        setupopts = {"pca": True, "group_ratio": 0.05, **parse_options(setup_opts)}
+        searchopts = {"metric": metric, "parallel": True, "group_threshold": 1e-1, **parse_options(search_opts)}
     solver.setup(mrfdict.keys, mrfdict.values, **setupopts)
 
     # group trajectories and kspace
@@ -364,6 +366,24 @@ def makevol(values, mask):
     new[mask] = values
     return new
 
+def trycast(value, types=[int, float], default=str):
+    """ return cast value for multiple types """
+    for type in types:
+        try:
+            return type(value)
+        except ValueError:
+            pass
+    if default is not None:
+        return default(value)
+    return value
+
+
+def parse_options(seq, sep="="):
+    """ parse and cast sequence of 'key=value' string """
+    return {
+        item[0]: trycast(item[1], [int, float])
+        for item in map(lambda x: x.split(sep), seq)
+    }
 
 #
 # handlers
