@@ -3,6 +3,11 @@ import pathlib
 import itertools
 import numpy as np
 from scipy import ndimage
+import sys
+sys.path.append(r"/home/cslioussarenko/PythonRepositories/epgpy")
+sys.path.append(r"/home/cslioussarenko/PythonRepositories/machines")
+sys.path.append(r"/home/cslioussarenko/PythonRepositories/mutools")
+sys.path.append(r"/home/cslioussarenko/PythonRepositories/dicomstack")
 
 # matplotlib
 import matplotlib
