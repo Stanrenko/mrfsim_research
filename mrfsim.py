@@ -11,7 +11,7 @@ sys.path.append(r"/home/cslioussarenko/PythonRepositories/dicomstack")
 
 # matplotlib
 import matplotlib
-matplotlib.use("Agg")
+matplotlib.use("TkAgg")
 from matplotlib import pyplot as plt
 
 # misc
