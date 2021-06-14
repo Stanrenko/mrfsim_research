@@ -84,3 +84,56 @@ def create_random_map(list_params,region_size,size,mask):
     basis = np.random.choice(list_params,(int(size[0]/region_size),int(size[1]/region_size)))
     map = np.repeat(np.repeat(basis, region_size, axis=1), region_size, axis=0) * mask
     return map
+
+def compare_patterns(pixel_number,images_1,images_2,title_1="image_1",title_2="image_2"):
+
+    fig,(ax1,ax2,ax3) = plt.subplots(1,3)
+    ax1.plot(np.real(images_1[:,pixel_number[0],pixel_number[1]]),label=title_1+" - real part")
+    ax1.plot(np.real(images_2[:, pixel_number[0],pixel_number[1]]), label=title_2+" - real part")
+    ax1.legend()
+    ax2.plot(np.imag(images_1[:, pixel_number[0], pixel_number[1]]),
+             label=title_1+" - imaginary part")
+    ax2.plot(np.imag(images_2[:, pixel_number[0], pixel_number[1]]),
+             label=title_2+" - imaginary part")
+    ax2.legend()
+
+    ax3.plot(np.abs(images_1[:, pixel_number[0], pixel_number[1]]),
+             label=title_1+" - norm")
+    ax3.plot(np.abs(images_2[:, pixel_number[0], pixel_number[1]]),
+             label=title_2+" - norm")
+    ax3.legend()
+
+    plt.show()
+
+
+def translation_breathing(t,direction,T=300,frac_expiration=0.7):
+    def base_pattern(t):
+        lambda1=5/(frac_expiration*T)
+        lambda2=20/((1-frac_expiration)*T)
+        if t<(frac_expiration*T):
+            return (1-np.exp(-lambda1*t))*direction
+        else:
+            return ((1-np.exp(-lambda1*frac_expiration*T))* np.exp(-lambda2*t)/np.exp(-lambda2*frac_expiration*T))*direction
+
+    return base_pattern(t-int(t/T)*T).flatten()
+
+
+def find_klargest_freq(ft, k=1, remove_central_peak=True):
+    n_max = len(ft_movement_in_image) - 1
+    n_min = 0
+    if remove_central_peak:
+        # Removing the central peak in fourier transform (corresponds roughly to PSF)
+        while (ft_movement_in_image[n_max - 1] <= ft_movement_in_image[n_max]):
+            n_max = n_max - 1
+
+        while (ft_movement_in_image[n_min + 1] <= ft_movement_in_image[n_min]):
+            n_min = n_min + 1
+
+    freq_image = np.argsort((ft_movement_in_image)[n_min:n_max])[-k]
+
+    if freq_image + n_min < 175 / 2:
+        freq_image = freq_image + n_min
+    else:
+        freq_image = len(ft_movement_in_image) - 1 - (freq_image + n_min)
+
+    return freq_image

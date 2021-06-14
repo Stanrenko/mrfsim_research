@@ -4,6 +4,8 @@ try:
 except:
     pass
 
+from scipy import ndimage
+from scipy.ndimage import affine_transform
 import matplotlib.pyplot as plt
 
 from utils_mrf import create_random_map
@@ -16,6 +18,14 @@ import finufft
 DEFAULT_wT2 = 80
 DEFAULT_fT1 = 350
 DEFAULT_fT2 = 40
+
+DEFAULT_ROUNDING_wT1=0
+DEFAULT_ROUNDING_wT2=0
+DEFAULT_ROUNDING_fT1=0
+DEFAULT_ROUNDING_fT2=0
+DEFAULT_ROUNDING_df=0
+DEFAULT_ROUNDING_attB1=2
+DEFAULT_ROUNDING_ff=2
 
 
 def dump_function(func):
@@ -30,6 +40,16 @@ def dump_function(func):
         print(f"{func.__module__}.{func.__qualname__} ")
         return func(*args, **kwargs)
 
+def wrapper_rounding(func):
+    def wrapper(self, *args, **kwargs):
+        print("Building Param Map")
+        func(self,*args,**kwargs)
+        if self.paramDict["rounding"]:
+            print("Warning : Values in the initial map are being rounded")
+            for paramName in self.paramMap.keys():
+                self.roundParam(paramName,self.paramDict["rounding_"+paramName])
+
+    return wrapper
 
 
 class ImageSeries(object):
@@ -41,6 +61,26 @@ class ImageSeries(object):
         self.image_size=self.paramDict["image_size"]
         self.mask =np.ones(self.image_size)
         self.paramMap=None
+
+        if "rounding" not in self.paramDict:
+            self.paramDict["rounding"]=False
+        else:
+            if self.paramDict["rounding"]:
+                if "rounding_wT1" not in self.paramDict:
+                    self.paramDict["rounding_wT1"] = DEFAULT_ROUNDING_wT1
+                if "rounding_wT2" not in self.paramDict:
+                    self.paramDict["rounding_wT2"] = DEFAULT_ROUNDING_wT2
+                if "rounding_fT1" not in self.paramDict:
+                    self.paramDict["rounding_fT1"] = DEFAULT_ROUNDING_fT1
+                if "rounding_fT2" not in self.paramDict:
+                    self.paramDict["rounding_fT2"] = DEFAULT_ROUNDING_fT2
+                if "rounding_ff" not in self.paramDict:
+                    self.paramDict["rounding_ff"] = DEFAULT_ROUNDING_ff
+                if "rounding_attB1" not in self.paramDict:
+                    self.paramDict["rounding_attB1"] = DEFAULT_ROUNDING_attB1
+                if "rounding_df" not in self.paramDict:
+                    self.paramDict["rounding_df"] = DEFAULT_ROUNDING_df
+
 
         self.fat_amp=[0.0586, 0.0109, 0.0618, 0.1412, 0.66, 0.0673]
         fat_cs = [0.1011, -0.2083, -0.281, -0.30569999999999997, -0.3956, -0.4462]
@@ -86,6 +126,10 @@ class ImageSeries(object):
         fat = seq(T1=[fT1_in_map], T2=fT2_in_map, att=[[attB1_in_map]], g=[[[fatdf_in_map]]], eval=eval, args=args)
         fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
 
+        # building the time axis
+        TE_list = seq.TE
+        t = np.cumsum([np.sum(dt, axis=0) for dt in groupby(np.array(TE_list), window)])
+
         # join water and fat
         print("Build dictionary.")
         keys = list(itertools.product(wT1_in_map, wT2_in_map, fT1_in_map, fT2_in_map, attB1_in_map, df_in_map))
@@ -100,6 +144,8 @@ class ImageSeries(object):
 
         images_series = np.moveaxis(images_series, -1, 0)
         self.images_series=images_series
+        self.cached_images_series=images_series
+        self.t=t
 
 
     def simulate_undersampled_images(self,traj):
@@ -117,11 +163,24 @@ class ImageSeries(object):
 
         return images_series_rebuilt
 
-    def rotate_images(self,R):
-        pass
+    def rotate_images(self,angles_t):
+        # angles_t function returning rotation angle as a function of t
+        angles = [angles_t(t) for t in self.t]
+        self.images_series= np.array([ndimage.rotate(self.images_series[i,:,:], angles[i], reshape=False) for i in range(self.images_series.shape[0])])
 
-    def translate_images(self,T):
-        pass
+    def translate_images(self,shifts_t,round=True):
+        # shifts_t function returning tuple with x,y shift as a function of t
+        if round:
+            shifts = [np.round(shifts_t(t))for t in self.t]
+        else:
+            shifts = [shifts_t(t) for t in self.t]
+
+        self.images_series = np.array([affine_transform(self.images_series[i, :, :], ((1.0, 0.0), (0.0, 1.0)),offset=list(-shifts[i]),order=1,mode="nearest") for i in
+                                      range(self.images_series.shape[0])])
+
+        #orig = self.images_series[0,:,:]
+        #trans = affine_transform(self.images_series[0, :, :], ((1.0, 0.0), (0.0, 1.0)),offset=list(np.round(shifts[0])),order=3,mode="nearest")
+
 
     def buildParamMap(self,mask=None):
         raise ValueError("should be implemented in child")
@@ -151,12 +210,37 @@ class ImageSeries(object):
 
         plt.show()
 
+    def roundParam(self,paramName,decimals=0):
+        self.paramMap[paramName]=np.round(self.paramMap[paramName],decimals=decimals)
+
+    def reset_image_series(self):
+        self.images_series=self.cached_images_series
+
+    def compare_patterns(self,pixel_number):
+
+        fig,(ax1,ax2,ax3) = plt.subplots(1,3)
+        ax1.plot(np.real(self.cached_images_series[:,pixel_number[0],pixel_number[1]]),label="original image - real part")
+        ax1.plot(np.real(self.images_series[:, pixel_number[0],pixel_number[1]]), label="transformed image - real part")
+        ax1.legend()
+        ax2.plot(np.imag(self.cached_images_series[:, pixel_number[0], pixel_number[1]]),
+                 label="original image - imaginary part")
+        ax2.plot(np.imag(self.images_series[:, pixel_number[0], pixel_number[1]]),
+                 label="transformed - imaginary part")
+        ax2.legend()
+
+        ax3.plot(np.abs(self.cached_images_series[:, pixel_number[0], pixel_number[1]]),
+                 label="original image - norm")
+        ax3.plot(np.abs(self.images_series[:, pixel_number[0], pixel_number[1]]),
+                 label="transformed - norm")
+        ax3.legend()
+
+        plt.show()
+
+
 class RandomMap(ImageSeries):
 
     def __init__(self,name,dict_config,**kwargs):
         super().__init__(name,dict_config,**kwargs)
-
-        self.paramDict=kwargs
 
         self.region_size=self.paramDict["region_size"]
 
@@ -168,9 +252,9 @@ class RandomMap(ImageSeries):
         mask[int(self.image_size[0] *mask_red):int(self.image_size[0]*(1-mask_red)), int(self.image_size[1] *mask_red):int(self.image_size[1]*(1-mask_red))] = 1.0
         self.mask=mask
 
-
+    @wrapper_rounding
     def buildParamMap(self,mask=None):
-        print("Building Param Map")
+        #print("Building Param Map")
         if mask is None:
             mask=self.mask
         else:
@@ -195,6 +279,7 @@ class RandomMap(ImageSeries):
         map_all = np.stack((map_wT1, map_wT2, map_fT1, map_fT2, map_attB1, map_df, map_ff), axis=-1)
         map_all_on_mask = map_all[mask > 0]
 
+
         self.paramMap = {
             "wT1": map_all_on_mask[:, 0],
             "wT2": map_all_on_mask[:, 1],
@@ -215,7 +300,7 @@ class MapFromFile(ImageSeries):
     def __init__(self, name, **kwargs):
         super().__init__(name, {}, **kwargs)
 
-        self.paramDict = kwargs
+
 
         if "file" not in self.paramDict:
             raise ValueError("file key value argument containing param map file path should be given for MapFromFile")
@@ -227,7 +312,7 @@ class MapFromFile(ImageSeries):
         if "default_fT1" not in self.paramDict:
             self.paramDict["default_fT1"]=DEFAULT_fT1
 
-
+    @wrapper_rounding
     def buildParamMap(self,mask=None):
 
         if mask is not None:
@@ -260,6 +345,8 @@ class MapFromFile(ImageSeries):
             "ff": map_all_on_mask[:, 6]
 
         }
+
+
 
 
 
