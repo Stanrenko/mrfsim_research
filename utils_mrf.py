@@ -1,8 +1,11 @@
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from mutools.optim.dictsearch import dictsearch
+from mutools.optim.dictsearch import dictsearch,groupmatch
+from mrfsim import makevol,parse_options,groupby
 import numpy as np
+import finufft
+from scipy import ndimage
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
@@ -33,7 +36,7 @@ def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
 
 
-def animate_images(images_series,interval=200):
+def animate_images(images_series,interval=200,metric=np.abs):
     fig, ax = plt.subplots()
     # ims is a list of lists, each row is a list of artists to draw in the
     # current frame; here we are just animating one artist, the image, in
@@ -41,9 +44,9 @@ def animate_images(images_series,interval=200):
     ims = []
     for i, image in enumerate(images_series):
 
-        im = ax.imshow(np.abs(image), animated=True)
+        im = ax.imshow(metric(image), animated=True)
         if i == 0:
-            ax.imshow(np.abs(image))  # show an initial one first
+            ax.imshow(metric(image))  # show an initial one first
         ims.append([im])
 
     return animation.ArtistAnimation(fig, ims, interval=interval, blit=True,
@@ -74,7 +77,7 @@ def animate_multiple_images(images_series,images_series_rebuilt,interval=200):
                                     repeat_delay=10 * interval),
 
 def radial_golden_angle_traj(total_nspoke,npoint,k_max=np.pi):
-    golden_angle=111.25*np.pi/180
+    golden_angle=-111.25*np.pi/180
     base_spoke = np.arange(-k_max, k_max, 2 * k_max / npoint, dtype=np.complex_)
     all_rotations = np.exp(1j * np.arange(total_nspoke) * golden_angle)
     all_spokes = np.matmul(np.diag(all_rotations), np.repeat(base_spoke.reshape(1, -1), total_nspoke, axis=0))
@@ -119,21 +122,126 @@ def translation_breathing(t,direction,T=300,frac_expiration=0.7):
 
 
 def find_klargest_freq(ft, k=1, remove_central_peak=True):
-    n_max = len(ft_movement_in_image) - 1
+    n_max = len(ft) - 1
     n_min = 0
     if remove_central_peak:
         # Removing the central peak in fourier transform (corresponds roughly to PSF)
-        while (ft_movement_in_image[n_max - 1] <= ft_movement_in_image[n_max]):
+        while (ft[n_max - 1] <= ft[n_max]):
             n_max = n_max - 1
 
-        while (ft_movement_in_image[n_min + 1] <= ft_movement_in_image[n_min]):
+        while (ft[n_min + 1] <= ft[n_min]):
             n_min = n_min + 1
 
-    freq_image = np.argsort((ft_movement_in_image)[n_min:n_max])[-k]
+    freq_image = np.argsort((ft)[n_min:n_max])[-k]
 
     if freq_image + n_min < 175 / 2:
         freq_image = freq_image + n_min
     else:
-        freq_image = len(ft_movement_in_image) - 1 - (freq_image + n_min)
+        freq_image = len(ft) - 1 - (freq_image + n_min)
 
     return freq_image
+
+def SearchMrf(kdata,traj, dictfile, niter, method, metric, shape,nspoke,density_adj=False, setup_opts={}, search_opts= {}):
+    """ Estimate parameters """
+    # constants
+    shape = tuple(shape)
+
+
+    # density compensation
+    npoint = traj.shape[1]
+    if density_adj:
+        density = np.abs(np.linspace(-1, 1, npoint))
+    else:
+        density=np.ones(npoint)
+
+    # printer(f"Load dictionary: {dictfile}")
+    mrfdict = dictsearch.Dictionary()
+    mrfdict.load(dictfile, force=True)
+
+    print(f"Init solver ({method})")
+    if method == "brute":
+        solver = dictsearch.DictSearch()
+        setupopts = {"pca": True, **parse_options(setup_opts)}
+        searchopts = {"metric": metric, "parallel": True, **parse_options(search_opts)}
+    elif method == "group":
+        solver = groupmatch.GroupMatch()
+        setupopts = {"pca": True, "group_ratio": 0.05, **parse_options(setup_opts)}
+        searchopts = {"metric": metric, "parallel": True, "group_threshold": 1e-1, **parse_options(search_opts)}
+    solver.setup(mrfdict.keys, mrfdict.values, **setupopts)
+
+    # group trajectories and kspace
+    traj = np.reshape(groupby(traj, nspoke), (-1, npoint * nspoke))
+    kdata = np.array([(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata])
+
+    #kdata = np.reshape(groupby(kdata * density, nspoke), (-1, npoint * nspoke))
+
+    print(f"Build volumes ({nspoke} groups)")
+
+    # NUFFT
+    kdata /= np.sum(np.abs(kdata)**2)**0.5 / len(kdata)
+    volumes = [
+        finufft.nufft2d1(t.real, t.imag, s, shape)
+        for t, s in zip(traj, kdata)
+    ]
+
+    # init mask
+    mask = False
+    volumes0 = volumes
+    kdata0 = kdata
+    info = {}
+    for i in range(niter + 1):
+
+        # auto mask
+        unique = np.histogram(np.abs(volumes), 100)[1]
+        mask = mask | (np.mean(np.abs(volumes), axis=0) > unique[len(unique) // 10])
+        mask = ndimage.binary_closing(mask, iterations=3)
+
+        print(f"Search data (iteration {i})")
+        obs = np.transpose([vol[mask] for vol in volumes])
+        res = solver.search(obs, **searchopts)
+
+        info[f"iteration {i}"] = solver.info
+
+        if i == niter:
+            break
+
+        # generate prediction volumes
+        pred = np.asarray(solver.predict(res)).T
+
+        # predict spokes
+        kdata = [
+            finufft.nufft2d2(t.real, t.imag, makevol(p, mask))
+            for t, p in zip(traj, pred)
+        ]
+        kdatai = [d * np.tile(density, nspoke) for d in kdata]
+
+        # NUFFT
+        kdatai /= np.sum(np.abs(kdatai)**2)**0.5 / len(kdatai)
+        volumesi = [
+            finufft.nufft2d1(t.real, t.imag, s, shape)
+            for t, s in zip(traj, kdatai)
+        ]
+
+        # correct volumes
+        volumes = [2 * vol0 - voli for vol0, voli in zip(volumes0, volumesi)]
+
+
+    # make maps
+    wt1map = makevol([p[0] for p in res.parameters], mask)
+    ft1map = makevol([p[1] for p in res.parameters], mask)
+    b1map = makevol([p[2] for p in res.parameters], mask)
+    dfmap = makevol([p[3] for p in res.parameters], mask)
+    wmap =  makevol([s[0] for s in res.scales], mask)
+    fmap =  makevol([s[1] for s in res.scales], mask)
+    ffmap = makevol([s[1]/(s[0] + s[1]) for s in res.scales], mask)
+    return {
+        "mask": mask,
+        "wt1map": wt1map,
+        "ft1map": ft1map,
+        "b1map": b1map,
+        "dfmap": dfmap,
+        "wmap": wmap,
+        "fmap": fmap,
+        "ffmap": ffmap,
+        "info": {"search": info, "options": solver.options},
+    }

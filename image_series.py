@@ -138,17 +138,37 @@ class ImageSeries(object):
         mrfdict = dictsearch.Dictionary(keys, values)
 
         images_series = np.zeros(self.image_size + (values.shape[-2],), dtype=np.complex_)
+        water_series = images_series.copy()
+        fat_series = images_series.copy()
+
         images_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0] * (1 - map_ff_on_mask[i]) + mrfdict[tuple(
             pixel_params)][:, 1] * (map_ff_on_mask[i]) for (i, pixel_params) in enumerate(map_all_on_mask)])
+        water_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0]  for (i, pixel_params) in enumerate(map_all_on_mask)])
+        fat_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 1]  for (i, pixel_params) in enumerate(map_all_on_mask)])
+
         images_series[self.mask > 0, :] = images_in_mask
+        water_series[self.mask > 0, :] = water_in_mask
+        fat_series[self.mask > 0, :] = fat_in_mask
 
         images_series = np.moveaxis(images_series, -1, 0)
+        water_series = np.moveaxis(water_series, -1, 0)
+        fat_series = np.moveaxis(fat_series, -1, 0)
+
         self.images_series=images_series
+        self.water_series = water_series
+        self.fat_series=fat_series
+
+        self.fat_images = np.array(
+            [mrfdict[tuple(pixel_params)][:, 0] for (i, pixel_params) in enumerate(map_all_on_mask)])
+
         self.cached_images_series=images_series
         self.t=t
 
 
-    def simulate_undersampled_images(self,traj):
+    def simulate_radial_undersampled_images(self,traj,density_adj=False,npoint=None):
+
+        size = self.image_size
+
 
         kdata = [
             finufft.nufft2d2(t.real, t.imag, p)
@@ -156,12 +176,27 @@ class ImageSeries(object):
         ]
 
         kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+
+        if density_adj:
+            if npoint is None:
+                raise ValueError("Should supply number of point on spoke for density compensation")
+            density = np.abs(np.linspace(-1, 1, npoint))
+            kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+
         images_series_rebuilt = [
-            finufft.nufft2d1(t.real, t.imag, s, self.image_size)
+            finufft.nufft2d1(t.real, t.imag, s, size)
             for t, s in zip(traj, kdata)
         ]
 
         return images_series_rebuilt
+
+    def generate_kdata(self,traj):
+        kdata = [
+            finufft.nufft2d2(t.real, t.imag, p)
+            for t, p in zip(traj, self.images_series)
+        ]
+
+        return kdata
 
     def rotate_images(self,angles_t):
         # angles_t function returning rotation angle as a function of t
@@ -324,6 +359,8 @@ class MapFromFile(ImageSeries):
         map_attB1 = matobj["B1"][0, 0]
         map_ff = matobj["FF"][0, 0]
 
+        self.image_size=map_wT1.shape
+
         mask = np.zeros(self.image_size)
         mask[map_wT1>0]=1.0
         self.mask=mask
@@ -341,9 +378,8 @@ class MapFromFile(ImageSeries):
             "fT1": map_all_on_mask[:, 2],
             "fT2": map_all_on_mask[:, 3],
             "attB1": map_all_on_mask[:, 4],
-            "df": map_all_on_mask[:, 5],
+            "df": -map_all_on_mask[:, 5]/1000,
             "ff": map_all_on_mask[:, 6]
-
         }
 
 
@@ -352,7 +388,20 @@ class MapFromFile(ImageSeries):
 
 
 
+class MapFromMatching(ImageSeries):
+    def __init__(self, name, **kwargs):
+        super().__init__(name, {}, **kwargs)
+        if "search_function" not in self.paramDict:
+            raise ValueError("You should define a search_function for building a map from matching with existing patterns")
+        if "kdata" not in self.paramDict :
+            raise ValueError(
+                "You should define a kdata for building a map from matching with existing patterns")
+        if "traj" not in self.paramDict :
+            raise ValueError(
+                "You should define a traj for building a map from matching with existing patterns")
 
+    def buildParamMap(self,mask=None):
+        pass
 
 
 
