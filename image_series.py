@@ -158,9 +158,6 @@ class ImageSeries(object):
         self.water_series = water_series
         self.fat_series=fat_series
 
-        self.fat_images = np.array(
-            [mrfdict[tuple(pixel_params)][:, 0] for (i, pixel_params) in enumerate(map_all_on_mask)])
-
         self.cached_images_series=images_series
         self.t=t
 
