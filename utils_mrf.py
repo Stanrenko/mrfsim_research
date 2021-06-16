@@ -170,7 +170,7 @@ def SearchMrf(kdata,traj, dictfile, niter, method, metric, shape,nspoke,density_
     solver.setup(mrfdict.keys, mrfdict.values, **setupopts)
 
     # group trajectories and kspace
-
+    #traj = np.reshape(groupby(traj, nspoke), (-1, npoint * nspoke))
     kdata = np.array([(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata])
 
     #kdata = np.reshape(groupby(kdata * density, nspoke), (-1, npoint * nspoke))

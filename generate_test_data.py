@@ -1,25 +1,27 @@
 
 #import matplotlib
 #matplotlib.use("TkAgg")
-import json
-import os
-
-from image_series import *
+import numpy as np
 from mrfsim import T1MRF
-from utils_mrf import radial_golden_angle_traj, translation_breathing, SearchMrf,animate_multiple_images,animate_images,compare_patterns
-
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
+from image_series import *
+from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf
+import json
+from finufft import nufft1d1,nufft1d2
+from scipy import signal,interpolate
+#import os
+#os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 
 ## Random map simulation
-dictfile = "mrf175.dict"
 
-with open("mrf_sequence.json") as f:
+dictfile = "/home/cslioussarenko/PythonRepositories/mrf-sim/mrf175.dict"
+
+with open("/home/cslioussarenko/PythonRepositories/mrf-sim/mrf_sequence.json") as f:
     sequence_config = json.load(f)
 
 seq = T1MRF(**sequence_config)
 
-with open("mrf_dictconf.json") as f:
+with open("/home/cslioussarenko/PythonRepositories/mrf-sim/mrf_dictconf.json") as f:
     dict_config = json.load(f)
 
 dict_config["ff"]=np.arange(0.,1.05,0.05)
@@ -31,10 +33,10 @@ size=(256,256)
 file_matlab_paramMap = "/home/cslioussarenko/PythonRepositories/mrf-sim/data/paramMap.mat"
 
 ###### Building Map
-m = RandomMap("TestRandom",dict_config,image_size=size,region_size=region_size,mask_reduction_factor=1/4)
-#m = MapFromFile("TestPhantomV1",image_size=size,file=file_matlab_paramMap,rounding=True)
+#m = RandomMap("TestRandom",dict_config,image_size=size,region_size=region_size,mask_reduction_factor=1/4)
+m = MapFromFile("TestPhantomV1",image_size=size,file=file_matlab_paramMap,rounding=True)
 m.buildParamMap()
-#m.plotParamMap(figsize=(5,5))
+m.plotParamMap(figsize=(5,5))
 #m.plotParamMap("df",figsize=(5,5))
 
 ##### Simulating Ref Images
@@ -49,7 +51,7 @@ image_series = m.images_series
 
 ##### Movement
 
-direction = np.array([15,0])
+direction = np.array([4,0])
 shifts_t = lambda t:translation_breathing(t,direction)
 m.translate_images(shifts_t,round=True)
 #ani_shift=animate_images(m.images_series)
@@ -75,13 +77,10 @@ image_series_rebuilt_with_movement = m.simulate_radial_undersampled_images(traj,
 #ani=animate_images(images_series)
 #ani_r=animate_images(images_series_rebuilt)
 
-
+#ani1,ani2= animate_multiple_images(image_series,image_series_rebuilt)
 
 m.reset_image_series()
 image_series_rebuilt = m.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint)
-
-
-#ani1,ani2= animate_multiple_images(image_series_rebuilt,image_series_rebuilt_with_movement)
 
 #masked_images_rebuilt_mvt = np.transpose(np.array(image_series_rebuilt_with_movement)[:,m.mask>0])
 #masked_images_rebuilt = np.transpose(np.array(image_series_rebuilt)[:,m.mask>0])
@@ -101,36 +100,63 @@ image_series_rebuilt = m.simulate_radial_undersampled_images(traj,density_adj=Tr
 
 ########## Dictionary matching ##########################
 # Original data
-kdata_allspokes = np.array(m.generate_kdata(traj))
-res_matching=SearchMrf(kdata_allspokes,traj, dictfile, 1, "brute", "ls", m.image_size,8,density_adj=True, setup_opts={}, search_opts= {})
-plt.imshow(np.abs(res_matching["b1map"]))
+# kdata_allspokes = m.generate_kdata(traj)
+# res_matching=SearchMrf(kdata_allspokes,traj, dictfile, 1, "brute", "ls", m.image_size,8,density_adj=True, setup_opts={}, search_opts= {})
+# plt.imshow(np.abs(res_matching["b1map"]))
+#
+#
+# m.translate_images(shifts_t,round=True)
+# kdata_allspokes_mvt = m.generate_kdata(traj)
+# res_matching_movement=SearchMrf(kdata_allspokes_mvt,all_spokes, dictfile, 1, "brute", "ls", m.image_size,8,density_adj=True, setup_opts={}, search_opts= {})
+# plt.imshow(np.abs(res_matching_movement["b1map"]))
 
 
-m.translate_images(shifts_t,round=True)
-kdata_allspokes_mvt = m.generate_kdata(traj)
-res_matching_movement=SearchMrf(kdata_allspokes_mvt,all_spokes, dictfile, 1, "brute", "ls", m.image_size,8,density_adj=True, setup_opts={}, search_opts= {})
-plt.imshow(np.abs(res_matching_movement["ffmap"]))
+pixel = (125,125)
 
-pixel =(125,125)
 signal = m.images_series[:,pixel[0],pixel[1]]
-signal_rebuilt = np.array(image_series_rebuilt)[:,pixel[0],pixel[1]]
-mrfdict = dictsearch.Dictionary();mrfdict.load(dictfile, force=True)
+signal_rebuilt =np.array(image_series_rebuilt)[:,pixel[0],pixel[1]]
 
-all_signals=m.images_series[:,m.mask>0]
+ground_truth={}
+for key in m.paramMap.keys():
+    volume = makevol(m.paramMap[key],m.mask>0)
+    param = volume[pixel[0],pixel[1]]
+    ground_truth[key]=param
 
-array_water = mrfdict.values[:,:,0]
+mrfdict = dictsearch.Dictionary()
+mrfdict.load(dictfile, force=True)
+
+array_water =  mrfdict.values[:,:,0]
 array_fat = mrfdict.values[:,:,1]
 
-sig_w = np.std(array_water,axis=1)
-sig_f = np.std(array_fat,axis=1)
-m_w = np.mean(array_water,axis=1)
-m_f =np.mean(array_fat,axis=1)
+var_w= np.sum(array_water*array_water.conj(),axis=1).real
+var_f= np.sum(array_fat*array_fat.conj(),axis=1).real
+sig_wf = np.sum(array_water*array_fat.conj(),axis=1).real
 
-sig_w_f = np.sum((array_water*array_fat.conj()),axis=1)
+sig_ws = np.matmul(array_water,signal).real
+sig_fs = np.matmul(array_fat,signal).real
 
-sig_w_s = np.matmul(array_water,signal.conj())
-sig_w_f = np.matmul(array_fat,signal.conj())
+alpha0 = -(var_w*sig_fs-sig_wf*sig_fs)/((sig_ws+sig_fs)*(sig_wf-var_f))
 
+J = ((1-alpha0)*sig_ws + alpha0 * sig_fs)/np.sqrt((1-alpha0)**2*var_w+alpha0**2*var_f+2*alpha0*(1-alpha0)*sig_wf)
+idx_max = np.argmax(J)
+idx_max=170824
+params = mrfdict.keys[idx_max]
+
+
+
+var_w_pixel = var_w[idx_max]
+var_f_pixel = var_f[idx_max]
+sig_wf_pixel = sig_wf[idx_max]
+
+sig_ws_pixel = sig_ws[idx_max]
+sig_fs_pixel = sig_fs[idx_max]
+
+def J(alpha):
+    return ((1-alpha)*sig_ws_pixel + alpha * sig_fs_pixel)/np.sqrt((1-alpha)**2*var_w_pixel+alpha**2*var_f_pixel+2*alpha*(1-alpha)*sig_wf_pixel)
+
+alpha = np.arange(0.001,1.0,0.01)
+plt.plot(alpha,J(alpha))
+np.argmax(J(alpha))
 
 
 red_factor = 1/3
