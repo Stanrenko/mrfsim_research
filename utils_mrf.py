@@ -245,3 +245,129 @@ def SearchMrf(kdata,traj, dictfile, niter, method, metric, shape,nspoke,density_
         "ffmap": ffmap,
         "info": {"search": info, "options": solver.options},
     }
+
+def basicDictSearch(all_signals,dictfile):
+    #Basic dic search with component separation
+    #
+    mrfdict = dictsearch.Dictionary()
+    mrfdict.load(dictfile, force=True)
+
+    array_water = mrfdict.values[:, :, 0]
+    array_fat = mrfdict.values[:, :, 1]
+
+    var_w = np.sum(array_water * array_water.conj(), axis=1).real
+    var_f = np.sum(array_fat * array_fat.conj(), axis=1).real
+    sig_wf = np.sum(array_water * array_fat.conj(), axis=1).real
+
+    print("Removing duplicate dictionary entries and signals")
+    array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
+    array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
+    all_signals_unique, index_signals_unique = np.unique(all_signals, axis=1, return_inverse=True)
+
+    print("Calculating correlations")
+    sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, :].conj()).real
+    sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, :].conj()).real
+    sig_ws_all = sig_ws_all_unique[index_water_unique, :]
+    sig_fs_all = sig_fs_all_unique[index_fat_unique, :]
+
+    print("Calculating optimal fat fraction and best pattern per signal")
+    var_w = np.reshape(var_w, (-1, 1))
+    var_f = np.reshape(var_f, (-1, 1))
+    sig_wf = np.reshape(sig_wf, (-1, 1))
+
+    alpha_all_unique = (sig_wf * sig_ws_all-var_w*sig_fs_all) / ((sig_ws_all + sig_fs_all) * sig_wf-var_w*sig_fs_all-var_f*sig_ws_all)
+    one_minus_alpha_all = 1 - alpha_all_unique
+    J_all = (one_minus_alpha_all * sig_ws_all + alpha_all_unique * sig_fs_all) / np.sqrt(
+        one_minus_alpha_all ** 2 * var_w + alpha_all_unique ** 2 * var_f + 2 * alpha_all_unique * one_minus_alpha_all * sig_wf)
+    idx_max_all_unique = np.argmax(J_all, axis=0)
+    #idx_max_all = idx_max_all_unique[index_signals_unique]
+
+    print("Building the maps")
+    #alpha_all = alpha_all_unique[:, index_signals_unique]
+
+    params_all_unique = np.array([mrfdict.keys[idx] + (alpha_all_unique[idx, i],) for i, idx in enumerate(idx_max_all_unique)])
+    params_all = params_all_unique[index_signals_unique]
+
+
+
+    return {
+            "wT1": params_all[:, 0],
+            "fT1": params_all[:, 1],
+            "attB1": params_all[:, 2],
+            "df": params_all[:, 3],
+            "ff": params_all[:, 4]
+
+            }
+
+
+def compare_paramMaps(map1,map2,mask,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8):
+    keys_1 = set(map1.keys())
+    keys_2 = set(map2.keys())
+    for k in (keys_1 & keys_2):
+        fig,axes=plt.subplots(1,3)
+        vol1 = makevol(map1[k],mask)
+        vol2= makevol(map2[k],mask)
+        if adj_wT1 and k=="wT1":
+            ff = makevol(map2["ff"],mask)
+            vol2[ff>fat_threshold]=vol1[ff>fat_threshold]
+
+        error=np.abs(vol1-vol2)
+
+        im1=axes[0].imshow(vol1)
+        axes[0].set_title(title1+" "+k)
+        axes[0].tick_params(axis='x', labelsize=fontsize)
+        axes[0].tick_params(axis='y', labelsize=fontsize)
+        cbar1 = fig.colorbar(im1, ax=axes[0], fraction=0.046, pad=0.04)
+        cbar1.ax.tick_params(labelsize=fontsize)
+
+        im2 = axes[1].imshow(vol2)
+        axes[1].set_title(title2+" "+k)
+        axes[1].tick_params(axis='x', labelsize=fontsize)
+        axes[1].tick_params(axis='y', labelsize=fontsize)
+        cbar2 = fig.colorbar(im2, ax=axes[1], fraction=0.046, pad=0.04)
+        cbar2.ax.tick_params(labelsize=fontsize)
+
+        im3 = axes[2].imshow(error)
+        axes[2].set_title("Error {}".format(k))
+        axes[2].tick_params(axis='x', labelsize=fontsize)
+        axes[2].tick_params(axis='y', labelsize=fontsize)
+        cbar3 = fig.colorbar(im3, ax=axes[2], fraction=0.046, pad=0.04)
+        cbar3.ax.tick_params(labelsize=fontsize)
+
+def regression_paramMaps(map1,map2,fontsize=5,adj_wT1=False,fat_threshold=0.8):
+
+    keys_1 = set(map1.keys())
+    keys_2 = set(map2.keys())
+    nb_keys=len(keys_1 & keys_2)
+    fig,ax = plt.subplots(1,nb_keys)
+    for i,k in enumerate(keys_1 & keys_2):
+        obs = map1[k]
+        pred = map2[k]
+
+        if adj_wT1 and k=="wT1":
+            ff = map2["ff"]
+            obs = obs[ff < fat_threshold]
+            pred = pred[ff < fat_threshold]
+
+        x_min = np.min(obs)
+        x_max = np.max(obs)
+
+        if x_min==x_max:
+            fig.delaxes(ax[i])
+            continue
+
+        mean=np.mean(obs)
+        ss_tot = np.sum((obs-mean)**2)
+        ss_res = np.sum((obs-pred)**2)
+        bias = np.mean((pred-obs))
+        r_2 = 1-ss_res/ss_tot
+
+        dx = (x_max - x_min) / 10
+        x_ = np.arange(x_min, x_max+dx,dx )
+
+        ax[i].scatter(obs,pred,s=1)
+        ax[i].plot(x_, x_,"r")
+        ax[i].set_title(k+" R2:{} Bias:{}".format(np.round(r_2,2),np.round(bias,2)),fontsize=2*fontsize)
+        ax[i].tick_params(axis='x', labelsize=fontsize)
+        ax[i].tick_params(axis='y', labelsize=fontsize)
+
