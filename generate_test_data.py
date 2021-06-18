@@ -4,7 +4,7 @@
 import numpy as np
 from mrfsim import T1MRF
 from image_series import *
-from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,regression_paramMaps
+from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,regression_paramMaps,dictSearchMemoryOptim
 import json
 from finufft import nufft1d1,nufft1d2
 from scipy import signal,interpolate
@@ -132,10 +132,159 @@ image_series_rebuilt = m.simulate_radial_undersampled_images(traj,density_adj=Tr
 # np.argmax(J_(alpha))
 
 all_signals = m.images_series[:,m.mask>0]
-map_rebuilt = basicDictSearch(all_signals,dictfile)
+
+#map_rebuilt = basicDictSearch(all_signals,dictfile)
+#compare_paramMaps(m.paramMap,map_rebuilt,m.mask>0,adj_wT1=True)
+#regression_paramMaps(m.paramMap,map_rebuilt,adj_wT1=True,fat_threshold=0.8)
+
+
+
+map_rebuilt=dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca=0.999999,split=2000)
+compare_paramMaps(m.paramMap,map_rebuilt,m.mask>0,adj_wT1=True)
+regression_paramMaps(m.paramMap,map_rebuilt,adj_wT1=True,fat_threshold=0.8)
+
+
+map_rebuilt_us=dictSearchMemoryOptim(np.array(image_series_rebuilt)[:,m.mask>0],dictfile,pca=True,threshold_pca=0.999999,split=2000)
+compare_paramMaps(m.paramMap,map_rebuilt_us,m.mask>0,adj_wT1=True)
+regression_paramMaps(m.paramMap,map_rebuilt_us,adj_wT1=True,fat_threshold=0.8)
+
+
+
+##############################################""
+from sklearn.decomposition import PCA,TruncatedSVD
+from scipy import linalg
+
+
+
+mrfdict = dictsearch.Dictionary()
+mrfdict.load(dictfile, force=True)
+
+keys=mrfdict.keys
+array_water = mrfdict.values[:, :, 0]
+array_fat = mrfdict.values[:, :, 1]
+
+del mrfdict
+
+array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
+array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
+
+nb_patterns=array_water.shape[0]
+nb_signals= all_signals.shape[1]
+
+del array_water
+del array_fat
+
+
+threshold_pca=0.999999
+
+
+
+
+cov_fat = np.matmul(np.transpose(array_fat_unique.conj()),array_fat_unique)
+cov_water = np.matmul(np.transpose(array_water_unique.conj()),array_water_unique)
+
+fat_val,fat_vect  = np.linalg.eigh(cov_fat)
+water_val,water_vect  = np.linalg.eigh(cov_water)
+
+sorted_index_fat=np.argsort(fat_val)[::-1]
+fat_val=fat_val[sorted_index_fat]
+fat_vect=fat_vect[:,sorted_index_fat]
+
+sorted_index_water=np.argsort(water_val)[::-1]
+water_val=water_val[sorted_index_water]
+water_vect=water_vect[:,sorted_index_water]
+
+explained_variance_ratio_fat = np.cumsum(fat_val**2)/np.sum(fat_val**2)
+n_components_fat = np.sum(explained_variance_ratio_fat<threshold_pca)+1
+
+
+explained_variance_ratio_water = np.cumsum(water_val**2)/np.sum(water_val**2)
+n_components_water = np.sum(explained_variance_ratio_water<threshold_pca)+1
+
+
+
+fat_vect=fat_vect[:,:n_components_fat]
+water_vect=water_vect[:,:n_components_water]
+
+transformed_array_water_unique = np.matmul(array_water_unique,water_vect.conj())
+transformed_array_fat_unique = np.matmul(array_fat_unique,fat_vect.conj())
+
+#retrieved_array_water_unique = np.matmul(transformed_array_water_unique,np.transpose(water_vect))
+#retrieved_array_fat_unique = np.matmul(transformed_array_fat_unique,np.transpose(fat_vect))
+
+#plt.figure()
+#plt.plot(retrieved_array_fat_unique[0,:].real)
+#plt.plot(array_fat_unique[0,:].real)
+
+transformed_all_signals_water = np.transpose(np.matmul(np.transpose(all_signals),water_vect.conj()))
+transformed_all_signals_fat = np.transpose(np.matmul(np.transpose(all_signals),fat_vect.conj()))
+
+var_w = np.sum(array_water_unique* array_water_unique.conj(), axis=1).real
+var_f = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
+sig_wf = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(), axis=1).real
+
+var_w = var_w[index_water_unique]
+var_f = var_f[index_fat_unique]
+
+
+
+print("Calculating correlations")
+sig_ws_all_unique = np.matmul(transformed_array_water_unique, transformed_all_signals_water[:, :].conj()).real
+sig_fs_all_unique = np.matmul(transformed_array_fat_unique, transformed_all_signals_fat[:, :].conj()).real
+
+
+
+
+print("Calculating optimal fat fraction and best pattern per signal")
+var_w = np.reshape(var_w, (-1, 1))
+var_f = np.reshape(var_f, (-1, 1))
+sig_wf = np.reshape(sig_wf, (-1, 1))
+
+alpha_all_unique=np.zeros((nb_patterns,nb_signals))
+J_all=np.zeros(alpha_all_unique.shape)
+
+num_signal = alpha_all_unique.shape[1]
+split=2000
+num_group = int(num_signal/split )+1
+
+for j in (range(num_group)):
+    print(j/num_group)
+    j_signal = j*split
+    j_signal_next = np.minimum((j+1)*split,num_signal)
+    current_sig_ws = sig_ws_all_unique[index_water_unique,j_signal:j_signal_next]
+    current_sig_fs = sig_fs_all_unique[index_fat_unique,j_signal:j_signal_next]
+    current_alpha_all_unique =  (sig_wf * current_sig_ws-var_w*current_sig_fs) / ((current_sig_ws + current_sig_fs) * sig_wf-var_w*current_sig_fs-var_f*current_sig_ws)
+    alpha_all_unique[:,j_signal:j_signal_next] = current_alpha_all_unique
+    J_all[:,j_signal:j_signal_next] = ((1-current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
+    (1-current_alpha_all_unique)  ** 2 * var_w + current_alpha_all_unique ** 2 * var_f + 2 * current_alpha_all_unique * (1-current_alpha_all_unique)  * sig_wf)
+
+idx_max_all_unique = np.argmax(J_all, axis=0)
+#idx_max_all = idx_max_all_unique[index_signals_unique]
+#idx_max_all_unique = np.argmax(J_all, axis=0)
+    #idx_max_all = idx_max_all_unique[index_signals_unique]
+del J_all
+
+print("Building the maps")
+#alpha_all = alpha_all_unique[:, index_signals_unique]
+
+del sig_ws_all_unique
+del sig_fs_all_unique
+
+params_all_unique = np.array([keys[idx] + (alpha_all_unique[idx, i],) for i, idx in enumerate(idx_max_all_unique)])
+params_all = params_all_unique
+
+map_rebuilt= {
+            "wT1": params_all[:, 0],
+            "fT1": params_all[:, 1],
+            "attB1": params_all[:, 2],
+            "df": params_all[:, 3],
+            "ff": params_all[:, 4]
+
+            }
 
 compare_paramMaps(m.paramMap,map_rebuilt,m.mask>0,adj_wT1=True)
 regression_paramMaps(m.paramMap,map_rebuilt,adj_wT1=True,fat_threshold=0.8)
+
 
 
 
