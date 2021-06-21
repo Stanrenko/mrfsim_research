@@ -380,7 +380,53 @@ class MapFromFile(ImageSeries):
         }
 
 
+class MapFromDict(ImageSeries):
 
+    def __init__(self, name, **kwargs):
+        super().__init__(name, {}, **kwargs)
+
+
+
+        if "paramMap" not in self.paramDict:
+            raise ValueError("paramMap key value argument containing param map file path should be given for MapFromFile")
+
+        if "default_wT2" not in self.paramDict:
+            self.paramDict["default_wT2"]=DEFAULT_wT2
+        if "default_fT2" not in self.paramDict:
+            self.paramDict["default_fT2"]=DEFAULT_fT2
+        if "default_fT1" not in self.paramDict:
+            self.paramDict["default_fT1"]=DEFAULT_fT1
+
+    @wrapper_rounding
+    def buildParamMap(self,mask=None):
+
+        if mask is not None:
+            raise ValueError("mask automatically built from wT1 map for map load for now")
+
+        paramMap = self.paramDict["paramMap"]
+
+        self.image_size=paramMap["wT1"].shape
+
+        mask = np.zeros(self.image_size)
+        mask[map_wT1>0]=1.0
+        self.mask=mask
+
+        map_wT2 = mask*self.paramDict["default_wT2"]
+        map_fT1 = mask*self.paramDict["default_fT1"]
+        map_fT2 = mask*self.paramDict["default_fT2"]
+
+        map_all = np.stack((paramMap["wT1"], map_wT2, map_fT1, map_fT2, paramMap["attB1"], paramMap["df"], paramMap["ff"]), axis=-1)
+        map_all_on_mask = map_all[mask > 0]
+
+        self.paramMap = {
+            "wT1": map_all_on_mask[:, 0],
+            "wT2": map_all_on_mask[:, 1],
+            "fT1": map_all_on_mask[:, 2],
+            "fT2": map_all_on_mask[:, 3],
+            "attB1": map_all_on_mask[:, 4],
+            "df": -map_all_on_mask[:, 5]/1000,
+            "ff": map_all_on_mask[:, 6]
+        }
 
 
 
