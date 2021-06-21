@@ -8,7 +8,7 @@ from scipy import ndimage
 from scipy.ndimage import affine_transform
 import matplotlib.pyplot as plt
 
-from utils_mrf import create_random_map
+from utils_mrf import create_random_map,voronoi_volumes
 from mutools.optim.dictsearch import dictsearch
 import itertools
 from mrfsim import groupby,makevol,loadmat
@@ -168,7 +168,7 @@ class ImageSeries(object):
         self.t=t
 
 
-    def simulate_radial_undersampled_images(self,traj,density_adj=False,npoint=None):
+    def simulate_radial_undersampled_images(self,traj,density_adj=True,npoint=None):
 
         size = self.image_size
 
@@ -185,6 +185,34 @@ class ImageSeries(object):
                 raise ValueError("Should supply number of point on spoke for density compensation")
             density = np.abs(np.linspace(-1, 1, npoint))
             kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+
+        images_series_rebuilt = [
+            finufft.nufft2d1(t.real, t.imag, s, size)
+            for t, s in zip(traj, kdata)
+        ]
+
+        return np.array(images_series_rebuilt)
+
+
+    def simulate_undersampled_images(self,traj,density_adj=True):
+
+        size = self.image_size
+
+        kdata = [
+            finufft.nufft2d2(t.real, t.imag, p)
+            for t, p in zip(traj, self.images_series)
+        ]
+
+        kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+
+        if density_adj:
+            density = np.zeros(kdata.shape)
+            for i in tqdm(range(kdata.shape[0])):
+                vol = voronoi_volumes(np.transpose(np.array([traj[i].real,traj[i].imag])))[0]
+                
+                density[i]
+            density = [voronoi_volumes(np.transpose(np.array([t.real,t.imag])))[0] for t in traj]
+            kdata = [k*density[i] for i,k in enumerate(kdata)]
 
         images_series_rebuilt = [
             finufft.nufft2d1(t.real, t.imag, s, size)
@@ -414,7 +442,7 @@ class ImageSeries(object):
             # del sig_fs_all_unique
 
             params_all_unique = np.array(
-                [keys[idx] + (alpha_optim[i],) for i, idx in enumerate(idx_max_all_unique)])
+                [keys[idx] + (alpha_optim[l],) for l, idx in enumerate(idx_max_all_unique)])
 
             if duplicate_signals:
                 params_all = params_all_unique[index_signals_unique]
@@ -434,9 +462,9 @@ class ImageSeries(object):
                 break
 
             # generate prediction volumes
-            keys = list(map_rebuilt.keys())
-            values = [makevol(map_rebuilt[k], mask > 0) for k in keys]
-            map_for_sim = dict(zip(keys, values))
+            keys_simu = list(map_rebuilt.keys())
+            values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+            map_for_sim = dict(zip(keys_simu, values_simu))
 
             images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=True)
             images_pred.buildParamMap()

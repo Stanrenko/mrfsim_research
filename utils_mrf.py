@@ -8,6 +8,7 @@ import finufft
 from scipy import ndimage
 from sklearn.decomposition import PCA
 import tqdm
+from scipy.spatial import Voronoi,ConvexHull
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
@@ -663,3 +664,13 @@ def regression_paramMaps(map1,map2,fontsize=5,adj_wT1=False,fat_threshold=0.8):
         ax[i].tick_params(axis='x', labelsize=fontsize)
         ax[i].tick_params(axis='y', labelsize=fontsize)
 
+def voronoi_volumes(points):
+    v = Voronoi(points)
+    vol = np.zeros(v.npoints)
+    for i, reg_num in enumerate(v.point_region):
+        indices = v.regions[reg_num]
+        if -1 in indices: # some regions can be opened
+            vol[i] = np.inf
+        else:
+            vol[i] = ConvexHull(v.vertices[indices]).volume
+    return vol,v

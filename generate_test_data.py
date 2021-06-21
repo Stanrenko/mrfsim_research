@@ -4,7 +4,7 @@
 import numpy as np
 from mrfsim import T1MRF
 from image_series import *
-from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,regression_paramMaps,dictSearchMemoryOptim
+from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,regression_paramMaps,dictSearchMemoryOptim,voronoi_volumes
 import json
 from finufft import nufft1d1,nufft1d2
 from scipy import signal,interpolate
@@ -74,6 +74,16 @@ traj = np.reshape(groupby(all_spokes, nspoke), (-1, npoint * nspoke))
 
 image_series_rebuilt_with_movement = m.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint)
 
+# vol,vor =voronoi_volumes(np.transpose(np.array([traj[0].real,traj[0].imag])))
+#
+# from scipy.spatial import voronoi_plot_2d
+#
+# import matplotlib.pyplot as plt
+# fig = voronoi_plot_2d(vor)
+# plt.show()
+
+
+
 #ani=animate_images(images_series)
 #ani_r=animate_images(images_series_rebuilt)
 
@@ -81,6 +91,10 @@ image_series_rebuilt_with_movement = m.simulate_radial_undersampled_images(traj,
 
 m.reset_image_series()
 image_series_rebuilt = m.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint)
+print("Simulation US images")
+image_series_rebuilt_2 = m.simulate_undersampled_images(traj,density_adj=True)
+
+ani,ani1=animate_multiple_images(image_series_rebuilt,image_series_rebuilt_2)
 
 #masked_images_rebuilt_mvt = np.transpose(np.array(image_series_rebuilt_with_movement)[:,m.mask>0])
 #masked_images_rebuilt = np.transpose(np.array(image_series_rebuilt)[:,m.mask>0])
@@ -100,9 +114,9 @@ image_series_rebuilt = m.simulate_radial_undersampled_images(traj,density_adj=Tr
 
 ########## Dictionary matching ##########################
 # Original data
-#kdata_allspokes = m.generate_kdata(traj)
-#res_matching=SearchMrf(kdata_allspokes,traj, dictfile, 1, "brute", "ls", m.image_size,8,density_adj=True, setup_opts={}, search_opts= {})
-#plt.imshow(np.abs(res_matching["b1map"]))
+# kdata_allspokes = m.generate_kdata(traj)
+# res_matching=SearchMrf(kdata_allspokes,traj, dictfile, 1, "brute", "ls", m.image_size,8,density_adj=True, setup_opts={}, search_opts= {})
+# plt.imshow(np.abs(res_matching["b1map"]))
 
 #
 #
@@ -142,15 +156,13 @@ all_signals = m.images_series[:,m.mask>0]
 
 #map_rebuilt=dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca=0.999999,split=2000)
 #map_rebuilt=dictSearchMemoryOptimIterative(image_series,dictfile,seq,traj,npoint,niter=1)
-map_rebuilt=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=0,split=1000)
+map_rebuilt=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split=1000)
 compare_paramMaps(m.paramMap,map_rebuilt,m.mask>0,adj_wT1=True)
 regression_paramMaps(m.paramMap,map_rebuilt,adj_wT1=True,fat_threshold=0.8)
 
-
-map_rebuilt=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split=2000)
-compare_paramMaps(m.paramMap,map_rebuilt,m.mask>0,adj_wT1=True)
-regression_paramMaps(m.paramMap,map_rebuilt,adj_wT1=True,fat_threshold=0.8)
-
+map_rebuilt_it1=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=0,split=1000)
+compare_paramMaps(m.paramMap,map_rebuilt_it1,m.mask>0,adj_wT1=True)
+regression_paramMaps(m.paramMap,map_rebuilt_it1,adj_wT1=True,fat_threshold=0.8)
 
 map_rebuilt_us=dictSearchMemoryOptim(np.array(image_series_rebuilt)[:,m.mask>0],dictfile,pca=True,threshold_pca=0.999999,split=2000)
 compare_paramMaps(m.paramMap,map_rebuilt_us,m.mask>0,adj_wT1=True)
