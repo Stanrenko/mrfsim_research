@@ -4,7 +4,7 @@
 import numpy as np
 from mrfsim import T1MRF
 from image_series import *
-from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,regression_paramMaps,dictSearchMemoryOptim
+from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,regression_paramMaps,dictSearchMemoryOptim,dictSearchMemoryOptimPCAPatterns
 import json
 from finufft import nufft1d1,nufft1d2
 from scipy import signal,interpolate
@@ -36,7 +36,7 @@ file_matlab_paramMap = "/home/cslioussarenko/PythonRepositories/mrf-sim/data/par
 #m = RandomMap("TestRandom",dict_config,image_size=size,region_size=region_size,mask_reduction_factor=1/4)
 m = MapFromFile("TestPhantomV1",image_size=size,file=file_matlab_paramMap,rounding=True)
 m.buildParamMap()
-m.plotParamMap(figsize=(5,5))
+#m.plotParamMap(figsize=(5,5))
 #m.plotParamMap("df",figsize=(5,5))
 
 ##### Simulating Ref Images
@@ -144,7 +144,7 @@ compare_paramMaps(m.paramMap,map_rebuilt,m.mask>0,adj_wT1=True)
 regression_paramMaps(m.paramMap,map_rebuilt,adj_wT1=True,fat_threshold=0.8)
 
 
-map_rebuilt_us=dictSearchMemoryOptim(np.array(image_series_rebuilt)[:,m.mask>0],dictfile,pca=True,threshold_pca=0.999999,split=2000)
+map_rebuilt_us=dictSearchMemoryOptimPCAPatterns(np.array(image_series_rebuilt)[:,m.mask>0],dictfile,pca=True,threshold_pca=0.999999,split=2000)
 compare_paramMaps(m.paramMap,map_rebuilt_us,m.mask>0,adj_wT1=True)
 regression_paramMaps(m.paramMap,map_rebuilt_us,adj_wT1=True,fat_threshold=0.8)
 
