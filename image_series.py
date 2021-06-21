@@ -14,6 +14,7 @@ import itertools
 from mrfsim import groupby,makevol,loadmat
 import numpy as np
 import finufft
+import tqdm
 
 DEFAULT_wT2 = 80
 DEFAULT_fT1 = 350
@@ -23,10 +24,11 @@ DEFAULT_ROUNDING_wT1=0
 DEFAULT_ROUNDING_wT2=0
 DEFAULT_ROUNDING_fT1=0
 DEFAULT_ROUNDING_fT2=0
-DEFAULT_ROUNDING_df=0
+DEFAULT_ROUNDING_df=3 #df in kHz but chemical shifts generally order of magnitude in Hz
 DEFAULT_ROUNDING_attB1=2
 DEFAULT_ROUNDING_ff=2
 
+DEFAULT_IMAGE_SIZE =(256,256)
 
 def dump_function(func):
     """
@@ -58,7 +60,11 @@ class ImageSeries(object):
         self.name=name
         self.dict_config=dict_config
         self.paramDict = kwargs
+        if "image_size" not in self.paramDict:
+            self.paramDict["image_size"]=DEFAULT_IMAGE_SIZE
+
         self.image_size=self.paramDict["image_size"]
+
         self.mask =np.ones(self.image_size)
         self.paramMap=None
 
@@ -185,7 +191,7 @@ class ImageSeries(object):
             for t, s in zip(traj, kdata)
         ]
 
-        return images_series_rebuilt
+        return np.array(images_series_rebuilt)
 
     def generate_kdata(self,traj):
         kdata = [
@@ -268,6 +274,192 @@ class ImageSeries(object):
 
         plt.show()
 
+    def dictSearchMemoryOptimIterative(self, dictfile, seq, traj, npoint, niter=1, pca=True, threshold_pca=0.999999,
+                                       split=2000):
+        mask = self.mask
+        volumes0 = self.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint)
+        all_signals = volumes0[:, mask > 0]
+        density = np.abs(np.linspace(-1, 1, npoint))
+
+        mrfdict = dictsearch.Dictionary()
+        mrfdict.load(dictfile, force=True)
+
+        keys = mrfdict.keys
+        array_water = mrfdict.values[:, :, 0]
+        array_fat = mrfdict.values[:, :, 1]
+
+        del mrfdict
+
+        array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
+        array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
+
+        nb_water_timesteps = array_water_unique.shape[1]
+        nb_fat_timesteps = array_fat_unique.shape[1]
+        nb_patterns = array_water.shape[0]
+
+        del array_water
+        del array_fat
+
+        if pca:
+            print("Performing PCA")
+
+            mean_fat = np.mean(array_fat_unique, axis=0)
+            mean_water = np.mean(array_water_unique, axis=0)
+
+            cov_fat = np.matmul(np.transpose((array_fat_unique - mean_fat).conj()), (array_fat_unique - mean_fat))
+            cov_water = np.matmul(np.transpose((array_water_unique - mean_water).conj()),
+                                  (array_water_unique - mean_water))
+
+            fat_val, fat_vect = np.linalg.eigh(cov_fat)
+            water_val, water_vect = np.linalg.eigh(cov_water)
+
+            sorted_index_fat = np.argsort(fat_val)[::-1]
+            fat_val = fat_val[sorted_index_fat]
+            fat_vect = fat_vect[:, sorted_index_fat]
+
+            sorted_index_water = np.argsort(water_val)[::-1]
+            water_val = water_val[sorted_index_water]
+            water_vect = water_vect[:, sorted_index_water]
+
+            explained_variance_ratio_fat = np.cumsum(fat_val ** 2) / np.sum(fat_val ** 2)
+            n_components_fat = np.sum(explained_variance_ratio_fat < threshold_pca) + 1
+
+            explained_variance_ratio_water = np.cumsum(water_val ** 2) / np.sum(water_val ** 2)
+            n_components_water = np.sum(explained_variance_ratio_water < threshold_pca) + 1
+
+            print("Water Components Retained {} out of {} timesteps".format(n_components_water, nb_water_timesteps))
+            print("Fat Components Retained {} out of {} timesteps".format(n_components_fat, nb_fat_timesteps))
+
+            fat_vect = fat_vect[:, :n_components_fat]
+            water_vect = water_vect[:, :n_components_water]
+
+            transformed_array_water_unique = np.matmul(array_water_unique, water_vect.conj())
+            transformed_array_fat_unique = np.matmul(array_fat_unique, fat_vect.conj())
+
+            # retrieved_array_water_unique = np.matmul(transformed_array_water_unique,np.transpose(water_vect))
+            # retrieved_array_fat_unique = np.matmul(transformed_array_fat_unique,np.transpose(fat_vect))
+
+            # plt.figure()
+            # plt.plot(retrieved_array_fat_unique[0,:].real)
+            # plt.plot(array_fat_unique[0,:].real)
+
+        var_w = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
+        var_f = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
+        sig_wf = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(), axis=1).real
+
+        var_w = var_w[index_water_unique]
+        var_f = var_f[index_fat_unique]
+
+        print("Calculating optimal fat fraction and best pattern per signal")
+        var_w = np.reshape(var_w, (-1, 1))
+        var_f = np.reshape(var_f, (-1, 1))
+        sig_wf = np.reshape(sig_wf, (-1, 1))
+
+        for i in range(niter + 1):
+
+            all_signals_unique, index_signals_unique = np.unique(all_signals, axis=1, return_inverse=True)
+            nb_signals_unique = all_signals_unique.shape[1]
+            nb_signals = all_signals.shape[1]
+
+            duplicate_signals = True
+            if nb_signals_unique == nb_signals:
+                print("No duplicate signals")
+                duplicate_signals = False
+                all_signals_unique = all_signals
+
+            if pca:
+                transformed_all_signals_water = np.transpose(
+                    np.matmul(np.transpose(all_signals_unique), water_vect.conj()))
+                transformed_all_signals_fat = np.transpose(np.matmul(np.transpose(all_signals_unique), fat_vect.conj()))
+                sig_ws_all_unique = np.matmul(transformed_array_water_unique,
+                                              transformed_all_signals_water[:, :].conj()).real
+                sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
+                                              transformed_all_signals_fat[:, :].conj()).real
+            else:
+                sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, :].conj()).real
+                sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, :].conj()).real
+
+            alpha_all_unique = np.zeros((nb_patterns, nb_signals_unique))
+            #J_all = np.zeros(alpha_all_unique.shape)
+
+            num_group = int(nb_signals_unique / split) + 1
+
+            idx_max_all_unique=[]
+            alpha_optim=[]
+
+            for j in tqdm.tqdm(range(num_group)):
+                j_signal = j * split
+                j_signal_next = np.minimum((j + 1) * split, nb_signals_unique)
+                current_sig_ws = sig_ws_all_unique[index_water_unique, j_signal:j_signal_next]
+                current_sig_fs = sig_fs_all_unique[index_fat_unique, j_signal:j_signal_next]
+                current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
+                        (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
+                #alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
+                J_all = ((
+                                                            1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
+                    (
+                            1 - current_alpha_all_unique) ** 2 * var_w + current_alpha_all_unique ** 2 * var_f + 2 * current_alpha_all_unique * (
+                            1 - current_alpha_all_unique) * sig_wf)
+
+                idx_max_all_current=np.argmax(J_all,axis=0)
+                idx_max_all_unique.extend(idx_max_all_current)
+                alpha_optim.extend(current_alpha_all_unique[idx_max_all_current,np.arange(J_all.shape[1])])
+
+            #idx_max_all_unique = np.argmax(J_all, axis=0)
+            del J_all
+
+            print("Building the maps")
+
+            # del sig_ws_all_unique
+            # del sig_fs_all_unique
+
+            params_all_unique = np.array(
+                [keys[idx] + (alpha_optim[i],) for i, idx in enumerate(idx_max_all_unique)])
+
+            if duplicate_signals:
+                params_all = params_all_unique[index_signals_unique]
+            else:
+                params_all = params_all_unique
+
+            map_rebuilt = {
+                "wT1": params_all[:, 0],
+                "fT1": params_all[:, 1],
+                "attB1": params_all[:, 2],
+                "df": params_all[:, 3],
+                "ff": params_all[:, 4]
+
+            }
+
+            if i == niter:
+                break
+
+            # generate prediction volumes
+            keys = list(map_rebuilt.keys())
+            values = [makevol(map_rebuilt[k], mask > 0) for k in keys]
+            map_for_sim = dict(zip(keys, values))
+
+            images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=True)
+            images_pred.buildParamMap()
+            images_pred.build_ref_images(seq, int(traj.shape[1] / npoint))
+
+            # predict spokes
+            kdata = images_pred.generate_kdata(traj)
+            kdatai = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+
+            # NUFFT
+            kdatai /= np.sum(np.abs(kdatai) ** 2) ** 0.5 / len(kdatai)
+            volumesi = [
+                finufft.nufft2d1(t.real, t.imag, s, images_pred.image_size)
+                for t, s in zip(traj, kdatai)
+            ]
+
+            # correct volumes
+            volumes = [2 * vol0 - voli for vol0, voli in zip(volumes0, volumesi)]
+
+            all_signals = np.array(volumes)[:, mask > 0]
+
+        return map_rebuilt
+
 
 class RandomMap(ImageSeries):
 
@@ -322,7 +514,6 @@ class RandomMap(ImageSeries):
             "ff": map_all_on_mask[:, 6]
 
         }
-
 
 
 
@@ -405,10 +596,12 @@ class MapFromDict(ImageSeries):
 
         paramMap = self.paramDict["paramMap"]
 
-        self.image_size=paramMap["wT1"].shape
+        map_wT1=paramMap["wT1"]
+        self.image_size=map_wT1.shape
 
         mask = np.zeros(self.image_size)
         mask[map_wT1>0]=1.0
+
         self.mask=mask
 
         map_wT2 = mask*self.paramDict["default_wT2"]
@@ -424,7 +617,7 @@ class MapFromDict(ImageSeries):
             "fT1": map_all_on_mask[:, 2],
             "fT2": map_all_on_mask[:, 3],
             "attB1": map_all_on_mask[:, 4],
-            "df": -map_all_on_mask[:, 5]/1000,
+            "df": map_all_on_mask[:, 5],
             "ff": map_all_on_mask[:, 6]
         }
 

@@ -4,24 +4,24 @@
 import numpy as np
 from mrfsim import T1MRF
 from image_series import *
-from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,regression_paramMaps,dictSearchMemoryOptim,dictSearchMemoryOptimPCAPatterns
+from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,regression_paramMaps,dictSearchMemoryOptim
 import json
 from finufft import nufft1d1,nufft1d2
 from scipy import signal,interpolate
-#import os
-#os.environ['KMP_DUPLICATE_LIB_OK']='True'
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 
 ## Random map simulation
 
-dictfile = "/home/cslioussarenko/PythonRepositories/mrf-sim/mrf175.dict"
+dictfile = "mrf175.dict"
 
-with open("/home/cslioussarenko/PythonRepositories/mrf-sim/mrf_sequence.json") as f:
+with open("mrf_sequence.json") as f:
     sequence_config = json.load(f)
 
 seq = T1MRF(**sequence_config)
 
-with open("/home/cslioussarenko/PythonRepositories/mrf-sim/mrf_dictconf.json") as f:
+with open("mrf_dictconf.json") as f:
     dict_config = json.load(f)
 
 dict_config["ff"]=np.arange(0.,1.05,0.05)
@@ -30,7 +30,7 @@ window = 8 #corresponds to nspoke by image
 region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
 size=(256,256)
 
-file_matlab_paramMap = "/home/cslioussarenko/PythonRepositories/mrf-sim/data/paramMap.mat"
+file_matlab_paramMap = "./data/paramMap.mat"
 
 ###### Building Map
 #m = RandomMap("TestRandom",dict_config,image_size=size,region_size=region_size,mask_reduction_factor=1/4)
@@ -139,12 +139,20 @@ all_signals = m.images_series[:,m.mask>0]
 
 
 
-map_rebuilt=dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca=0.999999,split=2000)
+
+#map_rebuilt=dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca=0.999999,split=2000)
+#map_rebuilt=dictSearchMemoryOptimIterative(image_series,dictfile,seq,traj,npoint,niter=1)
+map_rebuilt=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=0,split=1000)
 compare_paramMaps(m.paramMap,map_rebuilt,m.mask>0,adj_wT1=True)
 regression_paramMaps(m.paramMap,map_rebuilt,adj_wT1=True,fat_threshold=0.8)
 
 
-map_rebuilt_us=dictSearchMemoryOptimPCAPatterns(np.array(image_series_rebuilt)[:,m.mask>0],dictfile,pca=True,threshold_pca=0.999999,split=2000)
+map_rebuilt=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split=2000)
+compare_paramMaps(m.paramMap,map_rebuilt,m.mask>0,adj_wT1=True)
+regression_paramMaps(m.paramMap,map_rebuilt,adj_wT1=True,fat_threshold=0.8)
+
+
+map_rebuilt_us=dictSearchMemoryOptim(np.array(image_series_rebuilt)[:,m.mask>0],dictfile,pca=True,threshold_pca=0.999999,split=2000)
 compare_paramMaps(m.paramMap,map_rebuilt_us,m.mask>0,adj_wT1=True)
 regression_paramMaps(m.paramMap,map_rebuilt_us,adj_wT1=True,fat_threshold=0.8)
 
