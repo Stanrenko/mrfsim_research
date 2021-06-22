@@ -14,8 +14,7 @@ import itertools
 from mrfsim import groupby,makevol,loadmat
 import numpy as np
 import finufft
-import tqdm
-
+from tqdm import tqdm
 DEFAULT_wT2 = 80
 DEFAULT_fT1 = 350
 DEFAULT_fT2 = 40
@@ -170,17 +169,19 @@ class ImageSeries(object):
         self.t=t
 
 
-    def simulate_radial_undersampled_images(self,traj,density_adj=True,npoint=None):
+    def simulate_radial_undersampled_images(self,traj,nspoke=8,density_adj=True,npoint=None):
 
         size = self.image_size
-
 
         kdata = [
             finufft.nufft2d2(t.real, t.imag, p)
             for t, p in zip(traj, self.images_series)
         ]
 
-        kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+        dtheta = 1/nspoke
+        kdata = np.array(kdata)/npoint*dtheta
+
+        #kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
 
         if density_adj:
             if npoint is None:
@@ -205,7 +206,7 @@ class ImageSeries(object):
             for t, p in zip(traj, self.images_series)
         ]
 
-        kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+        #kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
 
         if density_adj:
             density = np.zeros(kdata.shape)
@@ -214,7 +215,7 @@ class ImageSeries(object):
 
                 density[i]
             density = [voronoi_volumes(np.transpose(np.array([t.real,t.imag])))[0] for t in traj]
-            kdata = [k*density[i] for i,k in enumerate(kdata)]
+            kdata = [k*density[i] for i,k in enumerate(kdata)]/(2*np.pi)**2
 
         images_series_rebuilt = [
             finufft.nufft2d1(t.real, t.imag, s, size)
@@ -265,6 +266,7 @@ class ImageSeries(object):
             self.paramMap[param]=new_values_on_mask
 
         self.mask=new_mask
+        self.image_size = self.images_series.shape
 
 
     def buildParamMap(self,mask=None):
@@ -324,7 +326,8 @@ class ImageSeries(object):
     def dictSearchMemoryOptimIterative(self, dictfile, seq, traj, npoint, niter=1, pca=True, threshold_pca=0.999999,
                                        split=2000):
         mask = self.mask
-        volumes0 = self.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint)
+        nspoke = int(traj.shape[1] / npoint)
+        volumes0 = self.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint,nspoke=nspoke)
         all_signals = volumes0[:, mask > 0]
         density = np.abs(np.linspace(-1, 1, npoint))
 
@@ -397,13 +400,16 @@ class ImageSeries(object):
         var_w = var_w[index_water_unique]
         var_f = var_f[index_fat_unique]
 
-        print("Calculating optimal fat fraction and best pattern per signal")
+
         var_w = np.reshape(var_w, (-1, 1))
         var_f = np.reshape(var_f, (-1, 1))
         sig_wf = np.reshape(sig_wf, (-1, 1))
 
         for i in range(niter + 1):
 
+            print("################# ITERATION : Number {} out of {} ####################".format(i,niter))
+
+            print("Calculating optimal fat fraction and best pattern per signal for iteration {}".format(i))
             all_signals_unique, index_signals_unique = np.unique(all_signals, axis=1, return_inverse=True)
             nb_signals_unique = all_signals_unique.shape[1]
             nb_signals = all_signals.shape[1]
@@ -434,7 +440,7 @@ class ImageSeries(object):
             idx_max_all_unique=[]
             alpha_optim=[]
 
-            for j in tqdm.tqdm(range(num_group)):
+            for j in tqdm(range(num_group)):
                 j_signal = j * split
                 j_signal_next = np.minimum((j + 1) * split, nb_signals_unique)
                 current_sig_ws = sig_ws_all_unique[index_water_unique, j_signal:j_signal_next]
@@ -455,7 +461,7 @@ class ImageSeries(object):
             #idx_max_all_unique = np.argmax(J_all, axis=0)
             del J_all
 
-            print("Building the maps")
+            print("Building the maps for iteration {}".format(i))
 
             # del sig_ws_all_unique
             # del sig_fs_all_unique
@@ -480,27 +486,23 @@ class ImageSeries(object):
             if i == niter:
                 break
 
+
+            print("Generating prediction volumes and undersampled images for iteration {}".format(i))
             # generate prediction volumes
             keys_simu = list(map_rebuilt.keys())
             values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
             map_for_sim = dict(zip(keys_simu, values_simu))
 
-            images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=True)
-            images_pred.buildParamMap()
-            images_pred.build_ref_images(seq, int(traj.shape[1] / npoint))
 
             # predict spokes
+            images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=True)
+            images_pred.buildParamMap()
+            images_pred.build_ref_images(seq, nspoke)
             kdata = images_pred.generate_kdata(traj)
-            kdatai = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
-
-            # NUFFT
-            kdatai /= np.sum(np.abs(kdatai) ** 2) ** 0.5 / len(kdatai)
-            volumesi = [
-                finufft.nufft2d1(t.real, t.imag, s, images_pred.image_size)
-                for t, s in zip(traj, kdatai)
-            ]
+            volumesi = images_pred.simulate_radial_undersampled_images(traj,nspoke=nspoke,npoint=npoint,density_adj=True)
 
             # correct volumes
+            print("Correcting volumes volumes for iteration {}".format(i))
             volumes = [2 * vol0 - voli for vol0, voli in zip(volumes0, volumesi)]
 
             all_signals = np.array(volumes)[:, mask > 0]

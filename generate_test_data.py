@@ -10,7 +10,9 @@ from finufft import nufft1d1,nufft1d2
 from scipy import signal,interpolate
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
+import pathlib
 
+path = pathlib.Path("mrf_sequence.json").parent.absolute()
 
 ## Random map simulation
 
@@ -41,8 +43,8 @@ m.buildParamMap()
 
 ##### Simulating Ref Images
 m.build_ref_images(seq,window)
-m.change_resolution(compression_factor=3)
-ani=animate_images(m.images_series)
+#m.change_resolution(compression_factor=3)
+#ani=animate_images(m.images_series)
 
 #print(m.t[0])
 #plt.imshow(np.angle(m.fat_series[0]))
@@ -66,14 +68,24 @@ images_series_with_movement = m.images_series
 
 ###### Undersampling k space
 
-npoint = 2*image_series.shape[0]
+npoint = 2*image_series.shape[1]
 total_nspoke=8*175
 nspoke=8
 
 all_spokes=radial_golden_angle_traj(total_nspoke,npoint)
 traj = np.reshape(groupby(all_spokes, nspoke), (-1, npoint * nspoke))
 
-image_series_rebuilt_with_movement = m.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint)
+image_series_rebuilt_with_movement = m.simulate_radial_undersampled_images(traj,density_adj=True,nspoke=nspoke,npoint=npoint)
+
+# plt.figure()
+# plt.imshow(np.abs(image_series_rebuilt_with_movement[0]))
+# plt.colorbar()
+#
+#
+# plt.figure()
+# plt.imshow(np.abs(image_series[0]))
+# plt.colorbar()
+
 
 # vol,vor =voronoi_volumes(np.transpose(np.array([traj[0].real,traj[0].imag])))
 #
@@ -91,11 +103,11 @@ image_series_rebuilt_with_movement = m.simulate_radial_undersampled_images(traj,
 #ani1,ani2= animate_multiple_images(image_series,image_series_rebuilt)
 
 m.reset_image_series()
-image_series_rebuilt = m.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint)
-print("Simulation US images")
-image_series_rebuilt_2 = m.simulate_undersampled_images(traj,density_adj=True)
+image_series_rebuilt = m.simulate_radial_undersampled_images(traj,density_adj=True,nspoke=nspoke,npoint=npoint)
+#print("Simulation US images")
+#image_series_rebuilt_2 = m.simulate_undersampled_images(traj,density_adj=True)
 
-ani,ani1=animate_multiple_images(image_series_rebuilt,image_series_rebuilt_2)
+#ani,ani1=animate_multiple_images(image_series_rebuilt,image_series_rebuilt_2)
 
 #masked_images_rebuilt_mvt = np.transpose(np.array(image_series_rebuilt_with_movement)[:,m.mask>0])
 #masked_images_rebuilt = np.transpose(np.array(image_series_rebuilt)[:,m.mask>0])
@@ -157,13 +169,18 @@ all_signals = m.images_series[:,m.mask>0]
 
 #map_rebuilt=dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca=0.999999,split=2000)
 #map_rebuilt=dictSearchMemoryOptimIterative(image_series,dictfile,seq,traj,npoint,niter=1)
-map_rebuilt=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split=1000)
-compare_paramMaps(m.paramMap,map_rebuilt,m.mask>0,adj_wT1=True)
-regression_paramMaps(m.paramMap,map_rebuilt,adj_wT1=True,fat_threshold=0.8)
-
-map_rebuilt_it1=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=0,split=1000)
+map_rebuilt_it1=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split=4000)
 compare_paramMaps(m.paramMap,map_rebuilt_it1,m.mask>0,adj_wT1=True)
 regression_paramMaps(m.paramMap,map_rebuilt_it1,adj_wT1=True,fat_threshold=0.8)
+
+map_rebuilt_it0=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=0,split=4000)
+compare_paramMaps(m.paramMap,map_rebuilt_it0,m.mask>0,adj_wT1=True)
+regression_paramMaps(m.paramMap,map_rebuilt_it0,adj_wT1=True,fat_threshold=0.8)
+
+map_rebuilt_it4=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=4,split=4000)
+compare_paramMaps(m.paramMap,map_rebuilt_it4,m.mask>0,adj_wT1=True)
+regression_paramMaps(m.paramMap,map_rebuilt_it4,adj_wT1=True,fat_threshold=0.8)
+
 
 map_rebuilt_us=dictSearchMemoryOptim(np.array(image_series_rebuilt)[:,m.mask>0],dictfile,pca=True,threshold_pca=0.999999,split=2000)
 compare_paramMaps(m.paramMap,map_rebuilt_us,m.mask>0,adj_wT1=True)
