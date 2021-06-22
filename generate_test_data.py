@@ -41,7 +41,8 @@ m.buildParamMap()
 
 ##### Simulating Ref Images
 m.build_ref_images(seq,window)
-#ani=animate_images(m.images_series,metric=np.angle)
+m.change_resolution(compression_factor=3)
+ani=animate_images(m.images_series)
 
 #print(m.t[0])
 #plt.imshow(np.angle(m.fat_series[0]))
@@ -65,7 +66,7 @@ images_series_with_movement = m.images_series
 
 ###### Undersampling k space
 
-npoint = 512
+npoint = 2*image_series.shape[0]
 total_nspoke=8*175
 nspoke=8
 

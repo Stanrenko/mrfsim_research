@@ -64,6 +64,8 @@ class ImageSeries(object):
             self.paramDict["image_size"]=DEFAULT_IMAGE_SIZE
 
         self.image_size=self.paramDict["image_size"]
+        self.images_series=None
+        self.cached_images_series=None
 
         self.mask =np.ones(self.image_size)
         self.paramMap=None
@@ -209,7 +211,7 @@ class ImageSeries(object):
             density = np.zeros(kdata.shape)
             for i in tqdm(range(kdata.shape[0])):
                 vol = voronoi_volumes(np.transpose(np.array([traj[i].real,traj[i].imag])))[0]
-                
+
                 density[i]
             density = [voronoi_volumes(np.transpose(np.array([t.real,t.imag])))[0] for t in traj]
             kdata = [k*density[i] for i,k in enumerate(kdata)]
@@ -246,6 +248,23 @@ class ImageSeries(object):
 
         #orig = self.images_series[0,:,:]
         #trans = affine_transform(self.images_series[0, :, :], ((1.0, 0.0), (0.0, 1.0)),offset=list(np.round(shifts[0])),order=3,mode="nearest")
+
+
+    def change_resolution(self,compression_factor=2):
+        print("WARNING : Compression is irreversible")
+        kept_indices=int(compression_factor)
+        self.images_series = self.images_series[:,::kept_indices,::kept_indices]
+        self.cached_images_series=self.images_series
+        new_mask=self.mask[::kept_indices,::kept_indices]
+
+        for param in self.paramMap.keys():
+            values_on_mask=self.paramMap[param]
+            values=makevol(values_on_mask,self.mask>0)
+            values=values[::kept_indices,::kept_indices]
+            new_values_on_mask=values[new_mask>0]
+            self.paramMap[param]=new_values_on_mask
+
+        self.mask=new_mask
 
 
     def buildParamMap(self,mask=None):
