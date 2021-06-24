@@ -2,6 +2,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from mutools.optim.dictsearch import dictsearch,groupmatch
+from functools import reduce
 from mrfsim import makevol,parse_options,groupby
 import numpy as np
 import finufft
@@ -627,12 +628,13 @@ def compare_paramMaps(map1,map2,mask,fontsize=5,title1="Orig Map",title2="Rebuil
         cbar3 = fig.colorbar(im3, ax=axes[2], fraction=0.046, pad=0.04)
         cbar3.ax.tick_params(labelsize=fontsize)
 
-def regression_paramMaps(map1,map2,fontsize=5,adj_wT1=False,fat_threshold=0.8):
+def regression_paramMaps(map1,map2,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8):
 
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
     nb_keys=len(keys_1 & keys_2)
     fig,ax = plt.subplots(1,nb_keys)
+
     for i,k in enumerate(keys_1 & keys_2):
         obs = map1[k]
         pred = map2[k]
@@ -664,6 +666,8 @@ def regression_paramMaps(map1,map2,fontsize=5,adj_wT1=False,fat_threshold=0.8):
         ax[i].tick_params(axis='x', labelsize=fontsize)
         ax[i].tick_params(axis='y', labelsize=fontsize)
 
+    plt.suptitle(title)
+
 def voronoi_volumes(points):
     v = Voronoi(points)
     vol = np.zeros(v.npoints)
@@ -674,3 +678,10 @@ def voronoi_volumes(points):
         else:
             vol[i] = ConvexHull(v.vertices[indices]).volume
     return vol,v
+
+def normalize_image_series(images_series):
+    shapes=list(images_series.shape)
+    last_dimensions_collapse =reduce(lambda x, y: x*y, shapes[1:])
+    normalization = np.reshape(np.sum(np.abs(np.reshape(images_series,(-1,last_dimensions_collapse)) ** 2), axis=-1) ** 0.5, (-1,)+tuple(np.ones(len(shapes[1:])).astype(int)))
+    images_series /= normalization
+    return images_series

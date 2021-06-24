@@ -5,10 +5,13 @@ except:
     pass
 
 from scipy import ndimage
+from scipy.optimize import minimize
 from scipy.ndimage import affine_transform
 import matplotlib.pyplot as plt
+from datetime import datetime
 
-from utils_mrf import create_random_map,voronoi_volumes
+import pandas as pd
+from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series
 from mutools.optim.dictsearch import dictsearch
 import itertools
 from mrfsim import groupby,makevol,loadmat
@@ -145,25 +148,27 @@ class ImageSeries(object):
         mrfdict = dictsearch.Dictionary(keys, values)
 
         images_series = np.zeros(self.image_size + (values.shape[-2],), dtype=np.complex_)
-        water_series = images_series.copy()
-        fat_series = images_series.copy()
+        #water_series = images_series.copy()
+        #fat_series = images_series.copy()
 
         images_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0] * (1 - map_ff_on_mask[i]) + mrfdict[tuple(
             pixel_params)][:, 1] * (map_ff_on_mask[i]) for (i, pixel_params) in enumerate(map_all_on_mask)])
-        water_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0]  for (i, pixel_params) in enumerate(map_all_on_mask)])
-        fat_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 1]  for (i, pixel_params) in enumerate(map_all_on_mask)])
+        #water_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0]  for (i, pixel_params) in enumerate(map_all_on_mask)])
+        #fat_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 1]  for (i, pixel_params) in enumerate(map_all_on_mask)])
 
         images_series[self.mask > 0, :] = images_in_mask
-        water_series[self.mask > 0, :] = water_in_mask
-        fat_series[self.mask > 0, :] = fat_in_mask
+        #water_series[self.mask > 0, :] = water_in_mask
+        #fat_series[self.mask > 0, :] = fat_in_mask
 
         images_series = np.moveaxis(images_series, -1, 0)
-        water_series = np.moveaxis(water_series, -1, 0)
-        fat_series = np.moveaxis(fat_series, -1, 0)
+        #water_series = np.moveaxis(water_series, -1, 0)
+        #fat_series = np.moveaxis(fat_series, -1, 0)
 
+        #images_series=normalize_image_series(images_series)
         self.images_series=images_series
-        self.water_series = water_series
-        self.fat_series=fat_series
+
+        #self.water_series = water_series
+        #self.fat_series=fat_series
 
         self.cached_images_series=images_series
         self.t=t
@@ -172,10 +177,12 @@ class ImageSeries(object):
     def simulate_radial_undersampled_images(self,traj,nspoke=8,density_adj=True,npoint=None):
 
         size = self.image_size
+        images_series=self.images_series
+        #images_series =normalize_image_series(self.images_series)
 
         kdata = [
             finufft.nufft2d2(t.real, t.imag, p)
-            for t, p in zip(traj, self.images_series)
+            for t, p in zip(traj, images_series)
         ]
 
         dtheta = 1/nspoke
@@ -183,16 +190,21 @@ class ImageSeries(object):
 
         #kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
 
+
         if density_adj:
             if npoint is None:
                 raise ValueError("Should supply number of point on spoke for density compensation")
             density = np.abs(np.linspace(-1, 1, npoint))
             kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
 
+        #kdata = (normalize_image_series(np.array(kdata)))
+
         images_series_rebuilt = [
             finufft.nufft2d1(t.real, t.imag, s, size)
             for t, s in zip(traj, kdata)
         ]
+
+        #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
 
         return np.array(images_series_rebuilt)
 
@@ -266,7 +278,7 @@ class ImageSeries(object):
             self.paramMap[param]=new_values_on_mask
 
         self.mask=new_mask
-        self.image_size = self.images_series.shape
+        self.image_size = self.images_series.shape[1:]
 
 
     def buildParamMap(self,mask=None):
@@ -324,7 +336,12 @@ class ImageSeries(object):
         plt.show()
 
     def dictSearchMemoryOptimIterative(self, dictfile, seq, traj, npoint, niter=1, pca=True, threshold_pca=0.999999,
-                                       split=2000):
+                                       split=2000,log=False):
+
+        if log:
+            now = datetime.now()
+            date_time = now.strftime("%Y%m%d_%H%M%S")
+
         mask = self.mask
         nspoke = int(traj.shape[1] / npoint)
         volumes0 = self.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint,nspoke=nspoke)
@@ -351,7 +368,7 @@ class ImageSeries(object):
         del array_fat
 
         if pca:
-            print("Performing PCA")
+            print("############### INITIALIZATION : Performing PCA ######################")
 
             mean_fat = np.mean(array_fat_unique, axis=0)
             mean_water = np.mean(array_water_unique, axis=0)
@@ -405,6 +422,9 @@ class ImageSeries(object):
         var_f = np.reshape(var_f, (-1, 1))
         sig_wf = np.reshape(sig_wf, (-1, 1))
 
+        values_results=[]
+        keys_results=list(range(niter+1))
+
         for i in range(niter + 1):
 
             print("################# ITERATION : Number {} out of {} ####################".format(i,niter))
@@ -440,6 +460,7 @@ class ImageSeries(object):
             idx_max_all_unique=[]
             alpha_optim=[]
 
+
             for j in tqdm(range(num_group)):
                 j_signal = j * split
                 j_signal_next = np.minimum((j + 1) * split, nb_signals_unique)
@@ -447,6 +468,7 @@ class ImageSeries(object):
                 current_sig_fs = sig_fs_all_unique[index_fat_unique, j_signal:j_signal_next]
                 current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
                         (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
+                current_alpha_all_unique=np.minimum(np.maximum(current_alpha_all_unique,0.0),1.0)
                 #alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
                 J_all = ((
                                                             1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
@@ -483,6 +505,8 @@ class ImageSeries(object):
 
             }
 
+            values_results.append(map_rebuilt)
+
             if i == niter:
                 break
 
@@ -495,19 +519,36 @@ class ImageSeries(object):
 
 
             # predict spokes
-            images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=True)
+            images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=False)
             images_pred.buildParamMap()
             images_pred.build_ref_images(seq, nspoke)
-            kdata = images_pred.generate_kdata(traj)
+            pred_volumesi = images_pred.images_series
             volumesi = images_pred.simulate_radial_undersampled_images(traj,nspoke=nspoke,npoint=npoint,density_adj=True)
 
+            #def fourier_scaling_cost(a,vol1,vol2,mask):
+            #    return np.sum(np.abs(vol1 - a * vol2)[:, mask > 0])
+
+            #res=minimize(lambda x:fourier_scaling_cost(x,pred_volumesi,volumesi,mask),1)
+
+            if log:
+                print("Saving correction volumes for iteration {}".format(i))
+                with open('./log/volumes0_it_{}_{}.npy'.format(int(i),date_time), 'wb') as f:
+                    np.save(f, np.array(volumes0))
+                with open('./log/volumes1_it_{}_{}.npy'.format(int(i),date_time), 'wb') as f:
+                    np.save(f, np.array(volumesi))
+                with open('./log/predvolumes_it_{}_{}.npy'.format(int(i),date_time), 'wb') as f:
+                    np.save(f, np.array(pred_volumesi))
+
             # correct volumes
-            print("Correcting volumes volumes for iteration {}".format(i))
-            volumes = [2 * vol0 - voli for vol0, voli in zip(volumes0, volumesi)]
+            print("Correcting volumes for iteration {}".format(i))
+            volumes = [vol0 - (voli-vol0) for vol0, voli in zip(volumes0, volumesi)]
 
             all_signals = np.array(volumes)[:, mask > 0]
 
-        return map_rebuilt
+        if log:
+            print(date_time)
+
+        return dict(zip(keys_results,values_results))
 
 
 class RandomMap(ImageSeries):
