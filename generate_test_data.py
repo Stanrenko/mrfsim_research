@@ -3,7 +3,7 @@
 #matplotlib.use("TkAgg")
 from mrfsim import T1MRF
 from image_series import *
-from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,regression_paramMaps,dictSearchMemoryOptim,voronoi_volumes
+from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,regression_paramMaps,dictSearchMemoryOptim,voronoi_volumes,transform_py_map
 import json
 from finufft import nufft1d1,nufft1d2
 from scipy import signal,interpolate
@@ -16,9 +16,11 @@ import numpy as np
 ## Random map simulation
 
 dictfile = "mrf175.dict"
+#dictfile = "mrf175_CS.dict"
 
 with open("mrf_sequence.json") as f:
     sequence_config = json.load(f)
+
 
 seq = T1MRF(**sequence_config)
 
@@ -59,7 +61,7 @@ m.translate_images(shifts_t,round=True)
 #ani_shift=animate_images(m.images_series)
 images_series_with_movement = m.images_series
 
-#m.reset_image_series()
+m.reset_image_series()
 
 #pixel=(125,125)
 #m.compare_patterns(pixel)
@@ -179,34 +181,60 @@ all_signals = m.images_series[:,m.mask>0]
 #
 # array_retrieved=array_unique[index_unique,:]
 
-#map_rebuilt=dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca=0.999999,split=2000)
+#map_rebuilt=dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca=10,split=4000)
+#regression_paramMaps(m.paramMap,map_rebuilt,adj_wT1=True,fat_threshold=0.7,title="Param matching with movement")
 #map_rebuilt=dictSearchMemoryOptimIterative(image_series,dictfile,seq,traj,npoint,niter=1)
 
 #Param maps with and without movement
-all_maps_mvt=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split=500,log=True)
+#all_maps_mvt=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split=2000,log=True)
+#map_rebuilt_it0_mvt=all_maps_mvt[0]
+#map_rebuilt_it1_mvt=all_maps_mvt[1]
+# regression_paramMaps(m.paramMap,map_rebuilt_it1_mvt,adj_wT1=True,fat_threshold=0.7,title="Param matching with movement")
+# compare_paramMaps(m.paramMap,map_rebuilt_it1_mvt,m.mask>0,adj_wT1=True,fat_threshold=0.7,title2="Rebuilt Map with movement")
+
+#Checking Pierre Yves Implementation vs Constantin
+#kdata = m.generate_kdata(traj)
+#res = SearchMrf(kdata,traj,dictfile,1,"brute","ls",m.image_size,nspoke,True)
+
+#map_py=transform_py_map(res,m.mask)
+#regression_paramMaps(m.paramMap,map_py,adj_wT1=True,fat_threshold=0.7,title="Param matching Pierre Yves")
+#compare_paramMaps(m.paramMap,map_py,m.mask>0,adj_wT1=True,fat_threshold=0.7,title2="Rebuilt Pierre Yves")
+
 m.reset_image_series()
-all_maps=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split=500,log=True)
-
-map_rebuilt_it0_mvt=all_maps_mvt[0]
-map_rebuilt_it1_mvt=all_maps_mvt[1]
-
-regression_paramMaps(m.paramMap,map_rebuilt_it1_mvt,adj_wT1=True,fat_threshold=0.7,title="Param matching with movement")
-
-
+all_maps=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split=500,threshold_pca=15,log=False,useAdjPred=False)
 map_rebuilt_it0=all_maps[0]
 map_rebuilt_it1=all_maps[1]
 
-regression_paramMaps(m.paramMap,map_rebuilt_it1,adj_wT1=True,fat_threshold=0.7,title="Param matching without movement")
+all_maps_adj=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split=500,threshold_pca=15,log=False,useAdjPred=True)
+map_rebuilt_it0_adj=all_maps_adj[0]
+map_rebuilt_it1_adj=all_maps_adj[1]
 
-compare_paramMaps(m.paramMap,map_rebuilt_it1_mvt,m.mask>0,adj_wT1=True,fat_threshold=0.7,title2="Rebuilt Map with movement")
+regression_paramMaps(m.paramMap,map_rebuilt_it1,adj_wT1=True,fat_threshold=0.7,title="Param matching No adj")
+regression_paramMaps(m.paramMap,map_rebuilt_it1_adj,adj_wT1=True,fat_threshold=0.7,title="Param matching Adj pred")
+
+regression_paramMaps(m.paramMap,map_rebuilt_it1,adj_wT1=True,fat_threshold=0.7,title="Param matching Constantin")
 compare_paramMaps(m.paramMap,map_rebuilt_it1,m.mask>0,adj_wT1=True,fat_threshold=0.7,title2="Rebuilt Map without movement")
+
+m.reset_image_series()
+all_maps=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split=500,threshold_pca=15,log=False)
+map_rebuilt_it0=all_maps[0]
+map_rebuilt_it1=all_maps[1]
+regression_paramMaps(m.paramMap,map_rebuilt_it1,adj_wT1=True,fat_threshold=0.7,title="Param matching Constantin")
+compare_paramMaps(m.paramMap,map_rebuilt_it1,m.mask>0,adj_wT1=True,fat_threshold=0.7,title2="Rebuilt Map without movement")
+
+all_maps_noUS=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=0,split=500,threshold_pca=15,log=False,simulate_undersampling=False)
+map_rebuilt_noUS=all_maps_noUS[0]
+regression_paramMaps(m.paramMap,map_rebuilt_noUS,adj_wT1=True,fat_threshold=0.7,title="Param matching no undersampling")
+compare_paramMaps(m.paramMap,map_rebuilt_noUS,m.mask>0,adj_wT1=False,fat_threshold=0.7,title2="Rebuilt Map no undersampling")
+
+regression_paramMaps(map_rebuilt_noUS,map_rebuilt_it1,adj_wT1=True,fat_threshold=0.7,title="Param matching no US vs US")
+compare_paramMaps(map_rebuilt_noUS,map_rebuilt_it1,m.mask>0,adj_wT1=False,fat_threshold=0.7,title1="Rebuilt Map no US",title2="Rebuilt Map US")
 
 
 #Param maps comparison as a function of iteration
-all_maps=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split=500,log=False)
-
-map_rebuilt_it0=all_maps[0]
-map_rebuilt_it1=all_maps[1]
+#all_maps=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=4,split=500,log=False)
+#map_rebuilt_it0=all_maps[0]
+#map_rebuilt_it1=all_maps[1]
 # map_rebuilt_it2=all_maps[2]
 # map_rebuilt_it3=all_maps[3]
 # map_rebuilt_it4=all_maps[4]

@@ -10,6 +10,7 @@ from scipy import ndimage
 from sklearn.decomposition import PCA
 import tqdm
 from scipy.spatial import Voronoi,ConvexHull
+from Transformers import PCAComplex
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
@@ -217,7 +218,7 @@ def SearchMrf(kdata,traj, dictfile, niter, method, metric, shape,nspoke,density_
             finufft.nufft2d2(t.real, t.imag, makevol(p, mask))
             for t, p in zip(traj, pred)
         ]
-        kdatai = [d * np.tile(density, nspoke) for d in kdata]
+        kdatai = np.array([(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata])
 
         # NUFFT
         kdatai /= np.sum(np.abs(kdatai)**2)**0.5 / len(kdatai)
@@ -238,6 +239,9 @@ def SearchMrf(kdata,traj, dictfile, niter, method, metric, shape,nspoke,density_
     wmap =  makevol([s[0] for s in res.scales], mask)
     fmap =  makevol([s[1] for s in res.scales], mask)
     ffmap = makevol([s[1]/(s[0] + s[1]) for s in res.scales], mask)
+
+
+
     return {
         "mask": mask,
         "wt1map": wt1map,
@@ -303,7 +307,7 @@ def basicDictSearch(all_signals,dictfile):
 
             }
 
-def dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca = 0.999999,split=2000):
+def dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca = 0.9999999,split=2000):
     mrfdict = dictsearch.Dictionary()
     mrfdict.load(dictfile, force=True)
 
@@ -329,44 +333,23 @@ def dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca = 0.999999
         duplicate_signals = False
         all_signals_unique=all_signals
 
-
     del array_water
     del array_fat
 
     if pca:
         print("Performing PCA")
 
-        mean_fat = np.mean(array_fat_unique,axis=0)
-        mean_water = np.mean(array_water_unique,axis=0)
+        pca_water = PCAComplex(n_components=threshold_pca)
+        pca_fat = PCAComplex(n_components=threshold_pca)
 
-        cov_fat = np.matmul(np.transpose((array_fat_unique-mean_fat).conj()), (array_fat_unique-mean_fat))
-        cov_water = np.matmul(np.transpose((array_water_unique-mean_water).conj()), (array_water_unique-mean_water))
+        pca_water.fit(array_water_unique)
+        pca_fat.fit(array_fat_unique)
 
-        fat_val, fat_vect = np.linalg.eigh(cov_fat)
-        water_val, water_vect = np.linalg.eigh(cov_water)
+        print("Water Components Retained {} out of {} timesteps".format(pca_water.n_components_, nb_water_timesteps))
+        print("Fat Components Retained {} out of {} timesteps".format(pca_fat.n_components_, nb_fat_timesteps))
 
-        sorted_index_fat = np.argsort(fat_val)[::-1]
-        fat_val = fat_val[sorted_index_fat]
-        fat_vect = fat_vect[:, sorted_index_fat]
-
-        sorted_index_water = np.argsort(water_val)[::-1]
-        water_val = water_val[sorted_index_water]
-        water_vect = water_vect[:, sorted_index_water]
-
-        explained_variance_ratio_fat = np.cumsum(fat_val ** 2) / np.sum(fat_val ** 2)
-        n_components_fat = np.sum(explained_variance_ratio_fat < threshold_pca) + 1
-
-        explained_variance_ratio_water = np.cumsum(water_val ** 2) / np.sum(water_val ** 2)
-        n_components_water = np.sum(explained_variance_ratio_water < threshold_pca) + 1
-
-        print("Water Components Retained {} out of {} timesteps".format(n_components_water,nb_water_timesteps))
-        print("Fat Components Retained {} out of {} timesteps".format(n_components_fat, nb_fat_timesteps))
-
-        fat_vect = fat_vect[:, :n_components_fat]
-        water_vect = water_vect[:, :n_components_water]
-
-        transformed_array_water_unique = np.matmul(array_water_unique, water_vect.conj())
-        transformed_array_fat_unique = np.matmul(array_fat_unique, fat_vect.conj())
+        transformed_array_water_unique = pca_water.transform(array_water_unique)
+        transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
 
         # retrieved_array_water_unique = np.matmul(transformed_array_water_unique,np.transpose(water_vect))
         # retrieved_array_fat_unique = np.matmul(transformed_array_fat_unique,np.transpose(fat_vect))
@@ -375,11 +358,15 @@ def dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca = 0.999999
         # plt.plot(retrieved_array_fat_unique[0,:].real)
         # plt.plot(array_fat_unique[0,:].real)
 
-        transformed_all_signals_water = np.transpose(np.matmul(np.transpose(all_signals_unique), water_vect.conj()))
-        transformed_all_signals_fat = np.transpose(np.matmul(np.transpose(all_signals_unique), fat_vect.conj()))
+        transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique)))
+        transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
 
         sig_ws_all_unique = np.matmul(transformed_array_water_unique, transformed_all_signals_water[:, :].conj()).real
         sig_fs_all_unique = np.matmul(transformed_array_fat_unique, transformed_all_signals_fat[:, :].conj()).real
+
+        pca_water.plot_retrieved_signal(array_water_unique,0)
+        pca_fat.plot_retrieved_signal(array_fat_unique, 0)
+
 
     else:
         sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, :].conj()).real
@@ -399,10 +386,13 @@ def dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca = 0.999999
     var_f = np.reshape(var_f, (-1, 1))
     sig_wf = np.reshape(sig_wf, (-1, 1))
 
-    alpha_all_unique = np.zeros((nb_patterns, nb_signals_unique))
-    J_all = np.zeros(alpha_all_unique.shape)
+    #alpha_all_unique = np.zeros((nb_patterns, nb_signals_unique))
+    #J_all = np.zeros(alpha_all_unique.shape)
 
     num_group = int(nb_signals_unique / split) + 1
+
+    idx_max_all_unique = []
+    alpha_optim = []
 
     for j in tqdm.tqdm(range(num_group)):
         j_signal = j * split
@@ -411,13 +401,16 @@ def dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca = 0.999999
         current_sig_fs = sig_fs_all_unique[index_fat_unique, j_signal:j_signal_next]
         current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
                     (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
-        alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
-        J_all[:, j_signal:j_signal_next] = ((
+        #alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
+        current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
+        J_all = ((
                                                         1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
             (1 - current_alpha_all_unique) ** 2 * var_w + current_alpha_all_unique ** 2 * var_f + 2 * current_alpha_all_unique * (
                         1 - current_alpha_all_unique) * sig_wf)
+        idx_max_all_current = np.argmax(J_all, axis=0)
+        idx_max_all_unique.extend(idx_max_all_current)
+        alpha_optim.extend(current_alpha_all_unique[idx_max_all_current, np.arange(J_all.shape[1])])
 
-    idx_max_all_unique = np.argmax(J_all, axis=0)
     del J_all
 
     print("Building the maps")
@@ -425,9 +418,8 @@ def dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca = 0.999999
     del sig_ws_all_unique
     del sig_fs_all_unique
 
-    params_all_unique = np.array([keys[idx] + (alpha_all_unique[idx, i],) for i, idx in enumerate(idx_max_all_unique)])
-
-
+    params_all_unique = np.array(
+        [keys[idx] + (alpha_optim[l],) for l, idx in enumerate(idx_max_all_unique)])
 
     if duplicate_signals:
         params_all = params_all_unique[index_signals_unique]
@@ -685,3 +677,17 @@ def normalize_image_series(images_series):
     normalization = np.reshape(np.sum(np.abs(np.reshape(images_series,(-1,last_dimensions_collapse)) ** 2), axis=-1) ** 0.5, (-1,)+tuple(np.ones(len(shapes[1:])).astype(int)))
     images_series /= normalization
     return images_series
+
+
+def transform_py_map(res,mask):
+    map_py = res.copy()
+    map_py.pop("info")
+    map_py.pop("mask")
+    keys = list(map_py.keys()).copy()
+
+    for k in keys:
+        map_py[str.split(k, "map")[0]] = map_py.pop(k)[mask > 0]
+    map_py["attB1"] = map_py.pop("b1")
+    map_py["fT1"] = map_py.pop("ft1")
+    map_py["wT1"] = map_py.pop("wt1")
+    return map_py

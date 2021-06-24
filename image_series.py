@@ -18,6 +18,7 @@ from mrfsim import groupby,makevol,loadmat
 import numpy as np
 import finufft
 from tqdm import tqdm
+from Transformers import PCAComplex
 DEFAULT_wT2 = 80
 DEFAULT_fT1 = 350
 DEFAULT_fT2 = 40
@@ -97,7 +98,7 @@ class ImageSeries(object):
         self.fat_cs = [- value / 1000 for value in fat_cs]  # temp
 
 
-    def build_ref_images(self,seq,window):
+    def build_ref_images(self,seq,window=8):
         print("Building Ref Images")
         if self.paramMap is None:
             return ValueError("buildparamMap should be called prior to image simulation")
@@ -336,7 +337,7 @@ class ImageSeries(object):
         plt.show()
 
     def dictSearchMemoryOptimIterative(self, dictfile, seq, traj, npoint, niter=1, pca=True, threshold_pca=0.999999,
-                                       split=2000,log=False):
+                                       split=2000,log=False,simulate_undersampling=True,useAdjPred=False):
 
         if log:
             now = datetime.now()
@@ -344,7 +345,14 @@ class ImageSeries(object):
 
         mask = self.mask
         nspoke = int(traj.shape[1] / npoint)
-        volumes0 = self.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint,nspoke=nspoke)
+
+        if simulate_undersampling:
+            volumes0 = self.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint,nspoke=nspoke)
+        else:
+            volumes0 = self.images_series
+            print("No undersampling artifact as working with true images : forcing number of iterations to 0")
+            niter = 0
+
         all_signals = volumes0[:, mask > 0]
         density = np.abs(np.linspace(-1, 1, npoint))
 
@@ -368,47 +376,20 @@ class ImageSeries(object):
         del array_fat
 
         if pca:
-            print("############### INITIALIZATION : Performing PCA ######################")
 
-            mean_fat = np.mean(array_fat_unique, axis=0)
-            mean_water = np.mean(array_water_unique, axis=0)
+            pca_water = PCAComplex(n_components=threshold_pca)
+            pca_fat = PCAComplex(n_components=threshold_pca)
 
-            cov_fat = np.matmul(np.transpose((array_fat_unique - mean_fat).conj()), (array_fat_unique - mean_fat))
-            cov_water = np.matmul(np.transpose((array_water_unique - mean_water).conj()),
-                                  (array_water_unique - mean_water))
+            pca_water.fit(array_water_unique)
+            pca_fat.fit(array_fat_unique)
 
-            fat_val, fat_vect = np.linalg.eigh(cov_fat)
-            water_val, water_vect = np.linalg.eigh(cov_water)
+            print("Water Components Retained {} out of {} timesteps".format(pca_water.n_components_, nb_water_timesteps))
+            print("Fat Components Retained {} out of {} timesteps".format(pca_fat.n_components_, nb_fat_timesteps))
 
-            sorted_index_fat = np.argsort(fat_val)[::-1]
-            fat_val = fat_val[sorted_index_fat]
-            fat_vect = fat_vect[:, sorted_index_fat]
+            transformed_array_water_unique = pca_water.transform(array_water_unique)
+            transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
 
-            sorted_index_water = np.argsort(water_val)[::-1]
-            water_val = water_val[sorted_index_water]
-            water_vect = water_vect[:, sorted_index_water]
 
-            explained_variance_ratio_fat = np.cumsum(fat_val ** 2) / np.sum(fat_val ** 2)
-            n_components_fat = np.sum(explained_variance_ratio_fat < threshold_pca) + 1
-
-            explained_variance_ratio_water = np.cumsum(water_val ** 2) / np.sum(water_val ** 2)
-            n_components_water = np.sum(explained_variance_ratio_water < threshold_pca) + 1
-
-            print("Water Components Retained {} out of {} timesteps".format(n_components_water, nb_water_timesteps))
-            print("Fat Components Retained {} out of {} timesteps".format(n_components_fat, nb_fat_timesteps))
-
-            fat_vect = fat_vect[:, :n_components_fat]
-            water_vect = water_vect[:, :n_components_water]
-
-            transformed_array_water_unique = np.matmul(array_water_unique, water_vect.conj())
-            transformed_array_fat_unique = np.matmul(array_fat_unique, fat_vect.conj())
-
-            # retrieved_array_water_unique = np.matmul(transformed_array_water_unique,np.transpose(water_vect))
-            # retrieved_array_fat_unique = np.matmul(transformed_array_fat_unique,np.transpose(fat_vect))
-
-            # plt.figure()
-            # plt.plot(retrieved_array_fat_unique[0,:].real)
-            # plt.plot(array_fat_unique[0,:].real)
 
         var_w = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
         var_f = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
@@ -441,9 +422,9 @@ class ImageSeries(object):
                 all_signals_unique = all_signals
 
             if pca:
-                transformed_all_signals_water = np.transpose(
-                    np.matmul(np.transpose(all_signals_unique), water_vect.conj()))
-                transformed_all_signals_fat = np.transpose(np.matmul(np.transpose(all_signals_unique), fat_vect.conj()))
+                transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique)))
+                transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
+
                 sig_ws_all_unique = np.matmul(transformed_array_water_unique,
                                               transformed_all_signals_water[:, :].conj()).real
                 sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
@@ -521,12 +502,13 @@ class ImageSeries(object):
             # predict spokes
             images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=False)
             images_pred.buildParamMap()
-            images_pred.build_ref_images(seq, nspoke)
+            images_pred.build_ref_images(seq)
             pred_volumesi = images_pred.images_series
             volumesi = images_pred.simulate_radial_undersampled_images(traj,nspoke=nspoke,npoint=npoint,density_adj=True)
 
             #def fourier_scaling_cost(a,vol1,vol2,mask):
             #    return np.sum(np.abs(vol1 - a * vol2)[:, mask > 0])
+
 
             #res=minimize(lambda x:fourier_scaling_cost(x,pred_volumesi,volumesi,mask),1)
 
@@ -541,7 +523,14 @@ class ImageSeries(object):
 
             # correct volumes
             print("Correcting volumes for iteration {}".format(i))
-            volumes = [vol0 - (voli-vol0) for vol0, voli in zip(volumes0, volumesi)]
+
+            if useAdjPred:
+                a = np.sum((volumesi * pred_volumesi.conj()).real) / np.sum(volumesi * volumesi.conj())
+                volumes = [vol0 - (a*voli - predvoli) for vol0, voli,predvoli in zip(volumes0, volumesi,pred_volumesi)]
+
+            else:
+                volumes = [vol0 - (voli-vol0) for vol0, voli in zip(volumes0, volumesi)]
+
 
             all_signals = np.array(volumes)[:, mask > 0]
 
