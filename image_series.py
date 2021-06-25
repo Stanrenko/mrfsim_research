@@ -54,6 +54,11 @@ def wrapper_rounding(func):
             for paramName in self.paramMap.keys():
                 self.roundParam(paramName,self.paramDict["rounding_"+paramName])
 
+        if "dict_overrides" in self.paramDict:
+            print("Warning : Overriding map values for params {}" .format(self.paramDict["dict_overrides"].keys()))
+            for paramName in self.paramDict["dict_overrides"].keys():
+                self.paramMap[paramName]=np.ones(self.paramMap[paramName].shape)*self.paramDict["dict_overrides"][paramName]
+
     return wrapper
 
 

@@ -691,3 +691,10 @@ def transform_py_map(res,mask):
     map_py["fT1"] = map_py.pop("ft1")
     map_py["wT1"] = map_py.pop("wt1")
     return map_py
+
+def build_mask(volumes):
+    mask = False
+    unique = np.histogram(np.abs(volumes), 100)[1]
+    mask = mask | (np.mean(np.abs(volumes), axis=0) > unique[len(unique) // 10])
+    mask = ndimage.binary_closing(mask, iterations=3)
+    return mask*1
