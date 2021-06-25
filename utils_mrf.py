@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from mutools.optim.dictsearch import dictsearch,groupmatch
 from functools import reduce
-from mrfsim import makevol,parse_options,groupby
+from mrfsim import makevol,parse_options,groupby,load_data
 import numpy as np
 import finufft
 from scipy import ndimage
@@ -586,15 +586,17 @@ def dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca = 0.999999
 #
 #     return map_rebuilt
 
-def compare_paramMaps(map1,map2,mask,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8):
+def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8):
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
+    if mask2 is None:
+        mask2 = mask1
     for k in (keys_1 & keys_2):
         fig,axes=plt.subplots(1,3)
-        vol1 = makevol(map1[k],mask)
-        vol2= makevol(map2[k],mask)
+        vol1 = makevol(map1[k],mask1)
+        vol2= makevol(map2[k],mask2)
         if adj_wT1 and k=="wT1":
-            ff = makevol(map2["ff"],mask)
+            ff = makevol(map2["ff"],mask2)
             vol2[ff>fat_threshold]=vol1[ff>fat_threshold]
 
         error=np.abs(vol1-vol2)
@@ -620,7 +622,7 @@ def compare_paramMaps(map1,map2,mask,fontsize=5,title1="Orig Map",title2="Rebuil
         cbar3 = fig.colorbar(im3, ax=axes[2], fraction=0.046, pad=0.04)
         cbar3.ax.tick_params(labelsize=fontsize)
 
-def regression_paramMaps(map1,map2,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8):
+def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8):
 
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
@@ -631,11 +633,22 @@ def regression_paramMaps(map1,map2,title="Maps regression plots",fontsize=5,adj_
         obs = map1[k]
         pred = map2[k]
 
+        if mask1 is not None:
+            if mask2 is None:
+                mask2 = mask1
+            mask_union = mask1 | mask2
+            mat_obs = makevol(map1[k],mask1)
+            mat_pred = makevol(map2[k],mask2)
+
+            obs = mat_obs[mask_union]
+            pred = mat_pred[mask_union]
+
         if adj_wT1 and k=="wT1":
             ff = map2["ff"]
             obs = obs[ff < fat_threshold]
             pred = pred[ff < fat_threshold]
 
+        print(obs)
         x_min = np.min(obs)
         x_max = np.max(obs)
 
@@ -698,3 +711,6 @@ def build_mask(volumes):
     mask = mask | (np.mean(np.abs(volumes), axis=0) > unique[len(unique) // 10])
     mask = ndimage.binary_closing(mask, iterations=3)
     return mask*1
+
+
+
