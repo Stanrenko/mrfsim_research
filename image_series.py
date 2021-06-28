@@ -19,6 +19,8 @@ import numpy as np
 import finufft
 from tqdm import tqdm
 from Transformers import PCAComplex
+import matplotlib.animation as animation
+
 DEFAULT_wT2 = 80
 DEFAULT_fT1 = 350
 DEFAULT_fT2 = 40
@@ -551,7 +553,7 @@ class MapFromFile3D(ImageSeries):
         if "nb_slices" not in self.paramDict:
             raise ValueError("nb_slices should be provided for MapFromFile3D")
         if "gap_slice" not in self.paramDict:
-            raise ValueError("gap_slice should be provided for MapFromFile3D")
+            self.paramDict["gap_slice"]=1
 
         if "nb_empty_slices" not in self.paramDict:#Empty slices on both sides of the stack
             self.paramDict["nb_empty_slices"]=10
@@ -575,22 +577,30 @@ class MapFromFile3D(ImageSeries):
         map_attB1 = matobj["B1"][0, 0]
         map_ff = matobj["FF"][0, 0]
 
-        self.image_size=tuple(self.paramDict["nb_slices"]+2*self.paramDict["nb_empty_slices"])+map_wT1.shape
+        mask_slice = np.zeros(map_wT1.shape)
+        mask_slice[map_wT1 > 0] = 1.0
+
+        self.image_size=(self.paramDict["nb_slices"]+2*self.paramDict["nb_empty_slices"],)+map_wT1.shape
+
+
 
         map_wT1=np.resize(map_wT1,self.image_size)
         map_df = np.resize(map_df, self.image_size)
         map_attB1 = np.resize(map_attB1, self.image_size)
         map_ff = np.resize(map_ff, self.image_size)
 
-
-
-        mask = np.zeros(self.image_size)
-        mask[map_wT1>0]=1.0
+        mask = np.resize(mask_slice, self.image_size)
+        mask[:self.paramDict["nb_empty_slices"],:,:]=0
+        mask[-self.paramDict["nb_empty_slices"]:, :, :] =0
         self.mask=mask
 
         map_wT2 = mask*self.paramDict["default_wT2"]
         map_fT1 = mask*self.paramDict["default_fT1"]
         map_fT2 = mask*self.paramDict["default_fT2"]
+        map_wT1=mask*map_wT1
+        map_df=mask*map_df
+        map_attB1 = mask * map_attB1
+        map_ff = mask * map_ff
 
         map_all = np.stack((map_wT1, map_wT2, map_fT1, map_fT2, map_attB1, map_df, map_ff), axis=-1)
         map_all_on_mask = map_all[mask > 0]
@@ -605,7 +615,25 @@ class MapFromFile3D(ImageSeries):
             "ff": map_all_on_mask[:, 6]
         }
 
+    def plotParamMap(self, key, figsize=(5, 5), fontsize=5,interval=200):
 
+        images_series = list(self.paramMap[key])
+        nb_frames = self.mask.shape[0]
+
+        fig, ax = plt.subplots()
+        # ims is a list of lists, each row is a list of artists to draw in the
+        # current frame; here we are just animating one artist, the image, in
+        # each frame
+        ims = []
+        for i in range(nb_frames):
+            image=makevol(images_series[i],self.mask[i,:,:]>0)
+            im = ax.imshow(image, animated=True)
+            if i == 0:
+                ax.imshow(image)  # show an initial one first
+            ims.append([im])
+
+        return animation.ArtistAnimation(fig, ims, interval=interval, blit=True,
+                                         repeat_delay=10 * interval)
 
 
 def dictSearchMemoryOptimIterative(dictfile, volumes, seq, traj, npoint, niter=1, pca=True, threshold_pca=0.999999,
