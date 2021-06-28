@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 
 import pandas as pd
-from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series,build_mask
+from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series,build_mask,generate_kdata,build_mask_single_image
 from mutools.optim.dictsearch import dictsearch
 import itertools
 from mrfsim import groupby,makevol,load_data,loadmat
@@ -243,11 +243,7 @@ class ImageSeries(object):
         return np.array(images_series_rebuilt)
 
     def generate_kdata(self,traj):
-        kdata = [
-            finufft.nufft2d2(t.real, t.imag, p)
-            for t, p in zip(traj, self.images_series)
-        ]
-
+        kdata = generate_kdata(self.images_series,traj)
         return kdata
 
     def rotate_images(self,angles_t):
@@ -349,13 +345,14 @@ class ImageSeries(object):
             volumes0 = self.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint,nspoke=nspoke)
         else:
             volumes0 = self.images_series
-            print("No undersampling artifact as working with true images : forcing number of iterations to 0")
+            print("No undersampling artifact as working with true images : forcing number of iterations to 0 and True mask")
             niter = 0
+            true_mask=True
 
         if true_mask:
             mask =self.mask
         else:
-            mask=None
+            mask=build_mask_single_image(self.images_series,traj,npoint,nspoke)
 
         res = dictSearchMemoryOptimIterative(dictfile,volumes0,seq,traj,npoint,niter,pca,threshold_pca,split,log,useAdjPred,mask)
 
@@ -538,6 +535,77 @@ class MapFromMatching(ImageSeries):
 
     def buildParamMap(self,mask=None):
         pass
+
+
+
+class MapFromFile3D(ImageSeries):
+
+    def __init__(self, name, **kwargs):
+        super().__init__(name, {}, **kwargs)
+
+
+
+        if "file" not in self.paramDict:
+            raise ValueError("file key value argument containing param map file path should be given for MapFromFile")
+
+        if "nb_slices" not in self.paramDict:
+            raise ValueError("nb_slices should be provided for MapFromFile3D")
+        if "gap_slice" not in self.paramDict:
+            raise ValueError("gap_slice should be provided for MapFromFile3D")
+
+        if "nb_empty_slices" not in self.paramDict:#Empty slices on both sides of the stack
+            self.paramDict["nb_empty_slices"]=10
+
+        if "default_wT2" not in self.paramDict:
+            self.paramDict["default_wT2"]=DEFAULT_wT2
+        if "default_fT2" not in self.paramDict:
+            self.paramDict["default_fT2"]=DEFAULT_fT2
+        if "default_fT1" not in self.paramDict:
+            self.paramDict["default_fT1"]=DEFAULT_fT1
+
+    @wrapper_rounding
+    def buildParamMap(self,mask=None):
+
+        if mask is not None:
+            raise ValueError("mask automatically built from wT1 map for file load for now")
+
+        matobj = loadmat(self.paramDict["file"])["paramMap"]
+        map_wT1 = matobj["T1"][0, 0]
+        map_df = matobj["Df"][0, 0]
+        map_attB1 = matobj["B1"][0, 0]
+        map_ff = matobj["FF"][0, 0]
+
+        self.image_size=tuple(self.paramDict["nb_slices"]+2*self.paramDict["nb_empty_slices"])+map_wT1.shape
+
+        map_wT1=np.resize(map_wT1,self.image_size)
+        map_df = np.resize(map_df, self.image_size)
+        map_attB1 = np.resize(map_attB1, self.image_size)
+        map_ff = np.resize(map_ff, self.image_size)
+
+
+
+        mask = np.zeros(self.image_size)
+        mask[map_wT1>0]=1.0
+        self.mask=mask
+
+        map_wT2 = mask*self.paramDict["default_wT2"]
+        map_fT1 = mask*self.paramDict["default_fT1"]
+        map_fT2 = mask*self.paramDict["default_fT2"]
+
+        map_all = np.stack((map_wT1, map_wT2, map_fT1, map_fT2, map_attB1, map_df, map_ff), axis=-1)
+        map_all_on_mask = map_all[mask > 0]
+
+        self.paramMap = {
+            "wT1": map_all_on_mask[:, 0],
+            "wT2": map_all_on_mask[:, 1],
+            "fT1": map_all_on_mask[:, 2],
+            "fT2": map_all_on_mask[:, 3],
+            "attB1": map_all_on_mask[:, 4],
+            "df": -map_all_on_mask[:, 5]/1000,
+            "ff": map_all_on_mask[:, 6]
+        }
+
+
 
 
 def dictSearchMemoryOptimIterative(dictfile, volumes, seq, traj, npoint, niter=1, pca=True, threshold_pca=0.999999,

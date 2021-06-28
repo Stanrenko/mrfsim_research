@@ -16,7 +16,7 @@ import numpy as np
 ## Random map simulation
 
 dictfile = "mrf175.dict"
-#dictfile = "mrf175_CS.dict"
+dictfile = "mrf175_CS.dict"
 
 with open("mrf_sequence.json") as f:
     sequence_config = json.load(f)
@@ -53,8 +53,13 @@ all_maps_true_mask=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,nit
 
 
 
-regression_paramMaps(m.paramMap,all_maps_true_mask[1][0],m.mask>0,all_maps_true_mask[1][1]>0,title="Orig vs True Mask")
-regression_paramMaps(m.paramMap,all_maps_auto_mask[1][0],m.mask>0,all_maps_auto_mask[1][1]>0,title="Orig vs Auto Mask")
+regression_paramMaps(m.paramMap,all_maps_true_mask[1][0],m.mask>0,all_maps_true_mask[1][1]>0,title="Orig vs True Mask",adj_wT1=True,fat_threshold=0.7)
+regression_paramMaps(m.paramMap,all_maps_auto_mask[1][0],m.mask>0,all_maps_auto_mask[1][1]>0,title="Orig vs Auto Mask",adj_wT1=True,fat_threshold=0.7)
 
-compare_paramMaps(m.paramMap,all_maps_true_mask[1][0],m.mask>0,all_maps_true_mask[1][1]>0,title1="Orig",title2="True Mask")
-compare_paramMaps(m.paramMap,all_maps_auto_mask[1][0],m.mask>0,all_maps_auto_mask[1][1]>0,title1="Orig",title2="Auto Mask")
+compare_paramMaps(m.paramMap,all_maps_true_mask[1][0],m.mask>0,all_maps_true_mask[1][1]>0,title1="Orig",title2="True Mask",adj_wT1=True,fat_threshold=0.7,proj_on_mask1=True)
+compare_paramMaps(m.paramMap,all_maps_auto_mask[1][0],m.mask>0,all_maps_auto_mask[1][1]>0,title1="Orig",title2="Auto Mask",adj_wT1=True,fat_threshold=0.7,proj_on_mask1=True)
+
+
+regression_paramMaps(m.paramMap,all_maps_auto_mask[1][0],m.mask>0,all_maps_auto_mask[1][1]>0,title="Orig vs Auto Mask",adj_wT1=True,fat_threshold=0.7,mode="Boxplot")
+
+regression_paramMaps(m.paramMap,all_maps_auto_mask[1][0],m.mask>0,all_maps_auto_mask[1][1]>0,title="Orig vs Auto Mask",adj_wT1=True,fat_threshold=0.7,mode="Boxplot",proj_on_mask1=True)

@@ -11,6 +11,8 @@ from sklearn.decomposition import PCA
 import tqdm
 from scipy.spatial import Voronoi,ConvexHull
 from Transformers import PCAComplex
+import seaborn as sns
+
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
@@ -442,151 +444,7 @@ def dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca = 0.999999
 
 
 
-# def dictSearchMemoryOptimPCAPatterns(all_signals,dictfile,pca=True,threshold_pca = 0.999999,split=2000):
-#     mrfdict = dictsearch.Dictionary()
-#     mrfdict.load(dictfile, force=True)
-#
-#     keys = mrfdict.keys
-#     array_water = mrfdict.values[:, :, 0]
-#     array_fat = mrfdict.values[:, :, 1]
-#
-#     del mrfdict
-#
-#     array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
-#     array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
-#     all_signals_unique, index_signals_unique = np.unique(all_signals, axis=1, return_inverse=True)
-#
-#     nb_water = array_water_unique.shape[0]
-#     nb_fat = array_fat_unique.shape[0]
-#     nb_patterns = array_water.shape[0]
-#     nb_signals_unique = all_signals_unique.shape[1]
-#     nb_signals = all_signals.shape[1]
-#
-#     duplicate_signals=True
-#     if nb_signals_unique==nb_signals:
-#         print("No duplicate signals")
-#         duplicate_signals = False
-#         all_signals_unique=all_signals
-#
-#
-#     del array_water
-#     del array_fat
-#
-#     if pca:
-#         print("Performing PCA")
-#         mean_fat = np.mean(array_fat_unique,axis=1).reshape(-1,1)
-#         mean_water = np.mean(array_water_unique,axis=1).reshape(-1,1)
-#         cov_fat = np.matmul((array_fat_unique-mean_fat).conj(), np.transpose(array_fat_unique-mean_fat))
-#         cov_water = np.matmul((array_water_unique-mean_water).conj(), np.transpose(array_water_unique-mean_water))
-#
-#         del mean_water
-#         del mean_fat
-#
-#         fat_val, fat_vect = np.linalg.eigh(cov_fat)
-#         water_val, water_vect = np.linalg.eigh(cov_water)
-#
-#         del cov_water
-#         del cov_fat
-#
-#         sorted_index_fat = np.argsort(fat_val)[::-1]
-#         fat_val = fat_val[sorted_index_fat]
-#         fat_vect = fat_vect[:, sorted_index_fat]
-#
-#         sorted_index_water = np.argsort(water_val)[::-1]
-#         water_val = water_val[sorted_index_water]
-#         water_vect = water_vect[:, sorted_index_water]
-#
-#         explained_variance_ratio_fat = np.cumsum(fat_val>0 ** 2) / np.sum(fat_val>0 ** 2)
-#         n_components_fat = np.sum(explained_variance_ratio_fat < threshold_pca) + 1
-#
-#         explained_variance_ratio_water = np.cumsum(water_val>0 ** 2) / np.sum(water_val>0 ** 2)
-#         n_components_water = np.sum(explained_variance_ratio_water < threshold_pca) + 1
-#
-#         print("Water Components Retained {} out of {}".format(n_components_water,nb_water))
-#         print("Fat Components Retained {} out of {}".format(n_components_fat, nb_fat))
-#
-#
-#         fat_vect = fat_vect[:, :n_components_fat]
-#         water_vect = water_vect[:, :n_components_water]
-#
-#         transformed_array_water_unique = (np.matmul( np.transpose(water_vect),array_water_unique))
-#         transformed_array_fat_unique = (np.matmul( np.transpose(fat_vect),array_fat_unique))
-#
-#         #retrieved_array_water_unique = np.matmul((water_vect.conj()),transformed_array_water_unique)
-#         #retrieved_array_fat_unique = np.matmul((fat_vect.conj()),transformed_array_fat_unique)
-#
-#         #plt.figure()
-#         #plt.plot(retrieved_array_fat_unique[0,:].real)
-#         #plt.plot(array_fat_unique[0,:].real)
-#
-#
-#         sig_ws_all_unique = np.matmul(transformed_array_water_unique, all_signals_unique[:, :].conj()).real
-#         sig_fs_all_unique = np.matmul(transformed_array_fat_unique, all_signals_unique[:, :].conj()).real
-#
-#     else:
-#         sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, :].conj()).real
-#         sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, :].conj()).real
-#
-#
-#
-#     var_w = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
-#     var_f = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
-#     sig_wf = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(), axis=1).real
-#
-#     var_w = var_w[index_water_unique]
-#     var_f = var_f[index_fat_unique]
-#
-#     print("Calculating optimal fat fraction and best pattern per signal")
-#     var_w = np.reshape(var_w, (-1, 1))
-#     var_f = np.reshape(var_f, (-1, 1))
-#     sig_wf = np.reshape(sig_wf, (-1, 1))
-#
-#     alpha_all_unique = np.zeros((nb_patterns, nb_signals_unique))
-#     J_all = np.zeros(alpha_all_unique.shape)
-#
-#     num_group = int(nb_signals_unique / split) + 1
-#
-#     for j in tqdm.tqdm(range(num_group)):
-#         j_signal = j * split
-#         j_signal_next = np.minimum((j + 1) * split, nb_signals_unique)
-#         current_sig_ws = sig_ws_all_unique[index_water_unique, j_signal:j_signal_next]
-#         current_sig_fs = sig_fs_all_unique[index_fat_unique, j_signal:j_signal_next]
-#         current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
-#                     (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
-#         alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
-#         J_all[:, j_signal:j_signal_next] = ((
-#                                                         1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
-#             (1 - current_alpha_all_unique) ** 2 * var_w + current_alpha_all_unique ** 2 * var_f + 2 * current_alpha_all_unique * (
-#                         1 - current_alpha_all_unique) * sig_wf)
-#
-#     idx_max_all_unique = np.argmax(J_all, axis=0)
-#     del J_all
-#
-#     print("Building the maps")
-#
-#     del sig_ws_all_unique
-#     del sig_fs_all_unique
-#
-#     params_all_unique = np.array([keys[idx] + (alpha_all_unique[idx, i],) for i, idx in enumerate(idx_max_all_unique)])
-#
-#     if duplicate_signals:
-#         params_all = params_all_unique[index_signals_unique]
-#     else:
-#         params_all = params_all_unique
-#
-#
-#     map_rebuilt = {
-#         "wT1": params_all[:, 0],
-#         "fT1": params_all[:, 1],
-#         "attB1": params_all[:, 2],
-#         "df": params_all[:, 3],
-#         "ff": params_all[:, 4]
-#
-#     }
-#
-#     return map_rebuilt
-
-def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8):
+def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8,proj_on_mask1=False):
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
     if mask2 is None:
@@ -595,6 +453,8 @@ def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",ti
         fig,axes=plt.subplots(1,3)
         vol1 = makevol(map1[k],mask1)
         vol2= makevol(map2[k],mask2)
+        if proj_on_mask1:
+            vol2=vol2*(mask1*1)
         if adj_wT1 and k=="wT1":
             ff = makevol(map2["ff"],mask2)
             vol2[ff>fat_threshold]=vol1[ff>fat_threshold]
@@ -622,7 +482,7 @@ def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",ti
         cbar3 = fig.colorbar(im3, ax=axes[2], fraction=0.046, pad=0.04)
         cbar3.ax.tick_params(labelsize=fontsize)
 
-def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8):
+def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8,mode="Standard",proj_on_mask1=False):
 
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
@@ -639,6 +499,8 @@ def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression 
             mask_union = mask1 | mask2
             mat_obs = makevol(map1[k],mask1)
             mat_pred = makevol(map2[k],mask2)
+            if proj_on_mask1:
+                mat_pred = mat_pred*(mask1*1)
 
             obs = mat_obs[mask_union]
             pred = mat_pred[mask_union]
@@ -648,7 +510,6 @@ def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression 
             obs = obs[ff < fat_threshold]
             pred = pred[ff < fat_threshold]
 
-        print(obs)
         x_min = np.min(obs)
         x_max = np.max(obs)
 
@@ -665,8 +526,18 @@ def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression 
         dx = (x_max - x_min) / 10
         x_ = np.arange(x_min, x_max+dx,dx )
 
-        ax[i].scatter(obs,pred,s=1)
-        ax[i].plot(x_, x_,"r")
+        if mode=="Standard":
+            ax[i].scatter(obs,pred,s=1)
+            ax[i].plot(x_, x_, "r")
+        elif mode=="Boxplot":
+            unique_obs=np.unique(obs)
+            sns.boxplot(ax=ax[i],x=obs,y=pred)
+            locs=ax[i].get_xticks()
+            print(locs)
+            sns.lineplot(ax=ax[i],x=locs,y=unique_obs)
+        else:
+            raise ValueError("mode should be Standard/Boxplot")
+
         ax[i].set_title(k+" R2:{} Bias:{}".format(np.round(r_2,2),np.round(bias,2)),fontsize=2*fontsize)
         ax[i].tick_params(axis='x', labelsize=fontsize)
         ax[i].tick_params(axis='y', labelsize=fontsize)
@@ -713,4 +584,35 @@ def build_mask(volumes):
     return mask*1
 
 
+def build_mask_single_image(volumes,traj,npoint,nspoke):
+    mask = False
+    size=volumes.shape[1:]
 
+    kdata=generate_kdata(volumes,traj)
+    dtheta = 1 / nspoke
+    kdata = np.array(kdata) / npoint * dtheta
+
+    # kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+
+    density = np.abs(np.linspace(-1, 1, npoint))
+    kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+    # kdata = (normalize_image_series(np.array(kdata)))
+    kdata_all = np.reshape(kdata, (-1,))
+    traj_all = np.reshape(traj, (-1,))
+
+    volume_rebuilt = finufft.nufft2d1(traj_all.real, traj_all.imag, kdata_all, size)
+
+    unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
+    mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 5])
+    mask = ndimage.binary_closing(mask, iterations=3)
+
+    return mask*1
+
+
+def generate_kdata(volumes,traj):
+    kdata = [
+            finufft.nufft2d2(t.real, t.imag, p)
+            for t, p in zip(traj, volumes)
+        ]
+
+    return kdata
