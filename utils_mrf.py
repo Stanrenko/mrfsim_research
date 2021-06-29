@@ -170,14 +170,15 @@ def find_klargest_freq(ft, k=1, remove_central_peak=True):
 
     return freq_image
 
-def SearchMrf(kdata,traj, dictfile, niter, method, metric, shape,nspoke,density_adj=False, setup_opts={}, search_opts= {}):
+def SearchMrf(kdata,trajectory, dictfile, niter, method, metric, shape,density_adj=False, setup_opts={}, search_opts= {}):
     """ Estimate parameters """
     # constants
     shape = tuple(shape)
 
+    nspoke=trajectory.paramDict["nspoke"]
+    npoint=trajectory.paramDict["npoint"]
+    traj = trajectory.get_traj()
 
-    # density compensation
-    npoint = traj.shape[1]
     if density_adj:
         density = np.abs(np.linspace(-1, 1, npoint))
     else:
@@ -466,7 +467,7 @@ def dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca = 0.999999
 
 
 
-def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8,proj_on_mask1=False):
+def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8,proj_on_mask1=False,save=False):
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
     if mask2 is None:
@@ -503,6 +504,48 @@ def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",ti
         axes[2].tick_params(axis='y', labelsize=fontsize)
         cbar3 = fig.colorbar(im3, ax=axes[2], fraction=0.046, pad=0.04)
         cbar3.ax.tick_params(labelsize=fontsize)
+        if save:
+            plt.savefig("./figures/{}_vs_{}_{}".format(title1,title2,k))
+
+def compare_paramMaps_3D(map1,map2,mask1,mask2=None,slice=0,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8,proj_on_mask1=False,save=False):
+    keys_1 = set(map1.keys())
+    keys_2 = set(map2.keys())
+    if mask2 is None:
+        mask2 = mask1
+    for k in (keys_1 & keys_2):
+        fig,axes=plt.subplots(1,3)
+        vol1 = makevol(map1[k],mask1)[slice,:,:]
+        vol2= makevol(map2[k],mask2)[slice,:,:]
+        if proj_on_mask1:
+            vol2=vol2*(mask1[slice,:,:]*1)
+        if adj_wT1 and k=="wT1":
+            ff = makevol(map2["ff"],mask2)[slice,:,:]
+            vol2[ff>fat_threshold]=vol1[ff>fat_threshold]
+
+        error=np.abs(vol1-vol2)
+
+        im1=axes[0].imshow(vol1)
+        axes[0].set_title(title1+" "+k)
+        axes[0].tick_params(axis='x', labelsize=fontsize)
+        axes[0].tick_params(axis='y', labelsize=fontsize)
+        cbar1 = fig.colorbar(im1, ax=axes[0], fraction=0.046, pad=0.04)
+        cbar1.ax.tick_params(labelsize=fontsize)
+
+        im2 = axes[1].imshow(vol2)
+        axes[1].set_title(title2+" "+k)
+        axes[1].tick_params(axis='x', labelsize=fontsize)
+        axes[1].tick_params(axis='y', labelsize=fontsize)
+        cbar2 = fig.colorbar(im2, ax=axes[1], fraction=0.046, pad=0.04)
+        cbar2.ax.tick_params(labelsize=fontsize)
+
+        im3 = axes[2].imshow(error)
+        axes[2].set_title("Error {}".format(k))
+        axes[2].tick_params(axis='x', labelsize=fontsize)
+        axes[2].tick_params(axis='y', labelsize=fontsize)
+        cbar3 = fig.colorbar(im3, ax=axes[2], fraction=0.046, pad=0.04)
+        cbar3.ax.tick_params(labelsize=fontsize)
+        if save:
+            plt.savefig("./figures/{}_vs_{}_Slice_{}_{}".format(title1,title2,slice,k))
 
 def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8,mode="Standard",proj_on_mask1=False):
 
@@ -606,11 +649,15 @@ def build_mask(volumes):
     return mask*1
 
 
-def build_mask_single_image(volumes,traj,npoint,nspoke):
+def build_mask_single_image(volumes,trajectory):
     mask = False
     size=volumes.shape[1:]
 
-    kdata=generate_kdata(volumes,traj)
+    nspoke=trajectory.paramDict["nspoke"]
+    npoint=trajectory.paramDict["npoint"]
+    traj = trajectory.get_traj()
+
+    kdata=generate_kdata(volumes,trajectory)
     dtheta = 1 / nspoke
     kdata = np.array(kdata) / npoint * dtheta
 
@@ -620,9 +667,14 @@ def build_mask_single_image(volumes,traj,npoint,nspoke):
     kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
     # kdata = (normalize_image_series(np.array(kdata)))
     kdata_all = np.reshape(kdata, (-1,))
-    traj_all = np.reshape(traj, (-1,))
 
-    volume_rebuilt = finufft.nufft2d1(traj_all.real, traj_all.imag, kdata_all, size)
+    if traj.shape[-1]==2: # For slices
+        traj_all = np.reshape(traj, (-1,2))
+        volume_rebuilt = finufft.nufft2d1(traj_all[:,0], traj_all[:,1], kdata_all, size)
+
+    elif traj.shape[-1]==3: # For volumes
+        traj_all = np.reshape(traj, (-1, 3))
+        volume_rebuilt = finufft.nufft3d1(traj_all[:, 2],traj_all[:, 0], traj_all[:, 1], kdata_all, size)
 
     unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
     mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 5])
@@ -631,10 +683,16 @@ def build_mask_single_image(volumes,traj,npoint,nspoke):
     return mask*1
 
 
-def generate_kdata(volumes,traj):
-    kdata = [
-            finufft.nufft2d2(t.real, t.imag, p)
+def generate_kdata(volumes,trajectory):
+    traj=trajectory.get_traj()
+    if traj.shape[-1]==2:# For slices
+        kdata = [
+                finufft.nufft2d2(t[:,0], t[:,1], p)
+                for t, p in zip(traj, volumes)
+            ]
+    elif traj.shape[-1]==3:# For volumes
+        kdata = [
+            finufft.nufft3d2(t[:, 2],t[:, 0], t[:, 1], p)
             for t, p in zip(traj, volumes)
         ]
-
     return kdata

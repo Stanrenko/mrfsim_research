@@ -20,6 +20,7 @@ import finufft
 from tqdm import tqdm
 from Transformers import PCAComplex
 import matplotlib.animation as animation
+from trajectory import *
 
 DEFAULT_wT2 = 80
 DEFAULT_fT1 = 350
@@ -182,16 +183,29 @@ class ImageSeries(object):
         self.t=t
 
 
-    def simulate_radial_undersampled_images(self,traj,nspoke=8,density_adj=True,npoint=None):
+    def simulate_radial_undersampled_images(self,trajectory,density_adj=True):
+
+        nspoke=trajectory.paramDict["nspoke"]
+        npoint=trajectory.paramDict["npoint"]
+        traj = trajectory.get_traj()
+
+        if not(traj.shape[-1]==len(self.image_size)):
+            raise ValueError("Trajectory dimension does not match Image Space dimension")
 
         size = self.image_size
         images_series=self.images_series
         #images_series =normalize_image_series(self.images_series)
 
-        kdata = [
-            finufft.nufft2d2(t.real, t.imag, p)
-            for t, p in zip(traj, images_series)
-        ]
+        if traj.shape[-1]==2:#2D
+            kdata = [
+                finufft.nufft2d2(t[:,0], t[:,1], p)
+                for t, p in zip(traj, images_series)
+            ]
+        elif traj.shape[-1]==3:#3D
+            kdata = [
+                finufft.nufft3d2(t[:, 2],t[:, 0], t[:, 1], p)
+                for t, p in zip(traj, images_series)
+            ]
 
         dtheta = 1/nspoke
         kdata = np.array(kdata)/npoint*dtheta
@@ -207,10 +221,16 @@ class ImageSeries(object):
 
         #kdata = (normalize_image_series(np.array(kdata)))
 
-        images_series_rebuilt = [
-            finufft.nufft2d1(t.real, t.imag, s, size)
-            for t, s in zip(traj, kdata)
-        ]
+        if traj.shape[-1] == 2:  # 2D
+            images_series_rebuilt = [
+                finufft.nufft2d1(t[:,0], t[:,1], s, size)
+                for t, s in zip(traj, kdata)
+            ]
+        elif traj.shape[-1] == 3:  # 3D
+            images_series_rebuilt = [
+                finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size)
+                for t, s in zip(traj, kdata)
+            ]
 
         #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
 
@@ -260,7 +280,13 @@ class ImageSeries(object):
         else:
             shifts = [shifts_t(t) for t in self.t]
 
-        self.images_series = np.array([affine_transform(self.images_series[i, :, :], ((1.0, 0.0), (0.0, 1.0)),offset=list(-shifts[i]),order=1,mode="nearest") for i in
+        dim = len(self.image_size)
+
+        if not(np.array(shifts).shape[1]==dim):
+            raise ValueError("The transform dimension is not the same as the image space dimension")
+        affine_matrix=tuple([tuple(a) for a in np.eye(dim)])
+
+        self.images_series = np.array([affine_transform(self.images_series[i], affine_matrix,offset=list(-shifts[i]),order=1,mode="nearest") for i in
                                       range(self.images_series.shape[0])])
 
         #orig = self.images_series[0,:,:]
@@ -339,12 +365,12 @@ class ImageSeries(object):
 
         plt.show()
 
-    def dictSearchMemoryOptimIterative(self, dictfile, seq, traj, npoint, niter=1, pca=True, threshold_pca=0.999999,
+    def dictSearchMemoryOptimIterative(self, dictfile, seq, trajectory, niter=1, pca=True, threshold_pca=0.999999,
                                        split=2000,log=False,mode="Undersampled",useAdjPred=False,path=None,simulate_undersampling=True,true_mask=False):
 
-        nspoke = int(traj.shape[1] / npoint)
+
         if simulate_undersampling:
-            volumes0 = self.simulate_radial_undersampled_images(traj,density_adj=True,npoint=npoint,nspoke=nspoke)
+            volumes0 = self.simulate_radial_undersampled_images(trajectory,density_adj=True)
         else:
             volumes0 = self.images_series
             print("No undersampling artifact as working with true images : forcing number of iterations to 0 and True mask")
@@ -354,9 +380,9 @@ class ImageSeries(object):
         if true_mask:
             mask =self.mask
         else:
-            mask=build_mask_single_image(self.images_series,traj,npoint,nspoke)
+            mask=build_mask_single_image(self.images_series,trajectory)
 
-        res = dictSearchMemoryOptimIterative(dictfile,volumes0,seq,traj,npoint,niter,pca,threshold_pca,split,log,useAdjPred,mask)
+        res = dictSearchMemoryOptimIterative(dictfile,volumes0,seq,trajectory,niter,pca,threshold_pca,split,log,useAdjPred,mask)
 
         return res
 
@@ -539,8 +565,83 @@ class MapFromMatching(ImageSeries):
         pass
 
 
+class ImageSeries3D(ImageSeries):
 
-class MapFromFile3D(ImageSeries):
+    def __init__(self, name,dict_config={}, **kwargs):
+        super().__init__(name, dict_config, **kwargs)
+        if "nb_slices" not in self.paramDict:
+            raise ValueError("nb_slices should be provided for MapFromFile3D")
+        if "gap_slice" not in self.paramDict:
+            self.paramDict["gap_slice"]=1
+
+        if "nb_empty_slices" not in self.paramDict:#Empty slices on both sides of the stack
+            self.paramDict["nb_empty_slices"]=10
+
+        self.paramDict["nb_total_slices"]=2*self.paramDict["nb_empty_slices"]+self.paramDict["nb_slices"]
+
+    # def simulate_radial_undersampled_images(self, trajectory, density_adj=True):
+    #     # traj_3D is a matrix that represents the k_space trajectory, of size timesteps * number of points * 3 (x-y-z coord)
+    #     size = self.image_size
+    #     images_series = self.images_series
+    #     # images_series =normalize_image_series(self.images_series)
+    #
+    #     traj_3D = trajectory.get_traj()
+    #     nspoke=trajectory.paramDict["nspoke"]
+    #     npoint=trajectory.paramDict["npoint"]
+    #
+    #
+    #     kdata = [
+    #         finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], p)
+    #         for t, p in zip(traj_3D, images_series)
+    #     ]
+    #
+    #     dtheta = 1 / nspoke
+    #     kdata = np.array(kdata) / npoint * dtheta
+    #
+    #     # kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+    #
+    #     if density_adj:
+    #         if npoint is None:
+    #             raise ValueError("Should supply number of point on spoke for density compensation")
+    #         density = np.abs(np.linspace(-1, 1, npoint))
+    #         kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+    #
+    #     # kdata = (normalize_image_series(np.array(kdata)))
+    #
+    #     images_series_rebuilt = [
+    #         finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], s, size)
+    #         for t, s in zip(traj_3D, kdata)
+    #     ]
+    #
+    #     # images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+    #
+    #     return np.array(images_series_rebuilt)
+
+    def plotParamMap(self, key, figsize=(5, 5), fontsize=5, interval=200):
+
+        nb_frames = self.mask.shape[0]
+        all_images = makevol(self.paramMap[key],self.mask>0)
+
+        fig, ax = plt.subplots()
+        # ims is a list of lists, each row is a list of artists to draw in the
+        # current frame; here we are just animating one artist, the image, in
+        # each frame
+        ims = []
+        for i in range(nb_frames):
+            image = all_images[i]
+            im = ax.imshow(image, animated=True)
+            if i == 0:
+                ax.imshow(image)  # show an initial one first
+            ims.append([im])
+
+        return animation.ArtistAnimation(fig, ims, interval=interval, blit=True,
+                                         repeat_delay=10 * interval)
+
+
+
+
+
+class MapFromFile3D(ImageSeries3D):
 
     def __init__(self, name, **kwargs):
         super().__init__(name, {}, **kwargs)
@@ -550,13 +651,7 @@ class MapFromFile3D(ImageSeries):
         if "file" not in self.paramDict:
             raise ValueError("file key value argument containing param map file path should be given for MapFromFile")
 
-        if "nb_slices" not in self.paramDict:
-            raise ValueError("nb_slices should be provided for MapFromFile3D")
-        if "gap_slice" not in self.paramDict:
-            self.paramDict["gap_slice"]=1
 
-        if "nb_empty_slices" not in self.paramDict:#Empty slices on both sides of the stack
-            self.paramDict["nb_empty_slices"]=10
 
         if "default_wT2" not in self.paramDict:
             self.paramDict["default_wT2"]=DEFAULT_wT2
@@ -566,7 +661,7 @@ class MapFromFile3D(ImageSeries):
             self.paramDict["default_fT1"]=DEFAULT_fT1
 
     @wrapper_rounding
-    def buildParamMap(self,mask=None):
+    def buildParamMap(self, mask=None):
 
         if mask is not None:
             raise ValueError("mask automatically built from wT1 map for file load for now")
@@ -580,25 +675,23 @@ class MapFromFile3D(ImageSeries):
         mask_slice = np.zeros(map_wT1.shape)
         mask_slice[map_wT1 > 0] = 1.0
 
-        self.image_size=(self.paramDict["nb_slices"]+2*self.paramDict["nb_empty_slices"],)+map_wT1.shape
+        self.image_size = (self.paramDict["nb_slices"] + 2 * self.paramDict["nb_empty_slices"],) + map_wT1.shape
 
-
-
-        map_wT1=np.resize(map_wT1,self.image_size)
+        map_wT1 = np.resize(map_wT1, self.image_size)
         map_df = np.resize(map_df, self.image_size)
         map_attB1 = np.resize(map_attB1, self.image_size)
         map_ff = np.resize(map_ff, self.image_size)
 
         mask = np.resize(mask_slice, self.image_size)
-        mask[:self.paramDict["nb_empty_slices"],:,:]=0
-        mask[-self.paramDict["nb_empty_slices"]:, :, :] =0
-        self.mask=mask
+        mask[:self.paramDict["nb_empty_slices"], :, :] = 0
+        mask[-self.paramDict["nb_empty_slices"]:, :, :] = 0
+        self.mask = mask
 
-        map_wT2 = mask*self.paramDict["default_wT2"]
-        map_fT1 = mask*self.paramDict["default_fT1"]
-        map_fT2 = mask*self.paramDict["default_fT2"]
-        map_wT1=mask*map_wT1
-        map_df=mask*map_df
+        map_wT2 = mask * self.paramDict["default_wT2"]
+        map_fT1 = mask * self.paramDict["default_fT1"]
+        map_fT2 = mask * self.paramDict["default_fT2"]
+        map_wT1 = mask * map_wT1
+        map_df = mask * map_df
         map_attB1 = mask * map_attB1
         map_ff = mask * map_ff
 
@@ -611,65 +704,84 @@ class MapFromFile3D(ImageSeries):
             "fT1": map_all_on_mask[:, 2],
             "fT2": map_all_on_mask[:, 3],
             "attB1": map_all_on_mask[:, 4],
-            "df": -map_all_on_mask[:, 5]/1000,
+            "df": -map_all_on_mask[:, 5] / 1000,
             "ff": map_all_on_mask[:, 6]
         }
 
-    def simulate_radial_undersampled_images_3D(self, traj_3D, nb_rep, nspoke=8, density_adj=True, npoint=None):
-        # traj_3D is a matrix that represents the k_space trajectory, of size timesteps * number of points * 3 (x-y-z coord)
-        size = self.image_size
-        images_series = self.images_series
-        # images_series =normalize_image_series(self.images_series)
+class RandomMap3D(ImageSeries3D):
 
-        kdata = [
-            finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], p)
-            for t, p in zip(traj_3D, images_series)
-        ]
+    def __init__(self, name,dict_config, **kwargs):
+        super().__init__(name, dict_config, **kwargs)
 
-        dtheta = 1 / nspoke
-        kdata = np.array(kdata) / npoint * dtheta
+        self.region_size = self.paramDict["region_size"]
 
-        # kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+        if "mask_reduction_factor" not in self.paramDict:
+            self.paramDict[
+                "mask_reduction_factor"] = 0.0  # mask_reduction_factors*total_pixels will be cropped on all edges of the image
 
-        if density_adj:
-            if npoint is None:
-                raise ValueError("Should supply number of point on spoke for density compensation")
-            density = np.abs(np.linspace(-1, 1, npoint))
-            kdata = [(np.reshape(k, (nb_rep, -1, npoint)) * density).flatten() for k in kdata]
+        mask_red = self.paramDict["mask_reduction_factor"]
+        self.image_size=(self.paramDict["nb_total_slices"],self.image_size[0],self.image_size[1]) #for random map the image size is an input provided by the user, need to extend in z dimension
+        mask = np.zeros(self.image_size)
+        mask[:,int(self.image_size[1] * mask_red):int(self.image_size[1] * (1 - mask_red)),
+        int(self.image_size[2] * mask_red):int(self.image_size[2] * (1 - mask_red))] = 1.0
+        mask[:self.paramDict["nb_empty_slices"], :, :] = 0
+        mask[-self.paramDict["nb_empty_slices"]:, :, :] = 0
+        self.mask = mask
 
-        # kdata = (normalize_image_series(np.array(kdata)))
+    @wrapper_rounding
+    def buildParamMap(self, mask=None):
 
-        images_series_rebuilt = [
-            finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], s, size)
-            for t, s in zip(traj_3D, kdata)
-        ]
+        # print("Building Param Map")
+        if mask is None:
+            mask = self.mask
+        else:
+            self.mask = mask
 
-        # images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+        wT1 = self.dict_config["water_T1"]
+        fT1 = self.dict_config["fat_T1"]
+        wT2 = self.dict_config["water_T2"]
+        fT2 = self.dict_config["fat_T2"]
+        att = self.dict_config["B1_att"]
+        df = self.dict_config["delta_freqs"]
+        df = [- value / 1000 for value in df]
+        ff = self.dict_config["ff"]
 
-        return np.array(images_series_rebuilt)
+        nb_slices=self.paramDict["nb_slices"]
+        mask_without_empty_slices=self.mask[self.paramDict["nb_empty_slices"]:-self.paramDict["nb_empty_slices"],:,:]
 
-    def plotParamMap(self, key, figsize=(5, 5), fontsize=5,interval=200):
+        sliced_image_size=(self.image_size[1],self.image_size[2])
 
-        images_series = list(self.paramMap[key])
-        nb_frames = self.mask.shape[0]
+        map_all=np.zeros(self.image_size+(7,))
 
-        fig, ax = plt.subplots()
-        # ims is a list of lists, each row is a list of artists to draw in the
-        # current frame; here we are just animating one artist, the image, in
-        # each frame
-        ims = []
-        for i in range(nb_frames):
-            image=makevol(images_series[i],self.mask[i,:,:]>0)
-            im = ax.imshow(image, animated=True)
-            if i == 0:
-                ax.imshow(image)  # show an initial one first
-            ims.append([im])
+        for j in range(nb_slices):
+            sliced_mask = mask_without_empty_slices[j,:,:]
+            map_wT1 = create_random_map(wT1, self.region_size, sliced_image_size, sliced_mask)
+            map_wT2 = create_random_map([wT2], self.region_size, sliced_image_size, sliced_mask)
+            map_fT1 = create_random_map(fT1, self.region_size, sliced_image_size, sliced_mask)
+            map_fT2 = create_random_map([fT2], self.region_size, sliced_image_size, sliced_mask)
+            map_attB1 = create_random_map(att, self.region_size, sliced_image_size, sliced_mask)
+            map_df = create_random_map(df, self.region_size, sliced_image_size, sliced_mask)
+            map_ff = create_random_map(ff, self.region_size, sliced_image_size, sliced_mask)
 
-        return animation.ArtistAnimation(fig, ims, interval=interval, blit=True,
-                                         repeat_delay=10 * interval)
+            map_all[j+self.paramDict["nb_empty_slices"],:,:,:] = np.stack((map_wT1, map_wT2, map_fT1, map_fT2, map_attB1, map_df, map_ff), axis=-1)
+
+        map_all_on_mask = map_all[mask > 0]
+
+        self.paramMap = {
+            "wT1": map_all_on_mask[:, 0],
+            "wT2": map_all_on_mask[:, 1],
+            "fT1": map_all_on_mask[:, 2],
+            "fT2": map_all_on_mask[:, 3],
+            "attB1": map_all_on_mask[:, 4],
+            "df": map_all_on_mask[:, 5],
+            "ff": map_all_on_mask[:, 6]
+
+        }
 
 
-def dictSearchMemoryOptimIterative(dictfile, volumes, seq, traj, npoint, niter=1, pca=True, threshold_pca=0.999999,
+
+
+def dictSearchMemoryOptimIterative(dictfile, volumes, seq, trajectory, niter=1, pca=True, threshold_pca=0.999999,
                                    split=2000, log=False, useAdjPred=False,init_mask=None):
 
     if init_mask is None:
@@ -680,11 +792,13 @@ def dictSearchMemoryOptimIterative(dictfile, volumes, seq, traj, npoint, niter=1
     all_signals=np.array(volumes)[:,mask>0]
     volumes0 = volumes
 
+    nspoke=trajectory.paramDict["nspoke"]
+    npoint = trajectory.paramDict["npoint"]
+
     if log:
         now = datetime.now()
         date_time = now.strftime("%Y%m%d_%H%M%S")
 
-    nspoke = int(traj.shape[1] / npoint)
 
     mrfdict = dictsearch.Dictionary()
     mrfdict.load(dictfile, force=True)
@@ -759,7 +873,7 @@ def dictSearchMemoryOptimIterative(dictfile, volumes, seq, traj, npoint, niter=1
             sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, :].conj()).real
             sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, :].conj()).real
 
-        alpha_all_unique = np.zeros((nb_patterns, nb_signals_unique))
+        #alpha_all_unique = np.zeros((nb_patterns, nb_signals_unique))
         # J_all = np.zeros(alpha_all_unique.shape)
 
         num_group = int(nb_signals_unique / split) + 1
@@ -827,7 +941,7 @@ def dictSearchMemoryOptimIterative(dictfile, volumes, seq, traj, npoint, niter=1
         images_pred.buildParamMap()
         images_pred.build_ref_images(seq)
         pred_volumesi = images_pred.images_series
-        volumesi = images_pred.simulate_radial_undersampled_images(traj, nspoke=nspoke, npoint=npoint, density_adj=True)
+        volumesi = images_pred.simulate_radial_undersampled_images(trajectory, density_adj=True)
 
         # def fourier_scaling_cost(a,vol1,vol2,mask):
         #    return np.sum(np.abs(vol1 - a * vol2)[:, mask > 0])
@@ -868,11 +982,16 @@ def dictSearchMemoryOptimIterativeExternalFile(dictfile, path,seq,shape,nspoke, 
     print(f"Load input data")
     kdata, traj = load_data(path)
 
+
     # density compensation
     npoint = traj.shape[1]
     density=np.abs(np.linspace(-1,1,npoint))
 
     traj = np.reshape(groupby(traj, nspoke), (-1, npoint * nspoke))
+
+    trajectory = Radial(ntimesteps=traj.shape[0],nspoke=nspoke,npoint=npoint)
+    trajectory.traj = traj
+
     kdata = np.reshape(groupby(kdata * density ** 0.5, nspoke), (-1, npoint * nspoke))
     kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
     volumes = [
@@ -880,6 +999,6 @@ def dictSearchMemoryOptimIterativeExternalFile(dictfile, path,seq,shape,nspoke, 
         for t, s in zip(traj, kdata)
     ]
 
-    res=dictSearchMemoryOptimIterative(dictfile,volumes,seq,traj,npoint,niter,pca,threshold_pca, split, log, useAdjPred)
+    res=dictSearchMemoryOptimIterative(dictfile,volumes,seq,trajectory,niter,pca,threshold_pca, split, log, useAdjPred)
 
     return res
