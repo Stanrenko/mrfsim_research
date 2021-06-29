@@ -48,8 +48,8 @@ all_maps=m.dictSearchMemoryOptimIterative(dictfile,seq,traj,npoint,niter=1,split
 
 
 
-regression_paramMaps(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,title="Orig vs Adjusted Iterative")
-regression_paramMaps(m.paramMap,all_maps[1][0],m.mask>0,all_maps[1][1]>0,title="Orig vs Iterative")
+regression_paramMaps(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,title="Orig vs Adjusted Iterative",proj_on_mask1=True)
+regression_paramMaps(m.paramMap,all_maps[1][0],m.mask>0,all_maps[1][1]>0,title="Orig vs Iterative",proj_on_mask1=True)
 
 compare_paramMaps(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,title1="Orig",title2="Adjusted Iterative")
 compare_paramMaps(m.paramMap,all_maps[1][0],m.mask>0,all_maps[1][1]>0,title1="Orig",title2="Iterative")

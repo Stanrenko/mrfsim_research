@@ -615,6 +615,39 @@ class MapFromFile3D(ImageSeries):
             "ff": map_all_on_mask[:, 6]
         }
 
+    def simulate_radial_undersampled_images_3D(self, traj_3D, nb_rep, nspoke=8, density_adj=True, npoint=None):
+        # traj_3D is a matrix that represents the k_space trajectory, of size timesteps * number of points * 3 (x-y-z coord)
+        size = self.image_size
+        images_series = self.images_series
+        # images_series =normalize_image_series(self.images_series)
+
+        kdata = [
+            finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], p)
+            for t, p in zip(traj_3D, images_series)
+        ]
+
+        dtheta = 1 / nspoke
+        kdata = np.array(kdata) / npoint * dtheta
+
+        # kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+
+        if density_adj:
+            if npoint is None:
+                raise ValueError("Should supply number of point on spoke for density compensation")
+            density = np.abs(np.linspace(-1, 1, npoint))
+            kdata = [(np.reshape(k, (nb_rep, -1, npoint)) * density).flatten() for k in kdata]
+
+        # kdata = (normalize_image_series(np.array(kdata)))
+
+        images_series_rebuilt = [
+            finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], s, size)
+            for t, s in zip(traj_3D, kdata)
+        ]
+
+        # images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+
+        return np.array(images_series_rebuilt)
+
     def plotParamMap(self, key, figsize=(5, 5), fontsize=5,interval=200):
 
         images_series = list(self.paramMap[key])

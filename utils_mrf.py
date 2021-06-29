@@ -90,6 +90,28 @@ def radial_golden_angle_traj(total_nspoke,npoint,k_max=np.pi):
     all_spokes = np.matmul(np.diag(all_rotations), np.repeat(base_spoke.reshape(1, -1), total_nspoke, axis=0))
     return all_spokes
 
+
+def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4):
+    timesteps = int(total_nspoke / nspoke)
+    nb_rep = int(nb_slices / undersampling_factor)
+    all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
+    traj = np.reshape(all_spokes, (-1, nspoke * npoint))
+
+    k_z = np.zeros((timesteps, nb_rep))
+    all_slices = np.linspace(-np.pi, np.pi, nb_slices)
+    k_z[0, :] = all_slices[::undersampling_factor]
+    for j in range(1, k_z.shape[0]):
+        k_z[j, :] = np.sort(np.roll(all_slices, -j)[::undersampling_factor])
+
+    k_z = np.expand_dims(k_z, axis=-1)
+    traj = np.expand_dims(traj, axis=-2)
+    k_z, traj = np.broadcast_arrays(k_z, traj)
+    k_z = np.reshape(k_z, (timesteps, -1))
+    traj = np.reshape(traj, (timesteps, -1))
+
+    return np.stack([traj.real,traj.imag, k_z], axis=-1)
+
+
 def create_random_map(list_params,region_size,size,mask):
     basis = np.random.choice(list_params,(int(size[0]/region_size),int(size[1]/region_size)))
     map = np.repeat(np.repeat(basis, region_size, axis=1), region_size, axis=0) * mask
