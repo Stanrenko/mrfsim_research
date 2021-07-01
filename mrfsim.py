@@ -299,7 +299,7 @@ class T1MRF:
     def __init__(self, FA, TI, TE, TR, B1):
         """ build sequence """
         seqlen = len(TE)
-        self.TE=TE
+        self.TR=TR
         self.inversion = epg.T(180, 0) # perfect inversion
         seq = [epg.Offset(TI)]
         for i in range(seqlen):

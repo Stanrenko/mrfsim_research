@@ -36,7 +36,7 @@ size=(256,256)
 file_matlab_paramMap = "./data/paramMap.mat"
 
 ###### Building Map
-#m = RandomMap("TestRandom",dict_config,image_size=size,region_size=region_size,mask_reduction_factor=1/4)
+m = RandomMap("TestRandom",dict_config,image_size=size,region_size=region_size,mask_reduction_factor=1/4)
 m = MapFromFile("TestPhantomV1",image_size=size,file=file_matlab_paramMap,rounding=True)
 m.buildParamMap()
 #m.plotParamMap(figsize=(5,5))

@@ -30,7 +30,7 @@ size=(256,256)
 file_matlab_paramMap = "./data/paramMap.mat"
 
 ###### Building Map
-#m = MapFromFile3D("TestPhantomV1",nb_slices=2,nb_empty_slices=3,file=file_matlab_paramMap,rounding=True)
+#m = MapFromFile3D("TestPhantomV1",nb_slices=10,nb_empty_slices=3,file=file_matlab_paramMap,rounding=True)
 
 with open("mrf_dictconf_CS.json") as f:
     dict_config = json.load(f)
@@ -39,44 +39,52 @@ dict_config["ff"]=np.arange(0.,1.05,0.05)
 region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
 size=(256,256)
 mask_reduction_factor=1/4
-m = RandomMap3D("TestRandom3D",dict_config,nb_slices=4,nb_empty_slices=6,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor)
+m = RandomMap3D("TestRandom3D",dict_config,nb_slices=4,nb_empty_slices=2,undersampling_factor=4,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor)
 
 m.buildParamMap()
+
+
 
 ##### Simulating Ref Images
 m.build_ref_images(seq,window)
 
 
-undersampling_factor=4
+
 npoint=512
 nspoke=8
 ntimesteps=175
 
 nb_slices=m.paramDict["nb_total_slices"]
+undersampling_factor = m.paramDict["undersampling_factor"]
 
 radial_traj_3D=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_slices,undersampling_factor=undersampling_factor)
 
 all_maps_adj=m.dictSearchMemoryOptimIterative(dictfile,seq,radial_traj_3D,niter=1,split=500,threshold_pca=15,log=False,useAdjPred=True,true_mask=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,slice=5,title1="Orig",title2="Slice 5",proj_on_mask1=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,slice=6,title1="Orig",title2="Slice 6",proj_on_mask1=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,slice=8,title1="Orig",title2="Slice 8",proj_on_mask1=False)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,slice=2,title1="Orig",title2="Outside",proj_on_mask1=False,save=True)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,slice=3,title1="Orig",title2="Inside",proj_on_mask1=False,save=True)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,slice=7,title1="Orig",title2="Center",proj_on_mask1=False,save=True)
 
 plt.close("all")
 
 
 direction = np.array([0,4,0])
-shifts_t = lambda t:translation_breathing(t,direction)
-m.translate_images(shifts_t,round=True)
+shifts_t = lambda t:translation_breathing(t,direction,T=4000)
+shifts = [np.round(shifts_t(t/undersampling_factor))for t in m.t]
+plt.figure()
+plt.plot(m.t/undersampling_factor,np.array(shifts)[:,1])
+plt.title("Movement in Y direction")
+
+m.translate_images(shifts_t,round=True,undersampling_factor=undersampling_factor)
 
 #ani = animate_images(m.images_series[:,m.paramDict["nb_empty_slices"],:,:])
 
 all_maps_adj_mvt=m.dictSearchMemoryOptimIterative(dictfile,seq,radial_traj_3D,niter=1,split=500,threshold_pca=15,log=False,useAdjPred=True,true_mask=False)
 
-compare_paramMaps_3D(m.paramMap,all_maps_adj_mvt[1][0],m.mask>0,all_maps_adj_mvt[1][1]>0,slice=5,title1="Orig",title2="OutsideMvt",proj_on_mask1=False,save=True)
-compare_paramMaps_3D(m.paramMap,all_maps_adj_mvt[1][0],m.mask>0,all_maps_adj_mvt[1][1]>0,slice=6,title1="Orig",title2="InsideMvt",proj_on_mask1=False,save=True)
-compare_paramMaps_3D(m.paramMap,all_maps_adj_mvt[1][0],m.mask>0,all_maps_adj_mvt[1][1]>0,slice=8,title1="Orig",title2="CenterMvt",proj_on_mask1=False,save=True)
+compare_paramMaps_3D(m.paramMap,all_maps_adj_mvt[1][0],m.mask>0,all_maps_adj_mvt[1][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="OutsideMvt",proj_on_mask1=False,save=True)
+compare_paramMaps_3D(m.paramMap,all_maps_adj_mvt[1][0],m.mask>0,all_maps_adj_mvt[1][1]>0,slice=m.paramDict["nb_empty_slices"],title1="Orig",title2="InsideMvt",proj_on_mask1=False,save=True)
+compare_paramMaps_3D(m.paramMap,all_maps_adj_mvt[1][0],m.mask>0,all_maps_adj_mvt[1][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="CenterMvt",proj_on_mask1=False,save=True)
 
-
+plt.close("all")
 # for i in [0,m.paramDict["nb_empty_slices"]]:
 #     plt.figure()
 #     plt.imshow(np.abs(images_series_rebuilt[0][i,:,:]))

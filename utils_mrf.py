@@ -12,6 +12,9 @@ import tqdm
 from scipy.spatial import Voronoi,ConvexHull
 from Transformers import PCAComplex
 import seaborn as sns
+from sklearn.cluster import KMeans
+from sklearn.model_selection import GridSearchCV
+import pandas as pd
 
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
@@ -609,6 +612,80 @@ def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression 
 
     plt.suptitle(title)
 
+def regression_paramMaps_ROI(map1,map2,mask1=None,mask2=None,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8,mode="Standard",proj_on_mask1=True):
+
+    keys_1 = set(map1.keys())
+    keys_2 = set(map2.keys())
+    nb_keys=len(keys_1 & keys_2)
+    fig,ax = plt.subplots(1,nb_keys)
+    maskROI = buildROImask(map1)
+
+
+
+    for i,k in enumerate(keys_1 & keys_2):
+        obs = map1[k]
+        pred = map2[k]
+
+        if mask1 is not None:
+            if mask2 is None:
+                mask2 = mask1
+            mask_union = mask1 | mask2
+            mat_obs = makevol(map1[k],mask1)
+            mat_pred = makevol(map2[k],mask2)
+            mat_ROI = makevol(maskROI, mask1)
+            if proj_on_mask1:
+                mat_pred = mat_pred*(mask1*1)
+
+            obs = mat_obs[mask_union]
+            pred = mat_pred[mask_union]
+            maskROI_current=mat_ROI[mask_union]
+
+        if adj_wT1 and k=="wT1":
+            ff = map2["ff"]
+            obs = obs[ff < fat_threshold]
+            pred = pred[ff < fat_threshold]
+            maskROI_current=maskROI_current[ff < fat_threshold]
+
+        df_obs = pd.DataFrame(columns=["Data", "Groups"], data=np.stack([obs.flatten(), maskROI_current.flatten()],axis=-1))
+        df_pred = pd.DataFrame(columns=["Data", "Groups"], data=np.stack([pred.flatten(), maskROI_current.flatten()],axis=-1))
+        obs = np.array(df_obs.groupby("Groups").mean())[1:]
+        pred = np.array(df_pred.groupby("Groups").mean())[1:]
+
+        x_min = np.min(obs)
+        x_max = np.max(obs)
+
+        if x_min==x_max:
+            fig.delaxes(ax[i])
+            continue
+
+        mean=np.mean(obs)
+        ss_tot = np.sum((obs-mean)**2)
+        ss_res = np.sum((obs-pred)**2)
+        bias = np.mean((pred-obs))
+        r_2 = 1-ss_res/ss_tot
+
+        dx = (x_max - x_min) / 10
+        x_ = np.arange(x_min, x_max+dx,dx )
+
+        if mode=="Standard":
+            ax[i].scatter(obs,pred,s=1)
+            ax[i].plot(x_, x_, "r")
+        elif mode=="Boxplot":
+            unique_obs=np.unique(obs)
+            sns.boxplot(ax=ax[i],x=obs,y=pred)
+            locs=ax[i].get_xticks()
+            print(locs)
+            sns.lineplot(ax=ax[i],x=locs,y=unique_obs)
+        else:
+            raise ValueError("mode should be Standard/Boxplot")
+
+        ax[i].set_title(k+" R2:{} Bias:{}".format(np.round(r_2,4),np.round(bias,3)),fontsize=2*fontsize)
+        ax[i].tick_params(axis='x', labelsize=fontsize)
+        ax[i].tick_params(axis='y', labelsize=fontsize)
+
+    plt.suptitle(title)
+
+
 def voronoi_volumes(points):
     v = Voronoi(points)
     vol = np.zeros(v.npoints)
@@ -678,7 +755,7 @@ def build_mask_single_image(volumes,trajectory):
 
     unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
     mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 5])
-    mask = ndimage.binary_closing(mask, iterations=3)
+    #mask = ndimage.binary_closing(mask, iterations=3)
 
     return mask*1
 
@@ -696,3 +773,16 @@ def generate_kdata(volumes,trajectory):
             for t, p in zip(traj, volumes)
         ]
     return kdata
+
+def buildROImask(map):
+    if "wT1" not in map:
+        raise ValueError("wT1 should be in the param Map to build the ROI")
+
+    print(map["wT1"].shape)
+    orig_data = map["wT1"].reshape(-1, 1)
+    data = orig_data + np.random.normal(size=orig_data.shape)
+    model = KMeans(n_clusters=np.minimum(len(np.unique(orig_data)),10))
+    model.fit(data)
+    groups = model.labels_ + 1
+    print(groups.shape)
+    return groups

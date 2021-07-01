@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 
 import pandas as pd
-from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series,build_mask,generate_kdata,build_mask_single_image
+from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series,build_mask,generate_kdata,build_mask_single_image,buildROImask
 from mutools.optim.dictsearch import dictsearch
 import itertools
 from mrfsim import groupby,makevol,load_data,loadmat
@@ -25,6 +25,7 @@ from trajectory import *
 DEFAULT_wT2 = 80
 DEFAULT_fT1 = 350
 DEFAULT_fT2 = 40
+DEFAULT_MAX_CLUSTER = 10
 
 DEFAULT_ROUNDING_wT1=0
 DEFAULT_ROUNDING_wT2=0
@@ -146,8 +147,11 @@ class ImageSeries(object):
         fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
 
         # building the time axis
-        TE_list = seq.TE
-        t = np.cumsum([np.sum(dt, axis=0) for dt in groupby(np.array(TE_list), window)])
+        TR_list = seq.TR
+        t = np.cumsum([np.sum(dt, axis=0) for dt in groupby(np.array(TR_list), window)]).reshape(1,-1)
+
+
+
 
         # join water and fat
         print("Build dictionary.")
@@ -172,6 +176,19 @@ class ImageSeries(object):
         images_series = np.moveaxis(images_series, -1, 0)
         #water_series = np.moveaxis(water_series, -1, 0)
         #fat_series = np.moveaxis(fat_series, -1, 0)
+        if "nb_total_slices" in self.paramDict:
+
+            nb_rep = self.paramDict["nb_rep"]
+            final_time=t[-1]
+            nb_timesteps = len(t)
+            t=np.resize(t,(nb_rep,nb_timesteps))
+            rest = np.tile([self.paramDict["resting_time"]+final_time],nb_rep)
+            rest[0] = 0
+            rest = np.cumsum(rest).reshape(-1,1)
+            t = t+rest
+            #t = t.flatten()
+            #images_series=np.tile(images_series,(nb_rep,1))
+            #images_series=np.reshape(images_series,tuple(nb_rep*nb_timesteps)+self.image_size)
 
         #images_series=normalize_image_series(images_series)
         self.images_series=images_series
@@ -206,6 +223,12 @@ class ImageSeries(object):
                 finufft.nufft3d2(t[:, 2],t[:, 0], t[:, 1], p)
                 for t, p in zip(traj, images_series)
             ]
+
+            kdata = [
+                np.array(list(pd.DataFrame(t,columns=["KX","KY","KZ"]).groupby("KZ").apply(lambda grp:finufft.nufft3d2(grp.KZ,grp.KX, grp.KY, p)).values)).flatten()
+                for t, p in zip(traj, images_series)
+            ]
+
 
         dtheta = 1/nspoke
         kdata = np.array(kdata)/npoint*dtheta
@@ -264,6 +287,10 @@ class ImageSeries(object):
 
         return np.array(images_series_rebuilt)
 
+    def buildROImask(self):
+        return buildROImask(self.paramMap)
+
+
     def generate_kdata(self,traj):
         kdata = generate_kdata(self.images_series,traj)
         return kdata
@@ -274,6 +301,7 @@ class ImageSeries(object):
         self.images_series= np.array([ndimage.rotate(self.images_series[i,:,:], angles[i], reshape=False) for i in range(self.images_series.shape[0])])
 
     def translate_images(self,shifts_t,round=True):
+
         # shifts_t function returning tuple with x,y shift as a function of t
         if round:
             shifts = [np.round(shifts_t(t))for t in self.t]
@@ -291,6 +319,25 @@ class ImageSeries(object):
 
         #orig = self.images_series[0,:,:]
         #trans = affine_transform(self.images_series[0, :, :], ((1.0, 0.0), (0.0, 1.0)),offset=list(np.round(shifts[0])),order=3,mode="nearest")
+
+    def translate_images(self,shifts_t,nb_rep=1,round=True):#for 3D images - need the repetition to adjust the time from repetition to repetition
+        # shifts_t function returning tuple with x,y shift as a function of t
+        if round:
+            shifts = [np.round(shifts_t(t)) for t in self.t[nb_rep,:]]
+        else:
+            shifts = [shifts_t(t) for t in self.t[nb_rep,:]]
+
+        dim = len(self.image_size)
+
+        if not (np.array(shifts).shape[1] == dim):
+            raise ValueError("The transform dimension is not the same as the image space dimension")
+        affine_matrix = tuple([tuple(a) for a in np.eye(dim)])
+
+        images_series = np.array(
+            [affine_transform(self.images_series[i], affine_matrix, offset=list(-shifts[i]), order=1, mode="nearest")
+             for i in
+             range(self.images_series.shape[0])])
+        return images_series
 
 
     def change_resolution(self,compression_factor=2):
@@ -314,7 +361,7 @@ class ImageSeries(object):
     def buildParamMap(self,mask=None):
         raise ValueError("should be implemented in child")
 
-    def plotParamMap(self,key=None,figsize=(5,5),fontsize=5):
+    def plotParamMap(self,key=None,figsize=(5,5),fontsize=5,save=False):
         if key is None:
             keys=list(self.paramMap.keys())
             fig,axes=plt.subplots(1,len(keys),figsize=(len(keys)*figsize[0],figsize[1]))
@@ -325,6 +372,8 @@ class ImageSeries(object):
                 axes[i].tick_params(axis='y', labelsize=fontsize)
                 cbar=fig.colorbar(im, ax=axes[i],fraction=0.046, pad=0.04)
                 cbar.ax.tick_params(labelsize=fontsize)
+            if save:
+                plt.savefig("./figures/ParamMap_{}_all".format(self.name, key))
         else:
             fig,ax=plt.subplots(figsize=figsize)
 
@@ -335,6 +384,8 @@ class ImageSeries(object):
             cbar=fig.colorbar(im, ax=ax,fraction=0.046, pad=0.04)
             cbar.ax.tick_params(labelsize=fontsize)
 
+            if save:
+                plt.savefig("./figures/ParamMap_{}_{}".format(self.name,key))
 
 
         plt.show()
@@ -573,11 +624,15 @@ class ImageSeries3D(ImageSeries):
             raise ValueError("nb_slices should be provided for MapFromFile3D")
         if "gap_slice" not in self.paramDict:
             self.paramDict["gap_slice"]=1
-
+        if "undersampling_factor" not in self.paramDict:
+            self.paramDict["undersampling_factor"]=1
+        if "resting_time" not in self.paramDict:
+            self.paramDict["resting_time"]=0.0
         if "nb_empty_slices" not in self.paramDict:#Empty slices on both sides of the stack
             self.paramDict["nb_empty_slices"]=10
 
         self.paramDict["nb_total_slices"]=2*self.paramDict["nb_empty_slices"]+self.paramDict["nb_slices"]
+        self.paramDict["nb_rep"]=int(self.paramDict["nb_total_slices"]/self.paramDict["undersampling_factor"])
 
     # def simulate_radial_undersampled_images(self, trajectory, density_adj=True):
     #     # traj_3D is a matrix that represents the k_space trajectory, of size timesteps * number of points * 3 (x-y-z coord)
@@ -962,10 +1017,10 @@ def dictSearchMemoryOptimIterative(dictfile, volumes, seq, trajectory, niter=1, 
 
         if useAdjPred:
             a = np.sum((volumesi * pred_volumesi.conj()).real) / np.sum(volumesi * volumesi.conj())
-            volumes = [vol0 - (a * voli - predvoli) for vol0, voli, predvoli in zip(volumes0, volumesi, pred_volumesi)]
+            volumes = [vol0 - (a * voli - predvoli) for vol0, voli, predvoli in zip(volumes, volumesi, pred_volumesi)]
 
         else:
-            volumes = [vol0 - (voli - vol0) for vol0, voli in zip(volumes0, volumesi)]
+            volumes = [vol0 - (voli - vol0) for vol0, voli in zip(volumes, volumesi)]
 
         if init_mask is None:
             mask=build_mask(volumes)
