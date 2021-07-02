@@ -735,7 +735,7 @@ def build_mask_single_image(volumes,trajectory):
     traj = trajectory.get_traj()
 
     kdata=generate_kdata(volumes,trajectory)
-    dtheta = 1 / nspoke
+    dtheta = np.pi / nspoke
     kdata = np.array(kdata) / npoint * dtheta
 
     # kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)

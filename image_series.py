@@ -85,6 +85,8 @@ class ImageSeries(object):
         self.mask =np.ones(self.image_size)
         self.paramMap=None
 
+        self.list_movements=[]
+
         if "rounding" not in self.paramDict:
             self.paramDict["rounding"]=False
         else:
@@ -182,8 +184,8 @@ class ImageSeries(object):
         if "nb_total_slices" in self.paramDict:
 
             nb_rep = self.paramDict["nb_rep"]
-            final_time=t[-1]
-            nb_timesteps = len(t)
+            final_time=t[0,-1]
+            nb_timesteps = t.shape[1]
             t=np.resize(t,(nb_rep,nb_timesteps))
             rest = np.tile([self.paramDict["resting_time"]+final_time],nb_rep)
             rest[0] = 0
@@ -203,6 +205,10 @@ class ImageSeries(object):
         self.t=t
 
 
+
+    def add_movements(self,list_movements):
+        self.list_movements=[*self.list_movements,*list_movements]
+
     def simulate_radial_undersampled_images(self,trajectory,density_adj=True):
 
         nspoke=trajectory.paramDict["nspoke"]
@@ -217,24 +223,58 @@ class ImageSeries(object):
         #images_series =normalize_image_series(self.images_series)
 
         if traj.shape[-1]==2:#2D
-            kdata = [
+
+            if self.list_movements == []:
+
+                kdata = [
                 finufft.nufft2d2(t[:,0], t[:,1], p)
                 for t, p in zip(traj, images_series)
-            ]
+                ]
+            else:
+                df = pd.DataFrame(index=range(self.images_series.shape[0]), columns=["Timesteps", "Images"])
+                df["Timesteps"] = self.t.reshape(-1, 1)
+                df["Images"]= list(self.images_series)
+
+                for movement in self.list_movements:
+                    df = movement.apply(df)
+
+                images_series=df.Images
+
+                kdata = [
+                    finufft.nufft2d2(t[:, 0], t[:, 1], p)
+                    for t, p in zip(traj, images_series)
+                ]
+
         elif traj.shape[-1]==3:#3D
-            kdata = [
-                finufft.nufft3d2(t[:, 2],t[:, 0], t[:, 1], p)
-                for t, p in zip(traj, images_series)
-            ]
 
-            kdata = [
-                np.array(list(pd.DataFrame(x[0],columns=["KX","KY","KZ"]).groupby("KZ").apply(lambda grp:finufft.nufft3d2(grp.KZ,grp.KX, grp.KY, self.translate_images_1timestep())).values)).flatten()
-                for i,x in zip(traj, images_series)
-            ]
+            if self.list_movements==[]:
+                kdata = [
+                    finufft.nufft3d2(t[:, 2],t[:, 0], t[:, 1], p)
+                    for t, p in zip(traj, images_series)
+                ]
+
+            else:
+                print("Simulating 3D volume with movement for all timesteps")
+                kdata=[]
+                for i,x in (enumerate(tqdm(zip(traj,images_series)))):
+                    nb_rep = self.paramDict["nb_rep"]
+                    current_data = pd.DataFrame(x[0],columns=["KX","KY","KZ"])
+                    current_data['rep_number'] = current_data.groupby("KZ").ngroup()
+                    current_image = x[1]
+                    df = pd.DataFrame(index=range(self.paramDict["nb_rep"]), columns=["Timesteps", "Images"])
+                    df["Timesteps"] = self.t[:,i].reshape(-1,1)
+                    images_for_df = list(np.repeat(current_image,nb_rep,axis=0).reshape((nb_rep,)+current_image.shape))
+                    df["Images"] = images_for_df
+
+                    for movements in self.list_movements:
+                        df = movements.apply(df)
+
+                    values = np.array(list(current_data.groupby("KZ").apply(lambda grp:finufft.nufft3d2(grp.KZ,grp.KX, grp.KY, df.Images[np.unique(grp.rep_number)[0]])).values)).flatten()
+                    kdata.append(values)
 
 
-        dtheta = 1/nspoke
-        kdata = np.array(kdata)/npoint*dtheta
+        dtheta = np.pi/nspoke
+        kdata = np.array(kdata)/(npoint*self.paramDict["nb_rep"])*dtheta
 
         #kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
 
@@ -303,63 +343,30 @@ class ImageSeries(object):
         angles = [angles_t(t) for t in self.t]
         self.images_series= np.array([ndimage.rotate(self.images_series[i,:,:], angles[i], reshape=False) for i in range(self.images_series.shape[0])])
 
-    def translate_images(self,shifts_t,round=True):
 
-        # shifts_t function returning tuple with x,y shift as a function of t
-        if round:
-            shifts = [np.round(shifts_t(t))for t in self.t]
-        else:
-            shifts = [shifts_t(t) for t in self.t]
+    def simulate_moving_images(self):
+        if "nb_total_slices" not in self.paramDict:#2D slice
+            df = pd.DataFrame(index=range(self.images_series.shape[0]), columns=["Timesteps", "Images"])
+            df["Timesteps"] = self.t.reshape(-1, 1)
+            df["Images"] = list(self.images_series)
 
-        dim = len(self.image_size)
+            for movement in self.list_movements:
+                df = movement.apply(df)
+            return df
 
-        if not(np.array(shifts).shape[1]==dim):
-            raise ValueError("The transform dimension is not the same as the image space dimension")
-        affine_matrix=tuple([tuple(a) for a in np.eye(dim)])
+        else:#3D volume
+            timesteps_1rep = self.t.shape[1]
+            all_timesteps = self.t.reshape(-1,1)
+            df = pd.DataFrame(index=range(all_timesteps.shape[0]), columns=["Timesteps", "Images"])
+            df["Timesteps"] = all_timesteps
+            for i in range(self.paramDict["nb_rep"]):
+                current_df = df.iloc[i*(timesteps_1rep):(i+1)*(timesteps_1rep),:]
+                current_df["Images"]=list(self.images_series)
+                for movement in self.list_movements:
+                    current_df = movement.apply(current_df)
+                df.iloc[i*(timesteps_1rep):(i+1)*(timesteps_1rep),:]=current_df
 
-        self.images_series = np.array([affine_transform(self.images_series[i], affine_matrix,offset=list(-shifts[i]),order=1,mode="nearest") for i in
-                                      range(self.images_series.shape[0])])
 
-        #orig = self.images_series[0,:,:]
-        #trans = affine_transform(self.images_series[0, :, :], ((1.0, 0.0), (0.0, 1.0)),offset=list(np.round(shifts[0])),order=3,mode="nearest")
-
-    def translate_images_1rep(self,shifts_t,nb_rep=1,round=True):#for 3D images - need the repetition to adjust the time from repetition to repetition
-        # shifts_t function returning tuple with x,y shift as a function of t
-        if round:
-            shifts = [np.round(shifts_t(t)) for t in self.t[nb_rep,:]]
-        else:
-            shifts = [shifts_t(t) for t in self.t[nb_rep,:]]
-
-        dim = len(self.image_size)
-
-        if not (np.array(shifts).shape[1] == dim):
-            raise ValueError("The transform dimension is not the same as the image space dimension")
-        affine_matrix = tuple([tuple(a) for a in np.eye(dim)])
-
-        images_series = np.array(
-            [affine_transform(self.images_series[i], affine_matrix, offset=list(-shifts[i]), order=1, mode="nearest")
-             for i in
-             range(self.images_series.shape[0])])
-        return images_series
-
-    def translate_images_1timestep(self,shifts_t,index_timestep,round=True):#for 3D images - need the repetition to adjust the time from repetition to repetition
-        # shifts_t function returning tuple with x,y shift as a function of t
-        if round:
-            shifts = [np.round(shifts_t(t)) for t in self.t[:,index_timestep]]
-        else:
-            shifts = [shifts_t(t) for t in self.t[:,index_timestep]]
-
-        dim = len(self.image_size)
-
-        if not (np.array(shifts).shape[1] == dim):
-            raise ValueError("The transform dimension is not the same as the image space dimension")
-        affine_matrix = tuple([tuple(a) for a in np.eye(dim)])
-
-        images_series = np.array(
-            [affine_transform(self.images_series[index_timestep], affine_matrix, offset=list(-shifts[i]), order=1, mode="nearest")
-             for i in
-             range(len(shifts))])
-        return images_series
 
     def change_resolution(self,compression_factor=2):
         print("WARNING : Compression is irreversible")
@@ -865,7 +872,8 @@ def dictSearchMemoryOptimIterative(dictfile, volumes, seq, trajectory, niter=1, 
     else:
         mask=init_mask
 
-    all_signals=np.array(volumes)[:,mask>0]
+    volumes = volumes/np.linalg.norm(volumes,2,axis=0)
+    all_signals=volumes[:,mask>0]
     volumes0 = volumes
 
     nspoke=trajectory.paramDict["nspoke"]
@@ -1018,6 +1026,7 @@ def dictSearchMemoryOptimIterative(dictfile, volumes, seq, trajectory, niter=1, 
         images_pred.build_ref_images(seq)
         pred_volumesi = images_pred.images_series
         volumesi = images_pred.simulate_radial_undersampled_images(trajectory, density_adj=True)
+        volumesi=volumesi / np.linalg.norm(volumesi, 2, axis=0)
 
         # def fourier_scaling_cost(a,vol1,vol2,mask):
         #    return np.sum(np.abs(vol1 - a * vol2)[:, mask > 0])
@@ -1041,7 +1050,7 @@ def dictSearchMemoryOptimIterative(dictfile, volumes, seq, trajectory, niter=1, 
             volumes = [vol0 - (a * voli - predvoli) for vol0, voli, predvoli in zip(volumes, volumesi, pred_volumesi)]
 
         else:
-            volumes = [vol0 - (voli - vol0) for vol0, voli in zip(volumes, volumesi)]
+            volumes = [vol + (vol0 - voli) for vol,vol0, voli in zip(volumes,volumes0, volumesi)]
 
         if init_mask is None:
             mask=build_mask(volumes)

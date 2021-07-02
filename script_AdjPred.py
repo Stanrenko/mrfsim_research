@@ -11,6 +11,8 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 import matplotlib.pyplot as plt
 import numpy as np
+from movements import *
+from dictoptimizers import *
 
 
 ## Random map simulation
@@ -27,7 +29,7 @@ seq = T1MRF(**sequence_config)
 window = 8 #corresponds to nspoke by image
 size=(256,256)
 
-file_matlab_paramMap = "./data/paramMap.mat"
+file_matlab_paramMap = "./data/Phantom1/paramMap.mat"
 
 ###### Building Map
 m = MapFromFile("TestPhantomV1",image_size=size,file=file_matlab_paramMap,rounding=True)
@@ -53,30 +55,20 @@ m.buildParamMap()
 ##### Simulating Ref Images
 m.build_ref_images(seq,window)
 
-
 ntimesteps=175
 nspoke=8
 npoint = 2*m.images_series.shape[1]
 
-
-
 radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint)
+volumes = m.simulate_radial_undersampled_images(radial_traj)
+mask = build_mask_single_image(m.images_series,radial_traj)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
 
-all_maps_adj=m.dictSearchMemoryOptimIterative(dictfile,seq,radial_traj,niter=1,split=500,threshold_pca=15,log=False,useAdjPred=True,true_mask=False)
-regression_paramMaps_ROI(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,title="Orig vs No Iteration ROI",proj_on_mask1=False,adj_wT1=True,fat_threshold=0.7)
-regression_paramMaps_ROI(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,title="Orig vs Iter 1 ROI",proj_on_mask1=False,adj_wT1=True,fat_threshold=0.7)
-
-all_maps=m.dictSearchMemoryOptimIterative(dictfile,seq,radial_traj,niter=1,split=500,threshold_pca=15,log=False,useAdjPred=False,true_mask=False)
-
-
-regression_paramMaps(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,title="Orig vs No Iteration",proj_on_mask1=False)
-regression_paramMaps(m.paramMap,all_maps_adj[3][0],m.mask>0,all_maps_adj[3][1]>0,title="Orig vs Adjusted Iter 3",proj_on_mask1=False)
-regression_paramMaps(m.paramMap,all_maps[1][0],m.mask>0,all_maps[1][1]>0,title="Orig vs Iterative",proj_on_mask1=False)
+optimizer = SimpleDictSearch(mask=mask,niter=4,seq=seq,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False)
+all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
 plt.close("all")
 
-compare_paramMaps(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,title1="Orig",title2="No Iteration",save=True)
-compare_paramMaps(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,title1="Orig",title2="Adjusted Iterative",save=True)
-compare_paramMaps(m.paramMap,all_maps[1][0],m.mask>0,all_maps[1][1]>0,title1="Orig",title2="Iterative")
-
+for iter in all_maps_adj.keys():
+    regression_paramMaps_ROI(m.paramMap, all_maps_adj[iter][0], m.mask > 0, all_maps_adj[iter][1] > 0,
+                             title="ROI Orig vs Iteration {}".format(iter), proj_on_mask1=False, adj_wT1=True, fat_threshold=0.7)
 
