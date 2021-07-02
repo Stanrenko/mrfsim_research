@@ -75,6 +75,9 @@ class ImageSeries(object):
         if "image_size" not in self.paramDict:
             self.paramDict["image_size"]=DEFAULT_IMAGE_SIZE
 
+        if "nb_rep" not in self.paramDict:
+            self.paramDict["nb_rep"]=1
+
         self.image_size=self.paramDict["image_size"]
         self.images_series=None
         self.cached_images_series=None
@@ -225,8 +228,8 @@ class ImageSeries(object):
             ]
 
             kdata = [
-                np.array(list(pd.DataFrame(t,columns=["KX","KY","KZ"]).groupby("KZ").apply(lambda grp:finufft.nufft3d2(grp.KZ,grp.KX, grp.KY, p)).values)).flatten()
-                for t, p in zip(traj, images_series)
+                np.array(list(pd.DataFrame(x[0],columns=["KX","KY","KZ"]).groupby("KZ").apply(lambda grp:finufft.nufft3d2(grp.KZ,grp.KX, grp.KY, self.translate_images_1timestep())).values)).flatten()
+                for i,x in zip(traj, images_series)
             ]
 
 
@@ -320,7 +323,7 @@ class ImageSeries(object):
         #orig = self.images_series[0,:,:]
         #trans = affine_transform(self.images_series[0, :, :], ((1.0, 0.0), (0.0, 1.0)),offset=list(np.round(shifts[0])),order=3,mode="nearest")
 
-    def translate_images(self,shifts_t,nb_rep=1,round=True):#for 3D images - need the repetition to adjust the time from repetition to repetition
+    def translate_images_1rep(self,shifts_t,nb_rep=1,round=True):#for 3D images - need the repetition to adjust the time from repetition to repetition
         # shifts_t function returning tuple with x,y shift as a function of t
         if round:
             shifts = [np.round(shifts_t(t)) for t in self.t[nb_rep,:]]
@@ -339,6 +342,24 @@ class ImageSeries(object):
              range(self.images_series.shape[0])])
         return images_series
 
+    def translate_images_1timestep(self,shifts_t,index_timestep,round=True):#for 3D images - need the repetition to adjust the time from repetition to repetition
+        # shifts_t function returning tuple with x,y shift as a function of t
+        if round:
+            shifts = [np.round(shifts_t(t)) for t in self.t[:,index_timestep]]
+        else:
+            shifts = [shifts_t(t) for t in self.t[:,index_timestep]]
+
+        dim = len(self.image_size)
+
+        if not (np.array(shifts).shape[1] == dim):
+            raise ValueError("The transform dimension is not the same as the image space dimension")
+        affine_matrix = tuple([tuple(a) for a in np.eye(dim)])
+
+        images_series = np.array(
+            [affine_transform(self.images_series[index_timestep], affine_matrix, offset=list(-shifts[i]), order=1, mode="nearest")
+             for i in
+             range(len(shifts))])
+        return images_series
 
     def change_resolution(self,compression_factor=2):
         print("WARNING : Compression is irreversible")

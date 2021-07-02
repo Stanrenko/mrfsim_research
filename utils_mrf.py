@@ -141,7 +141,7 @@ def compare_patterns(pixel_number,images_1,images_2,title_1="image_1",title_2="i
     plt.show()
 
 
-def translation_breathing(t,direction,T=300,frac_expiration=0.7):
+def translation_breathing(t,direction,T=4000,frac_expiration=0.7):
     def base_pattern(t):
         lambda1=5/(frac_expiration*T)
         lambda2=20/((1-frac_expiration)*T)
