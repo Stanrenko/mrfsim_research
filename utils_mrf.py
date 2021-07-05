@@ -15,7 +15,9 @@ import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.model_selection import GridSearchCV
 import pandas as pd
-
+import pycuda.autoinit
+from pycuda.gpuarray import GPUArray, to_gpu
+from cufinufft import cufinufft
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
@@ -145,13 +147,10 @@ def translation_breathing(t,direction,T=4000,frac_expiration=0.7):
     def base_pattern(t):
         lambda1=5/(frac_expiration*T)
         lambda2=20/((1-frac_expiration)*T)
-        if t<(frac_expiration*T):
-            return (1-np.exp(-lambda1*t))*direction
-        else:
-            return ((1-np.exp(-lambda1*frac_expiration*T))* np.exp(-lambda2*t)/np.exp(-lambda2*frac_expiration*T))*direction
 
-    return base_pattern(t-int(t/T)*T).flatten()
+        return ((1-np.exp(-lambda1*t))*((t<(frac_expiration*T))*1) + ((t>=(frac_expiration*T))*1)*((1-np.exp(-lambda1*frac_expiration*T))* np.exp(-lambda2*t)/np.exp(-lambda2*frac_expiration*T)))*direction
 
+    return base_pattern(t-(t/T).astype(int)*T)
 
 def find_klargest_freq(ft, k=1, remove_central_peak=True):
     n_max = len(ft) - 1
@@ -726,17 +725,11 @@ def build_mask(volumes):
     return mask*1
 
 
-def build_mask_single_image(volumes,trajectory):
+def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
     mask = False
-    size=volumes.shape[1:]
 
-    nspoke=trajectory.paramDict["nspoke"]
     npoint=trajectory.paramDict["npoint"]
     traj = trajectory.get_traj()
-
-    kdata=generate_kdata(volumes,trajectory)
-    dtheta = np.pi / nspoke
-    kdata = np.array(kdata) / npoint * dtheta
 
     # kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
 
@@ -747,31 +740,146 @@ def build_mask_single_image(volumes,trajectory):
 
     if traj.shape[-1]==2: # For slices
         traj_all = np.reshape(traj, (-1,2))
-        volume_rebuilt = finufft.nufft2d1(traj_all[:,0], traj_all[:,1], kdata_all, size)
+        if not(useGPU):
+            volume_rebuilt = finufft.nufft2d1(traj_all[:,0], traj_all[:,1], kdata_all, size)
+        else:
+            N1, N2 = size[0], size[1]
+            fk_gpu = GPUArray((1, N1, N2), dtype=complex_dtype)
+
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+            c_retrieved = kdata_all
+            kx = traj_all[:, 0]
+            ky = traj_all[:, 1]
+
+            # Cast to desired datatype.
+            kx = kx.astype(dtype)
+            ky = ky.astype(dtype)
+            c_retrieved = c_retrieved.astype(complex_dtype)
+
+            # Allocate memory for the uniform grid on the GPU.
+
+            # Initialize the plan and set the points.
+            plan = cufinufft(1, (N1, N2), 1, eps=eps, dtype=dtype)
+            plan.set_pts(to_gpu(kx), to_gpu(ky))
+
+            # Execute the plan, reading from the strengths array c and storing the
+            # result in fk_gpu.
+            plan.execute(to_gpu(c_retrieved), fk_gpu)
+
+            fk = np.squeeze(fk_gpu.get())
+            volume_rebuilt = np.array(fk)
+            plan.__del__()
+
 
     elif traj.shape[-1]==3: # For volumes
         traj_all = np.reshape(traj, (-1, 3))
-        volume_rebuilt = finufft.nufft3d1(traj_all[:, 2],traj_all[:, 0], traj_all[:, 1], kdata_all, size)
+        if not(useGPU):
+            volume_rebuilt = finufft.nufft3d1(traj_all[:, 2],traj_all[:, 0], traj_all[:, 1], kdata_all, size)
+        else:
+            N1, N2, N3 = size[0], size[1], size[2]
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+            fk_gpu = GPUArray((1, N1, N2, N3), dtype=complex_dtype)
+
+            c_retrieved = kdata_all
+            kx = traj_all[:, 0]
+            ky = traj_all[:, 1]
+            kz = traj_all[:, 2]
+
+            # Cast to desired datatype.
+            kx = kx.astype(dtype)
+            ky = ky.astype(dtype)
+            kz = kz.astype(dtype)
+            c_retrieved = c_retrieved.astype(complex_dtype)
+
+            # Allocate memory for the uniform grid on the GPU.
+
+            # Initialize the plan and set the points.
+            plan = cufinufft(1, (N1, N2, N3), 1, eps=eps, dtype=dtype)
+            plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+
+            # Execute the plan, reading from the strengths array c and storing the
+            # result in fk_gpu.
+            plan.execute(to_gpu(c_retrieved), fk_gpu)
+
+            fk = np.squeeze(fk_gpu.get())
+            volume_rebuilt = np.array(fk)
+            plan.__del__()
 
     unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
     mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 5])
-    #mask = ndimage.binary_closing(mask, iterations=3)
+    mask = ndimage.binary_closing(mask, iterations=10)
 
     return mask*1
 
 
-def generate_kdata(volumes,trajectory):
+def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):
     traj=trajectory.get_traj()
+
     if traj.shape[-1]==2:# For slices
-        kdata = [
-                finufft.nufft2d2(t[:,0], t[:,1], p)
+        if not(useGPU):
+            kdata = [
+                    finufft.nufft2d2(t[:,0], t[:,1], p)
+                    for t, p in zip(traj, volumes)
+                ]
+        else:
+            # Allocate memory for the nonuniform coefficients on the GPU.
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+            N1,N2 = volumes.shape[1],volumes.shape[2]
+            M = traj.shape[1]
+            c_gpu = GPUArray((1, M), dtype=complex_dtype)
+            # Initialize the plan and set the points.
+            kdata=[]
+            for i in list(range(m.images_series.shape[0])):
+                fk = volumes[i, :, :]
+                kx = traj[i, :, 0]
+                ky = traj[i, :, 1]
+
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                fk = fk.astype(complex_dtype)
+
+                plan = cufinufft(2, (N1, N2), 1, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kx), to_gpu(ky))
+                plan.execute(c_gpu, to_gpu(fk))
+                c = np.squeeze(c_gpu.get())
+                kdata.append(c)
+                plan.__del__()
+
+    elif traj.shape[-1]==3:# For volumes
+        if not (useGPU):
+            kdata = [
+                finufft.nufft3d2(t[:, 2],t[:, 0], t[:, 1], p)
                 for t, p in zip(traj, volumes)
             ]
-    elif traj.shape[-1]==3:# For volumes
-        kdata = [
-            finufft.nufft3d2(t[:, 2],t[:, 0], t[:, 1], p)
-            for t, p in zip(traj, volumes)
-        ]
+        else:
+            # Allocate memory for the nonuniform coefficients on the GPU.
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+            N1, N2,N3 = volumes.shape[1], volumes.shape[2],volumes.shape[3]
+            M = traj.shape[1]
+            c_gpu = GPUArray((1, M), dtype=complex_dtype)
+            # Initialize the plan and set the points.
+            kdata = []
+            for i in list(range(m.images_series.shape[0])):
+                fk = volumes[i, :, :]
+                kx = traj[i, :, 0]
+                ky = traj[i, :, 1]
+                kz = traj[i, :, 2]
+
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                kz = kz.astype(dtype)
+                fk = fk.astype(complex_dtype)
+
+                plan = cufinufft(2, (N1, N2,N3), 1, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kz),to_gpu(kx), to_gpu(ky))
+                plan.execute(c_gpu, to_gpu(fk))
+                c = np.squeeze(c_gpu.get())
+                kdata.append(c)
+                plan.__del__()
     return kdata
 
 def buildROImask(map):
@@ -786,3 +894,99 @@ def buildROImask(map):
     groups = model.labels_ + 1
     print(groups.shape)
     return groups
+
+def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6):
+
+    traj=trajectory.get_traj()
+    npoint = trajectory.paramDict["npoint"]
+
+    if density_adj:
+        density = np.abs(np.linspace(-1, 1, npoint))
+        kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+
+    #kdata = (normalize_image_series(np.array(kdata)))
+
+    if traj.shape[-1] == 2:  # 2D
+        if not(useGPU):
+            images_series_rebuilt = [
+                finufft.nufft2d1(t[:,0], t[:,1], s, size)
+                for t, s in zip(traj, kdata)
+            ]
+        else:
+            N1, N2 = size[0], size[1]
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+            fk_gpu = GPUArray((1, N1, N2), dtype=complex_dtype)
+            images_GPU = []
+            for i in list(range(len(kdata))):
+
+                c_retrieved = kdata[i]
+                kx = traj[i, :, 0]
+                ky = traj[i, :, 1]
+
+                # Cast to desired datatype.
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                c_retrieved = c_retrieved.astype(complex_dtype)
+
+                # Allocate memory for the uniform grid on the GPU.
+
+
+                # Initialize the plan and set the points.
+                plan = cufinufft(1, (N1, N2), 1, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kx), to_gpu(ky))
+
+                # Execute the plan, reading from the strengths array c and storing the
+                # result in fk_gpu.
+                plan.execute(to_gpu(c_retrieved), fk_gpu)
+
+                fk = np.squeeze(fk_gpu.get())
+                images_GPU.append(fk)
+                plan.__del__()
+            images_series_rebuilt=np.array(images_GPU)
+    elif traj.shape[-1] == 3:  # 3D
+        if not(useGPU):
+            images_series_rebuilt = [
+                finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size)
+                for t, s in zip(traj, kdata)
+            ]
+
+        else:
+            N1, N2, N3 = size[0], size[1], size[2]
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+            fk_gpu = GPUArray((1, N1, N2, N3), dtype=complex_dtype)
+            images_GPU=[]
+            for i in list(range(len(kdata))):
+
+                c_retrieved = kdata[i]
+                kx = traj[i, :, 0]
+                ky = traj[i, :, 1]
+                kz = traj[i, :, 2]
+
+
+                # Cast to desired datatype.
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                kz = kz.astype(dtype)
+                c_retrieved = c_retrieved.astype(complex_dtype)
+
+                # Allocate memory for the uniform grid on the GPU.
+
+
+                # Initialize the plan and set the points.
+                plan = cufinufft(1, (N1, N2,N3), 1, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kz),to_gpu(kx), to_gpu(ky))
+
+                # Execute the plan, reading from the strengths array c and storing the
+                # result in fk_gpu.
+                plan.execute(to_gpu(c_retrieved), fk_gpu)
+
+                fk = np.squeeze(fk_gpu.get())
+                images_GPU.append(fk)
+                plan.__del__()
+            images_series_rebuilt = np.array(images_GPU)
+
+    #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+
+    return np.array(images_series_rebuilt)

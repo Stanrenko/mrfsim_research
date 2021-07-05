@@ -60,10 +60,12 @@ nspoke=8
 npoint = 2*m.images_series.shape[1]
 
 radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint)
-volumes = m.simulate_radial_undersampled_images(radial_traj)
-mask = build_mask_single_image(m.images_series,radial_traj)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
+kdata = m.generate_radial_kdata(radial_traj)
 
-optimizer = SimpleDictSearch(mask=mask,niter=4,seq=seq,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False)
+volumes = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True)
+mask = build_mask_single_image(kdata,radial_traj,m.image_size)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
+
+optimizer = SimpleDictSearch(mask=mask,niter=4,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False)
 all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
 plt.close("all")

@@ -2,6 +2,8 @@ import numpy as np
 from scipy import ndimage
 from scipy.ndimage import affine_transform
 from utils_mrf import translation_breathing
+import cupy as cp
+from cupyx.scipy.ndimage import affine_transform as cupy_affine_transform
 
 class Movement(object):
 
@@ -21,23 +23,34 @@ class Translation(Movement):
         self.paramDict["transformation"]=transf
         self.paramDict["round"]=round
 
-    def apply(self,timesteps_images):
+    def apply(self,timesteps_images,useGPU=False):
         transf_timesteps_images=timesteps_images.copy()
         transf = self.paramDict["transformation"]
 
-        if self.paramDict["round"]:
-            shifts = timesteps_images.Timesteps.apply(lambda t:np.round(transf(t)))
-        else:
-            shifts = timesteps_images.Timesteps.apply(lambda t:transf(t))
+        t = np.array(timesteps_images.Timesteps).reshape(-1,1)
 
-        shifts = np.array(list(shifts.values))
+        if self.paramDict["round"]:
+            shifts = np.around(transf(t))
+        else:
+            shifts = transf(t)
+
         dim = len(timesteps_images.Images.iloc[0].shape)
 
         if not (np.array(shifts).shape[1] == dim):
             raise ValueError("The transform dimension is not the same as the image space dimension")
-        affine_matrix = tuple([tuple(a) for a in np.eye(dim)])
 
-        transf_timesteps_images["Images"]=timesteps_images.apply(lambda row:affine_transform(row.Images,affine_matrix, offset=list(-shifts[row.name]), order=1, mode="nearest"),axis=1)
+        if not(useGPU):
+            affine_matrix = tuple([tuple(a) for a in np.eye(dim)])
+            transf_timesteps_images["Images"]=timesteps_images.apply(lambda row:affine_transform(row.Images,affine_matrix, offset=list(-shifts[row.name]), order=1, mode="nearest"),axis=1)
+
+        else:
+            affine_matrix=np.eye(dim)
+            matrix = cp.asarray(affine_matrix)
+            #transformed = [cupy_affine_transform(image, matrix, offset=list(-ts[i]), order=1, mode="nearest") for i in
+            #           range(len(ts))]
+            transf_timesteps_images["Images"] = timesteps_images.apply(
+                lambda row: cupy_affine_transform(cp.asarray(row.Images), matrix, offset=list(-shifts[row.name]), order=1,
+                                             mode="nearest").get(), axis=1)
         return transf_timesteps_images
 
 class TranslationBreathing(Translation):

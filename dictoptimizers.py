@@ -1,16 +1,19 @@
 import numpy as np
 from scipy import ndimage
 from scipy.ndimage import affine_transform
-from utils_mrf import translation_breathing,build_mask_single_image,build_mask
+from utils_mrf import translation_breathing,build_mask_single_image,build_mask,simulate_radial_undersampled_images
 from Transformers import PCAComplex
 from mutools.optim.dictsearch import dictsearch
 from tqdm import tqdm
+from mrfsim import makevol
+from image_series import MapFromDict
 
 class Optimizer(object):
 
-    def __init__(self,log=False,mask=None,**kwargs):
+    def __init__(self,log=False,mask=None,useGPU=False,**kwargs):
         self.paramDict=kwargs
         self.paramDict["log"]=log
+        self.paramDict["useGPU"]=useGPU
         self.mask=mask
 
 
@@ -20,7 +23,7 @@ class Optimizer(object):
 
 class SimpleDictSearch(Optimizer):
 
-    def __init__(self,niter=0,seq=None,split=500,pca=True,threshold_pca=15,log=True,useAdjPred=False,**kwargs):
+    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,log=True,useAdjPred=False,**kwargs):
         #transf is a function that takes as input timesteps arrays and outputs shifts as output
         super().__init__(**kwargs)
         self.paramDict["niter"]=niter
@@ -34,6 +37,10 @@ class SimpleDictSearch(Optimizer):
                 raise ValueError("When more than 0 iteration, one needs to supply a sequence in order to resimulate the image series")
             else:
                 self.paramDict["sequence"]=seq
+            if trajectory is None:
+                raise ValueError("When more than 0 iteration, one needs to supply a kspace trajectory in order to resimulate the image series")
+            else:
+                self.paramDict["trajectory"]=trajectory
 
 
     def search_patterns(self,dictfile,volumes):
@@ -49,6 +56,8 @@ class SimpleDictSearch(Optimizer):
         useAdjPred=self.paramDict["useAdjPred"]
         seq = self.paramDict["sequence"]
         log=self.paramDict["log"]
+        trajectory = self.paramDict["trajectory"]
+        useGPU=self.paramDict["useGPU"]
 
         volumes = volumes / np.linalg.norm(volumes, 2, axis=0)
         all_signals = volumes[:, mask > 0]
@@ -122,17 +131,17 @@ class SimpleDictSearch(Optimizer):
                 duplicate_signals = False
                 all_signals_unique = all_signals
 
-            if pca:
-                transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique)))
-                transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
-
-                sig_ws_all_unique = np.matmul(transformed_array_water_unique,
-                                              transformed_all_signals_water[:, :].conj()).real
-                sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
-                                              transformed_all_signals_fat[:, :].conj()).real
-            else:
-                sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, :].conj()).real
-                sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, :].conj()).real
+            # if pca:
+            #     transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique)))
+            #     transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
+            #
+            #     sig_ws_all_unique = np.matmul(transformed_array_water_unique,
+            #                                   transformed_all_signals_water[:, :].conj()).real
+            #     sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
+            #                                   transformed_all_signals_fat[:, :].conj()).real
+            # else:
+            #     sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, :].conj()).real
+            #     sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, :].conj()).real
 
             # alpha_all_unique = np.zeros((nb_patterns, nb_signals_unique))
             # J_all = np.zeros(alpha_all_unique.shape)
@@ -145,8 +154,21 @@ class SimpleDictSearch(Optimizer):
             for j in tqdm(range(num_group)):
                 j_signal = j * split
                 j_signal_next = np.minimum((j + 1) * split, nb_signals_unique)
-                current_sig_ws = sig_ws_all_unique[index_water_unique, j_signal:j_signal_next]
-                current_sig_fs = sig_fs_all_unique[index_fat_unique, j_signal:j_signal_next]
+
+                if pca:
+                    transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique)))
+                    transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
+
+                    sig_ws_all_unique = np.matmul(transformed_array_water_unique,
+                                                  transformed_all_signals_water[:, j_signal:j_signal_next].conj()).real
+                    sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
+                                                  transformed_all_signals_fat[:, j_signal:j_signal_next].conj()).real
+                else:
+                    sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, j_signal:j_signal_next].conj()).real
+                    sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, j_signal:j_signal_next].conj()).real
+
+                current_sig_ws = sig_ws_all_unique[index_water_unique, :]
+                current_sig_fs = sig_fs_all_unique[index_fat_unique, :]
                 current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
                         (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
                 current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
@@ -202,7 +224,10 @@ class SimpleDictSearch(Optimizer):
             images_pred.buildParamMap()
             images_pred.build_ref_images(seq)
             pred_volumesi = images_pred.images_series
-            volumesi = images_pred.simulate_radial_undersampled_images(trajectory, density_adj=True)
+
+            #volumesi = images_pred.simulate_radial_undersampled_images(trajectory, density_adj=True)
+            kdatai = images_pred.generate_radial_kdata(trajectory,useGPU=seGPU)
+            volumesi = simulate_radial_undersampled_images(kdatai,trajectory,images_pred.image_size,useGPU=useGPU,density_adj=True)
             volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
 
             # def fourier_scaling_cost(a,vol1,vol2,mask):

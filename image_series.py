@@ -21,6 +21,10 @@ from tqdm import tqdm
 from Transformers import PCAComplex
 import matplotlib.animation as animation
 from trajectory import *
+import pycuda.autoinit
+from pycuda.gpuarray import GPUArray, to_gpu
+from cufinufft import cufinufft
+
 
 DEFAULT_wT2 = 80
 DEFAULT_fT1 = 350
@@ -209,98 +213,163 @@ class ImageSeries(object):
     def add_movements(self,list_movements):
         self.list_movements=[*self.list_movements,*list_movements]
 
-    def simulate_radial_undersampled_images(self,trajectory,density_adj=True):
 
-        nspoke=trajectory.paramDict["nspoke"]
-        npoint=trajectory.paramDict["npoint"]
+    def generate_radial_kdata(self,trajectory,useGPU=False,eps=1e-6):
+        nspoke = trajectory.paramDict["nspoke"]
+        npoint = trajectory.paramDict["npoint"]
         traj = trajectory.get_traj()
 
-        if not(traj.shape[-1]==len(self.image_size)):
+        if not (traj.shape[-1] == len(self.image_size)):
             raise ValueError("Trajectory dimension does not match Image Space dimension")
 
         size = self.image_size
-        images_series=self.images_series
-        #images_series =normalize_image_series(self.images_series)
+        images_series = self.images_series
+        # images_series =normalize_image_series(self.images_series)
 
-        if traj.shape[-1]==2:#2D
+        if traj.shape[-1] == 2:  # 2D
 
             if self.list_movements == []:
-
-                kdata = [
-                finufft.nufft2d2(t[:,0], t[:,1], p)
-                for t, p in zip(traj, images_series)
-                ]
-            else:
-                df = pd.DataFrame(index=range(self.images_series.shape[0]), columns=["Timesteps", "Images"])
-                df["Timesteps"] = self.t.reshape(-1, 1)
-                df["Images"]= list(self.images_series)
-
-                for movement in self.list_movements:
-                    df = movement.apply(df)
-
-                images_series=df.Images
 
                 kdata = [
                     finufft.nufft2d2(t[:, 0], t[:, 1], p)
                     for t, p in zip(traj, images_series)
                 ]
+            else:
+                df = pd.DataFrame(index=range(self.images_series.shape[0]), columns=["Timesteps", "Images"])
+                df["Timesteps"] = self.t.reshape(-1, 1)
+                df["Images"] = list(self.images_series)
 
-        elif traj.shape[-1]==3:#3D
+                for movement in self.list_movements:
+                    df = movement.apply(df)
 
-            if self.list_movements==[]:
+                images_series = df.Images
+
+                if not(useGPU):
+
+
+                    kdata = [
+                        finufft.nufft2d2(t[:, 0], t[:, 1], p)
+                        for t, p in zip(traj, images_series)
+                    ]
+                else:
+                    # Allocate memory for the nonuniform coefficients on the GPU.
+                    dtype = np.float32  # Datatype (real)
+                    complex_dtype = np.complex64
+                    N1, N2 = size[0], size[1]
+                    M = traj.shape[1]
+                    c_gpu = GPUArray((1, M), dtype=complex_dtype)
+                    # Initialize the plan and set the points.
+                    kdata = []
+                    for i in list(range(m.images_series.shape[0])):
+                        fk = images_series.iloc[i]
+                        kx = traj[i, :, 0]
+                        ky = traj[i, :, 1]
+
+                        kx = kx.astype(dtype)
+                        ky = ky.astype(dtype)
+                        fk = fk.astype(complex_dtype)
+
+                        plan = cufinufft(2, (N1, N2), 1, eps=eps, dtype=dtype)
+                        plan.set_pts(to_gpu(kx), to_gpu(ky))
+                        plan.execute(c_gpu, to_gpu(fk))
+                        c = np.squeeze(c_gpu.get())
+                        kdata.append(c)
+
+        elif traj.shape[-1] == 3:  # 3D
+
+            if self.list_movements == []:
                 kdata = [
-                    finufft.nufft3d2(t[:, 2],t[:, 0], t[:, 1], p)
+                    finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], p)
                     for t, p in zip(traj, images_series)
                 ]
 
             else:
                 print("Simulating 3D volume with movement for all timesteps")
-                kdata=[]
-                for i,x in (enumerate(tqdm(zip(traj,images_series)))):
-                    nb_rep = self.paramDict["nb_rep"]
-                    current_data = pd.DataFrame(x[0],columns=["KX","KY","KZ"])
-                    current_data['rep_number'] = current_data.groupby("KZ").ngroup()
-                    current_image = x[1]
-                    df = pd.DataFrame(index=range(self.paramDict["nb_rep"]), columns=["Timesteps", "Images"])
-                    df["Timesteps"] = self.t[:,i].reshape(-1,1)
-                    images_for_df = list(np.repeat(current_image,nb_rep,axis=0).reshape((nb_rep,)+current_image.shape))
-                    df["Images"] = images_for_df
+                if not(useGPU):
+                    kdata = []
+                    for i, x in (enumerate(tqdm(zip(traj, images_series)))):
 
-                    for movements in self.list_movements:
-                        df = movements.apply(df)
-
-                    values = np.array(list(current_data.groupby("KZ").apply(lambda grp:finufft.nufft3d2(grp.KZ,grp.KX, grp.KY, df.Images[np.unique(grp.rep_number)[0]])).values)).flatten()
-                    kdata.append(values)
+                        nb_rep = self.paramDict["nb_rep"]
+                        current_data = pd.DataFrame(x[0], columns=["KX", "KY", "KZ"])
+                        current_data['rep_number'] = current_data.groupby("KZ").ngroup()
+                        current_image = x[1]
+                        df = pd.DataFrame(index=range(self.paramDict["nb_rep"]), columns=["Timesteps", "Images"])
+                        df["Timesteps"] = self.t[:, i].reshape(-1, 1)
+                        images_for_df = list(
+                            np.repeat(current_image, nb_rep, axis=0).reshape((nb_rep,) + current_image.shape))
+                        df["Images"] = images_for_df
 
 
-        dtheta = np.pi/nspoke
-        kdata = np.array(kdata)/(npoint*self.paramDict["nb_rep"])*dtheta
+                        for movements in self.list_movements:
+                            df = movements.apply(df,useGPU)
 
-        #kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+                        values = np.array(list(current_data.groupby("KZ").apply(
+                            lambda grp: finufft.nufft3d2(grp.KZ, grp.KX, grp.KY,
+                                                         df.Images[np.unique(grp.rep_number)[0]])).values)).flatten()
+                        kdata.append(values)
+                else:
+                    kdata = []
+
+                    N1, N2, N3 = size[0], size[1], size[2]
+                    M = traj.shape[1]
+                    dtype = np.float32  # Datatype (real)
+                    complex_dtype = np.complex64
 
 
-        if density_adj:
-            if npoint is None:
-                raise ValueError("Should supply number of point on spoke for density compensation")
-            density = np.abs(np.linspace(-1, 1, npoint))
-            kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+                    for i, x in (enumerate(tqdm(zip(traj, images_series)))):
 
-        #kdata = (normalize_image_series(np.array(kdata)))
 
-        if traj.shape[-1] == 2:  # 2D
-            images_series_rebuilt = [
-                finufft.nufft2d1(t[:,0], t[:,1], s, size)
-                for t, s in zip(traj, kdata)
-            ]
-        elif traj.shape[-1] == 3:  # 3D
-            images_series_rebuilt = [
-                finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size)
-                for t, s in zip(traj, kdata)
-            ]
+                        nb_rep = self.paramDict["nb_rep"]
+                        current_data = pd.DataFrame(x[0], columns=["KX", "KY", "KZ"])
+                        current_image = x[1]
+                        df = pd.DataFrame(index=range(self.paramDict["nb_rep"]), columns=["Timesteps", "Images"])
+                        df["Timesteps"] = self.t[:, i].reshape(-1, 1)
+                        images_for_df = list(
+                            np.repeat(current_image, nb_rep, axis=0).reshape((nb_rep,) + current_image.shape))
+                        df["Images"] = images_for_df
 
-        #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+                        for movements in self.list_movements:
+                            df = movements.apply(df,useGPU)
 
-        return np.array(images_series_rebuilt)
+                        groups = current_data.groupby("KZ")
+
+                        kdata_current=[]
+
+                        for j,g in enumerate(groups):
+                            name = g[0]
+                            group = g[1]
+                            fk = df.Images[j]
+                            kx = np.array(group["KX"])
+                            ky = np.array(group["KY"])
+                            kz = np.array(group["KZ"])
+
+                            # Initialize the plan and set the points.
+
+                            kx = kx.astype(dtype)
+                            ky = ky.astype(dtype)
+                            kz = kz.astype(dtype)
+                            fk = fk.astype(complex_dtype)
+
+                            c_gpu = GPUArray((1, kx.shape[0]), dtype=complex_dtype)
+
+                            plan = cufinufft(2, (N1, N2,N3), 1, eps=eps, dtype=dtype)
+                            plan.set_pts(to_gpu(kz),to_gpu(kx), to_gpu(ky))
+                            plan.execute(c_gpu, to_gpu(fk))
+                            c = np.squeeze(c_gpu.get())
+                            kdata_current.append(c)
+                            plan.__del__()
+
+                        kdata_current=np.array(kdata_current).flatten()
+                        kdata.append(kdata_current)
+
+        dtheta = np.pi / nspoke
+        kdata = np.array(kdata) / (npoint * self.paramDict["nb_rep"]) * dtheta
+
+        # kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+        return kdata
+
+
+
 
 
     def simulate_undersampled_images(self,traj,density_adj=True):

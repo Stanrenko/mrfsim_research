@@ -3,7 +3,7 @@
 #matplotlib.use("TkAgg")
 from mrfsim import T1MRF
 from image_series import *
-from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,compare_paramMaps_3D,dictSearchMemoryOptim,voronoi_volumes,transform_py_map,radial_golden_angle_traj_3D
+from utils_mrf import *
 import json
 from finufft import nufft1d1,nufft1d2
 from scipy import signal,interpolate
@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from movements import *
 import pickle
+from dictoptimizers import SimpleDictSearch
 
 
 ## Random map simulation
@@ -37,6 +38,9 @@ file_matlab_paramMap = "./data/paramMap.mat"
 with open("mrf_dictconf_CS.json") as f:
     dict_config = json.load(f)
 
+
+
+
 dict_config["ff"]=np.arange(0.,1.05,0.05)
 region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
 size=(256,256)
@@ -53,8 +57,6 @@ move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
 
 m.add_movements([move])
 
-
-
 npoint=512
 nspoke=8
 ntimesteps=175
@@ -63,75 +65,33 @@ nb_slices=m.paramDict["nb_total_slices"]
 undersampling_factor = m.paramDict["undersampling_factor"]
 
 radial_traj_3D=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_slices,undersampling_factor=undersampling_factor)
+kdata = m.generate_radial_kdata(radial_traj_3D,useGPU=True)
+#kdata_noGPU=m.generate_radial_kdata(radial_traj_3D,useGPU=False)
+volumes = simulate_radial_undersampled_images(kdata,radial_traj_3D,m.image_size,density_adj=True,useGPU=True)
+#volumes_noGPU = simulate_radial_undersampled_images(kdata_noGPU,radial_traj_3D,m.image_size,density_adj=True,useGPU=True)
+#ani,ani1=animate_multiple_images(volumes[:,4,:,:],volumes_noGPU[:,4,:,:])
 
-all_maps_adj=m.dictSearchMemoryOptimIterative(dictfile,seq,radial_traj_3D,niter=0,split=500,threshold_pca=15,log=False,useAdjPred=False,true_mask=False)
+ani=animate_images(volumes[:,40,:,:])
+
+mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=True)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
+plt.imshow(mask[40,:,:])
+
+optimizer = SimpleDictSearch(mask=mask,niter=2,seq=seq,trajectory=radial_traj_3D,split=2000,pca=True,threshold_pca=15,useGPU=True,log=False,useAdjPred=False)
+all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
 pickle.dump(all_maps_adj,"all_maps_{}.pkl".format(m.name))
+
+plt.close("all")
+
+for iter in all_maps_adj.keys():
+    regression_paramMaps_ROI(m.paramMap, all_maps_adj[iter][0], m.mask > 0, all_maps_adj[iter][1] > 0,
+                             title="ROI Orig vs Iteration {}".format(iter), proj_on_mask1=False, adj_wT1=True, fat_threshold=0.7)
+
+
+
 
 compare_paramMaps_3D(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="Outside",proj_on_mask1=False,save=False)
 compare_paramMaps_3D(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,slice=m.paramDict["nb_empty_slices"],title1="Orig",title2="Inside",proj_on_mask1=False,save=False)
 compare_paramMaps_3D(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="Center",proj_on_mask1=False,save=False)
 
 plt.close("all")
-
-
-direction = np.array([0,4,0])
-shifts_t = lambda t:translation_breathing(t,direction,T=4000)
-shifts = [np.round(shifts_t(t/undersampling_factor))for t in m.t]
-plt.figure()
-plt.plot(m.t/undersampling_factor,np.array(shifts)[:,1])
-plt.title("Movement in Y direction")
-
-m.translate_images(shifts_t,round=True,undersampling_factor=undersampling_factor)
-
-#ani = animate_images(m.images_series[:,m.paramDict["nb_empty_slices"],:,:])
-
-all_maps_adj_mvt=m.dictSearchMemoryOptimIterative(dictfile,seq,radial_traj_3D,niter=1,split=500,threshold_pca=15,log=False,useAdjPred=True,true_mask=False)
-
-compare_paramMaps_3D(m.paramMap,all_maps_adj_mvt[1][0],m.mask>0,all_maps_adj_mvt[1][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="OutsideMvt",proj_on_mask1=False,save=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj_mvt[1][0],m.mask>0,all_maps_adj_mvt[1][1]>0,slice=m.paramDict["nb_empty_slices"],title1="Orig",title2="InsideMvt",proj_on_mask1=False,save=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj_mvt[1][0],m.mask>0,all_maps_adj_mvt[1][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="CenterMvt",proj_on_mask1=False,save=False)
-
-plt.close("all")
-# for i in [0,m.paramDict["nb_empty_slices"]]:
-#     plt.figure()
-#     plt.imshow(np.abs(images_series_rebuilt[0][i,:,:]))
-#     plt.colorbar()
-#
-# for i in [0,m.paramDict["nb_empty_slices"]]:
-#     plt.figure()
-#     plt.imshow(np.abs(images_series[0][i,:,:]))
-#     plt.colorbar()
-#
-# plt.figure()
-# plt.imshow(np.abs(images_series_rebuilt[0][5,:,:]-images_series_rebuilt[0][0,:,:]))
-# plt.colorbar()
-#
-# slice=7
-# image_slice=list(np.array(images_series)[:,slice,:,:])
-# image_slice_rebuilt=list(np.array(images_series_rebuilt)[:,slice,:,:])
-# image_slice_rebuilt_border=list(np.array(images_series_rebuilt)[:,0,:,:])
-# ani1,ani2=animate_multiple_images(image_slice,image_slice_rebuilt)
-#
-# ani1,ani2=animate_multiple_images(image_slice_rebuilt_border,image_slice_rebuilt)
-#
-
-
-#
-# pixel=(125,125)
-# time=0
-#
-# rebuilt_pixel_z_profile =  np.abs(images_series_rebuilt[time][:,pixel[0],pixel[1]])
-# orig_pixel_z_profile =  np.abs(images_series[time][:,pixel[0],pixel[1]])
-# rebuilt_pixel_z_profile =rebuilt_pixel_z_profile /np.max(rebuilt_pixel_z_profile)
-# orig_pixel_z_profile =orig_pixel_z_profile /np.max(orig_pixel_z_profile)
-# ymin=0
-# ymax=np.maximum(np.max(rebuilt_pixel_z_profile),np.max(rebuilt_pixel_z_profile))*(1+0.05)
-#
-# plt.figure()
-# plt.plot(rebuilt_pixel_z_profile,label="Rebuilt along z axis pixel {}".format(pixel),color="blue")
-# plt.plot(orig_pixel_z_profile,label="Original along z axis pixel {}".format(pixel),color="green")
-# plt.vlines(x=m.paramDict["nb_empty_slices"]-1,ymin=ymin,ymax=ymax,color="red")
-# plt.vlines(x=m.paramDict["nb_total_slices"]-m.paramDict["nb_empty_slices"],ymin=ymin,ymax=ymax,color="red")
-# plt.legend()
-#
