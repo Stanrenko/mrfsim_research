@@ -45,7 +45,7 @@ dict_config["ff"]=np.arange(0.,1.05,0.05)
 region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
 size=(256,256)
 mask_reduction_factor=1/4
-m = RandomMap3D("TestRandom3DMovement",dict_config,nb_slices=64,nb_empty_slices=8,undersampling_factor=4,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor)
+m = RandomMap3D("TestRandom3DMovement",dict_config,nb_slices=20,nb_empty_slices=6,undersampling_factor=4,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor)
 
 m.buildParamMap()
 
@@ -78,8 +78,13 @@ plt.imshow(mask[40,:,:])
 
 optimizer = SimpleDictSearch(mask=mask,niter=2,seq=seq,trajectory=radial_traj_3D,split=2000,pca=True,threshold_pca=15,useGPU=True,log=False,useAdjPred=False)
 all_maps_adj=optimizer.search_patterns(dictfile,volumes)
+# open a file, where you ant to store the data
 
-pickle.dump(all_maps_adj,"all_maps_{}.pkl".format(m.name))
+file = open( "all_maps_{}.pkl".format(m.name), "wb" )
+# dump information to that file
+pickle.dump(all_maps_adj, file)
+# close the file
+file.close()
 
 plt.close("all")
 
@@ -89,9 +94,22 @@ for iter in all_maps_adj.keys():
 
 
 
-
-compare_paramMaps_3D(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="Outside",proj_on_mask1=False,save=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,slice=m.paramDict["nb_empty_slices"],title1="Orig",title2="Inside",proj_on_mask1=False,save=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="Center",proj_on_mask1=False,save=False)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="Outside",proj_on_mask1=True,save=False)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]+5,title1="Orig",title2="Inside",proj_on_mask1=True,save=False)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="Center",proj_on_mask1=False,save=False)
 
 plt.close("all")
+
+
+import pycuda.autoinit
+import pycuda.gpuarray as cua
+import pycuda.tools as cut
+import numpy as np
+
+m = cut.DeviceMemoryPool()
+
+a= np.ones(2**30-1,dtype=np.float32)
+b= cua.to_gpu(a, allocator=m.allocate)  # Passes
+
+a= np.ones(2**30,dtype=np.float32)
+b= cua.to_gpu(a, allocator=m.allocate)

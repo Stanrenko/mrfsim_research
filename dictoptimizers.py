@@ -7,6 +7,8 @@ from mutools.optim.dictsearch import dictsearch
 from tqdm import tqdm
 from mrfsim import makevol
 from image_series import MapFromDict
+from datetime import datetime
+import cupy as cp
 
 class Optimizer(object):
 
@@ -155,6 +157,9 @@ class SimpleDictSearch(Optimizer):
                 j_signal = j * split
                 j_signal_next = np.minimum((j + 1) * split, nb_signals_unique)
 
+
+                print("PCA transform")
+                start = datetime.now()
                 if pca:
                     transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique)))
                     transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
@@ -167,21 +172,75 @@ class SimpleDictSearch(Optimizer):
                     sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, j_signal:j_signal_next].conj()).real
                     sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, j_signal:j_signal_next].conj()).real
 
+                end = datetime.now()
+                print(end-start)
+
+                print("Extracting all sig_ws and sig_fs")
+                start = datetime.now()
                 current_sig_ws = sig_ws_all_unique[index_water_unique, :]
                 current_sig_fs = sig_fs_all_unique[index_fat_unique, :]
-                current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
-                        (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
-                current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
-                # alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
-                J_all = ((
-                                 1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
-                    (
-                            1 - current_alpha_all_unique) ** 2 * var_w + current_alpha_all_unique ** 2 * var_f + 2 * current_alpha_all_unique * (
-                            1 - current_alpha_all_unique) * sig_wf)
+                end = datetime.now()
+                print(end-start)
 
+                if not(useGPU):
+                    print("Calculating alpha optim and flooring")
+                    start = datetime.now()
+                    current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
+                            (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
+                    end=datetime.now()
+                    print(end-start)
+
+                    start = datetime.now()
+                    current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
+                    end=datetime.now()
+                    print(end-start)
+
+                    # alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
+                    print("Calculating cost for all signals")
+                    start = datetime.now()
+                    J_all = ((
+                                     1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
+                        (
+                                1 - current_alpha_all_unique) ** 2 * var_w + current_alpha_all_unique ** 2 * var_f + 2 * current_alpha_all_unique * (
+                                1 - current_alpha_all_unique) * sig_wf)
+                    end = datetime.now()
+
+                else:
+                    print("Calculating alpha optim and flooring")
+                    start = datetime.now()
+                    current_alpha_all_unique = cp.divide(cp.subtract(cp.multiply(cp.asarray(sig_wf),cp.asarray(current_sig_ws)),cp.multiply(cp.asarray(var_w) ,cp.asarray(current_sig_fs))) ,
+                            cp.subtract(cp.multiply(cp.add(cp.asarray(current_sig_ws),cp.asarray(current_sig_fs)),cp.asarray(sig_wf)), cp.add(cp.multiply(cp.asarray(var_w) ,cp.asarray(current_sig_fs)), cp.multiply(cp.asarray(var_f),cp.asarray(current_sig_ws)))))
+                    end = datetime.now()
+                    print(end - start)
+
+                    start = datetime.now()
+                    current_alpha_all_unique = cp.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
+                    end = datetime.now()
+                    print(end - start)
+
+                    # alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
+                    print("Calculating cost for all signals")
+                    start = datetime.now()
+                    J_all = cp.divide(cp.add(cp.multiply((
+                                     1 - current_alpha_all_unique), cp.asarray(current_sig_ws)),cp.multiply(current_alpha_all_unique,cp.asarray(current_sig_fs))),cp.sqrt(
+                        cp.add(cp.multiply(cp.square(1 - current_alpha_all_unique),cp.asarray(var_w)) ,cp.add(cp.multiply(cp.square(current_alpha_all_unique), cp.asarray(var_f)) ,cp.multiply(cp.multiply(2 * current_alpha_all_unique,(
+                                1 - current_alpha_all_unique)), cp.asarray(sig_wf)))))).get()
+                    end = datetime.now()
+                    current_alpha_all_unique=current_alpha_all_unique.get()
+                print(end-start)
+
+                print("Extracting index of pattern with max correl")
+                start = datetime.now()
                 idx_max_all_current = np.argmax(J_all, axis=0)
+                end = datetime.now()
+                print(end-start)
+
+                print("Filling the lists with results for this loop")
+                start = datetime.now()
                 idx_max_all_unique.extend(idx_max_all_current)
                 alpha_optim.extend(current_alpha_all_unique[idx_max_all_current, np.arange(J_all.shape[1])])
+                end = datetime.now()
+                print(end - start)
 
             # idx_max_all_unique = np.argmax(J_all, axis=0)
             del J_all
@@ -226,7 +285,7 @@ class SimpleDictSearch(Optimizer):
             pred_volumesi = images_pred.images_series
 
             #volumesi = images_pred.simulate_radial_undersampled_images(trajectory, density_adj=True)
-            kdatai = images_pred.generate_radial_kdata(trajectory,useGPU=seGPU)
+            kdatai = images_pred.generate_radial_kdata(trajectory,useGPU=useGPU)
             volumesi = simulate_radial_undersampled_images(kdatai,trajectory,images_pred.image_size,useGPU=useGPU,density_adj=True)
             volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
 

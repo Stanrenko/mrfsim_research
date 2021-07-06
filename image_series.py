@@ -27,7 +27,7 @@ from cufinufft import cufinufft
 
 
 DEFAULT_wT2 = 80
-DEFAULT_fT1 = 350
+DEFAULT_fT1 = 300
 DEFAULT_fT2 = 40
 DEFAULT_MAX_CLUSTER = 10
 
@@ -608,27 +608,43 @@ class MapFromFile(ImageSeries):
         if "default_fT1" not in self.paramDict:
             self.paramDict["default_fT1"]=DEFAULT_fT1
 
+        if "file_type" not in self.paramDict:
+            self.paramDict["file_type"]="GroundTruth" # else "Result"
+
     @wrapper_rounding
     def buildParamMap(self,mask=None):
 
         if mask is not None:
             raise ValueError("mask automatically built from wT1 map for file load for now")
 
-        matobj = loadmat(self.paramDict["file"])["paramMap"]
-        map_wT1 = matobj["T1"][0, 0]
+        if self.paramDict["file_type"]=="GroundTruth":
+            matobj = loadmat(self.paramDict["file"])["paramMap"]
+            map_wT1 = matobj["T1"][0][0]
+        elif self.paramDict["file_type"]=="Result":
+            matobj = loadmat(self.paramDict["file"])["MRFmaps"]
+            map_wT1 = matobj["T1water"][0][0]
+        else:
+            raise ValueError("file_type can only be GroundTruth or Result")
+
         map_df = matobj["Df"][0, 0]
         map_attB1 = matobj["B1"][0, 0]
         map_ff = matobj["FF"][0, 0]
 
-        self.image_size=map_wT1.shape
+        self.image_size = map_wT1.shape
 
         mask = np.zeros(self.image_size)
         mask[map_wT1>0]=1.0
         self.mask=mask
 
-        map_wT2 = mask*self.paramDict["default_wT2"]
-        map_fT1 = mask*self.paramDict["default_fT1"]
-        map_fT2 = mask*self.paramDict["default_fT2"]
+        map_wT2 = mask * self.paramDict["default_wT2"]
+        map_fT2 = mask * self.paramDict["default_fT2"]
+
+        if self.paramDict["file_type"]=="GroundTruth":
+            map_fT1 = mask*self.paramDict["default_fT1"]
+        elif self.paramDict["file_type"] == "Result":
+            map_fT1 = matobj["T1fat"][0][0]
+        else:
+            raise ValueError("file_type can only be GroundTruth or Result")
 
         map_all = np.stack((map_wT1, map_wT2, map_fT1, map_fT2, map_attB1, map_df, map_ff), axis=-1)
         map_all_on_mask = map_all[mask > 0]

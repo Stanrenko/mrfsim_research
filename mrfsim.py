@@ -4,10 +4,11 @@ import itertools
 import numpy as np
 from scipy import ndimage
 import sys
-sys.path.append(r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap/epgpy")
-sys.path.append(r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap/machines")
-sys.path.append(r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap/mutools")
-sys.path.append(r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap/dicomstack")
+path = r"/home/cslioussarenko/PythonRepositories"
+sys.path.append(path+"/epgpy")
+sys.path.append(path+"/machines")
+sys.path.append(path+"/mutools")
+sys.path.append(path+"/dicomstack")
 
 # matplotlib
 import matplotlib

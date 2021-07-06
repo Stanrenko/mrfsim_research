@@ -611,12 +611,12 @@ def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression 
 
     plt.suptitle(title)
 
-def regression_paramMaps_ROI(map1,map2,mask1=None,mask2=None,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8,mode="Standard",proj_on_mask1=True):
+def regression_paramMaps_ROI(map1,map2,mask1=None,mask2=None,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8,mode="Standard",proj_on_mask1=True,figsize=(15,10)):
 
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
     nb_keys=len(keys_1 & keys_2)
-    fig,ax = plt.subplots(1,nb_keys)
+    fig,ax = plt.subplots(1,nb_keys,figsize=figsize)
     maskROI = buildROImask(map1)
 
 
@@ -673,7 +673,6 @@ def regression_paramMaps_ROI(map1,map2,mask1=None,mask2=None,title="Maps regress
             unique_obs=np.unique(obs)
             sns.boxplot(ax=ax[i],x=obs,y=pred)
             locs=ax[i].get_xticks()
-            print(locs)
             sns.lineplot(ax=ax[i],x=locs,y=unique_obs)
         else:
             raise ValueError("mode should be Standard/Boxplot")
@@ -990,3 +989,66 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
     #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
 
     return np.array(images_series_rebuilt)
+
+
+def plot_evolution_params(map_ref, mask_ref, all_maps, adj_wT1=True, title="R2 Evolution", fat_threshold=0.7,
+                          proj_on_mask1=True, fontsize=5, figsize=(15, 40)):
+    keys_1 = set(map_ref.keys())
+    keys_2 = set(all_maps[0][0].keys())
+    nb_keys = len(keys_1 & keys_2)
+    fig, ax = plt.subplots(nb_keys, figsize=figsize)
+    maskROI = buildROImask(map_ref)
+
+    for i, k in enumerate(keys_1 & keys_2):
+        print(i)
+        r_2_list = []
+        for it, value in all_maps.items():
+
+            map2 = value[0]
+            mask2 = value[1] > 0
+
+            mask_union = mask_ref | mask2
+            mat_obs = makevol(map_ref[k], mask_ref)
+            mat_pred = makevol(map2[k], mask2)
+            mat_ROI = makevol(maskROI, mask_ref)
+            if proj_on_mask1:
+                mat_pred = mat_pred * (mask_ref * 1)
+
+            obs = mat_obs[mask_union]
+            pred = mat_pred[mask_union]
+            maskROI_current = mat_ROI[mask_union]
+
+            if adj_wT1 and k == "wT1":
+                ff = map2["ff"]
+                obs = obs[ff < fat_threshold]
+                pred = pred[ff < fat_threshold]
+                maskROI_current = maskROI_current[ff < fat_threshold]
+
+            df_obs = pd.DataFrame(columns=["Data", "Groups"],
+                                  data=np.stack([obs.flatten(), maskROI_current.flatten()], axis=-1))
+            df_pred = pd.DataFrame(columns=["Data", "Groups"],
+                                   data=np.stack([pred.flatten(), maskROI_current.flatten()], axis=-1))
+            obs = np.array(df_obs.groupby("Groups").mean())[1:]
+            pred = np.array(df_pred.groupby("Groups").mean())[1:]
+
+            x_min = np.min(obs)
+            x_max = np.max(obs)
+
+            if x_min == x_max:
+                fig.delaxes(ax[i])
+                break
+
+            mean = np.mean(obs)
+            ss_tot = np.sum((obs - mean) ** 2)
+            ss_res = np.sum((obs - pred) ** 2)
+            bias = np.mean((pred - obs))
+            r_2 = 1 - ss_res / ss_tot
+            r_2_list.append(r_2)
+
+        n_it = len(r_2_list)
+        ax[i].plot(range(n_it), r_2_list, "r")
+        ax[i].set_title(k + " Evolution over Iteration", fontsize=2 * fontsize)
+        ax[i].tick_params(axis='x', labelsize=fontsize)
+        ax[i].tick_params(axis='y', labelsize=fontsize)
+
+    plt.suptitle(title)
