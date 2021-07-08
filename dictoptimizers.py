@@ -8,7 +8,10 @@ from tqdm import tqdm
 from mrfsim import makevol
 from image_series import MapFromDict
 from datetime import datetime
-import cupy as cp
+try:
+    import cupy as cp
+except:
+    pass
 
 class Optimizer(object):
 
@@ -133,20 +136,6 @@ class SimpleDictSearch(Optimizer):
                 duplicate_signals = False
                 all_signals_unique = all_signals
 
-            # if pca:
-            #     transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique)))
-            #     transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
-            #
-            #     sig_ws_all_unique = np.matmul(transformed_array_water_unique,
-            #                                   transformed_all_signals_water[:, :].conj()).real
-            #     sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
-            #                                   transformed_all_signals_fat[:, :].conj()).real
-            # else:
-            #     sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, :].conj()).real
-            #     sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, :].conj()).real
-
-            # alpha_all_unique = np.zeros((nb_patterns, nb_signals_unique))
-            # J_all = np.zeros(alpha_all_unique.shape)
 
             num_group = int(nb_signals_unique / split) + 1
 
@@ -208,25 +197,36 @@ class SimpleDictSearch(Optimizer):
                 else:
                     print("Calculating alpha optim and flooring")
                     start = datetime.now()
-                    current_alpha_all_unique = cp.divide(cp.subtract(cp.multiply(cp.asarray(sig_wf),cp.asarray(current_sig_ws)),cp.multiply(cp.asarray(var_w) ,cp.asarray(current_sig_fs))) ,
-                            cp.subtract(cp.multiply(cp.add(cp.asarray(current_sig_ws),cp.asarray(current_sig_fs)),cp.asarray(sig_wf)), cp.add(cp.multiply(cp.asarray(var_w) ,cp.asarray(current_sig_fs)), cp.multiply(cp.asarray(var_f),cp.asarray(current_sig_ws)))))
+                    sig_wf=cp.asarray(sig_wf)
+                    current_sig_ws=cp.asarray(current_sig_ws)
+                    current_sig_fs=cp.asarray(current_sig_fs)
+                    var_w = cp.asarray(var_w)
+                    var_f = cp.asarray(var_f)
+
+                    current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
+                            (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
                     end = datetime.now()
                     print(end - start)
 
                     start = datetime.now()
-                    current_alpha_all_unique = cp.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
+                    current_alpha_all_unique = cp.minimum(cp.maximum(current_alpha_all_unique, 0.0), 1.0)
                     end = datetime.now()
                     print(end - start)
 
                     # alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
                     print("Calculating cost for all signals")
                     start = datetime.now()
-                    J_all = cp.divide(cp.add(cp.multiply((
-                                     1 - current_alpha_all_unique), cp.asarray(current_sig_ws)),cp.multiply(current_alpha_all_unique,cp.asarray(current_sig_fs))),cp.sqrt(
-                        cp.add(cp.multiply(cp.square(1 - current_alpha_all_unique),cp.asarray(var_w)) ,cp.add(cp.multiply(cp.square(current_alpha_all_unique), cp.asarray(var_f)) ,cp.multiply(cp.multiply(2 * current_alpha_all_unique,(
-                                1 - current_alpha_all_unique)), cp.asarray(sig_wf)))))).get()
-                    end = datetime.now()
+                    J_all = ((
+                                     1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
+                        (
+                                1 - current_alpha_all_unique) ** 2 * var_w + current_alpha_all_unique ** 2 * var_f + 2 * current_alpha_all_unique * (
+                                1 - current_alpha_all_unique) * sig_wf)
+
+                    J_all = J_all.get()
                     current_alpha_all_unique=current_alpha_all_unique.get()
+                    end = datetime.now()
+
+
                 print(end-start)
 
                 print("Extracting index of pattern with max correl")
@@ -289,10 +289,6 @@ class SimpleDictSearch(Optimizer):
             volumesi = simulate_radial_undersampled_images(kdatai,trajectory,images_pred.image_size,useGPU=useGPU,density_adj=True)
             volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
 
-            # def fourier_scaling_cost(a,vol1,vol2,mask):
-            #    return np.sum(np.abs(vol1 - a * vol2)[:, mask > 0])
-
-            # res=minimize(lambda x:fourier_scaling_cost(x,pred_volumesi,volumesi,mask),1)
 
             if log:
                 print("Saving correction volumes for iteration {}".format(i))

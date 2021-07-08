@@ -17,8 +17,11 @@ from dictoptimizers import *
 
 ## Random map simulation
 
+useGPU=False
+
 dictfile = "mrf175.dict"
 #dictfile = "mrf175_CS.dict"
+dictfile = "mrf175_SimReco2.dict"
 
 with open("mrf_sequence.json") as f:
     sequence_config = json.load(f)
@@ -32,21 +35,21 @@ size=(256,256)
 file_matlab_paramMap = "./data/Phantom1/paramMap.mat"
 
 ###### Building Map
-m = MapFromFile("TestPhantomV1",image_size=size,file=file_matlab_paramMap,rounding=True)
+#m = MapFromFile("TestPhantomV1",image_size=size,file=file_matlab_paramMap,rounding=True)
 
-# with open("mrf_dictconf.json") as f:
-#     dict_config = json.load(f)
-#
-# dict_config["ff"]=np.arange(0.,1.05,0.05)
-#
-# window = 8 #corresponds to nspoke by image
-# region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
-# size=(256,256)
-#
-# file_matlab_paramMap = "./data/paramMap.mat"
-#
-# ###### Building Map
-# m = RandomMap("TestRandom",dict_config,image_size=size,region_size=region_size,mask_reduction_factor=1/4)
+with open("mrf_dictconf_SimReco2.json") as f:
+    dict_config = json.load(f)
+
+dict_config["ff"]=np.arange(0.,1.05,0.05)
+
+window = 8 #corresponds to nspoke by image
+region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
+size=(256,256)
+
+file_matlab_paramMap = "./data/paramMap.mat"
+
+###### Building Map
+m = RandomMap("TestRandom",dict_config,image_size=size,region_size=region_size,mask_reduction_factor=1/4)
 
 m.buildParamMap()
 
@@ -65,12 +68,15 @@ kdata = m.generate_radial_kdata(radial_traj)
 volumes = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True)
 mask = build_mask_single_image(kdata,radial_traj,m.image_size)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
 
-optimizer = SimpleDictSearch(mask=mask,niter=4,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False)
+optimizer = SimpleDictSearch(mask=mask,niter=10,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False)
 all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
 plt.close("all")
 
-for iter in all_maps_adj.keys():
-    regression_paramMaps_ROI(m.paramMap, all_maps_adj[iter][0], m.mask > 0, all_maps_adj[iter][1] > 0,
-                             title="ROI Orig vs Iteration {}".format(iter), proj_on_mask1=False, adj_wT1=True, fat_threshold=0.7)
+maskROI=buildROImask(m.paramMap)
 
+for iter in all_maps_adj.keys():
+    regression_paramMaps_ROI(m.paramMap, all_maps_adj[iter][0], m.mask > 0, all_maps_adj[iter][1] > 0,maskROI=maskROI,
+                             title="ROI Orig vs Iteration {}".format(iter), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7)
+
+plot_evolution_params(m.paramMap,m.mask>0,all_maps_adj)

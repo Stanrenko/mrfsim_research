@@ -15,9 +15,13 @@ import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.model_selection import GridSearchCV
 import pandas as pd
-import pycuda.autoinit
-from pycuda.gpuarray import GPUArray, to_gpu
-from cufinufft import cufinufft
+
+try:
+    import pycuda.autoinit
+    from pycuda.gpuarray import GPUArray, to_gpu
+    from cufinufft import cufinufft
+except:
+    pass
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
@@ -334,136 +338,7 @@ def basicDictSearch(all_signals,dictfile):
 
             }
 
-def dictSearchMemoryOptim(all_signals,dictfile,pca=True,threshold_pca = 0.9999999,split=2000):
-    mrfdict = dictsearch.Dictionary()
-    mrfdict.load(dictfile, force=True)
 
-    keys = mrfdict.keys
-    array_water = mrfdict.values[:, :, 0]
-    array_fat = mrfdict.values[:, :, 1]
-
-    del mrfdict
-
-    array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
-    array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
-    all_signals_unique, index_signals_unique = np.unique(all_signals, axis=1, return_inverse=True)
-
-    nb_water_timesteps = array_water_unique.shape[1]
-    nb_fat_timesteps = array_fat_unique.shape[1]
-    nb_patterns = array_water.shape[0]
-    nb_signals_unique = all_signals_unique.shape[1]
-    nb_signals = all_signals.shape[1]
-
-    duplicate_signals=True
-    if nb_signals_unique==nb_signals:
-        print("No duplicate signals")
-        duplicate_signals = False
-        all_signals_unique=all_signals
-
-    del array_water
-    del array_fat
-
-    if pca:
-        print("Performing PCA")
-
-        pca_water = PCAComplex(n_components=threshold_pca)
-        pca_fat = PCAComplex(n_components=threshold_pca)
-
-        pca_water.fit(array_water_unique)
-        pca_fat.fit(array_fat_unique)
-
-        print("Water Components Retained {} out of {} timesteps".format(pca_water.n_components_, nb_water_timesteps))
-        print("Fat Components Retained {} out of {} timesteps".format(pca_fat.n_components_, nb_fat_timesteps))
-
-        transformed_array_water_unique = pca_water.transform(array_water_unique)
-        transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
-
-        # retrieved_array_water_unique = np.matmul(transformed_array_water_unique,np.transpose(water_vect))
-        # retrieved_array_fat_unique = np.matmul(transformed_array_fat_unique,np.transpose(fat_vect))
-
-        # plt.figure()
-        # plt.plot(retrieved_array_fat_unique[0,:].real)
-        # plt.plot(array_fat_unique[0,:].real)
-
-        transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique)))
-        transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
-
-        sig_ws_all_unique = np.matmul(transformed_array_water_unique, transformed_all_signals_water[:, :].conj()).real
-        sig_fs_all_unique = np.matmul(transformed_array_fat_unique, transformed_all_signals_fat[:, :].conj()).real
-
-        pca_water.plot_retrieved_signal(array_water_unique,0)
-        pca_fat.plot_retrieved_signal(array_fat_unique, 0)
-
-
-    else:
-        sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, :].conj()).real
-        sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, :].conj()).real
-
-
-
-    var_w = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
-    var_f = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
-    sig_wf = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(), axis=1).real
-
-    var_w = var_w[index_water_unique]
-    var_f = var_f[index_fat_unique]
-
-    print("Calculating optimal fat fraction and best pattern per signal")
-    var_w = np.reshape(var_w, (-1, 1))
-    var_f = np.reshape(var_f, (-1, 1))
-    sig_wf = np.reshape(sig_wf, (-1, 1))
-
-    #alpha_all_unique = np.zeros((nb_patterns, nb_signals_unique))
-    #J_all = np.zeros(alpha_all_unique.shape)
-
-    num_group = int(nb_signals_unique / split) + 1
-
-    idx_max_all_unique = []
-    alpha_optim = []
-
-    for j in tqdm.tqdm(range(num_group)):
-        j_signal = j * split
-        j_signal_next = np.minimum((j + 1) * split, nb_signals_unique)
-        current_sig_ws = sig_ws_all_unique[index_water_unique, j_signal:j_signal_next]
-        current_sig_fs = sig_fs_all_unique[index_fat_unique, j_signal:j_signal_next]
-        current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
-                    (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
-        #alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
-        current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
-        J_all = ((
-                                                        1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
-            (1 - current_alpha_all_unique) ** 2 * var_w + current_alpha_all_unique ** 2 * var_f + 2 * current_alpha_all_unique * (
-                        1 - current_alpha_all_unique) * sig_wf)
-        idx_max_all_current = np.argmax(J_all, axis=0)
-        idx_max_all_unique.extend(idx_max_all_current)
-        alpha_optim.extend(current_alpha_all_unique[idx_max_all_current, np.arange(J_all.shape[1])])
-
-    del J_all
-
-    print("Building the maps")
-
-    del sig_ws_all_unique
-    del sig_fs_all_unique
-
-    params_all_unique = np.array(
-        [keys[idx] + (alpha_optim[l],) for l, idx in enumerate(idx_max_all_unique)])
-
-    if duplicate_signals:
-        params_all = params_all_unique[index_signals_unique]
-    else:
-        params_all = params_all_unique
-
-
-    map_rebuilt = {
-        "wT1": params_all[:, 0],
-        "fT1": params_all[:, 1],
-        "attB1": params_all[:, 2],
-        "df": params_all[:, 3],
-        "ff": params_all[:, 4]
-
-    }
-
-    return map_rebuilt
 
 
 
@@ -611,15 +486,18 @@ def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression 
 
     plt.suptitle(title)
 
-def regression_paramMaps_ROI(map1,map2,mask1=None,mask2=None,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8,mode="Standard",proj_on_mask1=True,figsize=(15,10)):
+def regression_paramMaps_ROI(map1,map2,mask1=None,mask2=None,maskROI=None,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8,mode="Standard",proj_on_mask1=True,figsize=(15,10)):
 
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
     nb_keys=len(keys_1 & keys_2)
-    fig,ax = plt.subplots(1,nb_keys,figsize=figsize)
-    maskROI = buildROImask(map1)
 
 
+    if maskROI is None:
+        maskROI = buildROImask(map1)
+
+
+    fig, ax = plt.subplots(1, nb_keys, figsize=figsize)
 
     for i,k in enumerate(keys_1 & keys_2):
         obs = map1[k]
@@ -634,13 +512,17 @@ def regression_paramMaps_ROI(map1,map2,mask1=None,mask2=None,title="Maps regress
             mat_ROI = makevol(maskROI, mask1)
             if proj_on_mask1:
                 mat_pred = mat_pred*(mask1*1)
+                mat_ROI = mat_ROI*(mask1*1)
+                mat_obs = mat_obs*(mask1*1)
+                mask_union=mask1
 
             obs = mat_obs[mask_union]
             pred = mat_pred[mask_union]
             maskROI_current=mat_ROI[mask_union]
 
         if adj_wT1 and k=="wT1":
-            ff = map2["ff"]
+            ff = makevol(map1["ff"],mask1)
+            ff=ff[mask_union]
             obs = obs[ff < fat_threshold]
             pred = pred[ff < fat_threshold]
             maskROI_current=maskROI_current[ff < fat_threshold]
@@ -650,6 +532,8 @@ def regression_paramMaps_ROI(map1,map2,mask1=None,mask2=None,title="Maps regress
         obs = np.array(df_obs.groupby("Groups").mean())[1:]
         pred = np.array(df_pred.groupby("Groups").mean())[1:]
 
+        if k == "ff":
+            print(np.sort(obs.flatten()))
         x_min = np.min(obs)
         x_max = np.max(obs)
 
@@ -831,7 +715,7 @@ def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):
             c_gpu = GPUArray((1, M), dtype=complex_dtype)
             # Initialize the plan and set the points.
             kdata=[]
-            for i in list(range(m.images_series.shape[0])):
+            for i in list(range(volumes.shape[0])):
                 fk = volumes[i, :, :]
                 kx = traj[i, :, 0]
                 ky = traj[i, :, 1]
@@ -862,7 +746,7 @@ def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):
             c_gpu = GPUArray((1, M), dtype=complex_dtype)
             # Initialize the plan and set the points.
             kdata = []
-            for i in list(range(m.images_series.shape[0])):
+            for i in list(range(volumes.shape[0])):
                 fk = volumes[i, :, :]
                 kx = traj[i, :, 0]
                 ky = traj[i, :, 1]
@@ -885,13 +769,13 @@ def buildROImask(map):
     if "wT1" not in map:
         raise ValueError("wT1 should be in the param Map to build the ROI")
 
-    print(map["wT1"].shape)
+    #print(map["wT1"].shape)
     orig_data = map["wT1"].reshape(-1, 1)
-    data = orig_data + np.random.normal(size=orig_data.shape)
+    data = orig_data + np.random.normal(size=orig_data.shape,scale=0.1)
     model = KMeans(n_clusters=np.minimum(len(np.unique(orig_data)),10))
     model.fit(data)
     groups = model.labels_ + 1
-    print(groups.shape)
+    #print(groups.shape)
     return groups
 
 def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6):
@@ -991,13 +875,15 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
     return np.array(images_series_rebuilt)
 
 
-def plot_evolution_params(map_ref, mask_ref, all_maps, adj_wT1=True, title="R2 Evolution", fat_threshold=0.7,
+def plot_evolution_params(map_ref, mask_ref, all_maps,maskROI=None, adj_wT1=True, title="R2 Evolution", fat_threshold=0.7,
                           proj_on_mask1=True, fontsize=5, figsize=(15, 40)):
     keys_1 = set(map_ref.keys())
     keys_2 = set(all_maps[0][0].keys())
     nb_keys = len(keys_1 & keys_2)
     fig, ax = plt.subplots(nb_keys, figsize=figsize)
-    maskROI = buildROImask(map_ref)
+
+    if maskROI is None:
+        maskROI = buildROImask(map_ref)
 
     for i, k in enumerate(keys_1 & keys_2):
         print(i)
@@ -1013,13 +899,17 @@ def plot_evolution_params(map_ref, mask_ref, all_maps, adj_wT1=True, title="R2 E
             mat_ROI = makevol(maskROI, mask_ref)
             if proj_on_mask1:
                 mat_pred = mat_pred * (mask_ref * 1)
+                mat_obs = mat_obs * (mask_ref * 1)
+                mat_ROI = mat_ROI * (mask_ref * 1)
+                mask_union=mask_ref
 
             obs = mat_obs[mask_union]
             pred = mat_pred[mask_union]
             maskROI_current = mat_ROI[mask_union]
 
             if adj_wT1 and k == "wT1":
-                ff = map2["ff"]
+                ff = makevol(map_ref["ff"],mask_ref)
+                ff=ff[mask_union]
                 obs = obs[ff < fat_threshold]
                 pred = pred[ff < fat_threshold]
                 maskROI_current = maskROI_current[ff < fat_threshold]
