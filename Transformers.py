@@ -1,6 +1,7 @@
 from sklearn.base import BaseEstimator, TransformerMixin  # This function just makes sure that the object is fitted
 from sklearn.utils.validation import check_is_fitted
 import numpy as np
+import cupy as cp
 import matplotlib.pyplot as plt
 
 
@@ -45,10 +46,17 @@ class PCAComplex(BaseEstimator,TransformerMixin):
 
     def transform(self, X):
         # make sure that it was fitted
+        xp=cp.get_array_module(X)
         check_is_fitted(self,'explained_variance_ratio_')
 
         X = X.copy()  # This is so we do not make changes to the
-        return np.matmul(X, self.components_.conj())
+
+        if xp=="cupy":
+            components = cp.asarray(self.components_)
+        else:
+            components = self.components_
+
+        return xp.matmul(X, components.conj())
 
     def plot_retrieved_signal(self,X,i=0):
         X_trans = self.transform(X)

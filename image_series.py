@@ -33,7 +33,6 @@ except:
 DEFAULT_wT2 = 80
 DEFAULT_fT1 = 300
 DEFAULT_fT2 = 40
-DEFAULT_MAX_CLUSTER = 10
 
 DEFAULT_ROUNDING_wT1=0
 DEFAULT_ROUNDING_wT2=0
@@ -355,12 +354,18 @@ class ImageSeries(object):
                             fk = fk.astype(complex_dtype)
 
                             c_gpu = GPUArray((1, kx.shape[0]), dtype=complex_dtype)
+                            #fk_gpu = GPUArray(fk.shape, dtype=complex_dtype)
+                            #fk_gpu.fill(fk)
+                            fk_gpu = to_gpu(fk)
+
 
                             plan = cufinufft(2, (N1, N2,N3), 1, eps=eps, dtype=dtype)
                             plan.set_pts(to_gpu(kz),to_gpu(kx), to_gpu(ky))
-                            plan.execute(c_gpu, to_gpu(fk))
+                            plan.execute(c_gpu, fk_gpu)
                             c = np.squeeze(c_gpu.get())
                             kdata_current.append(c)
+                            fk_gpu.gpudata.free()
+                            c_gpu.gpudata.free()
                             plan.__del__()
 
                         kdata_current=np.array(kdata_current).flatten()

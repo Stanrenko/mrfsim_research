@@ -344,13 +344,13 @@ def basicDictSearch(all_signals,dictfile):
 
 
 
-def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8,proj_on_mask1=False,save=False):
+def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8,proj_on_mask1=False,save=False,figsize=(30,10)):
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
     if mask2 is None:
         mask2 = mask1
     for k in (keys_1 & keys_2):
-        fig,axes=plt.subplots(1,3)
+        fig,axes=plt.subplots(1,3,figsize=figsize)
         vol1 = makevol(map1[k],mask1)
         vol2= makevol(map2[k],mask2)
         if proj_on_mask1:
@@ -359,7 +359,7 @@ def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",ti
             ff = makevol(map2["ff"],mask2)
             vol2[ff>fat_threshold]=vol1[ff>fat_threshold]
 
-        error=np.abs(vol1-vol2)
+        error=vol2-vol1
 
         im1=axes[0].imshow(vol1)
         axes[0].set_title(title1+" "+k)
@@ -399,7 +399,7 @@ def compare_paramMaps_3D(map1,map2,mask1,mask2=None,slice=0,fontsize=5,title1="O
             ff = makevol(map2["ff"],mask2)[slice,:,:]
             vol2[ff>fat_threshold]=vol1[ff>fat_threshold]
 
-        error=np.abs(vol1-vol2)
+        error=(vol1-vol2)
 
         im1=axes[0].imshow(vol1)
         axes[0].set_title(title1+" "+k)
@@ -486,20 +486,20 @@ def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression 
 
     plt.suptitle(title)
 
-def regression_paramMaps_ROI(map1,map2,mask1=None,mask2=None,maskROI=None,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8,mode="Standard",proj_on_mask1=True,figsize=(15,10)):
 
+def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, title="Maps regression plots",
+                             fontsize=5, adj_wT1=False, fat_threshold=0.8, mode="Standard", proj_on_mask1=True,plt_std=False,
+                             figsize=(15, 10)):
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
-    nb_keys=len(keys_1 & keys_2)
-
+    nb_keys = len(keys_1 & keys_2)
 
     if maskROI is None:
         maskROI = buildROImask(map1)
 
-
     fig, ax = plt.subplots(1, nb_keys, figsize=figsize)
 
-    for i,k in enumerate(keys_1 & keys_2):
+    for i, k in enumerate(keys_1 & keys_2):
         obs = map1[k]
         pred = map2[k]
 
@@ -507,61 +507,72 @@ def regression_paramMaps_ROI(map1,map2,mask1=None,mask2=None,maskROI=None,title=
             if mask2 is None:
                 mask2 = mask1
             mask_union = mask1 | mask2
-            mat_obs = makevol(map1[k],mask1)
-            mat_pred = makevol(map2[k],mask2)
+            mat_obs = makevol(map1[k], mask1)
+            mat_pred = makevol(map2[k], mask2)
             mat_ROI = makevol(maskROI, mask1)
             if proj_on_mask1:
-                mat_pred = mat_pred*(mask1*1)
-                mat_ROI = mat_ROI*(mask1*1)
-                mat_obs = mat_obs*(mask1*1)
-                mask_union=mask1
+                mat_pred = mat_pred * (mask1 * 1)
+                mat_ROI = mat_ROI * (mask1 * 1)
+                mat_obs = mat_obs * (mask1 * 1)
+                mask_union = mask1
 
             obs = mat_obs[mask_union]
             pred = mat_pred[mask_union]
-            maskROI_current=mat_ROI[mask_union]
+            maskROI_current = mat_ROI[mask_union]
 
-        if adj_wT1 and k=="wT1":
-            ff = makevol(map1["ff"],mask1)
-            ff=ff[mask_union]
+            # print(obs)
+
+        if adj_wT1 and k == "wT1":
+            ff = makevol(map1["ff"], mask1)
+            ff = ff[mask_union]
             obs = obs[ff < fat_threshold]
             pred = pred[ff < fat_threshold]
-            maskROI_current=maskROI_current[ff < fat_threshold]
+            maskROI_current = maskROI_current[ff < fat_threshold]
 
-        df_obs = pd.DataFrame(columns=["Data", "Groups"], data=np.stack([obs.flatten(), maskROI_current.flatten()],axis=-1))
-        df_pred = pd.DataFrame(columns=["Data", "Groups"], data=np.stack([pred.flatten(), maskROI_current.flatten()],axis=-1))
+        df_obs = pd.DataFrame(columns=["Data", "Groups"],
+                              data=np.stack([obs.flatten(), maskROI_current.flatten()], axis=-1))
+        df_pred = pd.DataFrame(columns=["Data", "Groups"],
+                               data=np.stack([pred.flatten(), maskROI_current.flatten()], axis=-1))
         obs = np.array(df_obs.groupby("Groups").mean())[1:]
         pred = np.array(df_pred.groupby("Groups").mean())[1:]
+        # obs_std = np.array(df_obs.groupby("Groups").std())[1:]
+
+        # print(list(pred_std.reshape(1,-1)))
 
         if k == "ff":
             print(np.sort(obs.flatten()))
         x_min = np.min(obs)
         x_max = np.max(obs)
 
-        if x_min==x_max:
+        if x_min == x_max:
             fig.delaxes(ax[i])
             continue
 
-        mean=np.mean(obs)
-        ss_tot = np.sum((obs-mean)**2)
-        ss_res = np.sum((obs-pred)**2)
-        bias = np.mean((pred-obs))
-        r_2 = 1-ss_res/ss_tot
+        mean = np.mean(obs)
+        ss_tot = np.sum((obs - mean) ** 2)
+        ss_res = np.sum((obs - pred) ** 2)
+        bias = np.mean((pred - obs))
+        r_2 = 1 - ss_res / ss_tot
 
         dx = (x_max - x_min) / 10
-        x_ = np.arange(x_min, x_max+dx,dx )
+        x_ = np.arange(x_min, x_max + dx, dx)
 
-        if mode=="Standard":
-            ax[i].scatter(obs,pred,s=1)
+        if mode == "Standard":
+            if plt_std:
+                pred_std = np.array(df_pred.groupby("Groups").std())[1:]
+                ax[i].errorbar(obs, pred, list(pred_std.flatten()), linestyle='None', marker='^')
+            else:
+                ax[i].scatter(obs,pred,s=1)
             ax[i].plot(x_, x_, "r")
-        elif mode=="Boxplot":
-            unique_obs=np.unique(obs)
-            sns.boxplot(ax=ax[i],x=obs,y=pred)
-            locs=ax[i].get_xticks()
-            sns.lineplot(ax=ax[i],x=locs,y=unique_obs)
+        elif mode == "Boxplot":
+            unique_obs = np.unique(obs)
+            sns.boxplot(ax=ax[i], x=obs, y=pred)
+            locs = ax[i].get_xticks()
+            sns.lineplot(ax=ax[i], x=locs, y=unique_obs)
         else:
             raise ValueError("mode should be Standard/Boxplot")
 
-        ax[i].set_title(k+" R2:{} Bias:{}".format(np.round(r_2,4),np.round(bias,3)),fontsize=2*fontsize)
+        ax[i].set_title(k + " R2:{} Bias:{}".format(np.round(r_2, 4), np.round(bias, 3)), fontsize=2 * fontsize)
         ax[i].tick_params(axis='x', labelsize=fontsize)
         ax[i].tick_params(axis='y', labelsize=fontsize)
 
@@ -692,7 +703,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
 
     unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
     mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 5])
-    mask = ndimage.binary_closing(mask, iterations=10)
+    mask = ndimage.binary_closing(mask, iterations=5)
 
     return mask*1
 
@@ -875,7 +886,7 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
     return np.array(images_series_rebuilt)
 
 
-def plot_evolution_params(map_ref, mask_ref, all_maps,maskROI=None, adj_wT1=True, title="R2 Evolution", fat_threshold=0.7,
+def plot_evolution_params(map_ref, mask_ref, all_maps, maskROI=None, adj_wT1=True, metric="R2", fat_threshold=0.7,
                           proj_on_mask1=True, fontsize=5, figsize=(15, 40)):
     keys_1 = set(map_ref.keys())
     keys_2 = set(all_maps[0][0].keys())
@@ -887,7 +898,8 @@ def plot_evolution_params(map_ref, mask_ref, all_maps,maskROI=None, adj_wT1=True
 
     for i, k in enumerate(keys_1 & keys_2):
         print(i)
-        r_2_list = []
+        result_list = []
+        std_list = []
         for it, value in all_maps.items():
 
             map2 = value[0]
@@ -901,15 +913,15 @@ def plot_evolution_params(map_ref, mask_ref, all_maps,maskROI=None, adj_wT1=True
                 mat_pred = mat_pred * (mask_ref * 1)
                 mat_obs = mat_obs * (mask_ref * 1)
                 mat_ROI = mat_ROI * (mask_ref * 1)
-                mask_union=mask_ref
+                mask_union = mask_ref
 
             obs = mat_obs[mask_union]
             pred = mat_pred[mask_union]
             maskROI_current = mat_ROI[mask_union]
 
             if adj_wT1 and k == "wT1":
-                ff = makevol(map_ref["ff"],mask_ref)
-                ff=ff[mask_union]
+                ff = makevol(map_ref["ff"], mask_ref)
+                ff = ff[mask_union]
                 obs = obs[ff < fat_threshold]
                 pred = pred[ff < fat_threshold]
                 maskROI_current = maskROI_current[ff < fat_threshold]
@@ -918,27 +930,48 @@ def plot_evolution_params(map_ref, mask_ref, all_maps,maskROI=None, adj_wT1=True
                                   data=np.stack([obs.flatten(), maskROI_current.flatten()], axis=-1))
             df_pred = pd.DataFrame(columns=["Data", "Groups"],
                                    data=np.stack([pred.flatten(), maskROI_current.flatten()], axis=-1))
-            obs = np.array(df_obs.groupby("Groups").mean())[1:]
-            pred = np.array(df_pred.groupby("Groups").mean())[1:]
+            mean_obs = np.array(df_obs.groupby("Groups").mean())[1:]
+            mean_pred = np.array(df_pred.groupby("Groups").mean())[1:]
 
-            x_min = np.min(obs)
-            x_max = np.max(obs)
+            x_min = np.min(mean_obs)
+            x_max = np.max(mean_pred)
 
             if x_min == x_max:
                 fig.delaxes(ax[i])
                 break
 
-            mean = np.mean(obs)
-            ss_tot = np.sum((obs - mean) ** 2)
-            ss_res = np.sum((obs - pred) ** 2)
-            bias = np.mean((pred - obs))
-            r_2 = 1 - ss_res / ss_tot
-            r_2_list.append(r_2)
+            if metric == "R2":
+                mean = np.mean(mean_obs)
+                ss_tot = np.sum((mean_obs - mean) ** 2)
+                ss_res = np.sum((mean_obs - mean_pred) ** 2)
+                bias = np.mean((mean_pred - mean_obs))
+                r_2 = 1 - ss_res / ss_tot
+                result_list.append(r_2)
 
-        n_it = len(r_2_list)
-        ax[i].plot(range(n_it), r_2_list, "r")
+            elif metric == "RMSE":
+                print(obs.shape)
+                print(pred.shape)
+                df_error = pd.DataFrame(columns=["Data", "Groups"],
+                                        data=np.stack(
+                                            [(pred.flatten() - obs.flatten()) ** 2, maskROI_current.flatten()],
+                                            axis=-1))
+                errors = np.sqrt(np.array(df_error.groupby("Groups").mean())[1:])
+                error = np.mean(errors)
+                std_error = np.std(errors)
+                result_list.append(error)
+                std_list.append(std_error)
+            else:
+                raise ValueError("Metric should be RMSE or R2")
+
+        n_it = len(result_list)
+        if metric == "R2":
+            ax[i].plot(range(n_it), result_list, "r")
+        elif metric == "RMSE":
+            # ax[i].plot(range(n_it), result_list, "r")
+            ax[i].errorbar(range(n_it), result_list, std_list)
+
         ax[i].set_title(k + " Evolution over Iteration", fontsize=2 * fontsize)
         ax[i].tick_params(axis='x', labelsize=fontsize)
         ax[i].tick_params(axis='y', labelsize=fontsize)
 
-    plt.suptitle(title)
+    plt.suptitle("{} Evolution".format(metric))

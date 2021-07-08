@@ -15,11 +15,12 @@ except:
 
 class Optimizer(object):
 
-    def __init__(self,log=False,mask=None,useGPU=False,**kwargs):
+    def __init__(self,log=False,mask=None,verbose=False,useGPU=False,**kwargs):
         self.paramDict=kwargs
         self.paramDict["log"]=log
         self.paramDict["useGPU"]=useGPU
         self.mask=mask
+        self.verbose=verbose
 
 
     def search_patterns(self,dict_file,volumes):
@@ -54,6 +55,8 @@ class SimpleDictSearch(Optimizer):
         else:
             mask = self.mask
 
+
+        verbose=self.verbose
         niter=self.paramDict["niter"]
         split=self.paramDict["split"]
         pca=self.paramDict["pca"]
@@ -146,30 +149,60 @@ class SimpleDictSearch(Optimizer):
                 j_signal = j * split
                 j_signal_next = np.minimum((j + 1) * split, nb_signals_unique)
 
+                if self.verbose:
+                    print("PCA transform")
+                    start = datetime.now()
 
-                print("PCA transform")
-                start = datetime.now()
-                if pca:
-                    transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique)))
-                    transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
+                if not(useGPU):
 
-                    sig_ws_all_unique = np.matmul(transformed_array_water_unique,
-                                                  transformed_all_signals_water[:, j_signal:j_signal_next].conj()).real
-                    sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
-                                                  transformed_all_signals_fat[:, j_signal:j_signal_next].conj()).real
+                    if pca:
+                        transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique)))
+                        transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
+
+                        sig_ws_all_unique = np.matmul(transformed_array_water_unique,
+                                                      transformed_all_signals_water[:, j_signal:j_signal_next].conj()).real
+                        sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
+                                                      transformed_all_signals_fat[:, j_signal:j_signal_next].conj()).real
+                    else:
+                        sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, j_signal:j_signal_next].conj()).real
+                        sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, j_signal:j_signal_next].conj()).real
+
+
                 else:
-                    sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, j_signal:j_signal_next].conj()).real
-                    sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, j_signal:j_signal_next].conj()).real
 
-                end = datetime.now()
-                print(end-start)
 
-                print("Extracting all sig_ws and sig_fs")
-                start = datetime.now()
+                    if pca:
+                        transformed_all_signals_water = np.transpose(
+                            pca_water.transform(np.transpose(all_signals_unique)))
+                        transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
+
+                        sig_ws_all_unique = np.matmul(transformed_array_water_unique,
+                                                      transformed_all_signals_water[:,
+                                                      j_signal:j_signal_next].conj()).real
+                        sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
+                                                      transformed_all_signals_fat[:,
+                                                      j_signal:j_signal_next].conj()).real
+                    else:
+                        sig_ws_all_unique = np.matmul(array_water_unique,
+                                                      all_signals_unique[:, j_signal:j_signal_next].conj()).real
+                        sig_fs_all_unique = np.matmul(array_fat_unique,
+                                                      all_signals_unique[:, j_signal:j_signal_next].conj()).real
+
+
+                if self.verbose:
+                    end = datetime.now()
+                    print(end - start)
+
+                if self.verbose:
+                    print("Extracting all sig_ws and sig_fs")
+                    start = datetime.now()
+
                 current_sig_ws = sig_ws_all_unique[index_water_unique, :]
                 current_sig_fs = sig_fs_all_unique[index_fat_unique, :]
-                end = datetime.now()
-                print(end-start)
+
+                if self.verbose:
+                    end = datetime.now()
+                    print(end-start)
 
                 if not(useGPU):
                     print("Calculating alpha optim and flooring")
@@ -195,8 +228,10 @@ class SimpleDictSearch(Optimizer):
                     end = datetime.now()
 
                 else:
-                    print("Calculating alpha optim and flooring")
-                    start = datetime.now()
+                    if verbose:
+                        print("Calculating alpha optim and flooring")
+                        start = datetime.now()
+
                     sig_wf=cp.asarray(sig_wf)
                     current_sig_ws=cp.asarray(current_sig_ws)
                     current_sig_fs=cp.asarray(current_sig_fs)
@@ -205,17 +240,23 @@ class SimpleDictSearch(Optimizer):
 
                     current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
                             (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
-                    end = datetime.now()
-                    print(end - start)
 
-                    start = datetime.now()
+                    if verbose:
+                        end = datetime.now()
+                        print(end - start)
+
+                    if verbose:
+                        start = datetime.now()
                     current_alpha_all_unique = cp.minimum(cp.maximum(current_alpha_all_unique, 0.0), 1.0)
-                    end = datetime.now()
-                    print(end - start)
+
+                    if verbose:
+                        end = datetime.now()
+                        print(end - start)
 
                     # alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
-                    print("Calculating cost for all signals")
-                    start = datetime.now()
+                    if verbose:
+                        print("Calculating cost for all signals")
+                        start = datetime.now()
                     J_all = ((
                                      1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
                         (
@@ -224,23 +265,31 @@ class SimpleDictSearch(Optimizer):
 
                     J_all = J_all.get()
                     current_alpha_all_unique=current_alpha_all_unique.get()
-                    end = datetime.now()
+                    if verbose:
+                        end = datetime.now()
+                        print(end - start)
 
 
-                print(end-start)
+                if verbose:
+                    print("Extracting index of pattern with max correl")
+                    start = datetime.now()
 
-                print("Extracting index of pattern with max correl")
-                start = datetime.now()
                 idx_max_all_current = np.argmax(J_all, axis=0)
-                end = datetime.now()
-                print(end-start)
 
-                print("Filling the lists with results for this loop")
-                start = datetime.now()
+                if verbose:
+                    end = datetime.now()
+                    print(end-start)
+
+                if verbose:
+                    print("Filling the lists with results for this loop")
+                    start = datetime.now()
+
                 idx_max_all_unique.extend(idx_max_all_current)
                 alpha_optim.extend(current_alpha_all_unique[idx_max_all_current, np.arange(J_all.shape[1])])
-                end = datetime.now()
-                print(end - start)
+
+                if verbose:
+                    end = datetime.now()
+                    print(end - start)
 
             # idx_max_all_unique = np.argmax(J_all, axis=0)
             del J_all
