@@ -1,9 +1,14 @@
+import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers,regularizers
 from tensorflow.keras.layers.experimental import preprocessing
 from tensorflow.keras.callbacks import LearningRateScheduler
-import kerastuner as kt
+import keras_tuner as kt
 import math
+import matplotlib.pyplot as plt
+import numpy as np
+from utils_mrf import read_mrf_dict
+from datetime import datetime
 #tf.compat.v1.enable_eager_execution()
 
 # learning rate schedule
@@ -54,7 +59,7 @@ def build_and_compile_model_simple():
     ])
 
     model.compile(loss='mean_squared_error',
-                  optimizer=tf.keras.optimizers.Adam(0.001))
+                  optimizer=tf.keras.optimizers.Adam(0.01))
     return model
 
 
@@ -102,6 +107,26 @@ def plot_loss(history, epoch_start=0):
     plt.grid(True)
 
 
+FF_list=list(np.arange(0.,1.05,0.05))
+dictfile = "mrf175_SimReco2.dict"
+keys,signal=read_mrf_dict(dictfile,FF_list)
+
+Y_TF = np.array(keys)
+real_signal = signal.real
+imag_signal = signal.imag
+
+X_TF = np.concatenate((real_signal,imag_signal),axis=1)
+
+from sklearn.preprocessing import MinMaxScaler,StandardScaler
+
+input_scaler  =StandardScaler()
+output_scaler = MinMaxScaler()
+
+X_TF = np.transpose(input_scaler.fit_transform((X_TF)))
+Y_TF = np.transpose(output_scaler.fit_transform(Y_TF))
+
+
+
 
 tuner = kt.Hyperband(build_and_compile_model_hp,
                     objective='val_loss',
@@ -109,8 +134,9 @@ tuner = kt.Hyperband(build_and_compile_model_hp,
                     factor=3,
                     directory='my_dir',
                     project_name='intro_to_kt',overwrite=True)
+n_outputs=Y_TF.shape[0]
 
-#stop_early = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
+stop_early = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)
 tuner.search(np.transpose(X_TF), np.transpose(Y_TF), validation_split=0.2, callbacks=[stop_early])
 
 # Get the optimal hyperparameters
@@ -121,4 +147,18 @@ The hyperparameter search is complete. The optimal dropout rate is {best_hps.get
 is {best_hps.get('learning_rate')}. The optimal activation is {best_hps.get('activation')}
 """)
 
-read_mrf_dict
+
+callbacks_list = []
+
+model_keras = tuner.get_best_models()[0]
+
+log_dir = "logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+callbacks_list.append(tensorboard_callback)
+
+history = model_keras.fit(
+    np.transpose(X_TF), np.transpose(Y_TF),batch_size=1024,shuffle=True,
+    validation_split=0.2,
+    verbose=1, epochs=1000,callbacks=callbacks_list)
+
+output_scaler.inverse_transform(model_keras.predict(X_TF[:,10].reshape(1,-1)))

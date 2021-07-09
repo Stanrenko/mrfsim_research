@@ -15,6 +15,7 @@ import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.model_selection import GridSearchCV
 import pandas as pd
+import itertools
 
 try:
     import pycuda.autoinit

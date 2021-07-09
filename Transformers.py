@@ -1,7 +1,10 @@
 from sklearn.base import BaseEstimator, TransformerMixin  # This function just makes sure that the object is fitted
 from sklearn.utils.validation import check_is_fitted
 import numpy as np
-import cupy as cp
+try:
+    import cupy as cp
+except:
+    pass
 import matplotlib.pyplot as plt
 
 
