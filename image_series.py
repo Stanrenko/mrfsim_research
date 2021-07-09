@@ -875,6 +875,9 @@ class RandomMap3D(ImageSeries3D):
             self.paramDict[
                 "mask_reduction_factor"] = 0.0  # mask_reduction_factors*total_pixels will be cropped on all edges of the image
 
+        if "repeat_slice" not in self.paramDict:
+            self.paramDict["repeat_slice"]=1
+
         mask_red = self.paramDict["mask_reduction_factor"]
         self.image_size=(self.paramDict["nb_total_slices"],self.image_size[0],self.image_size[1]) #for random map the image size is an input provided by the user, need to extend in z dimension
         mask = np.zeros(self.image_size)
@@ -909,7 +912,10 @@ class RandomMap3D(ImageSeries3D):
 
         map_all=np.zeros(self.image_size+(7,))
 
-        for j in range(nb_slices):
+        repeat_slice = self.paramDict["repeat_slice"]
+        params_slices_count = int(nb_slices/repeat_slice)
+
+        for j in range(params_slices_count):
             sliced_mask = mask_without_empty_slices[j,:,:]
             map_wT1 = create_random_map(wT1, self.region_size, sliced_image_size, sliced_mask)
             map_wT2 = create_random_map([wT2], self.region_size, sliced_image_size, sliced_mask)
@@ -919,7 +925,14 @@ class RandomMap3D(ImageSeries3D):
             map_df = create_random_map(df, self.region_size, sliced_image_size, sliced_mask)
             map_ff = create_random_map(ff, self.region_size, sliced_image_size, sliced_mask)
 
-            map_all[j+self.paramDict["nb_empty_slices"],:,:,:] = np.stack((map_wT1, map_wT2, map_fT1, map_fT2, map_attB1, map_df, map_ff), axis=-1)
+            j_current = j*repeat_slice+self.paramDict["nb_empty_slices"]
+            j_next = np.minimum((j+1)*repeat_slice,nb_slices)+self.paramDict["nb_empty_slices"]
+
+            nb_repeat_current = j_next-j_current
+
+            slices_value = np.stack((map_wT1, map_wT2, map_fT1, map_fT2, map_attB1, map_df, map_ff), axis=-1)
+
+            map_all[j_current:j_next,:,:,:] = np.resize(slices_value,(nb_repeat_current,)+slices_value.shape)
 
         map_all_on_mask = map_all[mask > 0]
 

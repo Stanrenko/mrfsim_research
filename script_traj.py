@@ -54,3 +54,5 @@ m.build_ref_images(seq,window)
 
 all_maps_adj=m.dictSearchMemoryOptimIterative(dictfile,seq,radial_traj,niter=1,split=500,threshold_pca=15,log=False,useAdjPred=True,true_mask=False)
 regression_paramMaps(m.paramMap,all_maps_adj[1][0],m.mask>0,all_maps_adj[1][1]>0,title="Orig vs Adjusted Iterative",proj_on_mask1=True)
+
+

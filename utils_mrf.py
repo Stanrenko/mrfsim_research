@@ -639,10 +639,11 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
             volume_rebuilt = finufft.nufft2d1(traj_all[:,0], traj_all[:,1], kdata_all, size)
         else:
             N1, N2 = size[0], size[1]
-            fk_gpu = GPUArray((1, N1, N2), dtype=complex_dtype)
-
             dtype = np.float32  # Datatype (real)
             complex_dtype = np.complex64
+            fk_gpu = GPUArray((1, N1, N2), dtype=complex_dtype)
+
+
             c_retrieved = kdata_all
             kx = traj_all[:, 0]
             ky = traj_all[:, 1]
@@ -665,6 +666,11 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
             fk = np.squeeze(fk_gpu.get())
             volume_rebuilt = np.array(fk)
             plan.__del__()
+
+
+        unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
+        mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 7])
+        #mask = ndimage.binary_closing(mask, iterations=10)
 
 
     elif traj.shape[-1]==3: # For volumes
@@ -702,11 +708,11 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
             volume_rebuilt = np.array(fk)
             plan.__del__()
 
-    unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
-    mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 5])
-    mask = ndimage.binary_closing(mask, iterations=5)
+        unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
+        mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 7])
+        mask = ndimage.binary_closing(mask, iterations=3)
 
-    return mask*1
+    return mask
 
 
 def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):

@@ -170,3 +170,5 @@ ani_diff = animate_images(images-images_GPU)
 # in c_gpu.
 
 # Retreive the result from the GPU.
+
+

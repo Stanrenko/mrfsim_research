@@ -1,7 +1,7 @@
 import numpy as np
 from scipy import ndimage
 from scipy.ndimage import affine_transform
-from utils_mrf import translation_breathing,build_mask_single_image,build_mask,simulate_radial_undersampled_images
+from utils_mrf import translation_breathing,build_mask_single_image,build_mask,simulate_radial_undersampled_images,read_mrf_dict
 from Transformers import PCAComplex
 from mutools.optim.dictsearch import dictsearch
 from tqdm import tqdm
@@ -13,6 +13,9 @@ try:
 except:
     pass
 
+from sklearn.preprocessing import MinMaxScaler,StandardScaler
+
+
 class Optimizer(object):
 
     def __init__(self,log=False,mask=None,verbose=False,useGPU=False,**kwargs):
@@ -23,7 +26,7 @@ class Optimizer(object):
         self.verbose=verbose
 
 
-    def search_patterns(self,dict_file,volumes):
+    def search_patterns(self,volumes):
         #takes as input dictionary pattern and an array of images or volumes and outputs parametric maps
         raise ValueError("search_patterns should be implemented in child")
 
@@ -50,6 +53,7 @@ class SimpleDictSearch(Optimizer):
 
 
     def search_patterns(self,dictfile,volumes):
+
         if self.mask is None:
             mask = build_mask(volumes)
         else:
@@ -62,9 +66,10 @@ class SimpleDictSearch(Optimizer):
         pca=self.paramDict["pca"]
         threshold_pca=self.paramDict["threshold_pca"]
         useAdjPred=self.paramDict["useAdjPred"]
-        seq = self.paramDict["sequence"]
+        if niter>0:
+            seq = self.paramDict["sequence"]
+            trajectory = self.paramDict["trajectory"]
         log=self.paramDict["log"]
-        trajectory = self.paramDict["trajectory"]
         useGPU=self.paramDict["useGPU"]
 
         volumes = volumes / np.linalg.norm(volumes, 2, axis=0)
@@ -365,3 +370,93 @@ class SimpleDictSearch(Optimizer):
             print(date_time)
 
         return dict(zip(keys_results, values_results))
+
+
+class ToyNN(Optimizer):
+
+    def __init__(self,model,model_opt,input_scaler=StandardScaler(),output_scaler=MinMaxScaler(),niter=0,pca=False,threshold_pca=15,log=True,fitted=False,**kwargs):
+        #transf is a function that takes as input timesteps arrays and outputs shifts as output
+        super().__init__(**kwargs)
+
+        self.paramDict["model"]=model
+        self.paramDict["input_scaler"]=input_scaler
+        self.paramDict["output_scaler"] = output_scaler
+
+        self.paramDict["model_opt"]=model_opt
+        self.paramDict["pca"] = pca
+        self.paramDict["threshold_pca"] = threshold_pca
+        self.paramDict["is_fitted"] = fitted
+
+
+
+    def search_patterns(self,dictfile,volumes,force_refit=False):
+        model = self.paramDict["model"]
+        model_opt=self.paramDict["model_opt"]
+
+        if not(self.paramDict["is_fitted"]) or (force_refit):
+            self.fit_and_set(dictfile,model,model_opt)
+            model=self.paramDict["model"]
+
+        mask=self.mask
+        all_signals = volumes[:, mask > 0]
+        real_signals=all_signals.real.T
+        imag_signals=all_signals.imag.T
+
+
+        signals_for_model = np.concatenate((real_signals, imag_signals), axis=-1)
+
+        print(signals_for_model.shape)
+
+        params_all = self.paramDict["output_scaler"].inverse_transform(model.predict(signals_for_model))
+
+        map_rebuilt = {
+            "wT1": params_all[:, 0],
+            "fT1": params_all[:, 1],
+            "attB1": params_all[:, 2],
+            "df": params_all[:, 3],
+            "ff": params_all[:, 4]
+
+        }
+
+        return {0:(map_rebuilt,mask)}
+
+
+
+
+    def fit_and_set(self,dictfile,model,model_opt):
+        #For keras - shape is n_observations * n_features
+        FF_list = list(np.arange(0., 1.05, 0.05))
+        keys, signal = read_mrf_dict(dictfile, FF_list)
+
+        Y_TF = np.array(keys)
+        real_signal = signal.real
+        imag_signal = signal.imag
+
+        X_TF = np.concatenate((real_signal, imag_signal), axis=1)
+
+        input_scaler = StandardScaler()
+        output_scaler = MinMaxScaler()
+
+        X_TF = input_scaler.fit_transform(X_TF)
+        Y_TF = output_scaler.fit_transform(Y_TF)
+
+        self.paramDict["input_scaler"]=input_scaler
+        self.paramDict["output_scaler"] = output_scaler
+
+        print(X_TF.shape)
+        print(Y_TF.shape)
+
+        n_outputs = Y_TF.shape[1]
+
+        print(n_outputs)
+
+        final_model = model(n_outputs)
+
+        history = final_model.fit(
+            X_TF, Y_TF, **model_opt)
+
+        self.paramDict["model"]=final_model
+        self.paramDict["is_fitted"]=True
+
+
+

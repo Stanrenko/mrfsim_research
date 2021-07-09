@@ -22,7 +22,7 @@ start = datetime.now()
 
 dictfile = "mrf175.dict"
 dictfile = "mrf175_CS.dict"
-dictfile = "mrf175_SimReco2.dict"
+#dictfile = "mrf175_SimReco2.dict"
 
 
 with open("mrf_sequence.json") as f:
@@ -37,17 +37,19 @@ size=(256,256)
 file_matlab_paramMap = "./data/KneePhantom/Phantom1/paramMap.mat"
 
 ###### Building Map
-m = MapFromFile3D("TestPhantomV1",nb_slices=64,nb_empty_slices=8,file=file_matlab_paramMap,rounding=True)
+#m = MapFromFile3D("TestPhantomV1",nb_slices=64,nb_empty_slices=8,file=file_matlab_paramMap,rounding=True)
 
-# with open("mrf_dictconf_CS.json") as f:
-#     dict_config = json.load(f)
-# dict_config["ff"]=np.arange(0.,1.05,0.05)
-# region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
-# size=(256,256)
-# mask_reduction_factor=1/4
-#m = RandomMap3D("TestRandom3DMovement",dict_config,nb_slices=64,nb_empty_slices=8,undersampling_factor=4,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor)
+with open("mrf_dictconf_CS.json") as f:
+    dict_config = json.load(f)
+dict_config["ff"]=np.arange(0.,1.05,0.05)
+region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
+size=(256,256)
+mask_reduction_factor=1/4
+m = RandomMap3D("TestRandom3DMovement",dict_config,nb_slices=64,nb_empty_slices=8,undersampling_factor=4,repeat_slice=8,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor)
 
 m.buildParamMap()
+
+m.plotParamMap("wT1")
 
 ##### Simulating Ref Images
 m.build_ref_images(seq,window)
@@ -74,9 +76,14 @@ volumes = simulate_radial_undersampled_images(kdata,radial_traj_3D,m.image_size,
 #ani=animate_images(volumes[:,8,:,:])
 
 mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=True)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
-plt.imshow(mask[8,:,:])
+plt.imshow(mask[m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),:,:])
 
-optimizer = SimpleDictSearch(mask=mask,niter=4,seq=seq,trajectory=radial_traj_3D,split=500,pca=True,threshold_pca=15,useGPU=True,log=False,useAdjPred=False)
+plt.imshow(mask[m.paramDict["nb_empty_slices"]-5,:,:])
+
+
+
+
+optimizer = SimpleDictSearch(mask=mask,niter=4,seq=seq,trajectory=radial_traj_3D,split=1000,pca=True,threshold_pca=15,useGPU=True,log=False,useAdjPred=False)
 all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
 end=datetime.now()
