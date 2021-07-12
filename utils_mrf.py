@@ -16,6 +16,7 @@ from sklearn.cluster import KMeans
 from sklearn.model_selection import GridSearchCV
 import pandas as pd
 import itertools
+from sigpy.mri import spiral
 
 try:
     import pycuda.autoinit
@@ -121,6 +122,13 @@ def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersa
 
     return np.stack([traj.real,traj.imag, k_z], axis=-1)
 
+def spiral_golden_angle_traj(total_spiral,fov, N, f_sampling, R, ninterleaves, alpha, gm, sm):
+    golden_angle = -111.25 * np.pi / 180
+    base_spiral = spiral(fov, N, f_sampling, R, ninterleaves, alpha, gm, sm)
+    base_spiral = base_spiral[:,0]+1j*base_spiral[:,1]
+    all_rotations = np.exp(1j * np.arange(total_spiral) * golden_angle)
+    all_spirals = np.matmul(np.diag(all_rotations), np.repeat(base_spiral.reshape(1, -1), total_spiral, axis=0))
+    return all_spirals
 
 def create_random_map(list_params,region_size,size,mask):
     basis = np.random.choice(list_params,(int(size[0]/region_size),int(size[1]/region_size)))
@@ -425,7 +433,7 @@ def compare_paramMaps_3D(map1,map2,mask1,mask2=None,slice=0,fontsize=5,title1="O
         if save:
             plt.savefig("./figures/{}_vs_{}_Slice_{}_{}".format(title1,title2,slice,k))
 
-def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8,mode="Standard",proj_on_mask1=False):
+def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression plots",fontsize=5,adj_wT1=False,fat_threshold=0.8,mode="Standard",proj_on_mask1=False,save=False):
 
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
@@ -487,10 +495,13 @@ def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression 
 
     plt.suptitle(title)
 
+    if save:
+        plt.savefig("./figures/{}".format(title))
+
 
 def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, title="Maps regression plots",
                              fontsize=5, adj_wT1=False, fat_threshold=0.8, mode="Standard", proj_on_mask1=True,plt_std=False,
-                             figsize=(15, 10)):
+                             figsize=(15, 10),save=False):
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
     nb_keys = len(keys_1 & keys_2)
@@ -578,6 +589,81 @@ def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, t
         ax[i].tick_params(axis='y', labelsize=fontsize)
 
     plt.suptitle(title)
+    if save:
+        plt.savefig("./figures/{}".format(title))
+
+def metrics_paramMaps_ROI(map_ref, map2, mask_ref=None, mask2=None, maskROI=None,
+                              adj_wT1=False, fat_threshold=0.8, proj_on_mask1=True,name="Result",
+                             ):
+
+    df = pd.DataFrame(columns=[name])
+
+    keys_1 = set(map_ref.keys())
+    keys_2 = set(map2.keys())
+    nb_keys = len(keys_1 & keys_2)
+
+    if maskROI is None:
+        maskROI = buildROImask(map_ref)
+
+    for i, k in enumerate(keys_1 & keys_2):
+        print(i)
+
+
+        mask_union = mask_ref | mask2
+        mat_obs = makevol(map_ref[k], mask_ref)
+        mat_pred = makevol(map2[k], mask2)
+        mat_ROI = makevol(maskROI, mask_ref)
+        if proj_on_mask1:
+            mat_pred = mat_pred * (mask_ref * 1)
+            mat_obs = mat_obs * (mask_ref * 1)
+            mat_ROI = mat_ROI * (mask_ref * 1)
+            mask_union = mask_ref
+
+        obs = mat_obs[mask_union]
+        pred = mat_pred[mask_union]
+        maskROI_current = mat_ROI[mask_union]
+
+        if adj_wT1 and k == "wT1":
+            ff = makevol(map_ref["ff"], mask_ref)
+            ff = ff[mask_union]
+            obs = obs[ff < fat_threshold]
+            pred = pred[ff < fat_threshold]
+            maskROI_current = maskROI_current[ff < fat_threshold]
+
+        df_obs = pd.DataFrame(columns=["Data", "Groups"],
+                              data=np.stack([obs.flatten(), maskROI_current.flatten()], axis=-1))
+        df_pred = pd.DataFrame(columns=["Data", "Groups"],
+                               data=np.stack([pred.flatten(), maskROI_current.flatten()], axis=-1))
+        mean_obs = np.array(df_obs.groupby("Groups").mean())[1:]
+        mean_pred = np.array(df_pred.groupby("Groups").mean())[1:]
+
+        x_min = np.min(mean_obs)
+        x_max = np.max(mean_obs)
+
+        if x_min == x_max:
+            continue
+
+        mean = np.mean(mean_obs)
+        ss_tot = np.sum((mean_obs - mean) ** 2)
+        ss_res = np.sum((mean_obs - mean_pred) ** 2)
+        bias = np.mean((mean_pred - mean_obs))
+        r_2 = 1 - ss_res / ss_tot
+
+
+        df_error = pd.DataFrame(columns=["Data", "Groups"],
+                                data=np.stack(
+                                    [(pred.flatten() - obs.flatten()) ** 2, maskROI_current.flatten()],
+                                    axis=-1))
+        errors = np.sqrt(np.array(df_error.groupby("Groups").mean())[1:])
+        error = np.mean(errors)
+        std_error = np.std(errors)
+
+        df=df.append(pd.DataFrame(columns=[name],index=["R2 {}".format(k)],data=r_2))
+        df=df.append(pd.DataFrame(columns=[name], index=["Bias {}".format(k)], data=bias))
+        df=df.append(pd.DataFrame(columns=[name], index=["mean RMSE {}".format(k)], data=error))
+        df=df.append(pd.DataFrame(columns=[name], index=["std RMSE {}".format(k)], data=std_error))
+
+    return df
 
 
 def voronoi_volumes(points):
@@ -586,9 +672,9 @@ def voronoi_volumes(points):
     for i, reg_num in enumerate(v.point_region):
         indices = v.regions[reg_num]
         if -1 in indices: # some regions can be opened
-            vol[i] = np.inf
-        else:
-            vol[i] = ConvexHull(v.vertices[indices]).volume
+            indices.remove(-1)
+
+        vol[i] = ConvexHull(v.vertices[indices]).volume
     return vol,v
 
 def normalize_image_series(images_series):
@@ -784,6 +870,7 @@ def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):
     return kdata
 
 def buildROImask(map):
+    # ROI using KNN clustering
     if "wT1" not in map:
         raise ValueError("wT1 should be in the param Map to build the ROI")
 
@@ -796,10 +883,26 @@ def buildROImask(map):
     #print(groups.shape)
     return groups
 
+def buildROImask_unique(map):
+    # ROI using regions with same value of T1
+    if "wT1" not in map:
+        raise ValueError("wT1 should be in the param Map to build the ROI")
+
+    unique_wT1 = np.unique(map["wT1"])
+    maskROI = np.zeros(map["wT1"].shape)
+    for i, value in enumerate(unique_wT1):
+        maskROI[map["wT1"] == value] = i + 1
+
+    return maskROI
+
 def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6):
 
     traj=trajectory.get_traj()
     npoint = trajectory.paramDict["npoint"]
+    nspoke = trajectory.paramDict["nspoke"]
+
+    dtheta = np.pi / nspoke
+    kdata = np.array(kdata) / (npoint * trajectory.paramDict["nb_rep"]) * dtheta
 
     if density_adj:
         density = np.abs(np.linspace(-1, 1, npoint))
@@ -892,9 +995,109 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
 
     return np.array(images_series_rebuilt)
 
+def simulate_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6):
+    # Strong Assumption : from one time step to the other, the sampling is just rotated, hence voronoi volumes can be calculated only once
+    print("Simulating Undersampled Images")
+    traj=trajectory.get_traj()
 
-def plot_evolution_params(map_ref, mask_ref, all_maps, maskROI=None, adj_wT1=True, metric="R2", fat_threshold=0.7,
-                          proj_on_mask1=True, fontsize=5, figsize=(15, 40)):
+    kdata = np.array(kdata) / (2*np.pi) **2
+
+    if density_adj:
+        print("Performing density adjustment using Voronoi cells")
+        density = voronoi_volumes(np.transpose(np.array([traj[0,:, 0], traj[0,:, 1]])))[0]
+        kdata = np.array([k * density for i, k in enumerate(kdata)]) / (2 * np.pi) ** 2
+
+    #kdata = (normalize_image_series(np.array(kdata)))
+
+    if traj.shape[-1] == 2:  # 2D
+        if not(useGPU):
+            images_series_rebuilt = [
+                finufft.nufft2d1(t[:,0], t[:,1], s, size)
+                for t, s in zip(traj, kdata)
+            ]
+        else:
+            N1, N2 = size[0], size[1]
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+            fk_gpu = GPUArray((1, N1, N2), dtype=complex_dtype)
+            images_GPU = []
+            for i in list(range(len(kdata))):
+
+                c_retrieved = kdata[i]
+                kx = traj[i, :, 0]
+                ky = traj[i, :, 1]
+
+                # Cast to desired datatype.
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                c_retrieved = c_retrieved.astype(complex_dtype)
+
+                # Allocate memory for the uniform grid on the GPU.
+
+
+                # Initialize the plan and set the points.
+                plan = cufinufft(1, (N1, N2), 1, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kx), to_gpu(ky))
+
+                # Execute the plan, reading from the strengths array c and storing the
+                # result in fk_gpu.
+                plan.execute(to_gpu(c_retrieved), fk_gpu)
+
+                fk = np.squeeze(fk_gpu.get())
+                images_GPU.append(fk)
+                plan.__del__()
+            images_series_rebuilt=np.array(images_GPU)
+    elif traj.shape[-1] == 3:  # 3D
+
+        raise ValueError("Generic undersampled trajectory simulation not covered yet for 3D")
+        # if not(useGPU):
+        #     images_series_rebuilt = [
+        #         finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size)
+        #         for t, s in zip(traj, kdata)
+        #     ]
+        #
+        # else:
+        #     N1, N2, N3 = size[0], size[1], size[2]
+        #     dtype = np.float32  # Datatype (real)
+        #     complex_dtype = np.complex64
+        #     fk_gpu = GPUArray((1, N1, N2, N3), dtype=complex_dtype)
+        #     images_GPU=[]
+        #     for i in list(range(len(kdata))):
+        #
+        #         c_retrieved = kdata[i]
+        #         kx = traj[i, :, 0]
+        #         ky = traj[i, :, 1]
+        #         kz = traj[i, :, 2]
+        #
+        #
+        #         # Cast to desired datatype.
+        #         kx = kx.astype(dtype)
+        #         ky = ky.astype(dtype)
+        #         kz = kz.astype(dtype)
+        #         c_retrieved = c_retrieved.astype(complex_dtype)
+        #
+        #         # Allocate memory for the uniform grid on the GPU.
+        #
+        #
+        #         # Initialize the plan and set the points.
+        #         plan = cufinufft(1, (N1, N2,N3), 1, eps=eps, dtype=dtype)
+        #         plan.set_pts(to_gpu(kz),to_gpu(kx), to_gpu(ky))
+        #
+        #         # Execute the plan, reading from the strengths array c and storing the
+        #         # result in fk_gpu.
+        #         plan.execute(to_gpu(c_retrieved), fk_gpu)
+        #
+        #         fk = np.squeeze(fk_gpu.get())
+        #         images_GPU.append(fk)
+        #         plan.__del__()
+        #     images_series_rebuilt = np.array(images_GPU)
+
+    #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+
+    return np.array(images_series_rebuilt)
+
+def plot_evolution_params(map_ref, mask_ref, all_maps, maskROI=None, adj_wT1=True, title="Evolution",metric="R2", fat_threshold=0.7,
+                          proj_on_mask1=True, fontsize=5, figsize=(15, 40),save=False):
     keys_1 = set(map_ref.keys())
     keys_2 = set(all_maps[0][0].keys())
     nb_keys = len(keys_1 & keys_2)
@@ -907,6 +1110,7 @@ def plot_evolution_params(map_ref, mask_ref, all_maps, maskROI=None, adj_wT1=Tru
         print(i)
         result_list = []
         std_list = []
+        it_list = []
         for it, value in all_maps.items():
 
             map2 = value[0]
@@ -954,6 +1158,9 @@ def plot_evolution_params(map_ref, mask_ref, all_maps, maskROI=None, adj_wT1=Tru
                 bias = np.mean((mean_pred - mean_obs))
                 r_2 = 1 - ss_res / ss_tot
                 result_list.append(r_2)
+                it_list.append(it)
+
+
 
             elif metric == "RMSE":
                 print(obs.shape)
@@ -967,18 +1174,28 @@ def plot_evolution_params(map_ref, mask_ref, all_maps, maskROI=None, adj_wT1=Tru
                 std_error = np.std(errors)
                 result_list.append(error)
                 std_list.append(std_error)
+                it_list.append(it)
+
+
             else:
                 raise ValueError("Metric should be RMSE or R2")
 
-        n_it = len(result_list)
+        if x_min == x_max:
+            continue
+
         if metric == "R2":
-            ax[i].plot(range(n_it), result_list, "r")
+            it_list, result_list = tuple(zip(*sorted(zip(it_list, result_list))))
+            ax[i].plot(it_list, result_list, "r")
         elif metric == "RMSE":
             # ax[i].plot(range(n_it), result_list, "r")
-            ax[i].errorbar(range(n_it), result_list, std_list)
+            it_list, result_list,std_list=tuple(zip(*sorted(zip(it_list, result_list,std_list))))
+            ax[i].errorbar(it_list, result_list, std_list)
 
         ax[i].set_title(k + " Evolution over Iteration", fontsize=2 * fontsize)
         ax[i].tick_params(axis='x', labelsize=fontsize)
         ax[i].tick_params(axis='y', labelsize=fontsize)
 
-    plt.suptitle("{} Evolution".format(metric))
+    plt.suptitle("{} : {}".format(title,metric))
+
+    if save :
+        plt.savefig("./figures/{} : {}".format(title,metric))

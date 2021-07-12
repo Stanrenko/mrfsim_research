@@ -217,9 +217,10 @@ class ImageSeries(object):
         self.list_movements=[*self.list_movements,*list_movements]
 
 
-    def generate_radial_kdata(self,trajectory,useGPU=False,eps=1e-6):
-        nspoke = trajectory.paramDict["nspoke"]
-        npoint = trajectory.paramDict["npoint"]
+    def generate_kdata(self,trajectory,useGPU=False,eps=1e-6):
+        print("Generating kdata")
+        #nspoke = trajectory.paramDict["nspoke"]
+        #npoint = trajectory.paramDict["npoint"]
         traj = trajectory.get_traj()
 
         if not (traj.shape[-1] == len(self.image_size)):
@@ -233,10 +234,41 @@ class ImageSeries(object):
 
             if self.list_movements == []:
 
-                kdata = [
-                    finufft.nufft2d2(t[:, 0], t[:, 1], p)
-                    for t, p in zip(traj, images_series)
-                ]
+                if not(useGPU):
+                    kdata = [
+                        finufft.nufft2d2(t[:, 0], t[:, 1], p)
+                        for t, p in zip(traj, images_series)
+                    ]
+
+                else:
+                    dtype = np.float32  # Datatype (real)
+                    complex_dtype = np.complex64
+                    N1, N2 = size[0], size[1]
+                    M = traj.shape[1]
+
+                    # Initialize the plan and set the points.
+                    kdata = []
+
+                    for i in list(range(self.images_series.shape[0])):
+                        c_gpu = GPUArray((1, M), dtype=complex_dtype)
+                        fk = images_series[i,:,:]
+                        kx = traj[i, :, 0]
+                        ky = traj[i, :, 1]
+
+                        kx = kx.astype(dtype)
+                        ky = ky.astype(dtype)
+                        fk = fk.astype(complex_dtype)
+                        fk_gpu = to_gpu(fk)
+
+                        plan = cufinufft(2, (N1, N2), 1, eps=eps, dtype=dtype)
+                        plan.set_pts(to_gpu(kx), to_gpu(ky))
+                        plan.execute(c_gpu, to_gpu(fk))
+                        c = np.squeeze(c_gpu.get())
+                        kdata.append(c)
+                        fk_gpu.gpudata.free()
+                        c_gpu.gpudata.free()
+                        plan.__del__()
+
             else:
                 df = pd.DataFrame(index=range(self.images_series.shape[0]), columns=["Timesteps", "Images"])
                 df["Timesteps"] = self.t.reshape(-1, 1)
@@ -287,7 +319,7 @@ class ImageSeries(object):
                 ]
 
             else:
-                print("Simulating 3D volume with movement for all timesteps")
+
                 if not(useGPU):
                     kdata = []
                     for i, x in (enumerate(tqdm(zip(traj, images_series)))):
@@ -371,50 +403,44 @@ class ImageSeries(object):
                         kdata_current=np.array(kdata_current).flatten()
                         kdata.append(kdata_current)
 
-        dtheta = np.pi / nspoke
-        kdata = np.array(kdata) / (npoint * self.paramDict["nb_rep"]) * dtheta
+        #dtheta = np.pi / nspoke
+        #kdata = np.array(kdata) / (npoint * self.paramDict["nb_rep"]) * dtheta
 
         # kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
         return kdata
 
 
 
-
-
-    def simulate_undersampled_images(self,traj,density_adj=True):
-
-        size = self.image_size
-
-        kdata = [
-            finufft.nufft2d2(t.real, t.imag, p)
-            for t, p in zip(traj, self.images_series)
-        ]
-
-        #kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
-
-        if density_adj:
-            density = np.zeros(kdata.shape)
-            for i in tqdm(range(kdata.shape[0])):
-                vol = voronoi_volumes(np.transpose(np.array([traj[i].real,traj[i].imag])))[0]
-
-                density[i]
-            density = [voronoi_volumes(np.transpose(np.array([t.real,t.imag])))[0] for t in traj]
-            kdata = [k*density[i] for i,k in enumerate(kdata)]/(2*np.pi)**2
-
-        images_series_rebuilt = [
-            finufft.nufft2d1(t.real, t.imag, s, size)
-            for t, s in zip(traj, kdata)
-        ]
-
-        return np.array(images_series_rebuilt)
+    # def generate_kdata(self,trajectory,useGPU=False,eps=1e-6):
+    #     size = self.image_size
+    #
+    #     kdata = [
+    #         finufft.nufft2d2(t.real, t.imag, p)
+    #         for t, p in zip(traj, self.images_series)
+    #     ]
+    #
+    #     #kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+    #
+    #     if density_adj:
+    #         density = np.zeros(kdata.shape)
+    #
+    #         density = [voronoi_volumes(np.transpose(np.array([t[:,0],t[:,1]])))[0] for t in traj]
+    #         kdata = [k*density[i] for i,k in enumerate(kdata)]/(2*np.pi)**2
+    #
+    #     images_series_rebuilt = [
+    #         finufft.nufft2d1(t.real, t.imag, s, size)
+    #         for t, s in zip(traj, kdata)
+    #     ]
+    #
+    #     return np.array(images_series_rebuilt)
 
     def buildROImask(self):
         return buildROImask(self.paramMap)
 
 
-    def generate_kdata(self,traj):
-        kdata = generate_kdata(self.images_series,traj)
-        return kdata
+    # def generate_kdata(self,traj):
+    #     kdata = generate_kdata(self.images_series,traj)
+    #     return kdata
 
     def rotate_images(self,angles_t):
         # angles_t function returning rotation angle as a function of t

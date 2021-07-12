@@ -97,15 +97,25 @@ file.close()
 
 plt.close("all")
 
+maskROI=buildROImask(m.paramMap)
+
 for iter in all_maps_adj.keys():
-    regression_paramMaps_ROI(m.paramMap, all_maps_adj[iter][0], m.mask > 0, all_maps_adj[iter][1] > 0,
+    regression_paramMaps_ROI(m.paramMap, all_maps_adj[iter][0], m.mask > 0, all_maps_adj[iter][1] > 0,maskROI=maskROI,
                              title="ROI Orig vs Iteration {}".format(iter), proj_on_mask1=False, adj_wT1=True, fat_threshold=0.7)
 
 
 
 compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="Outside",proj_on_mask1=True,save=False)
 compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]+5,title1="Orig",title2="Inside",proj_on_mask1=True,save=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="Center",proj_on_mask1=False,save=False)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False)
+
+size_slice = int(m.paramDict["nb_slices"]/m.paramDict["repeat_slice"])
+
+compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]+int(size_slice/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]+4*int(size_slice/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False)
+
+regression_paramMaps_ROI(m.paramMap, all_maps_adj[4][0], m.mask > 0, all_maps_adj[4][1] > 0,maskROI=maskROI,
+                             title="ROI Orig vs Iteration {}".format(4), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7)
 
 plt.close("all")
 
