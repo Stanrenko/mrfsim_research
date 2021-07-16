@@ -14,6 +14,7 @@ except:
     pass
 
 from sklearn.preprocessing import MinMaxScaler,StandardScaler
+from numba import cuda
 
 
 class Optimizer(object):
@@ -175,23 +176,25 @@ class SimpleDictSearch(Optimizer):
 
                 else:
 
-
+                    print("Using GPU")
                     if pca:
-                        transformed_all_signals_water = np.transpose(
-                            pca_water.transform(np.transpose(all_signals_unique)))
-                        transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
 
-                        sig_ws_all_unique = np.matmul(transformed_array_water_unique,
-                                                      transformed_all_signals_water[:,
-                                                      j_signal:j_signal_next].conj()).real
-                        sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
-                                                      transformed_all_signals_fat[:,
-                                                      j_signal:j_signal_next].conj()).real
+                        transformed_all_signals_water = cp.transpose(
+                            pca_water.transform(cp.transpose(cp.asarray(all_signals_unique)))).get()
+                        transformed_all_signals_fat = cp.transpose(pca_fat.transform(cp.transpose(cp.asarray(all_signals_unique)))).get()
+
+                        sig_ws_all_unique = (cp.matmul(cp.asarray(transformed_array_water_unique),
+                                                      cp.asarray(transformed_all_signals_water)[:,
+                                                      j_signal:j_signal_next].conj()).real).get()
+                        sig_fs_all_unique = (cp.matmul(cp.asarray(transformed_array_fat_unique),
+                                                      cp.asarray(transformed_all_signals_fat)[:,
+                                                      j_signal:j_signal_next].conj()).real).get()
                     else:
-                        sig_ws_all_unique = np.matmul(array_water_unique,
-                                                      all_signals_unique[:, j_signal:j_signal_next].conj()).real
-                        sig_fs_all_unique = np.matmul(array_fat_unique,
-                                                      all_signals_unique[:, j_signal:j_signal_next].conj()).real
+
+                        sig_ws_all_unique = (cp.matmul(cp.asarray(array_water_unique),
+                                                      cp.asarray(all_signals_unique)[:, j_signal:j_signal_next].conj()).real).get()
+                        sig_fs_all_unique = (cp.matmul(cp.asarray(array_fat_unique),
+                                                      cp.asarray(all_signals_unique)[:, j_signal:j_signal_next].conj()).real).get()
 
 
                 if self.verbose:
@@ -323,6 +326,11 @@ class SimpleDictSearch(Optimizer):
 
             values_results.append((map_rebuilt, mask))
 
+            if useGPU:#Forcing to free the memory
+                mempool = cp.get_default_memory_pool()
+                print("Cupy memory usage {}:".format(mempool.used_bytes()))
+                mempool.free_all_blocks()
+
             if i == niter:
                 break
 
@@ -339,7 +347,7 @@ class SimpleDictSearch(Optimizer):
             pred_volumesi = images_pred.images_series
 
             #volumesi = images_pred.simulate_radial_undersampled_images(trajectory, density_adj=True)
-            kdatai = images_pred.generate_radial_kdata(trajectory,useGPU=useGPU)
+            kdatai = images_pred.generate_kdata(trajectory,useGPU=useGPU)
             volumesi = simulate_radial_undersampled_images(kdatai,trajectory,images_pred.image_size,useGPU=useGPU,density_adj=True)
             volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
 

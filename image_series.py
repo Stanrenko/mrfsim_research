@@ -250,7 +250,8 @@ class ImageSeries(object):
                     kdata = []
 
                     for i in list(range(self.images_series.shape[0])):
-                        c_gpu = GPUArray((1, M), dtype=complex_dtype)
+
+
                         fk = images_series[i,:,:]
                         kx = traj[i, :, 0]
                         ky = traj[i, :, 1]
@@ -258,15 +259,23 @@ class ImageSeries(object):
                         kx = kx.astype(dtype)
                         ky = ky.astype(dtype)
                         fk = fk.astype(complex_dtype)
+
                         fk_gpu = to_gpu(fk)
+                        kx_gpu = to_gpu(kx)
+                        ky_gpu = to_gpu(ky)
+                        c_gpu = GPUArray((1, M), dtype=complex_dtype)
 
                         plan = cufinufft(2, (N1, N2), 1, eps=eps, dtype=dtype)
-                        plan.set_pts(to_gpu(kx), to_gpu(ky))
-                        plan.execute(c_gpu, to_gpu(fk))
+                        plan.set_pts(kx_gpu, ky_gpu)
+                        plan.execute(c_gpu, fk_gpu)
+
                         c = np.squeeze(c_gpu.get())
                         kdata.append(c)
+
                         fk_gpu.gpudata.free()
                         c_gpu.gpudata.free()
+                        kx_gpu.gpudata.free()
+                        ky_gpu.gpudata.free()
                         plan.__del__()
 
             else:
@@ -312,15 +321,13 @@ class ImageSeries(object):
 
         elif traj.shape[-1] == 3:  # 3D
 
-            if self.list_movements == []:
-                kdata = [
-                    finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], p)
-                    for t, p in zip(traj, images_series)
-                ]
-
-            else:
-
-                if not(useGPU):
+            if not(useGPU):
+                if self.list_movements == []:
+                    kdata = [
+                        finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], p)
+                        for t, p in zip(traj, images_series)
+                    ]
+                else:
                     kdata = []
                     for i, x in (enumerate(tqdm(zip(traj, images_series)))):
 
@@ -334,14 +341,61 @@ class ImageSeries(object):
                             np.repeat(current_image, nb_rep, axis=0).reshape((nb_rep,) + current_image.shape))
                         df["Images"] = images_for_df
 
-
                         for movements in self.list_movements:
-                            df = movements.apply(df,useGPU)
+                            df = movements.apply(df, useGPU)
 
                         values = np.array(list(current_data.groupby("KZ").apply(
                             lambda grp: finufft.nufft3d2(grp.KZ, grp.KX, grp.KY,
                                                          df.Images[np.unique(grp.rep_number)[0]])).values)).flatten()
                         kdata.append(values)
+            else:
+
+                if self.list_movements == []:
+                    kdata = []
+
+                    N1, N2, N3 = size[0], size[1], size[2]
+                    M = traj.shape[1]
+                    dtype = np.float32  # Datatype (real)
+                    complex_dtype = np.complex64
+
+                    for i, x in (enumerate(tqdm(zip(traj, images_series)))):
+
+                        fk = x[1]
+                        t = x[0]
+
+                        kx = t[:,0]
+                        ky = t[:,1]
+                        kz = t[:,2]
+
+                        # Initialize the plan and set the points.
+
+                        kx = kx.astype(dtype)
+                        ky = ky.astype(dtype)
+                        kz = kz.astype(dtype)
+                        fk = fk.astype(complex_dtype)
+
+
+                        c_gpu = GPUArray((1, kx.shape[0]), dtype=complex_dtype)
+                            # fk_gpu = GPUArray(fk.shape, dtype=complex_dtype)
+                            # fk_gpu.fill(fk)
+                        # kx_gpu = to_gpu(kx)
+                        # ky_gpu = to_gpu(ky)
+                        # kz_gpu = to_gpu(kz)
+                        fk_gpu = to_gpu(fk)
+
+                        plan = cufinufft(2, (N1, N2, N3), 1, eps=eps, dtype=dtype)
+                        plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+
+                        plan.execute(c_gpu, fk_gpu)
+                        fk_gpu.gpudata.free()
+
+                        c = np.squeeze(c_gpu.get())
+                        c_gpu.gpudata.free()
+
+                        plan.__del__()
+                        kdata.append(c)
+
+
                 else:
                     kdata = []
 

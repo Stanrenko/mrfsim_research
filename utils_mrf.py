@@ -17,6 +17,7 @@ from sklearn.model_selection import GridSearchCV
 import pandas as pd
 import itertools
 from sigpy.mri import spiral
+import cv2
 
 try:
     import pycuda.autoinit
@@ -24,6 +25,7 @@ try:
     from cufinufft import cufinufft
 except:
     pass
+
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
@@ -666,16 +668,55 @@ def metrics_paramMaps_ROI(map_ref, map2, mask_ref=None, mask2=None, maskROI=None
     return df
 
 
-def voronoi_volumes(points):
+def voronoi_volumes(points,size=(256,256)):
+
+    # rect = (0,0, size[0],size[1])
+    # subdiv = cv2.Subdiv2D(rect)
+    #
+    # list_points=[]
+    # for p in points:
+    #     #print(((p[0] * 128 / np.pi + 128), (p[1] * 128 / np.pi + 128)))
+    #     #subdiv.insert(((int(p[0]*128/np.pi)+128),(int(p[1]*128/np.pi)+128)))
+    #     list_points.append([p[0] * size[0] / (2*np.pi) + size[0]/2, p[1] * size[1] / (2*np.pi) + size[1]/2])
+    #     subdiv.insert(((p[0] * size[0] / (2*np.pi) + size[0]/2), (p[1] * size[1] / (2*np.pi) + size[1]/2)))
+    #
+    # (facets, centers) = subdiv.getVoronoiFacetList([])
+    #
+    # count = 0
+    # array_points = np.array(list_points)
+    # array_points = array_points.astype(np.float32)
+    # center_indices = {}
+    # for i, val in enumerate(array_points):
+    #     if not (np.where(centers == val)[0][-1] == i + count) and not (np.where(centers == val)[0][1] == i + count):
+    #         center_index = np.where(centers == val)[0][0]
+    #         center_indices[i]=center_index
+    #         count = count - 1
+    #     else:
+    #         center_indices[i]=i+count
+    #
+    # vol = np.zeros(len(points))
+    #
+    # for i in range(len(vol)):
+    #     vertices=facets[center_indices[i]].copy()
+    #     vertices[:,0] = (vertices[:,0] - size[0]/2) * 2*np.pi / size[0]
+    #     vertices[:, 1] = (vertices[:, 1] - size[1] / 2) * 2 * np.pi / size[1]
+    #     vol[i]=ConvexHull(vertices).volume
+    #
+    # return vol, (facets, centers)
+    #
     v = Voronoi(points)
     vol = np.zeros(v.npoints)
+
+
     for i, reg_num in enumerate(v.point_region):
         indices = v.regions[reg_num]
         if -1 in indices: # some regions can be opened
+
             indices.remove(-1)
 
         vol[i] = ConvexHull(v.vertices[indices]).volume
-    return vol,v
+    return vol, v
+
 
 def normalize_image_series(images_series):
     shapes=list(images_series.shape)
@@ -739,18 +780,27 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
             ky = ky.astype(dtype)
             c_retrieved = c_retrieved.astype(complex_dtype)
 
+            kx_gpu = to_gpu(kx)
+            ky_gpu = to_gpu(ky)
+            c_retrieved_gpu = to_gpu(c_retrieved)
+
             # Allocate memory for the uniform grid on the GPU.
 
             # Initialize the plan and set the points.
             plan = cufinufft(1, (N1, N2), 1, eps=eps, dtype=dtype)
-            plan.set_pts(to_gpu(kx), to_gpu(ky))
+            plan.set_pts(kx_gpu, ky_gpu)
 
             # Execute the plan, reading from the strengths array c and storing the
             # result in fk_gpu.
-            plan.execute(to_gpu(c_retrieved), fk_gpu)
+            plan.execute(c_retrieved_gpu, fk_gpu)
 
             fk = np.squeeze(fk_gpu.get())
             volume_rebuilt = np.array(fk)
+            kx_gpu.gpudata.free()
+            ky_gpu.gpudata.free()
+            fk_gpu.gpudata.free()
+            c_retrieved_gpu.gpudata.free()
+
             plan.__del__()
 
 
@@ -959,10 +1009,10 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
             N1, N2, N3 = size[0], size[1], size[2]
             dtype = np.float32  # Datatype (real)
             complex_dtype = np.complex64
-            fk_gpu = GPUArray((1, N1, N2, N3), dtype=complex_dtype)
+
             images_GPU=[]
             for i in list(range(len(kdata))):
-
+                fk_gpu = GPUArray((1, N1, N2, N3), dtype=complex_dtype)
                 c_retrieved = kdata[i]
                 kx = traj[i, :, 0]
                 ky = traj[i, :, 1]
@@ -976,7 +1026,7 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
                 c_retrieved = c_retrieved.astype(complex_dtype)
 
                 # Allocate memory for the uniform grid on the GPU.
-
+                c_retrieved_gpu = to_gpu(c_retrieved)
 
                 # Initialize the plan and set the points.
                 plan = cufinufft(1, (N1, N2,N3), 1, eps=eps, dtype=dtype)
@@ -984,9 +1034,13 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
 
                 # Execute the plan, reading from the strengths array c and storing the
                 # result in fk_gpu.
-                plan.execute(to_gpu(c_retrieved), fk_gpu)
+                plan.execute(c_retrieved_gpu, fk_gpu)
 
                 fk = np.squeeze(fk_gpu.get())
+
+                fk_gpu.gpudata.free()
+                c_retrieved_gpu.gpudata.free()
+
                 images_GPU.append(fk)
                 plan.__del__()
             images_series_rebuilt = np.array(images_GPU)
@@ -1004,7 +1058,7 @@ def simulate_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=F
 
     if density_adj:
         print("Performing density adjustment using Voronoi cells")
-        density = voronoi_volumes(np.transpose(np.array([traj[0,:, 0], traj[0,:, 1]])))[0]
+        density = voronoi_volumes(np.transpose(np.array([traj[0,:, 0], traj[0,:, 1]])),(2*size[0],2*size[1]))[0]
         kdata = np.array([k * density for i, k in enumerate(kdata)]) / (2 * np.pi) ** 2
 
     #kdata = (normalize_image_series(np.array(kdata)))

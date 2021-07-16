@@ -14,8 +14,13 @@ import numpy as np
 from movements import *
 import pickle
 from dictoptimizers import SimpleDictSearch
-
-
+#import pycuda.autoinit
+# from pycuda.gpuarray import GPUArray, to_gpu
+#
+# c_gpu = GPUArray((1, 10), dtype=np.complex64)
+# c_gpu.fill(0)
+# c = c_gpu.get()
+# c_gpu.gpudata.free()
 ## Random map simulation
 
 start = datetime.now()
@@ -45,7 +50,7 @@ dict_config["ff"]=np.arange(0.,1.05,0.05)
 region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
 size=(256,256)
 mask_reduction_factor=1/4
-m = RandomMap3D("TestRandom3DMovement",dict_config,nb_slices=64,nb_empty_slices=8,undersampling_factor=4,repeat_slice=8,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor)
+m = RandomMap3D("TestRandom3DMovement",dict_config,nb_slices=40,nb_empty_slices=8,undersampling_factor=4,repeat_slice=8,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor)
 
 m.buildParamMap()
 
@@ -55,9 +60,9 @@ m.plotParamMap("wT1")
 m.build_ref_images(seq,window)
 
 direction=np.array([0.0,4.0,0.0])
-move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
+#move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
 
-m.add_movements([move])
+#m.add_movements([move])
 
 npoint=512
 nspoke=8
@@ -67,29 +72,26 @@ nb_slices=m.paramDict["nb_total_slices"]
 undersampling_factor = m.paramDict["undersampling_factor"]
 
 radial_traj_3D=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_slices,undersampling_factor=undersampling_factor)
-kdata = m.generate_radial_kdata(radial_traj_3D,useGPU=True)
+kdata = m.generate_kdata(radial_traj_3D,useGPU=True)
 #kdata_noGPU=m.generate_radial_kdata(radial_traj_3D,useGPU=False)
 volumes = simulate_radial_undersampled_images(kdata,radial_traj_3D,m.image_size,density_adj=True,useGPU=True)
 #volumes_noGPU = simulate_radial_undersampled_images(kdata_noGPU,radial_traj_3D,m.image_size,density_adj=True,useGPU=True)
 #ani,ani1=animate_multiple_images(volumes[:,4,:,:],volumes_noGPU[:,4,:,:])
 
-#ani=animate_images(volumes[:,8,:,:])
+ani=animate_images(volumes[:,15,:,:])
 
 mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=True)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
 plt.imshow(mask[m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),:,:])
 
 plt.imshow(mask[m.paramDict["nb_empty_slices"]-5,:,:])
 
-
-
-
-optimizer = SimpleDictSearch(mask=mask,niter=4,seq=seq,trajectory=radial_traj_3D,split=1000,pca=True,threshold_pca=15,useGPU=True,log=False,useAdjPred=False)
+optimizer = SimpleDictSearch(mask=mask,niter=1,seq=seq,trajectory=radial_traj_3D,split=1000,pca=True,threshold_pca=15,useGPU=True,log=False,useAdjPred=False,verbose=True)
 all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
 end=datetime.now()
 print(end-start)
 
-file = open( "all_maps_{}.pkl".format(m.name), "wb" )
+file = open( "all_maps_40_{}.pkl".format(m.name), "wb" )
 # dump information to that file
 pickle.dump(all_maps_adj, file)
 # close the file
@@ -97,7 +99,7 @@ file.close()
 
 plt.close("all")
 
-maskROI=buildROImask(m.paramMap)
+maskROI=buildROImask_unique(m.paramMap)
 
 for iter in all_maps_adj.keys():
     regression_paramMaps_ROI(m.paramMap, all_maps_adj[iter][0], m.mask > 0, all_maps_adj[iter][1] > 0,maskROI=maskROI,
@@ -105,14 +107,14 @@ for iter in all_maps_adj.keys():
 
 
 
-compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="Outside",proj_on_mask1=True,save=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]+5,title1="Orig",title2="Inside",proj_on_mask1=True,save=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="Outside",proj_on_mask1=True,save=False)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+5,title1="Orig",title2="Inside",proj_on_mask1=True,save=False)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False)
 
 size_slice = int(m.paramDict["nb_slices"]/m.paramDict["repeat_slice"])
 
-compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]+int(size_slice/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[2][0],m.mask>0,all_maps_adj[2][1]>0,slice=m.paramDict["nb_empty_slices"]+4*int(size_slice/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+int(size_slice/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+2*int(size_slice/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False)
 
 regression_paramMaps_ROI(m.paramMap, all_maps_adj[4][0], m.mask > 0, all_maps_adj[4][1] > 0,maskROI=maskROI,
                              title="ROI Orig vs Iteration {}".format(4), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7)
@@ -132,3 +134,21 @@ b= cua.to_gpu(a, allocator=m.allocate)  # Passes
 
 a= np.ones(2**30,dtype=np.float32)
 b= cua.to_gpu(a, allocator=m.allocate)
+
+
+import torch
+import sys
+print('__Python VERSION:', sys.version)
+print('__pyTorch VERSION:', torch.__version__)
+print('__CUDA VERSION')
+from subprocess import call
+# call(["nvcc", "--version"]) does not work
+
+print('__CUDNN VERSION:', torch.backends.cudnn.version())
+print('__Number CUDA Devices:', torch.cuda.device_count())
+print('__Devices')
+call(["nvidia-smi", "--format=csv", "--query-gpu=index,name,driver_version,memory.total,memory.used,memory.free"])
+print('Active CUDA Device: GPU', torch.cuda.current_device())
+
+print ('Available devices ', torch.cuda.device_count())
+print ('Current cuda device ', torch.cuda.current_device())
