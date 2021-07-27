@@ -125,6 +125,11 @@ class SimpleDictSearch(Optimizer):
         var_f = np.reshape(var_f, (-1, 1))
         sig_wf = np.reshape(sig_wf, (-1, 1))
 
+        if useGPU:
+            var_w = cp.asarray(var_w)
+            var_f = cp.asarray(var_f)
+            sig_wf = cp.asarray(sig_wf)
+
         values_results = []
         keys_results = list(range(niter + 1))
 
@@ -240,11 +245,8 @@ class SimpleDictSearch(Optimizer):
                         print("Calculating alpha optim and flooring")
                         start = datetime.now()
 
-                    sig_wf=cp.asarray(sig_wf)
                     current_sig_ws=cp.asarray(current_sig_ws)
                     current_sig_fs=cp.asarray(current_sig_fs)
-                    var_w = cp.asarray(var_w)
-                    var_f = cp.asarray(var_f)
 
                     current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
                             (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
@@ -273,6 +275,11 @@ class SimpleDictSearch(Optimizer):
 
                     J_all = J_all.get()
                     current_alpha_all_unique=current_alpha_all_unique.get()
+
+                    del current_sig_fs
+                    del current_sig_ws
+
+
                     if verbose:
                         end = datetime.now()
                         print(end - start)
@@ -301,6 +308,7 @@ class SimpleDictSearch(Optimizer):
 
             # idx_max_all_unique = np.argmax(J_all, axis=0)
             del J_all
+            del current_alpha_all_unique
 
             print("Building the maps for iteration {}".format(i))
 
@@ -314,6 +322,8 @@ class SimpleDictSearch(Optimizer):
                 params_all = params_all_unique[index_signals_unique]
             else:
                 params_all = params_all_unique
+
+            del params_all_unique
 
             map_rebuilt = {
                 "wT1": params_all[:, 0],
@@ -330,6 +340,10 @@ class SimpleDictSearch(Optimizer):
                 mempool = cp.get_default_memory_pool()
                 print("Cupy memory usage {}:".format(mempool.used_bytes()))
                 mempool.free_all_blocks()
+
+                cp.cuda.set_allocator(None)
+                # Disable memory pool for pinned memory (CPU).
+                cp.cuda.set_pinned_memory_allocator(None)
 
             if i == niter:
                 break

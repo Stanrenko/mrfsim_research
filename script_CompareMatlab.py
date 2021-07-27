@@ -19,7 +19,7 @@ import pickle
 
 ## Random map simulation
 
-dictfile = "./mrf175_SimReco2.dict"
+dictfile = "./mrf175_SimReco2_mid_point.dict"
 #dictfile = "mrf175_CS.dict"
 
 with open("./mrf_sequence.json") as f:
@@ -29,7 +29,7 @@ seq = T1MRF(**sequence_config)
 
 window = 8 #corresponds to nspoke by image
 size=(256,256)
-useGPU=False
+useGPU=True
 
 load_maps=False
 save_maps = False
@@ -39,7 +39,7 @@ for ph_num in tqdm([1]):
     file_matlab_paramMap = "./data/SquarePhantom/Phantom{}/paramMap.mat".format(ph_num)
 
     ###### Building Map
-    m = MapFromFile("PythonPhantom{}".format(ph_num), image_size=size, file=file_matlab_paramMap, rounding=False)
+    m = MapFromFile("PythonPhantom{}".format(ph_num), image_size=size, file=file_matlab_paramMap, rounding=False,sim_mode="mean")
     m.buildParamMap()
 
     if not(load_maps):
@@ -58,7 +58,7 @@ for ph_num in tqdm([1]):
         volumes = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=useGPU)
         mask = build_mask_single_image(kdata,radial_traj,m.image_size)
 
-        optimizer = SimpleDictSearch(mask=mask,niter=10,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU=useGPU)
+        optimizer = SimpleDictSearch(mask=mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU=useGPU)
         all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
         if save_maps:
@@ -130,10 +130,131 @@ for ph_num in tqdm([1]):
 
 
 map_ff = makevol(m.paramMap["ff"],m.mask>0)
-mask_single_region = (np.round(map_ff,3)==0.109)
+#mask_single_region = (np.round(map_ff,3)==0.109)
+mask_single_region = np.zeros(m.image_size)
+mask_single_region[133:142,138:147]=1
+mask_single_region=mask_single_region>0
 
 volume_original = m.images_series[:,mask_single_region]
-mean_region=np.mean(volumes[:,mask_single_region],axis=1)
+undersampled_normalized = (volumes[:,mask_single_region] - np.mean(volumes[:,mask_single_region],axis=0))/np.std(volumes[:,mask_single_region],axis=0)
+
+#pd.DataFrame(volumes[:,mask_single_region]).to_csv("Test_UndersampledSignal_Python.csv")
+
+mean_region=np.mean((volumes[:,mask_single_region]),axis=1)
+mean_region = (mean_region -np.mean(mean_region))/np.std(mean_region)
+
+it=0
+maps_retrieved = all_maps_adj[it][0]
+mask_retrieved = all_maps_adj[it][1]
+maps_retrieved_volume_on_region = {}
+
+for k in maps_retrieved.keys():
+    maps_retrieved_volume_on_region[k]=makevol(maps_retrieved[k],mask_retrieved>0)[mask_single_region]
+
+map_all_on_mask = np.stack(list(maps_retrieved_volume_on_region.values())[:-1], axis=-1)
+map_ff_on_mask = maps_retrieved_volume_on_region["ff"]
+
+mrfdict = dictsearch.Dictionary()
+mrfdict.load(dictfile, force=True)
+
+mrfdict_2 = dictsearch.Dictionary()
+mrfdict_2.load("./mrf175_SimReco2.dict", force=True)
+
+images_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0] * (1 - map_ff_on_mask[i]) + mrfdict[tuple(
+            pixel_params)][:, 1] * (map_ff_on_mask[i]) for (i, pixel_params) in enumerate(map_all_on_mask)])
+
+images_in_mask_2 = np.array([mrfdict_2[tuple(pixel_params)][:, 0] * (1 - map_ff_on_mask[i]) + mrfdict_2[tuple(
+            pixel_params)][:, 1] * (map_ff_on_mask[i]) for (i, pixel_params) in enumerate(map_all_on_mask)])
+
+images_in_mask = np.transpose(images_in_mask)
+images_in_mask_2 = np.transpose(images_in_mask_2)
+
+num = 64
+plt.figure()
+plt.plot(images_in_mask[:,num],label="mid_point")
+plt.plot(images_in_mask_2[:,num],label="mean")
+plt.legend()
+
+mean_retrieved = np.mean(images_in_mask,axis=1)
+mean_retrieved=(mean_retrieved -np.mean(mean_retrieved))/np.std(mean_retrieved)
+
+original_normalized = (volume_original - np.mean(volume_original,axis=0))/np.std(volume_original,axis=0)
+mean_original = np.mean(volume_original,axis=1)
+mean_original=(mean_original -np.mean(mean_original))/np.std(mean_original)
+
+
+plt.figure()
+plt.plot(np.real(mean_region),label='Mean signal undersampled on region')
+plt.plot(np.real(mean_retrieved),label='Mean pattern retrieved on region')
+plt.plot(np.real(mean_original),"x",label='Mean signal original on region')
+plt.title("Mean Signals comparison in region with ff {} vs {}".format(np.round(map_ff[mask_single_region][0],4),np.round(np.mean(map_ff_on_mask),3)))
+plt.legend()
+
+plt.figure()
+plt.plot(np.real(mean_original),label='Mean signal original on region')
+plt.legend()
+
+
+
+#############################################
+
+
+#import matplotlib
+#matplotlib.use("TkAgg")
+from mrfsim import T1MRF
+from image_series import *
+from utils_mrf import *
+import json
+from finufft import nufft1d1,nufft1d2
+from scipy import signal,interpolate
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
+import matplotlib.pyplot as plt
+import numpy as np
+from movements import *
+from dictoptimizers import *
+import glob
+from tqdm import tqdm
+import pickle
+
+## Random map simulation
+
+dictfile = "./mrf175_SimReco2.dict"
+#dictfile = "mrf175_CS.dict"
+
+with open("./mrf_sequence.json") as f:
+    sequence_config = json.load(f)
+
+
+sig_matlab = loadmat(r"./data/SquarePhantom/Phantom1/Sig2.mat")["Sig2"]
+sig_matlab=sig_matlab.T
+volumes = np.expand_dims(sig_matlab,axis=-1)
+mask = np.array([[1]])
+
+
+ntimesteps=175
+nspoke=8
+npoint = 512
+radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint)
+
+seq = T1MRF(**sequence_config)
+
+optimizer = SimpleDictSearch(mask=mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU=False)
+all_maps_adj=optimizer.search_patterns(dictfile,volumes)
+
+
+mask_single_region = mask>0
+
+map_ff = makevol(m.paramMap["ff"],m.mask>0)
+mask_single_region_all = np.zeros(m.image_size)
+mask_single_region_all[133:142,138:147]=1
+mask_single_region_all=mask_single_region_all>0
+volume_original = m.images_series[:,mask_single_region_all]
+
+
+undersampled_normalized = (volumes[:,mask_single_region] - np.mean(volumes[:,mask_single_region],axis=0))/np.std(volumes[:,mask_single_region],axis=0)
+mean_region=np.mean((volumes[:,mask_single_region]),axis=1)
+mean_region = (mean_region -np.mean(mean_region))/np.std(mean_region)
 
 it=0
 maps_retrieved = all_maps_adj[it][0]
@@ -151,16 +272,23 @@ mrfdict.load(dictfile, force=True)
 
 images_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0] * (1 - map_ff_on_mask[i]) + mrfdict[tuple(
             pixel_params)][:, 1] * (map_ff_on_mask[i]) for (i, pixel_params) in enumerate(map_all_on_mask)])
-mean_retrieved = np.mean(images_in_mask,axis=0)
+
+images_in_mask = np.transpose(images_in_mask)
+retrieved_normalized = (images_in_mask - np.mean(images_in_mask,axis=0))/np.std(images_in_mask,axis=0)
+
+mean_retrieved = np.mean(images_in_mask,axis=1)
+mean_retrieved=(mean_retrieved -np.mean(mean_retrieved))/np.std(mean_retrieved)
+
+original_normalized = (volume_original - np.mean(volume_original,axis=0))/np.std(volume_original,axis=0)
 mean_original = np.mean(volume_original,axis=1)
+mean_original=(mean_original -np.mean(mean_original))/np.std(mean_original)
+
+
+
 
 plt.figure()
 plt.plot(np.real(mean_region),label='Mean signal undersampled on region')
 plt.plot(np.real(mean_retrieved),label='Mean pattern retrieved on region')
 plt.plot(np.real(mean_original),"x",label='Mean signal original on region')
-plt.title("Mean Signals comparison in region with ff {}".format(np.round(map_ff[mask_single_region][0],4)))
-plt.legend()
-
-plt.figure()
-plt.plot(np.real(mean_original),label='Mean signal original on region')
+plt.title("Mean Signals comparison in region with ff {} vs retrieved {}".format(np.round(map_ff[mask_single_region_all][0],4),np.round(map_ff_on_mask[0],3)))
 plt.legend()

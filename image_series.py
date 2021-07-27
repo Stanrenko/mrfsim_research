@@ -29,6 +29,7 @@ try:
 except:
     pass
 
+import gc
 
 DEFAULT_wT2 = 80
 DEFAULT_fT1 = 300
@@ -84,6 +85,9 @@ class ImageSeries(object):
 
         if "nb_rep" not in self.paramDict:
             self.paramDict["nb_rep"]=1
+
+        if "sim_mode" not in self.paramDict:
+            self.paramDict["sim_mode"]="mean" #mid_point
 
         self.image_size=self.paramDict["image_size"]
         self.images_series=None
@@ -147,7 +151,13 @@ class ImageSeries(object):
         # water
         print("Simulating Water Signal")
         water = seq(T1=wT1_in_map, T2=wT2_in_map, att=[[attB1_in_map]], g=[[[df_in_map]]])
-        water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
+        if self.paramDict["sim_mode"]=="mean":
+            water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
+        elif self.paramDict["sim_mode"]=="mid_point":
+            water = water[(int(window / 2) - 1):-1:window]
+        else:
+            raise ValueError("Unknow sim_mode")
+
 
         # fat
         print("Simulating Fat Signal")
@@ -156,7 +166,13 @@ class ImageSeries(object):
         # merge df and fat_cs df to dict
         fatdf_in_map = [[cs + f for cs in self.fat_cs] for f in df_in_map]
         fat = seq(T1=[fT1_in_map], T2=fT2_in_map, att=[[attB1_in_map]], g=[[[fatdf_in_map]]], eval=eval, args=args)
-        fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
+
+        if self.paramDict["sim_mode"]=="mean":
+            fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
+        elif self.paramDict["sim_mode"]=="mid_point":
+            fat = fat[(int(window / 2) - 1):-1:window]
+        else:
+            raise ValueError("Unknow sim_mode")
 
         # building the time axis
         TR_list = seq.TR
@@ -375,7 +391,7 @@ class ImageSeries(object):
                         fk = fk.astype(complex_dtype)
 
 
-                        c_gpu = GPUArray((1, kx.shape[0]), dtype=complex_dtype)
+                        c_gpu = GPUArray((kx.shape[0]), dtype=complex_dtype)
                             # fk_gpu = GPUArray(fk.shape, dtype=complex_dtype)
                             # fk_gpu.fill(fk)
                         # kx_gpu = to_gpu(kx)
@@ -387,14 +403,21 @@ class ImageSeries(object):
                         plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
 
                         plan.execute(c_gpu, fk_gpu)
-                        fk_gpu.gpudata.free()
-
                         c = np.squeeze(c_gpu.get())
+
+                        fk_gpu.gpudata.free()
                         c_gpu.gpudata.free()
 
                         plan.__del__()
                         kdata.append(c)
 
+                        del c
+                        del kx
+                        del ky
+                        del kz
+                        del fk
+                        del t
+                        gc.collect()
 
                 else:
                     kdata = []
@@ -439,7 +462,7 @@ class ImageSeries(object):
                             kz = kz.astype(dtype)
                             fk = fk.astype(complex_dtype)
 
-                            c_gpu = GPUArray((1, kx.shape[0]), dtype=complex_dtype)
+                            c_gpu = GPUArray((kx.shape[0]), dtype=complex_dtype)
                             #fk_gpu = GPUArray(fk.shape, dtype=complex_dtype)
                             #fk_gpu.fill(fk)
                             fk_gpu = to_gpu(fk)

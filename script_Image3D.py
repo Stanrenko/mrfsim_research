@@ -78,14 +78,14 @@ volumes = simulate_radial_undersampled_images(kdata,radial_traj_3D,m.image_size,
 #volumes_noGPU = simulate_radial_undersampled_images(kdata_noGPU,radial_traj_3D,m.image_size,density_adj=True,useGPU=True)
 #ani,ani1=animate_multiple_images(volumes[:,4,:,:],volumes_noGPU[:,4,:,:])
 
-ani=animate_images(volumes[:,15,:,:])
+#ani=animate_images(volumes[:,15,:,:])
 
 mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=True)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
-plt.imshow(mask[m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),:,:])
+#plt.imshow(mask[m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),:,:])
 
-plt.imshow(mask[m.paramDict["nb_empty_slices"]-5,:,:])
+#plt.imshow(mask[m.paramDict["nb_empty_slices"]-5,:,:])
 
-optimizer = SimpleDictSearch(mask=mask,niter=1,seq=seq,trajectory=radial_traj_3D,split=1000,pca=True,threshold_pca=15,useGPU=True,log=False,useAdjPred=False,verbose=True)
+optimizer = SimpleDictSearch(mask=mask,niter=3,seq=seq,trajectory=radial_traj_3D,split=1000,pca=True,threshold_pca=15,useGPU=True,log=False,useAdjPred=False,verbose=False)
 all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
 end=datetime.now()
@@ -103,21 +103,25 @@ maskROI=buildROImask_unique(m.paramMap)
 
 for iter in all_maps_adj.keys():
     regression_paramMaps_ROI(m.paramMap, all_maps_adj[iter][0], m.mask > 0, all_maps_adj[iter][1] > 0,maskROI=maskROI,
-                             title="ROI Orig vs Iteration {}".format(iter), proj_on_mask1=False, adj_wT1=True, fat_threshold=0.7)
+                             title="ROI Orig vs Iteration {}".format(iter), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7)
 
-
-
-compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="Outside",proj_on_mask1=True,save=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+5,title1="Orig",title2="Inside",proj_on_mask1=True,save=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False)
+# compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="Outside",proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
+# compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+5,title1="Orig",title2="Inside",proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
+# compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
 
 size_slice = int(m.paramDict["nb_slices"]/m.paramDict["repeat_slice"])
 
-compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+int(size_slice/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+2*int(size_slice/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False)
+iter =1
+sl = 1
 
-regression_paramMaps_ROI(m.paramMap, all_maps_adj[4][0], m.mask > 0, all_maps_adj[4][1] > 0,maskROI=maskROI,
-                             title="ROI Orig vs Iteration {}".format(4), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl-1)*size_slice+int(size_slice/2),title1="Orig",title2="Mid Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl)*size_slice,title1="Orig",title2="Border Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
+
+plt.close("all")
+
+#
+# regression_paramMaps_ROI(m.paramMap, all_maps_adj[4][0], m.mask > 0, all_maps_adj[4][1] > 0,maskROI=maskROI,
+#                              title="ROI Orig vs Iteration {}".format(4), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7)
 
 plt.close("all")
 
@@ -152,3 +156,17 @@ print('Active CUDA Device: GPU', torch.cuda.current_device())
 
 print ('Available devices ', torch.cuda.device_count())
 print ('Current cuda device ', torch.cuda.current_device())
+
+
+
+import cupy as cp
+
+n = 500
+a = cp.ones([n,256,100], dtype=cp.float32)
+b = cp.ones([n,100,100], dtype=cp.float32)
+
+a = cp.reshape(a, [n,256,100,1])
+b = cp.reshape(b, [n,1,100,100])
+c = cp.sum(a*b, axis=-2)
+
+print('Complete.')

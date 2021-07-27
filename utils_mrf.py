@@ -768,7 +768,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
             N1, N2 = size[0], size[1]
             dtype = np.float32  # Datatype (real)
             complex_dtype = np.complex64
-            fk_gpu = GPUArray((1, N1, N2), dtype=complex_dtype)
+            fk_gpu = GPUArray((N1, N2), dtype=complex_dtype)
 
 
             c_retrieved = kdata_all
@@ -817,7 +817,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
             N1, N2, N3 = size[0], size[1], size[2]
             dtype = np.float32  # Datatype (real)
             complex_dtype = np.complex64
-            fk_gpu = GPUArray((1, N1, N2, N3), dtype=complex_dtype)
+            fk_gpu = GPUArray((N1, N2, N3), dtype=complex_dtype)
 
             c_retrieved = kdata_all
             kx = traj_all[:, 0]
@@ -897,7 +897,7 @@ def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):
             complex_dtype = np.complex64
             N1, N2,N3 = volumes.shape[1], volumes.shape[2],volumes.shape[3]
             M = traj.shape[1]
-            c_gpu = GPUArray((1, M), dtype=complex_dtype)
+            c_gpu = GPUArray((M), dtype=complex_dtype)
             # Initialize the plan and set the points.
             kdata = []
             for i in list(range(volumes.shape[0])):
@@ -970,7 +970,7 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
             N1, N2 = size[0], size[1]
             dtype = np.float32  # Datatype (real)
             complex_dtype = np.complex64
-            fk_gpu = GPUArray((1, N1, N2), dtype=complex_dtype)
+            fk_gpu = GPUArray((N1, N2), dtype=complex_dtype)
             images_GPU = []
             for i in list(range(len(kdata))):
 
@@ -1012,7 +1012,7 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
 
             images_GPU=[]
             for i in list(range(len(kdata))):
-                fk_gpu = GPUArray((1, N1, N2, N3), dtype=complex_dtype)
+                fk_gpu = GPUArray((N1, N2, N3), dtype=complex_dtype)
                 c_retrieved = kdata[i]
                 kx = traj[i, :, 0]
                 ky = traj[i, :, 1]

@@ -40,7 +40,8 @@ DEFAULT_CONFIG = "mrf_dictconf.json"
 @set_parameter("window", int, default=None, description="Window size")
 @set_parameter("dictfile", str, description="Dictionary file")
 @set_parameter("overwrite", bool, default=False, description="Overwrite existing dictionary")
-def GenDict(sequence_config, dict_config, window, dictfile, overwrite):
+@set_parameter("sim_mode", str, default="mean", description="Aggregation mode for simulation")
+def GenDict(sequence_config, dict_config, window, dictfile, overwrite,sim_mode):
     """ Generate MRF-T1map dictionary """
 
     dictfile = pathlib.Path(dictfile)
@@ -73,7 +74,12 @@ def GenDict(sequence_config, dict_config, window, dictfile, overwrite):
     # water
     printer("Generate water signals.")
     water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
-    water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
+    if sim_mode == "mean":
+        water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
+    elif sim_mode == "mid_point":
+        water = water[(int(window / 2) - 1):-1:window]
+    else:
+        raise ValueError("Unknow sim_mode")
 
     # fat
     printer("Generate fat signals.")
@@ -82,7 +88,12 @@ def GenDict(sequence_config, dict_config, window, dictfile, overwrite):
     # merge df and fat_cs df to dict
     fatdf = [[cs + f for cs in fat_cs] for f in df]
     fat = seq(T1=[fT1], T2=fT2, att=[[att]], g=[[[fatdf]]], eval=eval, args=args)
-    fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
+    if sim_mode == "mean":
+        fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
+    elif sim_mode == "mid_point":
+        fat = fat[(int(window / 2) - 1):-1:window]
+    else:
+        raise ValueError("Unknow sim_mode")
 
     # join water and fat
     printer("Build dictionary.")

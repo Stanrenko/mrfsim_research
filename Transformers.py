@@ -52,8 +52,6 @@ class PCAComplex(BaseEstimator,TransformerMixin):
         xp=cp.get_array_module(X)
         check_is_fitted(self,'explained_variance_ratio_')
 
-        print(cp.cuda.get_cublas_handle())
-
         #X = X.copy()  # This is so we do not make changes to the
 
         if xp==cp:
