@@ -20,6 +20,7 @@ import pickle
 ## Random map simulation
 
 dictfile = "./mrf175_SimReco2_mid_point.dict"
+dictfile = "./mrf175_SimReco2.dict"
 #dictfile = "mrf175_CS.dict"
 
 with open("./mrf_sequence.json") as f:
@@ -27,7 +28,7 @@ with open("./mrf_sequence.json") as f:
 
 seq = T1MRF(**sequence_config)
 
-window = 8 #corresponds to nspoke by image
+window = 1 #corresponds to nspoke by image
 size=(256,256)
 useGPU=True
 
@@ -39,7 +40,7 @@ for ph_num in tqdm([1]):
     file_matlab_paramMap = "./data/SquarePhantom/Phantom{}/paramMap.mat".format(ph_num)
 
     ###### Building Map
-    m = MapFromFile("PythonPhantom{}".format(ph_num), image_size=size, file=file_matlab_paramMap, rounding=False,sim_mode="mean")
+    m = MapFromFile("PythonPhantom{}".format(ph_num), image_size=size, file=file_matlab_paramMap, rounding=False,sim_mode="mean",gen_mode="loop")
     m.buildParamMap()
 
     if not(load_maps):
@@ -292,3 +293,40 @@ plt.plot(np.real(mean_retrieved),label='Mean pattern retrieved on region')
 plt.plot(np.real(mean_original),"x",label='Mean signal original on region')
 plt.title("Mean Signals comparison in region with ff {} vs retrieved {}".format(np.round(map_ff[mask_single_region_all][0],4),np.round(map_ff_on_mask[0],3)))
 plt.legend()
+
+
+#################################
+
+image_series_matlab = loadmat(r"./data/SquarePhantom/Phantom1/ImgSeries_ideal_iter_TestCS0.mat")["ImgSeries"]
+image_series_matlab = np.moveaxis(image_series_matlab,-1,0)
+image_series_matlab = np.squeeze(image_series_matlab)
+
+image_series_python = m.images_series
+
+metric=np.abs
+
+python_on_mask = image_series_python[:,m.mask>0]
+matlab_on_mask=image_series_matlab[:,m.mask>0]
+
+error=np.linalg.norm(metric(python_on_mask-matlab_on_mask),axis=0)
+
+index_max = error.argmax()
+index_min = error.argmin()
+
+plt.figure()
+plt.title("Signal with max error")
+plt.plot(metric(matlab_on_mask[:,index_max]),label="Matlab")
+plt.plot(metric(python_on_mask[:,index_max]),label="Python")
+plt.legend()
+
+
+print(m.paramMap["ff"][index_max])
+
+plt.figure()
+plt.title("Signal with min error")
+plt.plot(metric(matlab_on_mask[:,index_min]),label="Matlab")
+plt.plot(metric(python_on_mask[:,index_min]),label="Python")
+plt.legend()
+
+
+print(m.paramMap["ff"][index_min])

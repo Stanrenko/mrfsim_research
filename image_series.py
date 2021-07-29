@@ -89,6 +89,9 @@ class ImageSeries(object):
         if "sim_mode" not in self.paramDict:
             self.paramDict["sim_mode"]="mean" #mid_point
 
+        if "gen_mode" not in self.paramDict:
+            self.paramDict["gen_mode"]=None #loop
+
         self.image_size=self.paramDict["image_size"]
         self.images_series=None
         self.cached_images_series=None
@@ -150,7 +153,19 @@ class ImageSeries(object):
 
         # water
         print("Simulating Water Signal")
-        water = seq(T1=wT1_in_map, T2=wT2_in_map, att=[[attB1_in_map]], g=[[[df_in_map]]])
+
+        if self.paramDict["gen_mode"]=="loop":
+            water_list=[]
+            for param in params_unique:
+                current_water = seq(T1=param[0], T2=param[1], att=param[4], g=param[5])
+                water_list.append(current_water)
+            water = np.squeeze(np.array(water_list))
+            water=water.T
+
+        else:
+            water = seq(T1=wT1_in_map, T2=wT2_in_map, att=[[attB1_in_map]], g=[[[df_in_map]]])
+
+
         if self.paramDict["sim_mode"]=="mean":
             water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
         elif self.paramDict["sim_mode"]=="mid_point":
@@ -163,9 +178,20 @@ class ImageSeries(object):
         print("Simulating Fat Signal")
         eval = "dot(signal, amps)"
         args = {"amps": self.fat_amp}
-        # merge df and fat_cs df to dict
-        fatdf_in_map = [[cs + f for cs in self.fat_cs] for f in df_in_map]
-        fat = seq(T1=[fT1_in_map], T2=fT2_in_map, att=[[attB1_in_map]], g=[[[fatdf_in_map]]], eval=eval, args=args)
+
+
+        if self.paramDict["gen_mode"] == "loop":
+            fat_list = []
+            for param in params_unique:
+                current_fat = seq(T1=param[2], T2=param[3], att=param[4], g=[cs + param[5] for cs in self.fat_cs],eval=eval,args=args)
+                fat_list.append(current_fat)
+            fat = np.squeeze(np.array(fat_list))
+            fat = fat.T
+
+        else:
+            # merge df and fat_cs df to dict
+            fatdf_in_map = [[cs + f for cs in self.fat_cs] for f in df_in_map]
+            fat = seq(T1=[fT1_in_map], T2=fT2_in_map, att=[[attB1_in_map]], g=[[[fatdf_in_map]]], eval=eval, args=args)
 
         if self.paramDict["sim_mode"]=="mean":
             fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
@@ -183,9 +209,14 @@ class ImageSeries(object):
 
         # join water and fat
         print("Build dictionary.")
-        keys = list(itertools.product(wT1_in_map, wT2_in_map, fT1_in_map, fT2_in_map, attB1_in_map, df_in_map))
-        values = np.stack(np.broadcast_arrays(water, fat), axis=-1)
-        values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
+        if self.paramDict["gen_mode"] == "loop":
+            keys=[tuple(param) for param in params_unique]
+            values=np.stack((water, fat),axis=-1)
+            values = np.moveaxis(values, 0, 1)
+        else :
+            keys = list(itertools.product(wT1_in_map, wT2_in_map, fT1_in_map, fT2_in_map, attB1_in_map, df_in_map))
+            values = np.stack(np.broadcast_arrays(water, fat), axis=-1)
+            values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
         mrfdict = dictsearch.Dictionary(keys, values)
 
         images_series = np.zeros(self.image_size + (values.shape[-2],), dtype=np.complex_)
