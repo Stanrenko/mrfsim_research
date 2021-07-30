@@ -20,9 +20,11 @@ from sigpy.mri import spiral
 import cv2
 
 try:
+    import pycuda
     import pycuda.autoinit
     from pycuda.gpuarray import GPUArray, to_gpu
     from cufinufft import cufinufft
+
 except:
     pass
 
@@ -97,8 +99,9 @@ def animate_multiple_images(images_series,images_series_rebuilt,interval=200):
                                     repeat_delay=10 * interval),
 
 def radial_golden_angle_traj(total_nspoke,npoint,k_max=np.pi):
-    golden_angle=-111.25*np.pi/180
-    base_spoke = np.arange(-k_max, k_max, 2 * k_max / npoint, dtype=np.complex_)
+    golden_angle=111.246*np.pi/180
+    #base_spoke = np.arange(-k_max, k_max, 2 * k_max / npoint, dtype=np.complex_)
+    base_spoke = -k_max+np.arange(npoint)*2*k_max/(npoint-1)
     all_rotations = np.exp(1j * np.arange(total_nspoke) * golden_angle)
     all_spokes = np.matmul(np.diag(all_rotations), np.repeat(base_spoke.reshape(1, -1), total_nspoke, axis=0))
     return all_spokes
@@ -927,7 +930,7 @@ def buildROImask(map):
     #print(map["wT1"].shape)
     orig_data = map["wT1"].reshape(-1, 1)
     data = orig_data + np.random.normal(size=orig_data.shape,scale=0.1)
-    model = KMeans(n_clusters=np.minimum(len(np.unique(orig_data)),10))
+    model = KMeans(n_clusters=np.minimum(len(np.unique(orig_data)),40))
     model.fit(data)
     groups = model.labels_ + 1
     #print(groups.shape)
@@ -952,7 +955,15 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
     nspoke = trajectory.paramDict["nspoke"]
 
     dtheta = np.pi / nspoke
+
+    kdata=np.array(kdata).reshape(traj.shape[0],-1)
+
+    if not(kdata.shape[1]==traj.shape[1]):
+        raise ValueError("Incompatible Kdata and Trajectory shapes")
+
     kdata = np.array(kdata) / (npoint * trajectory.paramDict["nb_rep"]) * dtheta
+
+
 
     if density_adj:
         density = np.abs(np.linspace(-1, 1, npoint))
@@ -1253,3 +1264,10 @@ def plot_evolution_params(map_ref, mask_ref, all_maps, maskROI=None, adj_wT1=Tru
 
     if save :
         plt.savefig("./figures/{} : {}".format(title,metric))
+
+
+def create_cuda_context():
+    pycuda.driver.init()
+    dev=pycuda.driver.Device(0)
+    context=dev.make_context()
+    return context

@@ -31,9 +31,9 @@ except:
 
 import gc
 
-DEFAULT_wT2 = 80
+DEFAULT_wT2 = 40
 DEFAULT_fT1 = 300
-DEFAULT_fT2 = 40
+DEFAULT_fT2 = 80
 
 DEFAULT_ROUNDING_wT1=0
 DEFAULT_ROUNDING_wT2=0
@@ -86,8 +86,8 @@ class ImageSeries(object):
         if "nb_rep" not in self.paramDict:
             self.paramDict["nb_rep"]=1
 
-        if "sim_mode" not in self.paramDict:
-            self.paramDict["sim_mode"]="mean" #mid_point
+        # if "sim_mode" not in self.paramDict:
+        #     self.paramDict["sim_mode"]="mean" #mid_point
 
         if "gen_mode" not in self.paramDict:
             self.paramDict["gen_mode"]=None #loop
@@ -126,7 +126,7 @@ class ImageSeries(object):
         self.fat_cs = [- value / 1000 for value in fat_cs]  # temp
 
 
-    def build_ref_images(self,seq,window=8):
+    def build_ref_images(self,seq):
         print("Building Ref Images")
         if self.paramMap is None:
             return ValueError("buildparamMap should be called prior to image simulation")
@@ -156,7 +156,8 @@ class ImageSeries(object):
 
         if self.paramDict["gen_mode"]=="loop":
             water_list=[]
-            for param in params_unique:
+            print("Simulation in loop mode")
+            for param in tqdm(params_unique):
                 current_water = seq(T1=param[0], T2=param[1], att=param[4], g=param[5])
                 water_list.append(current_water)
             water = np.squeeze(np.array(water_list))
@@ -166,12 +167,12 @@ class ImageSeries(object):
             water = seq(T1=wT1_in_map, T2=wT2_in_map, att=[[attB1_in_map]], g=[[[df_in_map]]])
 
 
-        if self.paramDict["sim_mode"]=="mean":
-            water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
-        elif self.paramDict["sim_mode"]=="mid_point":
-            water = water[(int(window / 2) - 1):-1:window]
-        else:
-            raise ValueError("Unknow sim_mode")
+        # if self.paramDict["sim_mode"]=="mean":
+        #     water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
+        # elif self.paramDict["sim_mode"]=="mid_point":
+        #     water = water[(int(window / 2) - 1):-1:window]
+        # else:
+        #     raise ValueError("Unknow sim_mode")
 
 
         # fat
@@ -182,7 +183,8 @@ class ImageSeries(object):
 
         if self.paramDict["gen_mode"] == "loop":
             fat_list = []
-            for param in params_unique:
+            print("Simulation in loop mode")
+            for param in tqdm(params_unique):
                 current_fat = seq(T1=param[2], T2=param[3], att=param[4], g=[cs + param[5] for cs in self.fat_cs],eval=eval,args=args)
                 fat_list.append(current_fat)
             fat = np.squeeze(np.array(fat_list))
@@ -193,17 +195,18 @@ class ImageSeries(object):
             fatdf_in_map = [[cs + f for cs in self.fat_cs] for f in df_in_map]
             fat = seq(T1=[fT1_in_map], T2=fT2_in_map, att=[[attB1_in_map]], g=[[[fatdf_in_map]]], eval=eval, args=args)
 
-        if self.paramDict["sim_mode"]=="mean":
-            fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
-        elif self.paramDict["sim_mode"]=="mid_point":
-            fat = fat[(int(window / 2) - 1):-1:window]
-        else:
-            raise ValueError("Unknow sim_mode")
+        # if self.paramDict["sim_mode"]=="mean":
+        #     fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
+        # elif self.paramDict["sim_mode"]=="mid_point":
+        #     fat = fat[(int(window / 2) - 1):-1:window]
+        # else:
+        #     raise ValueError("Unknow sim_mode")
 
         # building the time axis
         TR_list = seq.TR
-        t = np.cumsum([np.sum(dt, axis=0) for dt in groupby(np.array(TR_list), window)]).reshape(1,-1)
+        #t = np.cumsum([np.sum(dt, axis=0) for dt in groupby(np.array(TR_list), window)]).reshape(1,-1)
 
+        t=np.cumsum(TR_list).reshape(1,-1)
 
 
 
@@ -264,11 +267,13 @@ class ImageSeries(object):
         self.list_movements=[*self.list_movements,*list_movements]
 
 
-    def generate_kdata(self,trajectory,useGPU=False,eps=1e-6):
+    def generate_kdata(self,trajectory,useGPU=False,eps=1e-4):
         print("Generating kdata")
         #nspoke = trajectory.paramDict["nspoke"]
         #npoint = trajectory.paramDict["npoint"]
         traj = trajectory.get_traj()
+
+        traj = traj.reshape((self.images_series.shape[0], -1, traj.shape[-1]))
 
         if not (traj.shape[-1] == len(self.image_size)):
             raise ValueError("Trajectory dimension does not match Image Space dimension")
@@ -286,18 +291,18 @@ class ImageSeries(object):
                         finufft.nufft2d2(t[:, 0], t[:, 1], p)
                         for t, p in zip(traj, images_series)
                     ]
-
                 else:
                     dtype = np.float32  # Datatype (real)
                     complex_dtype = np.complex64
                     N1, N2 = size[0], size[1]
                     M = traj.shape[1]
-
                     # Initialize the plan and set the points.
                     kdata = []
 
-                    for i in list(range(self.images_series.shape[0])):
+                    for i in tqdm(list(range(self.images_series.shape[0]))):
 
+                        # print("Allocating input")
+                        # start = datetime.now()
 
                         fk = images_series[i,:,:]
                         kx = traj[i, :, 0]
@@ -307,23 +312,46 @@ class ImageSeries(object):
                         ky = ky.astype(dtype)
                         fk = fk.astype(complex_dtype)
 
+
+
+                        # end=datetime.now()
+                        # print(end-start)
+                        # print("Allocating Output")
+                        # start=datetime.now()
+
                         fk_gpu = to_gpu(fk)
-                        kx_gpu = to_gpu(kx)
-                        ky_gpu = to_gpu(ky)
-                        c_gpu = GPUArray((1, M), dtype=complex_dtype)
+                        c_gpu = GPUArray((M), dtype=complex_dtype)
+
+                        # end=datetime.now()
+                        # print(end-start)
+                        #
+                        # print("Executing FFT")
+                        # start=datetime.now()
 
                         plan = cufinufft(2, (N1, N2), 1, eps=eps, dtype=dtype)
-                        plan.set_pts(kx_gpu, ky_gpu)
+                        plan.set_pts(to_gpu(kx), to_gpu(ky))
                         plan.execute(c_gpu, fk_gpu)
 
                         c = np.squeeze(c_gpu.get())
-                        kdata.append(c)
 
                         fk_gpu.gpudata.free()
                         c_gpu.gpudata.free()
-                        kx_gpu.gpudata.free()
-                        ky_gpu.gpudata.free()
+
+                        kdata.append(c)
+
+                        del c
+                        del kx
+                        del ky
+                        del fk
+                        del fk_gpu
+                        del c_gpu
                         plan.__del__()
+
+                        # gc.collect()
+
+
+
+                    gc.collect()
 
             else:
                 df = pd.DataFrame(index=range(self.images_series.shape[0]), columns=["Timesteps", "Images"])
@@ -348,10 +376,10 @@ class ImageSeries(object):
                     complex_dtype = np.complex64
                     N1, N2 = size[0], size[1]
                     M = traj.shape[1]
-                    c_gpu = GPUArray((1, M), dtype=complex_dtype)
+                    c_gpu = GPUArray((M), dtype=complex_dtype)
                     # Initialize the plan and set the points.
                     kdata = []
-                    for i in list(range(m.images_series.shape[0])):
+                    for i in tqdm(list(range(m.images_series.shape[0]))):
                         fk = images_series.iloc[i]
                         kx = traj[i, :, 0]
                         ky = traj[i, :, 1]
@@ -406,6 +434,7 @@ class ImageSeries(object):
                     complex_dtype = np.complex64
 
                     for i, x in (enumerate(tqdm(zip(traj, images_series)))):
+
 
                         fk = x[1]
                         t = x[0]

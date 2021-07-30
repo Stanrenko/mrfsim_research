@@ -1,7 +1,7 @@
 import numpy as np
 from scipy import ndimage
 from scipy.ndimage import affine_transform
-from utils_mrf import translation_breathing,build_mask_single_image,build_mask,simulate_radial_undersampled_images,read_mrf_dict
+from utils_mrf import translation_breathing,build_mask_single_image,build_mask,simulate_radial_undersampled_images,read_mrf_dict,create_cuda_context
 from Transformers import PCAComplex
 from mutools.optim.dictsearch import dictsearch
 from tqdm import tqdm
@@ -9,13 +9,15 @@ from mrfsim import makevol
 from image_series import MapFromDict
 from datetime import datetime
 try:
+    #from pycuda.autoinit import _finish_up
     import cupy as cp
 except:
+    print("I was here")
     pass
 
 from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from numba import cuda
-
+import gc
 
 class Optimizer(object):
 
@@ -33,7 +35,7 @@ class Optimizer(object):
 
 class SimpleDictSearch(Optimizer):
 
-    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,log=True,useAdjPred=False,**kwargs):
+    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,log=True,useAdjPred=False,useGPU_dictsearch=False,useGPU_simulation=True,**kwargs):
         #transf is a function that takes as input timesteps arrays and outputs shifts as output
         super().__init__(**kwargs)
         self.paramDict["niter"]=niter
@@ -71,7 +73,8 @@ class SimpleDictSearch(Optimizer):
             seq = self.paramDict["sequence"]
             trajectory = self.paramDict["trajectory"]
         log=self.paramDict["log"]
-        useGPU=self.paramDict["useGPU"]
+        useGPU_dictsearch=self.paramDict["useGPU_dictsearch"]
+        useGPU_simulation = self.paramDict["useGPU_simulation"]
 
         volumes = volumes / np.linalg.norm(volumes, 2, axis=0)
         all_signals = volumes[:, mask > 0]
@@ -125,7 +128,7 @@ class SimpleDictSearch(Optimizer):
         var_f = np.reshape(var_f, (-1, 1))
         sig_wf = np.reshape(sig_wf, (-1, 1))
 
-        if useGPU:
+        if useGPU_dictsearch:
             var_w = cp.asarray(var_w)
             var_f = cp.asarray(var_f)
             sig_wf = cp.asarray(sig_wf)
@@ -164,7 +167,7 @@ class SimpleDictSearch(Optimizer):
                     print("PCA transform")
                     start = datetime.now()
 
-                if not(useGPU):
+                if not(useGPU_dictsearch):
 
                     if pca:
                         transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique)))
@@ -181,7 +184,7 @@ class SimpleDictSearch(Optimizer):
 
                 else:
 
-                    print("Using GPU")
+                    print("Using GPU for dict search")
                     if pca:
 
                         transformed_all_signals_water = cp.transpose(
@@ -217,7 +220,7 @@ class SimpleDictSearch(Optimizer):
                     end = datetime.now()
                     print(end-start)
 
-                if not(useGPU):
+                if not(useGPU_dictsearch):
                     print("Calculating alpha optim and flooring")
                     start = datetime.now()
                     current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
@@ -336,7 +339,7 @@ class SimpleDictSearch(Optimizer):
 
             values_results.append((map_rebuilt, mask))
 
-            if useGPU:#Forcing to free the memory
+            if useGPU_dictsearch:#Forcing to free the memory
                 mempool = cp.get_default_memory_pool()
                 print("Cupy memory usage {}:".format(mempool.used_bytes()))
                 mempool.free_all_blocks()
@@ -344,6 +347,8 @@ class SimpleDictSearch(Optimizer):
                 cp.cuda.set_allocator(None)
                 # Disable memory pool for pinned memory (CPU).
                 cp.cuda.set_pinned_memory_allocator(None)
+                gc.collect()
+
 
             if i == niter:
                 break
@@ -355,14 +360,14 @@ class SimpleDictSearch(Optimizer):
             map_for_sim = dict(zip(keys_simu, values_simu))
 
             # predict spokes
-            images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=False)
+            images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=True)
             images_pred.buildParamMap()
             images_pred.build_ref_images(seq)
             pred_volumesi = images_pred.images_series
 
             #volumesi = images_pred.simulate_radial_undersampled_images(trajectory, density_adj=True)
-            kdatai = images_pred.generate_kdata(trajectory,useGPU=useGPU)
-            volumesi = simulate_radial_undersampled_images(kdatai,trajectory,images_pred.image_size,useGPU=useGPU,density_adj=True)
+            kdatai = images_pred.generate_kdata(trajectory,useGPU=useGPU_simulation)
+            volumesi = simulate_radial_undersampled_images(kdatai,trajectory,images_pred.image_size,useGPU=useGPU_simulation,density_adj=True)
             volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
 
 
