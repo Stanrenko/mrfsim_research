@@ -325,10 +325,13 @@ class T1MRF:
             seq.extend(echo)
         self._seq = seq
 
-    def __call__(self, T1, T2, g, att, **kwargs):
+    def __call__(self, T1, T2, g, att, calc_deriv=False,**kwargs):
         """ simulate sequence """
-        seq = [self.inversion, epg.modify(self._seq, T1=T1, T2=T2, att=att, g=g)]
-        return np.asarray(epg.simulate(seq, **kwargs))
+        seq = [self.inversion, epg.modify(self._seq, T1=T1, T2=T2, att=att, g=g,calc_deriv=calc_deriv)]
+        if not(calc_deriv):
+            return np.asarray(epg.simulate(seq, **kwargs))
+        else:
+            return epg.simulate(seq,calc_deriv=calc_deriv, **kwargs)
 
 #
 # utils

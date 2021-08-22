@@ -273,7 +273,7 @@ class ImageSeries(object):
         #npoint = trajectory.paramDict["npoint"]
         traj = trajectory.get_traj()
 
-        traj = traj.reshape((self.images_series.shape[0], -1, traj.shape[-1]))
+        #traj = traj.reshape((self.images_series.shape[0], -1, traj.shape[-1]))
 
         if not (traj.shape[-1] == len(self.image_size)):
             raise ValueError("Trajectory dimension does not match Image Space dimension")
@@ -291,6 +291,7 @@ class ImageSeries(object):
                         finufft.nufft2d2(t[:, 0], t[:, 1], p)
                         for t, p in zip(traj, images_series)
                     ]
+
                 else:
                     dtype = np.float32  # Datatype (real)
                     complex_dtype = np.complex64
@@ -398,10 +399,14 @@ class ImageSeries(object):
 
             if not(useGPU):
                 if self.list_movements == []:
-                    kdata = [
-                        finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], p)
-                        for t, p in zip(traj, images_series)
-                    ]
+                    # kdata = [
+                    #     finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], p)
+                    #     for t, p in zip(traj, images_series)
+                    # ]
+                    kdata = []
+                    for i in tqdm(range(len(traj))):
+                        kdata.append(finufft.nufft3d2(traj[i,:,2],traj[i, :, 0], traj[i, :, 1], images_series[i]))
+
                 else:
                     kdata = []
                     for i, x in (enumerate(tqdm(zip(traj, images_series)))):

@@ -49,7 +49,12 @@ class PCAComplex(BaseEstimator,TransformerMixin):
 
     def transform(self, X):
         # make sure that it was fitted
-        xp=cp.get_array_module(X)
+        try:
+            xp=cp.get_array_module(X)
+        except :
+            xp=np
+            cp=None
+
         check_is_fitted(self,'explained_variance_ratio_')
 
         #X = X.copy()  # This is so we do not make changes to the

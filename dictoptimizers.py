@@ -29,13 +29,13 @@ class Optimizer(object):
         self.verbose=verbose
 
 
-    def search_patterns(self,volumes):
+    def search_patterns(self,dictfile,volumes,retained_timesteps=None):
         #takes as input dictionary pattern and an array of images or volumes and outputs parametric maps
         raise ValueError("search_patterns should be implemented in child")
 
 class SimpleDictSearch(Optimizer):
 
-    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,log=True,useAdjPred=False,useGPU_dictsearch=False,useGPU_simulation=True,**kwargs):
+    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,useAdjPred=False,useGPU_dictsearch=False,useGPU_simulation=True,**kwargs):
         #transf is a function that takes as input timesteps arrays and outputs shifts as output
         super().__init__(**kwargs)
         self.paramDict["niter"]=niter
@@ -54,8 +54,10 @@ class SimpleDictSearch(Optimizer):
             else:
                 self.paramDict["trajectory"]=trajectory
 
+        self.paramDict["useGPU_dictsearch"]=useGPU_dictsearch
+        self.paramDict["useGPU_simulation"] = useGPU_simulation
 
-    def search_patterns(self,dictfile,volumes):
+    def search_patterns(self,dictfile,volumes,retained_timesteps=None):
 
         if self.mask is None:
             mask = build_mask(volumes)
@@ -93,12 +95,15 @@ class SimpleDictSearch(Optimizer):
 
         del mrfdict
 
+        if retained_timesteps is not None:
+            array_water=array_water[:,retained_timesteps]
+            array_fat=array_fat[:,retained_timesteps]
+
         array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
         array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
 
         nb_water_timesteps = array_water_unique.shape[1]
         nb_fat_timesteps = array_fat_unique.shape[1]
-        nb_patterns = array_water.shape[0]
 
         del array_water
         del array_fat

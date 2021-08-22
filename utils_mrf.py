@@ -8,7 +8,7 @@ import numpy as np
 import finufft
 from scipy import ndimage
 from sklearn.decomposition import PCA
-import tqdm
+from tqdm import tqdm
 from scipy.spatial import Voronoi,ConvexHull
 from Transformers import PCAComplex
 import seaborn as sns
@@ -58,7 +58,7 @@ def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
 
 
-def animate_images(images_series,interval=200,metric=np.abs):
+def animate_images(images_series,interval=200,metric=np.abs,cmap=None):
     fig, ax = plt.subplots()
     # ims is a list of lists, each row is a list of artists to draw in the
     # current frame; here we are just animating one artist, the image, in
@@ -66,15 +66,15 @@ def animate_images(images_series,interval=200,metric=np.abs):
     ims = []
     for i, image in enumerate(images_series):
 
-        im = ax.imshow(metric(image), animated=True)
+        im = ax.imshow(metric(image), animated=True,cmap=cmap)
         if i == 0:
-            ax.imshow(metric(image))  # show an initial one first
+            ax.imshow(metric(image),cmap=cmap)  # show an initial one first
         ims.append([im])
 
     return animation.ArtistAnimation(fig, ims, interval=interval, blit=True,
                                     repeat_delay=10 * interval)
 
-def animate_multiple_images(images_series,images_series_rebuilt,interval=200):
+def animate_multiple_images(images_series,images_series_rebuilt,interval=200,cmap=None):
     nb_frames=len(images_series)
     fig, ax = plt.subplots()
     fig_rebuilt, ax_rebuilt = plt.subplots()
@@ -84,14 +84,14 @@ def animate_multiple_images(images_series,images_series_rebuilt,interval=200):
     ims = []
     ims_rebuilt = []
     for i in range(nb_frames):
-        im = ax.imshow(np.abs(images_series[i]), animated=True)
+        im = ax.imshow(np.abs(images_series[i]), animated=True,cmap=cmap)
         if i == 0:
-            ax.imshow(np.abs(images_series[i]))  # show an initial one first
+            ax.imshow(np.abs(images_series[i]),cmap=cmap)  # show an initial one first
         ims.append([im])
 
-        im_rebuilt = ax_rebuilt.imshow(np.abs(images_series_rebuilt[i]), animated=True)
+        im_rebuilt = ax_rebuilt.imshow(np.abs(images_series_rebuilt[i]), animated=True,cmap=cmap)
         if i == 0:
-            ax_rebuilt.imshow(np.abs(images_series_rebuilt[i]))  # show an initial one first
+            ax_rebuilt.imshow(np.abs(images_series_rebuilt[i]),cmap=cmap)  # show an initial one first
         ims_rebuilt.append([im_rebuilt])
 
     return animation.ArtistAnimation(fig, ims, interval=interval, blit=True,
@@ -111,7 +111,7 @@ def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersa
     timesteps = int(total_nspoke / nspoke)
     nb_rep = int(nb_slices / undersampling_factor)
     all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
-    traj = np.reshape(all_spokes, (-1, nspoke * npoint))
+    #traj = np.reshape(all_spokes, (-1, nspoke * npoint))
 
     k_z = np.zeros((timesteps, nb_rep))
     all_slices = np.linspace(-np.pi, np.pi, nb_slices)
@@ -119,20 +119,37 @@ def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersa
     for j in range(1, k_z.shape[0]):
         k_z[j, :] = np.sort(np.roll(all_slices, -j)[::undersampling_factor])
 
+    k_z=np.repeat(k_z, nspoke, axis=0)
     k_z = np.expand_dims(k_z, axis=-1)
-    traj = np.expand_dims(traj, axis=-2)
+    traj = np.expand_dims(all_spokes, axis=-2)
     k_z, traj = np.broadcast_arrays(k_z, traj)
-    k_z = np.reshape(k_z, (timesteps, -1))
-    traj = np.reshape(traj, (timesteps, -1))
 
-    return np.stack([traj.real,traj.imag, k_z], axis=-1)
+    # k_z = np.reshape(k_z, (timesteps, -1))
+    # traj = np.reshape(traj, (timesteps, -1))
+
+    result = np.stack([traj.real,traj.imag, k_z], axis=-1)
+    return result.reshape(result.shape[0],-1,result.shape[-1])
 
 def spiral_golden_angle_traj(total_spiral,fov, N, f_sampling, R, ninterleaves, alpha, gm, sm):
-    golden_angle = -111.25 * np.pi / 180
+    golden_angle = 111.246 * np.pi / 180
     base_spiral = spiral(fov, N, f_sampling, R, ninterleaves, alpha, gm, sm)
     base_spiral = base_spiral[:,0]+1j*base_spiral[:,1]
     all_rotations = np.exp(1j * np.arange(total_spiral) * golden_angle)
     all_spirals = np.matmul(np.diag(all_rotations), np.repeat(base_spiral.reshape(1, -1), total_spiral, axis=0))
+    return all_spirals
+
+def spiral_golden_angle_traj_v2(total_spiral,nspiral,fov, N, f_sampling, R, ninterleaves, alpha, gm, sm):
+    golden_angle = 111.246 * np.pi / 180
+    angle = 2*np.pi/nspiral
+    base_spiral = spiral(fov, N, f_sampling, R, ninterleaves, alpha, gm, sm)
+    base_spiral = base_spiral[:,0]+1j*base_spiral[:,1]
+    all_rotations = np.exp(1j * np.arange(total_spiral) * angle)
+    all_spirals = np.matmul(np.diag(all_rotations), np.repeat(base_spiral.reshape(1, -1), total_spiral, axis=0))
+
+    disk_rotations = np.exp(1j * np.arange(int(total_spiral/nspiral)) * golden_angle)
+    disk_rotations = np.repeat(disk_rotations,nspiral)
+    all_spirals = np.matmul(np.diag(disk_rotations),all_spirals )
+
     return all_spirals
 
 def create_random_map(list_params,region_size,size,mask):
@@ -715,9 +732,15 @@ def voronoi_volumes(points,size=(256,256)):
         indices = v.regions[reg_num]
         if -1 in indices: # some regions can be opened
 
-            indices.remove(-1)
+            #indices.remove(-1)
+            print("Warning : Had to set a voronoi volume to 0 for {}".format(np.round(v.points[i], 2)))
+            vol[i]=0
+        else:
+            vol[i] = ConvexHull(v.vertices[indices]).volume
+        # except:
+        #     print("Warning : Had to set a voronoi volume to 0 for {}".format(np.round(v.points[i],2)))
+        #     vol[i]=0
 
-        vol[i] = ConvexHull(v.vertices[indices]).volume
     return vol, v
 
 
@@ -950,18 +973,18 @@ def buildROImask_unique(map):
 
 def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6):
 
-    traj=trajectory.get_traj()
+    traj=trajectory.get_traj_for_reconstruction()
     npoint = trajectory.paramDict["npoint"]
     nspoke = trajectory.paramDict["nspoke"]
-
     dtheta = np.pi / nspoke
 
-    kdata=np.array(kdata).reshape(traj.shape[0],-1)
+    if not(len(kdata)==len(traj)):
+        kdata=np.array(kdata).reshape(len(traj),-1)
 
-    if not(kdata.shape[1]==traj.shape[1]):
+    if not(kdata[0].shape[0]==traj[0].shape[0]):
         raise ValueError("Incompatible Kdata and Trajectory shapes")
 
-    kdata = np.array(kdata) / (npoint * trajectory.paramDict["nb_rep"]) * dtheta
+    kdata = [k / (npoint * trajectory.paramDict["nb_rep"]) * dtheta for k in kdata]
 
 
 
@@ -971,7 +994,7 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
 
     #kdata = (normalize_image_series(np.array(kdata)))
 
-    if traj.shape[-1] == 2:  # 2D
+    if traj[0].shape[-1] == 2:  # 2D
         if not(useGPU):
             images_series_rebuilt = [
                 finufft.nufft2d1(t[:,0], t[:,1], s, size)
@@ -1009,12 +1032,16 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
                 images_GPU.append(fk)
                 plan.__del__()
             images_series_rebuilt=np.array(images_GPU)
-    elif traj.shape[-1] == 3:  # 3D
+    elif traj[0].shape[-1] == 3:  # 3D
         if not(useGPU):
-            images_series_rebuilt = [
-                finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size)
-                for t, s in zip(traj, kdata)
-            ]
+            #images_series_rebuilt = [
+            #    finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size)
+            #    for t, s in zip(traj, kdata)
+            #]
+
+            images_series_rebuilt=[]
+            for t,s in tqdm(zip(traj,kdata)):
+                images_series_rebuilt.append(finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size))
 
         else:
             N1, N2, N3 = size[0], size[1], size[2]
@@ -1063,14 +1090,17 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
 def simulate_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6):
     # Strong Assumption : from one time step to the other, the sampling is just rotated, hence voronoi volumes can be calculated only once
     print("Simulating Undersampled Images")
-    traj=trajectory.get_traj()
+    traj=trajectory.get_traj_for_reconstruction()
+
+    if not(len(kdata)==len(traj)):
+        kdata=np.array(kdata).reshape(len(traj),-1)
 
     kdata = np.array(kdata) / (2*np.pi) **2
 
     if density_adj:
         print("Performing density adjustment using Voronoi cells")
         density = voronoi_volumes(np.transpose(np.array([traj[0,:, 0], traj[0,:, 1]])),(2*size[0],2*size[1]))[0]
-        kdata = np.array([k * density for i, k in enumerate(kdata)]) / (2 * np.pi) ** 2
+        kdata = np.array([k * density for i, k in enumerate(kdata)])
 
     #kdata = (normalize_image_series(np.array(kdata)))
 

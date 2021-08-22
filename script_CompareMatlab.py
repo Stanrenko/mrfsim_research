@@ -16,6 +16,7 @@ from dictoptimizers import *
 import glob
 from tqdm import tqdm
 import pickle
+from scipy.io import savemat
 
 ## Random map simulation
 
@@ -30,19 +31,20 @@ seq = T1MRF(**sequence_config)
 
 
 size=(256,256)
-useGPU=True
+useGPU_simulation=False
+useGPU_dictsearch=False
 
 load_maps=False
 save_maps = False
 
-type="SquarePhantom"
+type="KneePhantom"
 
 for ph_num in tqdm([1]):
     print("##################### {} : PHANTOM {} #########################".format(type,ph_num))
     file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(type,ph_num)
 
     ###### Building Map
-    m = MapFromFile("{}{}".format(type,ph_num), image_size=size, file=file_matlab_paramMap, rounding=True,gen_mode="loop")
+    m = MapFromFile("{}{}".format(type,ph_num), image_size=size, file=file_matlab_paramMap, rounding=True,gen_mode="other")
     m.buildParamMap()
 
     if not(load_maps):
@@ -56,15 +58,26 @@ for ph_num in tqdm([1]):
         npoint = 2*m.images_series.shape[1]
 
         radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint)
-        kdata = m.generate_kdata(radial_traj,useGPU=True)
+        kdata = m.generate_kdata(radial_traj,useGPU=useGPU_simulation)
 
-        volumes = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=True)
+        volumes = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=useGPU_simulation)
         mask = build_mask_single_image(kdata,radial_traj,m.image_size)
+
+        # savemat("kdata_python.mat",{"KData":np.array(kdata)})
+        # savemat("images_ideal_python.mat", {"ImgIdeal": np.array(m.images_series)})
+        # savemat("images_rebuilt.mat", {"Img": np.array(volumes)})
+
+
+        # ani=animate_images([np.mean(gp, axis=0) for gp in groupby(m.images_series, nspoke)],cmap="gray")
+        # ani = animate_images(volumes, cmap="gray")
+
+        ani1,ani2 =animate_multiple_images([np.mean(gp, axis=0) for gp in groupby(m.images_series, nspoke)],volumes,cmap="gray")
+
 
         # kdata_noGPU = m.generate_kdata(radial_traj, useGPU=False)
         # volumes_noGPU = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=False)
 
-        optimizer = SimpleDictSearch(mask=mask,niter=10,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=False,useGPU_simulation=True)
+        optimizer = SimpleDictSearch(mask=mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=False,useGPU_simulation=False)
         all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
         if save_maps:
@@ -333,6 +346,8 @@ image_series_matlab = np.squeeze(image_series_matlab)
 
 image_series_python = m.images_series
 
+m.images_series=image_series_matlab
+
 metric=np.abs
 
 python_on_mask = image_series_python[:,m.mask>0]
@@ -399,6 +414,7 @@ plt.plot(np.abs(kx_python[0,:]-kx_matlab[0,:]),label="Error on base spoke")
 kdata_matlab=loadmat(r"./data/SquarePhantom/Phantom1/KSpaceData_TestCS4.mat")["KSpaceData"]
 #kdata_matlab=loadmat(r"./data/KneePhantom/Phantom1/KSpaceData_TestCS4.mat")["KSpaceData"]
 kdata_matlab=np.moveaxis(kdata_matlab,-1,0)
+kdata=list(kdata_matlab)
 
 kdata_python=np.array(kdata)
 

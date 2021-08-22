@@ -17,12 +17,12 @@ from dictoptimizers import *
 
 ## Random map simulation
 
-useGPU=True
+useGPU=False
 
 dictfile = "mrf175.dict"
 #dictfile = "mrf175_CS.dict"
 dictfile = "mrf175_SimReco2.dict"
-dictfile = "mrf175_SimReco2_window_1.dict"
+#dictfile = "mrf175_SimReco2_window_1.dict"
 
 with open("mrf_sequence.json") as f:
     sequence_config = json.load(f)
@@ -33,7 +33,10 @@ seq = T1MRF(**sequence_config)
 window = 1 #corresponds to nspoke by image
 size=(256,256)
 
-file_matlab_paramMap = "./data/KneePhantom/Phantom1/paramMap.mat"
+type="KneePhantom"
+num =1
+
+file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(type,num)
 
 ###### Building Map
 #m = MapFromFile("TestPhantomV1",image_size=size,file=file_matlab_paramMap,rounding=True)
@@ -43,37 +46,71 @@ with open("mrf_dictconf_SimReco2.json") as f:
 
 dict_config["ff"]=np.arange(0.,1.05,0.05)
 
-window = 1 #corresponds to nspoke by image
 region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
 size=(256,256)
 
 ###### Building Map
-m = RandomMap("TestRandom",dict_config,image_size=size,region_size=region_size,mask_reduction_factor=1/4)
-m = MapFromFile("TestPhantomV1",image_size=size,file=file_matlab_paramMap,rounding=True)
+#m = RandomMap("TestRandom",dict_config,image_size=size,region_size=region_size,mask_reduction_factor=1/4)
+m = MapFromFile("Map{}{}".format(type,num),image_size=size,file=file_matlab_paramMap,rounding=True,gen_mode="other")
 
 m.buildParamMap()
+m.build_ref_images(seq)
 
-#m.plotParamMap(save=True)
-
-##### Simulating Ref Images
-m.build_ref_images(seq,window)
-
-ntimesteps=1400
-nspoke=1
+ntimesteps=175
+nspoke=8
 npoint = 2*m.images_series.shape[1]
 
-spiral_traj=VariableSpiral(ntimesteps=ntimesteps,nspiral=nspoke,npoint=256,ninterleaves=1,alpha=8,spatial_us=6,temporal_us=1)
 
 
-kdata = m.generate_kdata(spiral_traj,useGPU=useGPU)
-volumes = simulate_undersampled_images(kdata,spiral_traj,m.image_size,useGPU=useGPU,density_adj=True)
+spatial_us_list = [8,16,32]
+temporal_us_list = [0.1,0.25,0.5,1.0]
 
+maskROI=buildROImask_unique(m.paramMap)
+optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=None,trajectory=None,split=1000,pca=True,threshold_pca=15,log=False,useAdjPred=False)
+
+# spiral_traj = VariableSpiral(ntimesteps=ntimesteps, nspiral=nspoke, npoint=256, ninterleaves=1, alpha=128,
+#                                      spatial_us=8, temporal_us=1)
+#
+# kdata = m.generate_kdata(spiral_traj, useGPU=useGPU)
+# np.array(kdata).shape
+
+df_python=pd.DataFrame()
+for sp in spatial_us_list:
+    for tp in temporal_us_list:
+        spiral_traj = VariableSpiral(ntimesteps=ntimesteps, nspiral=nspoke, npoint=256, ninterleaves=1, alpha=128,
+                                     spatial_us=sp, temporal_us=tp)
+
+        kdata = m.generate_kdata(spiral_traj, useGPU=useGPU)
+        volumes = simulate_undersampled_images(kdata, spiral_traj, m.image_size, useGPU=useGPU, density_adj=True)
+        all_maps_adj = optimizer.search_patterns(dictfile, volumes)
+
+        df_current = metrics_paramMaps_ROI(m.paramMap, all_maps_adj[0][0], m.mask > 0, all_maps_adj[0][1] > 0,
+                                           maskROI=maskROI, adj_wT1=True, fat_threshold=0.7, proj_on_mask1=True,
+                                           name="Spiral spus{}_tpus{}".format(sp,tp))
+
+        if df_python.empty:
+            df_python = df_current
+        else:
+            df_python = pd.merge(df_python, df_current, left_index=True, right_index=True)
+
+radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=512)
+kdata_radial = m.generate_kdata(radial_traj,useGPU=useGPU)
+volumes_radial = simulate_radial_undersampled_images(kdata_radial,radial_traj,m.image_size,useGPU=useGPU,density_adj=True)
+all_maps_adj = optimizer.search_patterns(dictfile, volumes_radial)
+
+df_current = metrics_paramMaps_ROI(m.paramMap, all_maps_adj[0][0], m.mask > 0, all_maps_adj[0][1] > 0,
+                                           maskROI=maskROI, adj_wT1=True, fat_threshold=0.7, proj_on_mask1=True,
+                                           name="Radial")
+
+
+df_res = pd.merge(df_python,df_current,left_index=True,right_index=True)
+df_res.to_csv("{} {} Spiral vs Radial.csv".format(type,num))
 # plt.scatter(spiral_traj.traj[0,:,0],spiral_traj.traj[0,:,1])
 # plt.scatter(kdata[0].real,kdata[0].imag)
 # tx,ty=np.meshgrid(spiral_traj.traj[0,:,0],spiral_traj.traj[0,:,1])
-plt.figure()
-plt.tricontourf(spiral_traj.traj[0,:,0],spiral_traj.traj[0,:,1],np.abs(kdata[0]),levels=100)
-plt.colorbar()
+# plt.figure()
+# plt.tricontourf(spiral_traj.traj[0,:,0],spiral_traj.traj[0,:,1],np.abs(kdata[0]),levels=100)
+# plt.colorbar()
 
 ani = animate_images(volumes)
 
@@ -145,14 +182,14 @@ plt.plot(zi[0,:])
 #TO DO - mask for generic traj
 #mask = build_mask_single_image(kdata,radial_traj,m.image_size)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
 
-optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=seq,trajectory=spiral_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False)
+optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=seq,trajectory=spiral_traj,split=1000,pca=True,threshold_pca=15,log=False,useAdjPred=False)
 all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
 plt.close("all")
 
 maskROI=buildROImask_unique(m.paramMap)
 
-for iter in all_maps_adj_radial.keys():
+for iter in all_maps_adj.keys():
     regression_paramMaps_ROI(m.paramMap, all_maps_adj[iter][0], m.mask > 0, all_maps_adj[iter][1] > 0,maskROI=maskROI,
                              title="Spiral ROI Orig vs Iteration {}".format(iter), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7)
 it=0
