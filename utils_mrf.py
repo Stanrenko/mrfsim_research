@@ -46,7 +46,7 @@ def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
         signal =water_signal +fat_signal
 
         signal_reshaped =np.moveaxis(signal ,-1 ,-2)
-        signal_reshaped =signal_reshaped.reshape((-1 ,175))
+        signal_reshaped =signal_reshaped.reshape((-1 ,signal_reshaped.shape[-1]))
 
         keys_with_ff = list(itertools.product(mrfdict.keys, FF_list))
         keys_with_ff = [(*res, f) for res, f in keys_with_ff]

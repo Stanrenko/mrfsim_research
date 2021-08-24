@@ -62,8 +62,8 @@ npoint = 2*m.images_series.shape[1]
 
 
 
-spatial_us_list = [16,32]
-temporal_us_list = [0.1]
+spatial_us_list = [16]
+temporal_us_list = [0.5]
 
 maskROI=buildROImask_unique(m.paramMap)
 optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=None,trajectory=None,split=1000,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_simulation=useGPU)

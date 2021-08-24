@@ -10,8 +10,8 @@ import matplotlib.pyplot as plt
 
 class PCAComplex(BaseEstimator,TransformerMixin):
 
-    def __init__(self, n_components=None):
-        self.n_components_=n_components
+    def __init__(self, n_components_=None):
+        self.n_components_=n_components_
 
     def fit(self, X):
         mean_X = np.mean(X, axis=0)
@@ -21,7 +21,6 @@ class PCAComplex(BaseEstimator,TransformerMixin):
             self.n_components_=cov_X.shape[0]
 
         X_val, X_vect = np.linalg.eigh(cov_X)
-
 
         sorted_index_X = np.argsort(X_val)[::-1]
         X_val = X_val[sorted_index_X]

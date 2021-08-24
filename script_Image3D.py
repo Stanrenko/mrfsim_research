@@ -58,7 +58,7 @@ mask_reduction_factor=1/4
 
 nb_slices= 64
 nb_empty_slices=8
-undersampling_factor=4
+undersampling_factor=2
 repeat_slice=8
 
 gen_mode ="loop"
@@ -135,7 +135,7 @@ mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=useGPU_s
 
 #plt.imshow(mask[m.paramDict["nb_empty_slices"]-5,:,:])
 
-niter=1
+niter=0
 
 optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj_3D,split=2000,pca=True,threshold_pca=20,useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch,log=False,useAdjPred=False,verbose=False,gen_mode=gen_mode)
 
@@ -182,6 +182,8 @@ move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
 
 m.add_movements([move])
 
+load=False
+
 if not(load):
     kdata = m.generate_kdata(radial_traj_3D,useGPU=useGPU_simulation)
     #kdata_noGPU=m.generate_radial_kdata(radial_traj_3D,useGPU=False)
@@ -215,7 +217,7 @@ pickle.dump(all_maps_mvt, file)
 # close the file
 file.close()
 
-all_maps_mvt = pickle.load(  open("all_maps_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "rb" ))
+#all_maps_mvt = pickle.load(  open("all_maps_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "rb" ))
 
 
 #

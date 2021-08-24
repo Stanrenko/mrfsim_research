@@ -110,8 +110,8 @@ class SimpleDictSearch(Optimizer):
         del array_fat
 
         if pca:
-            pca_water = PCAComplex(n_components=threshold_pca)
-            pca_fat = PCAComplex(n_components=threshold_pca)
+            pca_water = PCAComplex(n_components_=threshold_pca)
+            pca_fat = PCAComplex(n_components_=threshold_pca)
 
             pca_water.fit(array_water_unique)
             pca_fat.fit(array_fat_unique)
