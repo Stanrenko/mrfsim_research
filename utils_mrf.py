@@ -687,61 +687,124 @@ def metrics_paramMaps_ROI(map_ref, map2, mask_ref=None, mask2=None, maskROI=None
 
     return df
 
+def voronoi_finite_polygons_2d(vor, radius=None):
+    """
+    Reconstruct infinite voronoi regions in a 2D diagram to finite
+    regions.
+    Parameters
+    ----------
+    vor : Voronoi
+        Input diagram
+    radius : float, optional
+        Distance to 'points at infinity'.
+    Returns
+    -------
+    regions : list of tuples
+        Indices of vertices in each revised Voronoi regions.
+    vertices : list of tuples
+        Coordinates for revised Voronoi vertices. Same as coordinates
+        of input vertices, with 'points at infinity' appended to the
+        end.
+    """
 
-def voronoi_volumes(points,size=(256,256)):
+    if vor.points.shape[1] != 2:
+        raise ValueError("Requires 2D input")
 
-    # rect = (0,0, size[0],size[1])
-    # subdiv = cv2.Subdiv2D(rect)
-    #
-    # list_points=[]
-    # for p in points:
-    #     #print(((p[0] * 128 / np.pi + 128), (p[1] * 128 / np.pi + 128)))
-    #     #subdiv.insert(((int(p[0]*128/np.pi)+128),(int(p[1]*128/np.pi)+128)))
-    #     list_points.append([p[0] * size[0] / (2*np.pi) + size[0]/2, p[1] * size[1] / (2*np.pi) + size[1]/2])
-    #     subdiv.insert(((p[0] * size[0] / (2*np.pi) + size[0]/2), (p[1] * size[1] / (2*np.pi) + size[1]/2)))
-    #
-    # (facets, centers) = subdiv.getVoronoiFacetList([])
-    #
-    # count = 0
-    # array_points = np.array(list_points)
-    # array_points = array_points.astype(np.float32)
-    # center_indices = {}
-    # for i, val in enumerate(array_points):
-    #     if not (np.where(centers == val)[0][-1] == i + count) and not (np.where(centers == val)[0][1] == i + count):
-    #         center_index = np.where(centers == val)[0][0]
-    #         center_indices[i]=center_index
-    #         count = count - 1
-    #     else:
-    #         center_indices[i]=i+count
-    #
-    # vol = np.zeros(len(points))
-    #
-    # for i in range(len(vol)):
-    #     vertices=facets[center_indices[i]].copy()
-    #     vertices[:,0] = (vertices[:,0] - size[0]/2) * 2*np.pi / size[0]
-    #     vertices[:, 1] = (vertices[:, 1] - size[1] / 2) * 2 * np.pi / size[1]
-    #     vol[i]=ConvexHull(vertices).volume
-    #
-    # return vol, (facets, centers)
-    #
-    v = Voronoi(points)
-    vol = np.zeros(v.npoints)
+    new_regions = []
+    new_vertices = vor.vertices.tolist()
+
+    center = vor.points.mean(axis=0)
+    if radius is None:
+        radius = vor.points.ptp().max()*2
+
+    # Construct a map containing all ridges for a given point
+    all_ridges = {}
+    for (p1, p2), (v1, v2) in zip(vor.ridge_points, vor.ridge_vertices):
+        all_ridges.setdefault(p1, []).append((p2, v1, v2))
+        all_ridges.setdefault(p2, []).append((p1, v1, v2))
+
+    # Reconstruct infinite regions
+    for p1, region in enumerate(vor.point_region):
+        vertices = vor.regions[region]
+
+        if all(v >= 0 for v in vertices):
+            # finite region
+            new_regions.append(vertices)
+            continue
+
+        # reconstruct a non-finite region
+        ridges = all_ridges[p1]
+        new_region = [v for v in vertices if v >= 0]
+
+        for p2, v1, v2 in ridges:
+            if v2 < 0:
+                v1, v2 = v2, v1
+            if v1 >= 0:
+                # finite ridge: already in the region
+                continue
+
+            # Compute the missing endpoint of an infinite ridge
+
+            t = vor.points[p2] - vor.points[p1] # tangent
+            t /= np.linalg.norm(t)
+            n = np.array([-t[1], t[0]])  # normal
+
+            midpoint = vor.points[[p1, p2]].mean(axis=0)
+            direction = np.sign(np.dot(midpoint - center, n)) * n
+            far_point = vor.vertices[v2] + direction * radius
+
+            new_region.append(len(new_vertices))
+            new_vertices.append(far_point.tolist())
+
+        # sort region counterclockwise
+        vs = np.asarray([new_vertices[v] for v in new_region])
+        c = vs.mean(axis=0)
+        angles = np.arctan2(vs[:,1] - c[1], vs[:,0] - c[0])
+        new_region = np.array(new_region)[np.argsort(angles)]
+
+        # finish
+        new_regions.append(new_region.tolist())
+
+    return new_regions, np.asarray(new_vertices)
 
 
-    for i, reg_num in enumerate(v.point_region):
-        indices = v.regions[reg_num]
-        if -1 in indices: # some regions can be opened
+def voronoi_volumes(points,min_x=None,min_y=None,max_x=None,max_y=None,eps=0.1):
 
-            #indices.remove(-1)
+    vor = Voronoi(points)
+    regions, vertices = voronoi_finite_polygons_2d(vor)
+
+    if min_x is None:
+        min_x = vor.min_bound[0] - eps
+
+    if max_x is None:
+        max_x = vor.max_bound[0] + eps
+
+
+    if min_y is None:
+        min_y = vor.min_bound[1] - eps
+
+    if max_y is None:
+        max_y = vor.max_bound[1] + eps
+
+
+    mins = np.tile((min_x, min_y), (vertices.shape[0], 1))
+    bounded_vertices = np.max((vertices, mins), axis=0)
+    maxs = np.tile((max_x, max_y), (vertices.shape[0], 1))
+    bounded_vertices = np.min((bounded_vertices, maxs), axis=0)
+
+    vol = np.zeros(len(regions))
+    for i, indices in enumerate(regions):
+        if -1 in indices:  # some regions can be opened - SHOULD NOT HAPPEN WITH NEW IMPLEMENTATION
+            # indices.remove(-1)
             print("Warning : Had to set a voronoi volume to 0 for {}".format(np.round(v.points[i], 2)))
-            vol[i]=0
+            vol[i] = 0
         else:
-            vol[i] = ConvexHull(v.vertices[indices]).volume
+            vol[i] = ConvexHull(bounded_vertices[indices]).volume
         # except:
         #     print("Warning : Had to set a voronoi volume to 0 for {}".format(np.round(v.points[i],2)))
         #     vol[i]=0
 
-    return vol, v
+    return vol, vor
 
 
 def normalize_image_series(images_series):
@@ -1099,8 +1162,9 @@ def simulate_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=F
 
     if density_adj:
         print("Performing density adjustment using Voronoi cells")
-        density = voronoi_volumes(np.transpose(np.array([traj[0,:, 0], traj[0,:, 1]])),(2*size[0],2*size[1]))[0]
-        kdata = np.array([k * density for i, k in enumerate(kdata)])
+        #density = voronoi_volumes(np.transpose(np.array([traj[0,:, 0], traj[0,:, 1]])),min_x=-np.pi,min_y=-np.pi,max_x=np.pi,max_y=np.pi)[0]
+        density = [voronoi_volumes(np.transpose(np.array([traj[i,:, 0], traj[i,:, 1]])),min_x=-np.pi,min_y=-np.pi,max_x=np.pi,max_y=np.pi)[0] for i in tqdm(range(len(kdata)))]
+        kdata = np.array([k * density[i] for i, k in enumerate(kdata)])
 
     #kdata = (normalize_image_series(np.array(kdata)))
 

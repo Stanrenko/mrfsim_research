@@ -74,6 +74,7 @@ class SimpleDictSearch(Optimizer):
         if niter>0:
             seq = self.paramDict["sequence"]
             trajectory = self.paramDict["trajectory"]
+            gen_mode=self.paramDict["gen_mode"]
         log=self.paramDict["log"]
         useGPU_dictsearch=self.paramDict["useGPU_dictsearch"]
         useGPU_simulation = self.paramDict["useGPU_simulation"]
@@ -189,7 +190,7 @@ class SimpleDictSearch(Optimizer):
 
                 else:
 
-                    print("Using GPU for dict search")
+
                     if pca:
 
                         transformed_all_signals_water = cp.transpose(
@@ -365,8 +366,13 @@ class SimpleDictSearch(Optimizer):
             map_for_sim = dict(zip(keys_simu, values_simu))
 
             # predict spokes
-            images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=True)
+            images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=True,gen_mode=gen_mode)
             images_pred.buildParamMap()
+
+            del map_for_sim
+            del keys_simu
+            del values_simu
+
             images_pred.build_ref_images(seq)
             pred_volumesi = images_pred.images_series
 

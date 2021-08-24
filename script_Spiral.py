@@ -62,11 +62,11 @@ npoint = 2*m.images_series.shape[1]
 
 
 
-spatial_us_list = [8,16,32]
-temporal_us_list = [0.1,0.25,0.5,1.0]
+spatial_us_list = [16,32]
+temporal_us_list = [0.1]
 
 maskROI=buildROImask_unique(m.paramMap)
-optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=None,trajectory=None,split=1000,pca=True,threshold_pca=15,log=False,useAdjPred=False)
+optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=None,trajectory=None,split=1000,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_simulation=useGPU)
 
 # spiral_traj = VariableSpiral(ntimesteps=ntimesteps, nspiral=nspoke, npoint=256, ninterleaves=1, alpha=128,
 #                                      spatial_us=8, temporal_us=1)
@@ -104,7 +104,7 @@ df_current = metrics_paramMaps_ROI(m.paramMap, all_maps_adj[0][0], m.mask > 0, a
 
 
 df_res = pd.merge(df_python,df_current,left_index=True,right_index=True)
-df_res.to_csv("{} {} Spiral vs Radial.csv".format(type,num))
+df_res.to_csv("{} {} Spiral vs Radial_v3.csv".format(type,num))
 # plt.scatter(spiral_traj.traj[0,:,0],spiral_traj.traj[0,:,1])
 # plt.scatter(kdata[0].real,kdata[0].imag)
 # tx,ty=np.meshgrid(spiral_traj.traj[0,:,0],spiral_traj.traj[0,:,1])

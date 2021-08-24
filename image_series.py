@@ -161,6 +161,7 @@ class ImageSeries(object):
                 current_water = seq(T1=param[0], T2=param[1], att=param[4], g=param[5])
                 water_list.append(current_water)
             water = np.squeeze(np.array(water_list))
+            del water_list
             water=water.T
 
         else:
@@ -188,6 +189,7 @@ class ImageSeries(object):
                 current_fat = seq(T1=param[2], T2=param[3], att=param[4], g=[cs + param[5] for cs in self.fat_cs],eval=eval,args=args)
                 fat_list.append(current_fat)
             fat = np.squeeze(np.array(fat_list))
+            del fat_list
             fat = fat.T
 
         else:
@@ -226,6 +228,7 @@ class ImageSeries(object):
         #water_series = images_series.copy()
         #fat_series = images_series.copy()
 
+        print("Building image series")
         images_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0] * (1 - map_ff_on_mask[i]) + mrfdict[tuple(
             pixel_params)][:, 1] * (map_ff_on_mask[i]) for (i, pixel_params) in enumerate(map_all_on_mask)])
         #water_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0]  for (i, pixel_params) in enumerate(map_all_on_mask)])
@@ -834,18 +837,21 @@ class MapFromDict(ImageSeries):
             self.paramDict["default_fT1"]=DEFAULT_fT1
 
     @wrapper_rounding
-    def buildParamMap(self,mask=None):
+    def buildParamMap(self):
 
-        if mask is not None:
-            raise ValueError("mask automatically built from wT1 map for map load for now")
+
 
         paramMap = self.paramDict["paramMap"]
 
         map_wT1=paramMap["wT1"]
         self.image_size=map_wT1.shape
 
-        mask = np.zeros(self.image_size)
-        mask[map_wT1>0]=1.0
+        if "mask" in self.paramDict:
+            mask=self.paramDict["mask"]
+
+        else:
+            mask = np.zeros(self.image_size)
+            mask[map_wT1>0]=1.0
 
         self.mask=mask
 
