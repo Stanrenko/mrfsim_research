@@ -35,11 +35,13 @@ seq = T1MRF(**sequence_config)
 
 
 size=(256,256)
-useGPU_simulation=True
-useGPU_dictsearch=True
+useGPU_simulation=False
+useGPU_dictsearch=False
 
 load_maps=False
 save_maps = False
+
+load=True
 
 type="KneePhantom"
 
@@ -61,7 +63,16 @@ nspoke=8
 npoint = 2*m.images_series.shape[1]
 
 radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint)
-kdata = m.generate_kdata(radial_traj,useGPU=useGPU_simulation)
+
+if not(load):
+    kdata = m.generate_kdata(radial_traj,useGPU=useGPU_simulation)
+    with open("kdata_forLowRank_{}.pkl".format(m.name), "wb" ) as file:
+        pickle.dump(kdata, file)
+
+else:
+    kdata = pickle.load( open( "kdata_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb" ) )
+
+
 
 FF_list = list(np.arange(0.,1.05,0.05))
 
@@ -73,6 +84,9 @@ pca_signal.fit(values)
 
 V = pca_signal.components_
 
+
+
+
 trajectory=radial_traj
 traj=trajectory.get_traj_for_reconstruction()
 
@@ -82,6 +96,20 @@ traj=trajectory.get_traj_for_reconstruction()
 
 if not(len(kdata)==len(traj)):
     kdata=np.array(kdata).reshape(len(traj),-1)
+
+F = np.array(kdata).T
+T = np.array(traj).T
+m.image_size
+x=np.arange(-int(m.image_size[0]/2),int(m.image_size[0]/2),1.0)#+0.5
+y=np.arange(-int(m.image_size[1]/2),int(m.image_size[1]/2),1.0)#+0.5
+X,Y = np.meshgrid(x,y)
+X = X.reshape(1,-1)
+Y = Y.reshape(1,-1)
+
+
+#def J(U):
+
+
 
 volumes = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=useGPU_simulation)
 
