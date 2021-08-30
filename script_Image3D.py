@@ -26,7 +26,9 @@ from tqdm import tqdm
 
 start = datetime.now()
 
-load=True
+load=False
+load_maps=False
+load_paramMap=False
 
 dictfile = "mrf175.dict"
 dictfile = "mrf175_CS.dict"
@@ -65,9 +67,14 @@ gen_mode ="loop"
 
 m = RandomMap3D("TestRandom3DMovement",dict_config,nb_slices=nb_slices,nb_empty_slices=nb_empty_slices,undersampling_factor=undersampling_factor,repeat_slice=repeat_slice,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor,gen_mode=gen_mode)
 
-m.buildParamMap()
+if not(load_paramMap):
+    m.buildParamMap()
+    with open("paramMap_sl{}_{}.pkl".format(nb_slices+2*nb_empty_slices,m.name), "wb" ) as file:
+        pickle.dump(m.paramMap, file)
 
-m.plotParamMap("wT1")
+else:
+    m.paramMap=pickle.load(open("paramMap_sl{}_{}.pkl".format(nb_slices+2*nb_empty_slices,m.name), "rb"))
+#m.plotParamMap("wT1")
 
 ##### Simulating Ref Images
 m.build_ref_images(seq)
@@ -139,14 +146,17 @@ niter=0
 
 optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj_3D,split=2000,pca=True,threshold_pca=20,useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch,log=False,useAdjPred=False,verbose=False,gen_mode=gen_mode)
 
-all_maps_adj=optimizer.search_patterns(dictfile,volumes)
-file = open( "all_maps_no_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "wb" )
-# dump information to that file
-pickle.dump(all_maps_adj, file)
-# close the file
-file.close()
 
-all_maps_adj = pickle.load( open("all_maps_no_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "rb" ))
+if not(load_maps):
+
+    all_maps_adj=optimizer.search_patterns(dictfile,volumes)
+    file = open( "all_maps_no_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "wb" )
+    # dump information to that file
+    pickle.dump(all_maps_adj, file)
+    # close the file
+    file.close()
+else:
+    all_maps_adj = pickle.load( open("all_maps_no_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "rb" ))
 
 end=datetime.now()
 print(end-start)
@@ -161,19 +171,16 @@ for iter in all_maps_adj.keys():
     regression_paramMaps_ROI(m.paramMap, all_maps_adj[iter][0], m.mask > 0, all_maps_adj[iter][1] > 0,maskROI=maskROI,
                              title="Slices{}_US{} No movements ROI Orig vs Iteration {}".format(nb_total_slices,undersampling_factor,iter), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,save=True)
 
-# compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="Outside",proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+5,title1="Orig",title2="Inside",proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
-# compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
 
 size_slice = int(m.paramDict["nb_slices"]/m.paramDict["repeat_slice"])
 
-iter =0
-sl = 1
+# iter =0
+# sl = 1
+#
+# compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl-1)*size_slice+int(size_slice/2),title1="Slices{}_US{} No movements Orig".format(nb_total_slices,undersampling_factor),title2="Mid Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
+# compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl)*size_slice,title1="Slices{}_US{} No movements Orig".format(nb_total_slices,undersampling_factor),title2="Border Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
 
-compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl-1)*size_slice+int(size_slice/2),title1="Slices{}_US{} No movements Orig".format(nb_total_slices,undersampling_factor),title2="Mid Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl)*size_slice,title1="Slices{}_US{} No movements Orig".format(nb_total_slices,undersampling_factor),title2="Border Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
-
-plt.close("all")
+#plt.close("all")
 
 
 ##### ADDING MOVEMENT
@@ -183,6 +190,7 @@ move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
 m.add_movements([move])
 
 load=False
+load_maps=False
 
 if not(load):
     kdata = m.generate_kdata(radial_traj_3D,useGPU=useGPU_simulation)
@@ -210,15 +218,16 @@ else:
 
 mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=useGPU_simulation)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
 
-all_maps_mvt=optimizer.search_patterns(dictfile,volumes)
-file = open( "all_maps_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "wb" )
-# dump information to that file
-pickle.dump(all_maps_mvt, file)
-# close the file
-file.close()
+if not(load_maps):
+    all_maps_mvt=optimizer.search_patterns(dictfile,volumes)
+    file = open( "all_maps_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "wb" )
+    # dump information to that file
+    pickle.dump(all_maps_mvt, file)
+    # close the file
+    file.close()
 
-#all_maps_mvt = pickle.load(  open("all_maps_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "rb" ))
-
+else:
+    all_maps_mvt = pickle.load(  open("all_maps_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "rb" ))
 
 #
 # regression_paramMaps_ROI(m.paramMap, all_maps_adj[4][0], m.mask > 0, all_maps_adj[4][1] > 0,maskROI=maskROI,
@@ -226,7 +235,7 @@ file.close()
 
 
 
-plt.close("all")
+#plt.close("all")
 
 maskROI=buildROImask_unique(m.paramMap)
 
@@ -234,113 +243,125 @@ for iter in all_maps_mvt.keys():
     regression_paramMaps_ROI(m.paramMap, all_maps_mvt[iter][0], m.mask > 0, all_maps_mvt[iter][1] > 0,maskROI=maskROI,
                              title="Slices{}_US{} movement ROI Orig vs Iteration {}".format(nb_total_slices,undersampling_factor,iter), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,save=True)
 
-# compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="Outside",proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
-# compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+5,title1="Orig",title2="Inside",proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
-# compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
 
-size_slice = int(m.paramDict["nb_slices"]/m.paramDict["repeat_slice"])
-
-iter =0
-sl = 1
-
-compare_paramMaps_3D(m.paramMap,all_maps_mvt[iter][0],m.mask>0,all_maps_mvt[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl-1)*size_slice+int(size_slice/2),title1="Slices{}_US{} movement Orig".format(nb_total_slices,undersampling_factor),title2="Mid Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
-compare_paramMaps_3D(m.paramMap,all_maps_mvt[iter][0],m.mask>0,all_maps_mvt[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl)*size_slice,title1="Slices{}_US{} movement Orig".format(nb_total_slices,undersampling_factor),title2="Border Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
+# size_slice = int(m.paramDict["nb_slices"]/m.paramDict["repeat_slice"])
+#
+# iter =0
+# sl = 1
+#
+# compare_paramMaps_3D(m.paramMap,all_maps_mvt[iter][0],m.mask>0,all_maps_mvt[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl-1)*size_slice+int(size_slice/2),title1="Slices{}_US{} movement Orig".format(nb_total_slices,undersampling_factor),title2="Mid Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
+# compare_paramMaps_3D(m.paramMap,all_maps_mvt[iter][0],m.mask>0,all_maps_mvt[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl)*size_slice,title1="Slices{}_US{} movement Orig".format(nb_total_slices,undersampling_factor),title2="Border Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
 
 #####CORRECTION
+
+load=False
+load_maps=False
 
 kdata = pickle.load( open( "kdata_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb" ) )
 kdata = np.array(kdata)
 
-transf=m.list_movements[0].paramDict["transformation"]
-t = m.t
-shifts = transf(t.flatten().reshape(-1,1))[:,1]
+if not(load):
+    transf=m.list_movements[0].paramDict["transformation"]
+    t = m.t
+    shifts = transf(t.flatten().reshape(-1,1))[:,1]
 
 
-traj=radial_traj_3D.get_traj()
-traj_for_reconstruction=radial_traj_3D.get_traj_for_reconstruction()
+    traj=radial_traj_3D.get_traj()
+    traj_for_reconstruction=radial_traj_3D.get_traj_for_reconstruction()
 
-traj_for_selection = np.array(groupby(traj,npoint,axis=1))
-kdata_for_selection = np.array(groupby(kdata,npoint,axis=1))
+    traj_for_selection = np.array(groupby(traj,npoint,axis=1))
+    kdata_for_selection = np.array(groupby(kdata,npoint,axis=1))
 
-traj_for_selection=traj_for_selection.reshape(shifts.shape[0],-1,3)
-kdata_for_selection=kdata_for_selection.reshape(shifts.shape[0],-1)
+    traj_for_selection=traj_for_selection.reshape(shifts.shape[0],-1,3)
+    kdata_for_selection=kdata_for_selection.reshape(shifts.shape[0],-1)
 
-shifts_reshaped=shifts.reshape(t.shape)
-shifts_reshaped=shifts.reshape(m.paramDict["nb_rep"],ntimesteps,-1)
+    shifts_reshaped=shifts.reshape(t.shape)
+    shifts_reshaped=shifts.reshape(m.paramDict["nb_rep"],ntimesteps,-1)
 
-# traj_for_selection=traj_for_selection.reshape(t.shape+traj_for_selection.shape[-2:])
-# traj_for_selection=traj_for_selection.reshape((m.paramDict["nb_rep"],ntimesteps,-1)+traj_for_selection.shape[-2:])
-#
-# kdata_for_selection=kdata_for_selection.reshape(t.shape+kdata_for_selection.shape[-1:])
-# kdata_for_selection=kdata_for_selection.reshape((m.paramDict["nb_rep"],ntimesteps,-1)+kdata_for_selection.shape[-1:])
-
-
-perc=80
-threshold = np.percentile(shifts,perc)
-cond = (shifts>np.percentile(shifts,perc))
-indices=np.where(shifts_reshaped>np.percentile(shifts,perc))
-
-traj_retained=traj_for_selection[cond,:,:]
-kdata_retained=kdata_for_selection[cond,:]
+    # traj_for_selection=traj_for_selection.reshape(t.shape+traj_for_selection.shape[-2:])
+    # traj_for_selection=traj_for_selection.reshape((m.paramDict["nb_rep"],ntimesteps,-1)+traj_for_selection.shape[-2:])
+    #
+    # kdata_for_selection=kdata_for_selection.reshape(t.shape+kdata_for_selection.shape[-1:])
+    # kdata_for_selection=kdata_for_selection.reshape((m.paramDict["nb_rep"],ntimesteps,-1)+kdata_for_selection.shape[-1:])
 
 
-dico_traj={}
-dico_kdata={}
-for i,index in enumerate(np.array(indices).T):
-    curr_slice=index[0]
-    ts=index[1]
-    curr_spoke=index[2]
-    if ts not in dico_traj:
-        dico_traj[ts]= []
-        dico_kdata[ts] =[]
+    perc=80
+    threshold = np.percentile(shifts,perc)
+    cond = (shifts>np.percentile(shifts,perc))
+    indices=np.where(shifts_reshaped>np.percentile(shifts,perc))
 
-    #dico_traj[ts]=[*dico_traj[ts],*traj_retained[i]]
-    #dico_kdata[ts]=[*dico_kdata[ts],*kdata_retained[i]]
-
-    dico_traj[ts].append(traj_retained[i])
-    dico_kdata[ts].append(kdata_retained[i])
-
-retained_timesteps = list(dico_traj.keys())
-retained_timesteps.sort()
-
-traj_retained_final=[]
-kdata_retained_final=[]
-
-# for ts in tqdm(range(len(retained_timesteps))):
-#     traj_retained_final.append(np.array(dico_traj[ts]))
-#     kdata_retained_final.append(np.array(dico_kdata[ts]))
-
-for ts in tqdm(retained_timesteps):
-    traj_retained_final.append(np.array(dico_traj[ts]).flatten().reshape(-1,3))
-    kdata_retained_final.append(np.array(dico_kdata[ts]).flatten())
-
-traj_retained_final=np.array(traj_retained_final)
-kdata_retained_final=np.array(kdata_retained_final)
+    traj_retained=traj_for_selection[cond,:,:]
+    kdata_retained=kdata_for_selection[cond,:]
 
 
-radial_traj_3D_corrected=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_total_slices,undersampling_factor=undersampling_factor)
-radial_traj_3D_corrected.traj_for_reconstruction=traj_retained_final
+    dico_traj={}
+    dico_kdata={}
+    for i,index in enumerate(np.array(indices).T):
+        curr_slice=index[0]
+        ts=index[1]
+        curr_spoke=index[2]
+        if ts not in dico_traj:
+            dico_traj[ts]= []
+            dico_kdata[ts] =[]
 
-volumes_corrected = simulate_radial_undersampled_images(kdata_retained_final,radial_traj_3D_corrected,m.image_size,density_adj=True,useGPU=useGPU_simulation)
+        #dico_traj[ts]=[*dico_traj[ts],*traj_retained[i]]
+        #dico_kdata[ts]=[*dico_kdata[ts],*kdata_retained[i]]
 
-with open("volumes_mvt_corrected_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
-    pickle.dump(volumes_corrected, file)
+        dico_traj[ts].append(traj_retained[i])
+        dico_kdata[ts].append(kdata_retained[i])
+
+    retained_timesteps = list(dico_traj.keys())
+    retained_timesteps.sort()
+
+    traj_retained_final=[]
+    kdata_retained_final=[]
+
+    # for ts in tqdm(range(len(retained_timesteps))):
+    #     traj_retained_final.append(np.array(dico_traj[ts]))
+    #     kdata_retained_final.append(np.array(dico_kdata[ts]))
+
+    for ts in tqdm(retained_timesteps):
+        traj_retained_final.append(np.array(dico_traj[ts]).flatten().reshape(-1,3))
+        kdata_retained_final.append(np.array(dico_kdata[ts]).flatten())
+
+    traj_retained_final=np.array(traj_retained_final)
+    kdata_retained_final=np.array(kdata_retained_final)
+
+
+    radial_traj_3D_corrected=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_total_slices,undersampling_factor=undersampling_factor)
+    radial_traj_3D_corrected.traj_for_reconstruction=traj_retained_final
+
+    volumes_corrected = simulate_radial_undersampled_images(kdata_retained_final,radial_traj_3D_corrected,m.image_size,density_adj=True,useGPU=useGPU_simulation)
+
+    with open("volumes_mvt_corrected_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
+        pickle.dump(volumes_corrected, file)
+
+else:
+    volumes_corrected=pickle.load(
+        open("volumes_mvt_corrected_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb"))
 
 #mask = build_mask_single_image(kdata_retained_final,radial_traj_3D_corrected,m.image_size,useGPU=False)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
 
-mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=useGPU_simulation)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
 
+if not(load_maps):
 
-optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj_3D_corrected,split=1000,pca=True,threshold_pca=15,useGPU=True,log=False,useAdjPred=False,verbose=False)
-all_maps_mvt_corrected=optimizer.search_patterns(dictfile,volumes_corrected,retained_timesteps=retained_timesteps)
+    mask = build_mask_single_image(kdata, radial_traj_3D, m.image_size,
+                                   useGPU=useGPU_simulation)  # Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj_3D_corrected, split=1000,
+                                 pca=True, threshold_pca=15, useGPU=True, log=False, useAdjPred=False, verbose=False)
 
-file = open( "all_maps_mvt_corrected_perc{}_sl{}us{}_iter{}_{}.pkl".format(perc,nb_total_slices,undersampling_factor,niter,m.name), "wb" )
-# dump information to that file
-pickle.dump(all_maps_mvt_corrected, file)
-# close the file
-file.close()
+    all_maps_mvt_corrected=optimizer.search_patterns(dictfile,volumes_corrected,retained_timesteps=retained_timesteps)
+    file = open( "all_maps_mvt_corrected_perc{}_sl{}us{}_iter{}_{}.pkl".format(perc,nb_total_slices,undersampling_factor,niter,m.name), "wb" )
+    # dump information to that file
+    pickle.dump(all_maps_mvt_corrected, file)
+    # close the file
+    file.close()
 
-plt.close("all")
+else:
+    all_maps_mvt = pickle.load(
+        open("all_maps_mvt_corrected_perc{}_sl{}us{}_iter{}_{}.pkl".format(perc,nb_total_slices,undersampling_factor,niter,m.name), "rb"))
+
+#plt.close("all")
 
 maskROI=buildROImask_unique(m.paramMap)
 
@@ -348,9 +369,6 @@ for iter in all_maps_mvt_corrected.keys():
     regression_paramMaps_ROI(m.paramMap, all_maps_mvt_corrected[iter][0], m.mask > 0, all_maps_mvt_corrected[iter][1] > 0,maskROI=maskROI,
                              title="Slices{}_US{} movement corrected perc {} ROI Orig vs Iteration {}".format(nb_total_slices,undersampling_factor,perc,iter), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,save=True)
 
-# compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]-1,title1="Orig",title2="Outside",proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
-# compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+5,title1="Orig",title2="Inside",proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
-# compare_paramMaps_3D(m.paramMap,all_maps_adj[0][0],m.mask>0,all_maps_adj[0][1]>0,slice=m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),title1="Orig",title2="Center",proj_on_mask1=True,save=False,adj_wT1=True,fat_threshold=0.7)
 
 size_slice = int(m.paramDict["nb_slices"]/m.paramDict["repeat_slice"])
 
