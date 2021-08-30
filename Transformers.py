@@ -55,7 +55,11 @@ class PCAComplex(BaseEstimator,TransformerMixin):
         #     print("Not using cupy in PCA transform")
         #     xp=np
         #     cp=None
-        xp = cp.get_array_module(X)
+        try:
+            xp = cp.get_array_module(X)
+        except:
+            xp=np
+            cp=None
 
         check_is_fitted(self,'explained_variance_ratio_')
 
