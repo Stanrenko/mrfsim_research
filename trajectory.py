@@ -1,5 +1,5 @@
 import numpy as np
-from utils_mrf import radial_golden_angle_traj,radial_golden_angle_traj_3D,spiral_golden_angle_traj,spiral_golden_angle_traj_v2
+from utils_mrf import radial_golden_angle_traj,radial_golden_angle_traj_3D,spiral_golden_angle_traj,spiral_golden_angle_traj_v2,radial_golden_angle_traj_random_3D
 from mrfsim import groupby
 
 
@@ -48,13 +48,14 @@ class Radial(Trajectory):
 
 class Radial3D(Trajectory):
 
-    def __init__(self,ntimesteps=175,nspoke=8,npoint=512,undersampling_factor=4,**kwargs):
+    def __init__(self,ntimesteps=175,nspoke=8,npoint=512,undersampling_factor=4,is_random=False,**kwargs):
         super().__init__(**kwargs)
         self.paramDict["ntimesteps"] = ntimesteps
         self.paramDict["nspoke"] = nspoke
         self.paramDict["npoint"] = npoint
         self.paramDict["undersampling_factor"] = undersampling_factor
         self.paramDict["nb_rep"]=int(self.paramDict["nb_slices"]/self.paramDict["undersampling_factor"])
+        self.paramDict["random"]=is_random
 
     def get_traj(self):
         if self.traj is None:
@@ -63,7 +64,14 @@ class Radial3D(Trajectory):
             total_nspoke = nspoke * self.paramDict["ntimesteps"]
             nb_slices=self.paramDict["nb_slices"]
             undersampling_factor=self.paramDict["undersampling_factor"]
-            self.traj=radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor)
+            if self.paramDict["random"]:
+                if "frac_center" in self.paramDict:
+                    self.traj = radial_golden_angle_traj_random_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor,self.paramDict["frac_center"])
+                else:
+                    self.traj = radial_golden_angle_traj_random_3D(total_nspoke, npoint, nspoke, nb_slices,
+                                                                   undersampling_factor)
+            else:
+                self.traj=radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor)
 
         return self.traj
 

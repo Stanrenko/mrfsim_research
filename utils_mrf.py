@@ -130,6 +130,30 @@ def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersa
     result = np.stack([traj.real,traj.imag, k_z], axis=-1)
     return result.reshape(result.shape[0],-1,result.shape[-1])
 
+def radial_golden_angle_traj_random_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,frac_center=0.25):
+    timesteps = int(total_nspoke / nspoke)
+    nb_rep = int(nb_slices / undersampling_factor)
+    all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
+        #traj = np.reshape(all_spokes, (-1, nspoke * npoint))
+    k_z = np.zeros((timesteps, nb_rep))
+    all_slices = np.linspace(-np.pi, np.pi, nb_slices)
+    kz_center=all_slices[(int(nb_slices/2)+np.array(range(int(-frac_center*nb_rep/2),int(frac_center*nb_rep/2),1)))]
+    kz_border = [k for k in all_slices if k not in kz_center]
+    nb_border=nb_rep-len(kz_center)
+    for j in range(k_z.shape[0]):
+        k_z[j, :] = np.sort(np.concatenate([np.random.choice(kz_border,size=int(nb_border),replace=False),kz_center]))
+
+    k_z=np.repeat(k_z, nspoke, axis=0)
+    k_z = np.expand_dims(k_z, axis=-1)
+    traj = np.expand_dims(all_spokes, axis=-2)
+    k_z, traj = np.broadcast_arrays(k_z, traj)
+
+    # k_z = np.reshape(k_z, (timesteps, -1))
+    # traj = np.reshape(traj, (timesteps, -1))
+
+    result = np.stack([traj.real,traj.imag, k_z], axis=-1)
+    return result.reshape(result.shape[0],-1,result.shape[-1])
+
 def spiral_golden_angle_traj(total_spiral,fov, N, f_sampling, R, ninterleaves, alpha, gm, sm):
     golden_angle = 111.246 * np.pi / 180
     base_spiral = spiral(fov, N, f_sampling, R, ninterleaves, alpha, gm, sm)

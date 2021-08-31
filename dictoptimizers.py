@@ -381,6 +381,7 @@ class SimpleDictSearch(Optimizer):
             volumesi = simulate_radial_undersampled_images(kdatai,trajectory,images_pred.image_size,useGPU=useGPU_simulation,density_adj=True)
             volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
 
+            del images_pred
 
             if log:
                 print("Saving correction volumes for iteration {}".format(i))
@@ -402,7 +403,12 @@ class SimpleDictSearch(Optimizer):
             else:
                 volumes = [vol + (vol0 - voli) for vol, vol0, voli in zip(volumes, volumes0, volumesi)]
 
+            del pred_volumesi
+            del volumesi
+            del kdatai
+
             all_signals = np.array(volumes)[:, mask > 0]
+
 
         if log:
             print(date_time)

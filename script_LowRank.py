@@ -83,9 +83,7 @@ pca_signal = PCAComplex(n_components_=threshold_pca)
 pca_signal.fit(values)
 
 V = pca_signal.components_
-
-
-
+v_hat = V.T.conj()
 
 trajectory=radial_traj
 traj=trajectory.get_traj_for_reconstruction()
@@ -102,13 +100,130 @@ if not(len(kdata)==len(traj)):
 # m.image_size
 # x=np.arange(-int(m.image_size[0]/2),int(m.image_size[0]/2),1.0)#+0.5
 # y=np.arange(-int(m.image_size[1]/2),int(m.image_size[1]/2),1.0)#+0.5
+# x=np.array(x,dtype=np.float16)
+# y=np.array(y,dtype=np.float16)
 # X,Y = np.meshgrid(x,y)
-# X = X.reshape(1,-1)
-# Y = Y.reshape(1,-1)
+# X = np.squeeze(X.reshape(1,-1))
+# Y = np.squeeze(Y.reshape(1,-1))
+# r = np.vstack((X,Y))
+
+
+Np=kdata.size
+d=kdata.flatten()
+
+u_0 = np.zeros((m.images_series[0].size,threshold_pca))
+eps=1
+nit=3
+
+
+def Fourier_Image(traj,I,image_size,useGPU=False,eps=1e-4):
+    images_series=I.T.reshape((-1,)+image_size)
+    if not (useGPU):
+        kdata = [
+            finufft.nufft2d2(t[:, 0], t[:, 1], p)
+            for t, p in zip(traj, images_series)
+        ]
+
+    else:
+        dtype = np.float32  # Datatype (real)
+        complex_dtype = np.complex64
+        N1, N2 = size[0], size[1]
+        M = traj.shape[1]
+        # Initialize the plan and set the points.
+        kdata = []
+
+        for i in tqdm(list(range(images_series.shape[0]))):
+            # print("Allocating input")
+            # start = datetime.now()
+
+            fk = images_series[i, :, :]
+            kx = traj[i, :, 0]
+            ky = traj[i, :, 1]
+
+            kx = kx.astype(dtype)
+            ky = ky.astype(dtype)
+            fk = fk.astype(complex_dtype)
+
+            # end=datetime.now()
+            # print(end-start)
+            # print("Allocating Output")
+            # start=datetime.now()
+
+            fk_gpu = to_gpu(fk)
+            c_gpu = GPUArray((M), dtype=complex_dtype)
+
+            # end=datetime.now()
+            # print(end-start)
+            #
+            # print("Executing FFT")
+            # start=datetime.now()
+
+            plan = cufinufft(2, (N1, N2), 1, eps=eps, dtype=dtype)
+            plan.set_pts(to_gpu(kx), to_gpu(ky))
+            plan.execute(c_gpu, fk_gpu)
+
+            c = np.squeeze(c_gpu.get())
+
+            fk_gpu.gpudata.free()
+            c_gpu.gpudata.free()
+
+            kdata.append(c)
+
+            del c
+            del kx
+            del ky
+            del fk
+            del fk_gpu
+            del c_gpu
+            plan.__del__()
+
+            # gc.collect()
+
+        gc.collect()
+
+    return np.array(kdata).flatten()
+
+def Fourier_LowRank(traj,u,v_hat,image_size,useGPU=False):
+    I = np.matmul(u,v_hat)
+    return Fourier_Image(traj,I,image_size,useGPU)
+
+def dG_LowRank(traj,v_hat,image_size,useGPU=False):
+    L = v_hat.shape[0]
+    N = image_size[0]*image_size[1]
+    N_sample = traj.shape[0]*traj.shape[1]
+    M = traj.shape[0]
+    curr_I = np.zeros((N,M))
+    dg_store = np.zeros((N, L, N_sample))
+    for i in tqdm(range(N)):
+        for j in range(L):
+            curr_I[i,:]=v_hat[j,:]
+            dg=Fourier_Image(traj,curr_I,image_size,useGPU)
+            dg_store[i,j,:]=dg
+    return dg_store
+
+#dg_store = dG_LowRank(traj,v_hat,m.image_size,useGPU=True)
+
+def  Grad_LowRank(traj,u,v_hat,d,image_size,useGPU=False,dg_store=None):
+    N,L=u.shape
+    N_sample = traj.shape[1]
+    M=traj.shape[0]
+
+    grad = np.zeros((N,L))
+    #dg_store =  np.zeros((N,L,N_sample))
+    curr_I = np.zeros((N,M))
+    g_u = Fourier_LowRank(traj,u,v_hat,image_size,useGPU)
+    for i in tqdm(range(N)):
+        for j in range(L):
+            curr_I[i,:]=v_hat[j,:]
+            dg=Fourier_Image(traj,curr_I,image_size,useGPU)
+            #dg_store[i,j,:]=dg
+            grad[i,j]=np.vdot(dg,g_u-d)
+    return grad
+
+grad=Grad_LowRank(traj,u_0,v_hat,d,m.image_size,useGPU=True)
 
 
 
-#def J(U):
 
 
 
@@ -160,85 +275,69 @@ traj=trajectory.get_traj_for_reconstruction()
 
 #
 # ani1,ani2 =animate_multiple_images(pred_volumesi,m.images_series,cmap="gray")
-
-from numpy.linalg import svd
-from tqdm import tqdm
-import pandas as pd
-
-kx=np.arange(-np.pi,np.pi,2*np.pi/npoint)+np.pi/npoint
-ky=np.arange(-np.pi,np.pi,2*np.pi/npoint)+np.pi/npoint
-kx=np.concatenate([np.array([-np.pi]),kx,np.array([np.pi])])
-ky=np.concatenate([np.array([-np.pi]),ky,np.array([np.pi])])
-
-kdata_completed=list(kdata)
-traj_completed=list(traj)
-
-for i in tqdm(range(1,len(kx))):
-
-    kx_ = kx[i-1]
-    kx_next = kx[i]
-
-    for j in range(1,len(ky)):
-
-        ky_ = ky[j-1]
-        ky_next=ky[j]
-
-        indic_kx = (((traj[:,:,0]-kx_)*(traj[:,:,0]-kx_next))<=0).astype(int)
-        indic_ky = (((traj[:,:,1]-ky_)*(traj[:,:,1]-ky_next))<=0).astype(int)
-
-        indic = indic_kx * indic_ky
-        indices_in_box=np.argwhere(indic==1)
-        print("Number of kdata in box : {}".format(len(indices_in_box)))
-        timesteps_for_k = np.unique(indices_in_box[:,0])
-
-        all_timesteps = list(range(volumes_for_correction.shape[0]))
-        missing_timesteps = list(set(all_timesteps) - set(timesteps_for_k))
-
-        if len(missing_timesteps)==0:
-            continue
-
-        X = volumes_for_correction[timesteps_for_k,:]
-        u, s, vh = np.linalg.svd(X, full_matrices=False)
-
-        if s.size==0:
-            continue
-
-        index_retained = (s>0.01*s[0]).sum()
-        u_red = u[:,:index_retained]
-        vh_red = vh[:index_retained,:]
-        s_red=s[:index_retained]
-
-        df=pd.DataFrame(indices_in_box,columns=["Timesteps","Index"])
-        df=df.drop_duplicates(subset="Timesteps")
-        kdata_retained = kdata[df.Timesteps,df.Index]
-        traj_retained=traj[df.Timesteps,df.Index,:]
-
-        W = np.matmul(u_red.conj().T,kdata_retained)
-        U = np.matmul(volumes_for_correction,np.matmul(vh_red.conj().T,np.diag(1/s_red)))
-
-        kdata_interp = np.matmul(U,W)
-
-
-        print(missing_timesteps)
-        for t in missing_timesteps:
-            traj_to_add = [(kx_+kx_next)/2,(ky_+ky_next)/2]
-            traj_completed[t]=np.concatenate([traj_completed[t],[traj_to_add]])
-            kdata_completed[t]=np.concatenate([kdata_completed[t],[kdata_interp[t]]])
-
-
-kdata[df.iloc[0].Timesteps,df.iloc[0].Index]
-kdata_interp[0]
-
-np.unravel_index(np.argmax((((traj[:,:,0]-kx_)*(traj[:,:,0]-kx_next))<=0).astype(int)),traj.shape[:-1])
-
-
-(((traj[:,:,0]-ky_)*(traj[:,:,0]-ky_next))<=0).astype(int)
-
-
-
-for i in range(len(KX)):
-
-
-    kx_ = KX[i]
-    ky_ = KY[i]
+#
+# from numpy.linalg import svd
+# from tqdm import tqdm
+# import pandas as pd
+#
+# kx=np.arange(-np.pi,np.pi,2*np.pi/npoint)+np.pi/npoint
+# ky=np.arange(-np.pi,np.pi,2*np.pi/npoint)+np.pi/npoint
+# kx=np.concatenate([np.array([-np.pi]),kx,np.array([np.pi])])
+# ky=np.concatenate([np.array([-np.pi]),ky,np.array([np.pi])])
+#
+# kdata_completed=list(kdata)
+# traj_completed=list(traj)
+#
+# for i in tqdm(range(1,len(kx))):
+#
+#     kx_ = kx[i-1]
+#     kx_next = kx[i]
+#
+#     for j in range(1,len(ky)):
+#
+#         ky_ = ky[j-1]
+#         ky_next=ky[j]
+#
+#         indic_kx = (((traj[:,:,0]-kx_)*(traj[:,:,0]-kx_next))<=0).astype(int)
+#         indic_ky = (((traj[:,:,1]-ky_)*(traj[:,:,1]-ky_next))<=0).astype(int)
+#
+#         indic = indic_kx * indic_ky
+#         indices_in_box=np.argwhere(indic==1)
+#         print("Number of kdata in box : {}".format(len(indices_in_box)))
+#         timesteps_for_k = np.unique(indices_in_box[:,0])
+#
+#         all_timesteps = list(range(volumes_for_correction.shape[0]))
+#         missing_timesteps = list(set(all_timesteps) - set(timesteps_for_k))
+#
+#         if len(missing_timesteps)==0:
+#             continue
+#
+#         X = volumes_for_correction[timesteps_for_k,:]
+#         u, s, vh = np.linalg.svd(X, full_matrices=False)
+#
+#         if s.size==0:
+#             continue
+#
+#         index_retained = (s>0.01*s[0]).sum()
+#         u_red = u[:,:index_retained]
+#         vh_red = vh[:index_retained,:]
+#         s_red=s[:index_retained]
+#
+#         df=pd.DataFrame(indices_in_box,columns=["Timesteps","Index"])
+#         df=df.drop_duplicates(subset="Timesteps")
+#         kdata_retained = kdata[df.Timesteps,df.Index]
+#         traj_retained=traj[df.Timesteps,df.Index,:]
+#
+#         W = np.matmul(u_red.conj().T,kdata_retained)
+#         U = np.matmul(volumes_for_correction,np.matmul(vh_red.conj().T,np.diag(1/s_red)))
+#
+#         kdata_interp = np.matmul(U,W)
+#
+#
+#         print(missing_timesteps)
+#         for t in missing_timesteps:
+#             traj_to_add = [(kx_+kx_next)/2,(ky_+ky_next)/2]
+#             traj_completed[t]=np.concatenate([traj_completed[t],[traj_to_add]])
+#             kdata_completed[t]=np.concatenate([kdata_completed[t],[kdata_interp[t]]])
+#
 

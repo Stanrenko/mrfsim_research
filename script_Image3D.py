@@ -26,9 +26,13 @@ from tqdm import tqdm
 
 start = datetime.now()
 
-load=False
+load=True
 load_maps=False
-load_paramMap=False
+load_paramMap=True
+build_ref_images=False
+
+is_random=False
+
 
 dictfile = "mrf175.dict"
 dictfile = "mrf175_CS.dict"
@@ -60,7 +64,7 @@ mask_reduction_factor=1/4
 
 nb_slices= 64
 nb_empty_slices=8
-undersampling_factor=2
+undersampling_factor=4
 repeat_slice=8
 
 gen_mode ="loop"
@@ -77,26 +81,11 @@ else:
 #m.plotParamMap("wT1")
 
 ##### Simulating Ref Images
-m.build_ref_images(seq)
+if build_ref_images:
+    m.build_ref_images(seq)
+else:#still need to build the timeline for applying movement / movement correction
+    m.build_timeline(seq)
 
-# with open("ideal_volumes_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
-#      pickle.dump(m.images_series, file)
-#
-# with open("timeline_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices, undersampling_factor, m.name), "wb") as file:
-#     pickle.dump(m.t, file)
-#
-# images_series=pickle.load( open( "ideal_volumes_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb" ) )
-# t=pickle.load( open( "timeline_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices, undersampling_factor, m.name), "rb" ) )
-#
-# m.images_series=images_series
-# m.cached_images_series=images_series
-# m.t=t
-
-
-#direction=np.array([0.0,4.0,0.0])
-#move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
-
-#m.add_movements([move])
 
 npoint=512
 nspoke=8
@@ -105,20 +94,25 @@ ntimesteps=175
 nb_total_slices=m.paramDict["nb_total_slices"]
 undersampling_factor = m.paramDict["undersampling_factor"]
 
-radial_traj_3D=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_total_slices,undersampling_factor=undersampling_factor)
-
-
+radial_traj_3D=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_total_slices,undersampling_factor=undersampling_factor,is_random=is_random)
 
 if not(load):
 
     kdata = m.generate_kdata(radial_traj_3D,useGPU=useGPU_simulation)
 
-    with open("kdata_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
-        pickle.dump(kdata, file)
+    if not(is_random):
+        with open("kdata_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
+            pickle.dump(kdata, file)
+    else:
+        with open("kdata_random_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
+            pickle.dump(kdata, file)
 
 else:
-    kdata = pickle.load( open( "kdata_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb" ) )
-
+    if not(is_random):
+        kdata = pickle.load( open( "kdata_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb" ) )
+    else:
+        kdata = pickle.load(
+            open("kdata_random_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices, undersampling_factor, m.name), "rb"))
 
 
 #kdata_noGPU=m.generate_radial_kdata(radial_traj_3D,useGPU=False)
@@ -126,12 +120,18 @@ else:
 if not(load):
     volumes = simulate_radial_undersampled_images(kdata,radial_traj_3D,m.image_size,density_adj=True,useGPU=useGPU_simulation)
 
-    with open("volumes_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
-        pickle.dump(volumes, file)
+    if not(is_random):
+        with open("volumes_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
+            pickle.dump(volumes, file)
+    else:
+        with open("volumes_random_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
+            pickle.dump(volumes, file)
 else:
-    volumes = pickle.load( open( "volumes_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb" ) )
-
-
+    if not(is_random):
+        volumes = pickle.load( open( "volumes_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb" ) )
+    else:
+        volumes = pickle.load(
+            open("volumes_random_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices, undersampling_factor, m.name), "rb"))
 #volumes_noGPU = simulate_radial_undersampled_images(kdata_noGPU,radial_traj_3D,m.image_size,density_adj=True,useGPU=True)
 #ani,ani1=animate_multiple_images(volumes[:,4,:,:],volumes_noGPU[:,4,:,:])
 
@@ -142,26 +142,34 @@ mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=useGPU_s
 
 #plt.imshow(mask[m.paramDict["nb_empty_slices"]-5,:,:])
 
-niter=0
+niter=1
 
-optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj_3D,split=2000,pca=True,threshold_pca=20,useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch,log=False,useAdjPred=False,verbose=False,gen_mode=gen_mode)
+optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj_3D,split=2000,pca=True,threshold_pca=20,useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch,log=True,useAdjPred=False,verbose=False,gen_mode=gen_mode)
 
 
 if not(load_maps):
 
     all_maps_adj=optimizer.search_patterns(dictfile,volumes)
-    file = open( "all_maps_no_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "wb" )
+
+    if not(is_random):
+        file = open( "all_maps_no_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "wb" )
     # dump information to that file
+    else:
+        file = open(
+            "all_maps_random_no_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices, undersampling_factor, niter, m.name), "wb")
     pickle.dump(all_maps_adj, file)
     # close the file
     file.close()
 else:
-    all_maps_adj = pickle.load( open("all_maps_no_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "rb" ))
+    if not(is_random):
+        all_maps_adj = pickle.load( open("all_maps_no_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices,undersampling_factor,niter,m.name), "rb" ))
+    else:
+        all_maps_adj = pickle.load(
+            open("all_maps_random_no_mvt_sl{}us{}_iter{}_{}.pkl".format(nb_total_slices, undersampling_factor, niter, m.name),
+                 "rb"))
 
 end=datetime.now()
 print(end-start)
-
-
 
 plt.close("all")
 
@@ -189,8 +197,8 @@ move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
 
 m.add_movements([move])
 
-load=False
-load_maps=False
+load=True
+load_maps=True
 
 if not(load):
     kdata = m.generate_kdata(radial_traj_3D,useGPU=useGPU_simulation)
@@ -285,7 +293,7 @@ if not(load):
     # kdata_for_selection=kdata_for_selection.reshape((m.paramDict["nb_rep"],ntimesteps,-1)+kdata_for_selection.shape[-1:])
 
 
-    perc=80
+    perc=50
     threshold = np.percentile(shifts,perc)
     cond = (shifts>np.percentile(shifts,perc))
     indices=np.where(shifts_reshaped>np.percentile(shifts,perc))
@@ -327,18 +335,23 @@ if not(load):
     traj_retained_final=np.array(traj_retained_final)
     kdata_retained_final=np.array(kdata_retained_final)
 
+    size_initial = traj_for_reconstruction.size / 3
+    size_retained_final = traj_retained_final.size / 3
+    ratio=size_retained_final/size_initial
+    print("Compression factor : {}%".format((1-ratio)*100))
+
 
     radial_traj_3D_corrected=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_total_slices,undersampling_factor=undersampling_factor)
     radial_traj_3D_corrected.traj_for_reconstruction=traj_retained_final
 
     volumes_corrected = simulate_radial_undersampled_images(kdata_retained_final,radial_traj_3D_corrected,m.image_size,density_adj=True,useGPU=useGPU_simulation)
 
-    with open("volumes_mvt_corrected_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
+    with open("volumes_mvt_corrected__perc{}sl{}us{}_{}.pkl".format(perc,nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
         pickle.dump(volumes_corrected, file)
 
 else:
     volumes_corrected=pickle.load(
-        open("volumes_mvt_corrected_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb"))
+        open("volumes_mvt_corrected_perc{}sl{}us{}_{}.pkl".format(perc,nb_total_slices,undersampling_factor,m.name), "rb"))
 
 #mask = build_mask_single_image(kdata_retained_final,radial_traj_3D_corrected,m.image_size,useGPU=False)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
 

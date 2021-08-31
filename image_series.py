@@ -205,12 +205,7 @@ class ImageSeries(object):
         #     raise ValueError("Unknow sim_mode")
 
         # building the time axis
-        TR_list = seq.TR
-        #t = np.cumsum([np.sum(dt, axis=0) for dt in groupby(np.array(TR_list), window)]).reshape(1,-1)
-
-        t=np.cumsum(TR_list).reshape(1,-1)
-
-
+        self.build_timeline(seq)
 
         # join water and fat
         print("Build dictionary.")
@@ -241,19 +236,7 @@ class ImageSeries(object):
         images_series = np.moveaxis(images_series, -1, 0)
         #water_series = np.moveaxis(water_series, -1, 0)
         #fat_series = np.moveaxis(fat_series, -1, 0)
-        if "nb_total_slices" in self.paramDict:
 
-            nb_rep = self.paramDict["nb_rep"]
-            final_time=t[0,-1]
-            nb_timesteps = t.shape[1]
-            t=np.resize(t,(nb_rep,nb_timesteps))
-            rest = np.tile([self.paramDict["resting_time"]+final_time],nb_rep)
-            rest[0] = 0
-            rest = np.cumsum(rest).reshape(-1,1)
-            t = t+rest
-            #t = t.flatten()
-            #images_series=np.tile(images_series,(nb_rep,1))
-            #images_series=np.reshape(images_series,tuple(nb_rep*nb_timesteps)+self.image_size)
 
         #images_series=normalize_image_series(images_series)
         self.images_series=images_series
@@ -262,9 +245,25 @@ class ImageSeries(object):
         #self.fat_series=fat_series
 
         self.cached_images_series=images_series
+
+    def build_timeline(self,seq):
+
+        TR_list = seq.TR
+        # t = np.cumsum([np.sum(dt, axis=0) for dt in groupby(np.array(TR_list), window)]).reshape(1,-1)
+
+        t = np.cumsum(TR_list).reshape(1, -1)
+
+        if "nb_total_slices" in self.paramDict:
+            nb_rep = self.paramDict["nb_rep"]
+            final_time=t[0,-1]
+            nb_timesteps = t.shape[1]
+            t=np.resize(t,(nb_rep,nb_timesteps))
+            rest = np.tile([self.paramDict["resting_time"]+final_time],nb_rep)
+            rest[0] = 0
+            rest = np.cumsum(rest).reshape(-1,1)
+            t = t+rest
+
         self.t=t
-
-
 
     def add_movements(self,list_movements):
         self.list_movements=[*self.list_movements,*list_movements]
