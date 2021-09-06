@@ -60,7 +60,7 @@ m.build_ref_images(seq)
 #### Rebuilding the map from undersampled images
 ntimesteps=175
 nspoke=8
-npoint = 2*m.images_series.shape[1]
+npoint = 512
 
 radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint)
 
@@ -71,6 +71,139 @@ if not(load):
 
 else:
     kdata = pickle.load( open( "kdata_forLowRank_{}.pkl".format(m.name), "rb" ) )
+
+## Compressed sensing test
+
+volumes = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=useGPU_simulation)
+
+x=np.arange(-int(m.image_size[0]/2),int(m.image_size[0]/2),1.0)#+0.5
+y=np.arange(-int(m.image_size[1]/2),int(m.image_size[1]/2),1.0)#+0.5
+x=np.array(x,dtype=np.float16)
+y=np.array(y,dtype=np.float16)
+X,Y = np.meshgrid(x,y)
+X = np.squeeze(X.reshape(1,-1))
+Y = np.squeeze(Y.reshape(1,-1))
+r = np.vstack((X,Y))
+
+traj=radial_traj.get_traj_for_reconstruction()
+
+def J(volumes,kdata,traj,r,split=10):
+    nts=traj.shape[0]
+    vol = volumes.reshape((volumes.shape[0],-1))
+    if not (len(kdata) == len(traj)):
+        kdata = np.array(kdata).reshape(len(traj), -1)
+    nsamples=traj.shape[1]
+    ngroups=int(nts/split)
+    res=np.zeros((nts,nsamples),dtype=np.complex)
+    grad=np.zeros((nts,vol.shape[-1]),dtype=np.complex)
+    for t in tqdm(range(ngroups)):
+        t_cur=t*split
+        t_next=np.minimum((t+1)*split,nts)
+        traj_cur=traj[t_cur:t_next]
+
+        F_cur = np.matmul(traj_cur, r)
+        F_cur_adj = F_cur.T.conj()
+        F_cur_adj=np.moveaxis(F_cur_adj,-1,0)
+
+        M_cur=vol[t_cur:t_next]
+        M_cur=np.expand_dims(M_cur,axis=-1)
+
+        kdata_cur=kdata[t_cur:t_next]
+        print(kdata_cur.shape)
+        print(F_cur.shape)
+        print(M_cur.shape)
+        current_res = (kdata_cur-np.squeeze(np.matmul(F_cur,M_cur)))
+        res[t_cur:t_next]=current_res
+        print(current_res.shape)
+        print(F_cur_adj.shape)
+        grad[t_cur:t_next]=np.squeeze(np.matmul(F_cur_adj,np.expand_dims(current_res,axis=-1)))
+    return res,grad
+
+res,grad=J(volumes,np.array(kdata),traj,r,split=1)
+
+F = np.matmul(traj,r)
+
+####Wavelet filtering
+import pywt
+
+volumes = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=useGPU_simulation)
+
+level=3
+volumes_test=volumes[0,:,:]
+
+c = pywt.wavedec2(volumes_test, 'db2', level=level)
+
+#c[0] /= np.abs(c[0]).max()
+#for detail_level in range(level):
+#    c[detail_level + 1] = [d/np.abs(d).max() for d in c[detail_level + 1]]
+#    # show the normalized coefficients
+arr, slices = pywt.coeffs_to_array(c)
+
+#plt.imshow(np.abs(arr))
+
+sorted_coef = np.sort(np.abs(arr.flatten()))[::-1]
+
+cum_sum=np.cumsum(sorted_coef)
+cum_sum=cum_sum/cum_sum[-1]
+index_cut=(cum_sum>0.99).sum()
+value = sorted_coef[index_cut]
+
+#plt.plot(sorted_coef)
+
+perc=90
+
+perc_value=np.percentile(np.abs(arr),perc)
+max_value=np.max(np.abs(arr))
+arr_cut =arr.copy()
+arr_cut[np.abs(arr_cut)<value]=0
+
+
+#sorted_coef = np.sort(np.abs(arr_cut.flatten()))
+#plt.plot(sorted_coef)
+
+coef_cut = pywt.array_to_coeffs(arr_cut,slices,output_format='wavedec2')
+volumes_cut = pywt.waverec2(coef_cut, 'db2')
+
+plt.close("all")
+
+plt.figure()
+plt.imshow(np.abs(volumes_cut))
+plt.title("Rebuilt After Filtering")
+
+plt.figure()
+plt.imshow(np.abs(volumes_test))
+plt.title("Original")
+
+plt.figure()
+plt.imshow(np.abs(volumes_cut)-np.abs(volumes_test))
+plt.title("Diff")
+
+coef=pywt.array_to_coeffs(arr,slices,output_format='wavedec2')
+volumes_rebuilt = pywt.waverec2(c, 'db2')
+
+c_test=pywt.wavedec2(volumes[0,:,:], 'db2', level=level)
+volumes_rebuilt = pywt.waverec2(c_test, 'db2')
+
+
+
+
+def FourierMatrix(traj,r):
+    dot_prod=
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

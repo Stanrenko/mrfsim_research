@@ -1,9 +1,13 @@
 
 #import matplotlib
 #matplotlib.use("TkAgg")
+import numpy as np
+
 from mrfsim import T1MRF
 from image_series import *
-from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,regression_paramMaps,dictSearchMemoryOptim,voronoi_volumes,transform_py_map
+from dictoptimizers import SimpleDictSearch
+from utils_mrf import *
+from utils_mrf import radial_golden_angle_traj,animate_images,animate_multiple_images,compare_patterns,translation_breathing,find_klargest_freq,SearchMrf,basicDictSearch,compare_paramMaps,regression_paramMaps,voronoi_volumes,transform_py_map
 import json
 from finufft import nufft1d1,nufft1d2,nufft2d2,nufft2d1
 import imp
@@ -12,7 +16,7 @@ import readTwix as rT
 import time
 import TwixObject
 
-filename="./data/meas_MID00094_FID24076_JAMBES_raFin_CLI.dat"
+filename="./data/InVivo/meas_MID00094_FID24076_JAMBES_raFin_CLI.dat"
 
 Parsed_File = rT.map_VBVD(filename)
 
@@ -29,7 +33,59 @@ data = np.squeeze(RawData)
 data=np.moveaxis(data,-1,0)
 data=np.moveaxis(data,1,-1)
 
-slice=0
-data_slice=data[slice,:,:,:]
+with open("./"+str.split(filename,".")[1]+".npy","wb") as file:
+    np.save(file,data)
+
+slice=3
+kdata_all_channels=data[slice,:,:,:]
+
+nb_channels=kdata_all_channels.shape[0]
+
+ch = 4
+
+plt.plot(np.abs(kdata_all_channels[ch,0,:].T))
+
+#### Rebuilding the map from undersampled images
+ntimesteps=175
+nspoke=int(kdata_all_channels.shape[1]/ntimesteps)
+npoint = kdata_all_channels.shape[-1]
+image_size=(256,256)
+
+radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint)
+test_volumes = simulate_radial_undersampled_images(kdata_all_channels[ch],radial_traj,image_size,density_adj=True,useGPU=False)
+plt.imshow(np.abs(test_volumes[10]))
 
 
+density_adj=True
+if density_adj:
+    density = np.abs(np.linspace(-1, 1, npoint))
+    kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata_all_channels[ch]]
+
+kdata=np.array(kdata).flatten()
+traj = radial_traj.get_traj().reshape(-1,2)
+test_volumes_all =  finufft.nufft2d1(traj[:,0], traj[:,1], kdata, image_size)
+plt.imshow(np.abs(test_volumes_all))
+
+
+volumes_all_channels=np.zeros((nb_channels,ntimesteps,)+image_size)
+
+density = np.abs(np.linspace(-1, 1, npoint))
+density=np.expand_dims(density,axis=(0,1))
+kdata_all_channels_normalized=kdata_all_channels*density
+
+
+traj=radial_traj.get_traj_for_reconstruction()
+kdata_all_channels_normalized=kdata_all_channels_normalized.reshape((nb_channels,traj.shape[0],-1))
+kdata_all_channels_normalized=np.moveaxis(kdata_all_channels_normalized,1,0)
+
+
+images_series_rebuilt = [
+                finufft.nufft2d1(t[:, 0], t[:, 1], s, image_size)
+                for t, s in zip(traj, kdata_all_channels_normalized)
+            ]
+
+images_series_rebuilt=np.moveaxis(np.array(images_series_rebuilt),0,1)
+
+volumes=np.sqrt(np.sum(np.abs(images_series_rebuilt)**2,axis=0))
+
+ani=animate_images(volumes)

@@ -18,6 +18,7 @@ import pandas as pd
 import itertools
 from sigpy.mri import spiral
 import cv2
+import pywt
 
 try:
     import pycuda
@@ -1389,3 +1390,25 @@ def create_cuda_context():
     dev=pycuda.driver.Device(0)
     context=dev.make_context()
     return context
+
+def wavelet_denoising(image,retained_coef=0.99,level=3):
+    c = pywt.wavedec2(image, 'db2', level=level)
+    arr, slices = pywt.coeffs_to_array(c)
+
+    #Selection of the appropriate cut off
+    sorted_coef = np.sort(np.abs(arr.flatten()))[::-1]
+    cum_sum = np.cumsum(sorted_coef)
+    cum_sum = cum_sum / cum_sum[-1]
+    index_cut = (cum_sum > retained_coef).sum()
+    value = sorted_coef[index_cut]
+    # Cut off
+    arr_cut = arr.copy()
+    arr_cut[np.abs(arr_cut) < value] = 0
+
+    # sorted_coef = np.sort(np.abs(arr_cut.flatten()))
+    # plt.plot(sorted_coef)
+
+    #Image reconstruction
+    coef_cut = pywt.array_to_coeffs(arr_cut, slices, output_format='wavedec2')
+    image_cut = pywt.waverec2(coef_cut, 'db2')
+    return image_cut
