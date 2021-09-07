@@ -16,13 +16,18 @@ import readTwix as rT
 import time
 import TwixObject
 
+filename="./data/InVivo/meas_MID00060_FID24042_JAMBES_raFin_CLI.dat"
 filename="./data/InVivo/meas_MID00094_FID24076_JAMBES_raFin_CLI.dat"
+
 
 Parsed_File = rT.map_VBVD(filename)
 
 idx_ok = rT.detect_TwixImg(Parsed_File)
 start_time = time.time()
 RawData = Parsed_File[str(idx_ok)]["image"].readImage()
+test=Parsed_File["0"]["noise"].readImage()
+test = np.squeeze(test)
+
 elapsed_time = time.time()
 elapsed_time = elapsed_time - start_time
 progress_str = "Data read in %f s \n" % round(elapsed_time, 2)
@@ -33,6 +38,75 @@ data = np.squeeze(RawData)
 data=np.moveaxis(data,-1,0)
 data=np.moveaxis(data,1,-1)
 
+slice=2
+kdata_all_channels=data[slice,:,:,:]
+
+nb_channels = kdata_all_channels.shape[0]
+
+ch=3
+plt.plot(np.abs(kdata_all_channels)[ch,:,:].T)
+
+index=np.argwhere(np.abs(kdata_all_channels)[ch,:,:].flatten()>1e-3)
+len(np.unique(np.squeeze(np.unravel_index(index,kdata_all_channels.shape[1:])[1])))
+
+(np.abs(kdata_all_channels)[ch,:,:].flatten()>1e-3).sum()
+
+list_channels=[]
+for c in range(nb_channels):
+    index = np.argwhere(np.abs(kdata_all_channels)[c, :, :].flatten() > 1e-3)
+    if np.max(np.abs(np.abs(kdata_all_channels)[c,:,:].flatten()))<100:
+        list_channels.append(c)
+
+#### Rebuilding the map from undersampled images
+ntimesteps=175
+nspoke=int(kdata.shape[0]/ntimesteps)
+npoint = kdata.shape[1]
+image_size = (256,256)
+
+
+radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint)
+
+volumes_all_channels = np.zeros((nb_channels,ntimesteps)+image_size)
+
+
+traj_all=radial_traj.get_traj().reshape(-1,2)
+kdata_all = np.array(kdata_all_channels[ch].flatten(),dtype=np.complex128)
+volume_rebuilt = finufft.nufft2d1(traj_all[:,0], traj_all[:,1], kdata_all, image_size)
+plt.imshow(np.abs(volume_rebuilt))
+
+plt.imshow(np.abs(kdata_all))
+
+
+for i in tqdm(range(nb_channels)):
+    volumes_all_channels[i]=simulate_radial_undersampled_images(kdata_all_channels[i],radial_traj,image_size,density_adj=True,useGPU=True)
+
+
+
+volumes = np.sqrt(np.sum(np.abs(volumes_all_channels)**2,axis=0))
+
+t=10
+plt.imshow(np.abs(volumes_all_channels[4,t,:,:]))
+plt.imshow(np.abs(volumes[t]))
+
+## Dict mapping
+
+dictfile = "mrf175_SimReco2.dict"
+
+
+with open("mrf_sequence.json") as f:
+    sequence_config = json.load(f)
+
+
+seq = T1MRF(**sequence_config)
+
+niter = 0
+
+mask = build_mask_single_image(kdata,radial_traj,image_size,useGPU=True)
+
+optimizer = SimpleDictSearch(mask=mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=False,useGPU_simulation=True)
+all_maps=optimizer.search_patterns(dictfile,volumes)
+
+## Parallel reconstruction
 with open("./"+str.split(filename,".")[1]+".npy","wb") as file:
     np.save(file,data)
 
