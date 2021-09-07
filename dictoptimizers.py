@@ -35,14 +35,14 @@ class Optimizer(object):
 
 class SimpleDictSearch(Optimizer):
 
-    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,useAdjPred=False,useGPU_dictsearch=False,useGPU_simulation=True,**kwargs):
+    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,useGPU_simulation=True,**kwargs):
         #transf is a function that takes as input timesteps arrays and outputs shifts as output
         super().__init__(**kwargs)
         self.paramDict["niter"]=niter
         self.paramDict["split"] = split
         self.paramDict["pca"] = pca
         self.paramDict["threshold_pca"] = threshold_pca
-        self.paramDict["useAdjPred"]=useAdjPred
+        #self.paramDict["useAdjPred"]=useAdjPred
 
         if niter>0:
             if seq is None:
@@ -70,7 +70,7 @@ class SimpleDictSearch(Optimizer):
         split=self.paramDict["split"]
         pca=self.paramDict["pca"]
         threshold_pca=self.paramDict["threshold_pca"]
-        useAdjPred=self.paramDict["useAdjPred"]
+        #useAdjPred=self.paramDict["useAdjPred"]
         if niter>0:
             seq = self.paramDict["sequence"]
             trajectory = self.paramDict["trajectory"]
@@ -374,14 +374,47 @@ class SimpleDictSearch(Optimizer):
             del values_simu
 
             images_pred.build_ref_images(seq)
-            pred_volumesi = images_pred.images_series
+            #images_pred.build_timeline(seq)
+            #pred_volumesi = images_pred.images_series
+
+            # map_all_on_mask = np.stack(list(images_pred.paramMap.values())[:-1], axis=-1)
+            # map_ff_on_mask = images_pred.paramMap["ff"]
+            #
+            # mrfdict = dictsearch.Dictionary()
+            # mrfdict.load(dictfile, force=True)
+            #
+            #
+            # images_series = np.zeros(self.image_size + (values.shape[-2],), dtype=np.complex_)
+            # # water_series = images_series.copy()
+            # # fat_series = images_series.copy()
+            #
+            # print("Building image series")
+            # images_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0] * (1 - map_ff_on_mask[i]) + mrfdict[tuple(
+            #     pixel_params)][:, 1] * (map_ff_on_mask[i]) for (i, pixel_params) in enumerate(map_all_on_mask)])
+            # # water_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0]  for (i, pixel_params) in enumerate(map_all_on_mask)])
+            # # fat_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 1]  for (i, pixel_params) in enumerate(map_all_on_mask)])
+            #
+            # images_series[self.mask > 0, :] = images_in_mask
 
             #volumesi = images_pred.simulate_radial_undersampled_images(trajectory, density_adj=True)
             kdatai = images_pred.generate_kdata(trajectory,useGPU=useGPU_simulation)
+            kdatai = np.array(kdatai)
+            nans = np.nonzero(np.isnan(kdatai))
+
+            if len(nans)>0:
+                print("Warning : Nan Values replaced by zeros in rebuilt kdata")
+                kdatai[nans]=0.0
+
             volumesi = simulate_radial_undersampled_images(kdatai,trajectory,images_pred.image_size,useGPU=useGPU_simulation,density_adj=True)
+
+            nans_volumes = np.argwhere(np.isnan(volumesi))
+            if len(nans_volumes) > 0:
+                np.save('./log/kdatai.npy', kdatai)
+                np.save('./log/volumesi.npy',volumesi)
+                raise ValueError("Error : Nan Values in volumes")
+
             volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
 
-            del images_pred
 
             if log:
                 print("Saving correction volumes for iteration {}".format(i))
@@ -390,20 +423,23 @@ class SimpleDictSearch(Optimizer):
                 with open('./log/volumes1_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
                     np.save(f, np.array(volumesi))
                 with open('./log/predvolumes_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                    np.save(f, np.array(pred_volumesi))
+                    np.save(f, np.array(images_pred.images_series))
 
+
+            del images_pred
             # correct volumes
             print("Correcting volumes for iteration {}".format(i))
 
-            if useAdjPred:
-                a = np.sum((volumesi * pred_volumesi.conj()).real) / np.sum(volumesi * volumesi.conj())
-                volumes = [vol0 - (a * voli - predvoli) for vol0, voli, predvoli in
-                           zip(volumes, volumesi, pred_volumesi)]
+            # if useAdjPred:
+            #     a = np.sum((volumesi * pred_volumesi.conj()).real) / np.sum(volumesi * volumesi.conj())
+            #     volumes = [vol0 - (a * voli - predvoli) for vol0, voli, predvoli in
+            #                zip(volumes, volumesi, pred_volumesi)]
+            #
+            # else:
+            #     volumes = [vol + (vol0 - voli) for vol, vol0, voli in zip(volumes, volumes0, volumesi)]
 
-            else:
-                volumes = [vol + (vol0 - voli) for vol, vol0, voli in zip(volumes, volumes0, volumesi)]
+            volumes = [vol + (vol0 - voli) for vol, vol0, voli in zip(volumes, volumes0, volumesi)]
 
-            del pred_volumesi
             del volumesi
             del kdatai
 

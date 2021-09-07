@@ -19,7 +19,7 @@ from tqdm import tqdm
 import pickle
 from scipy.io import savemat
 from Transformers import PCAComplex
-
+import cupy as cp
 
 ## Random map simulation
 
@@ -87,7 +87,7 @@ r = np.vstack((X,Y))
 
 traj=radial_traj.get_traj_for_reconstruction()
 
-def J(volumes,kdata,traj,r,split=10):
+def J(volumes,kdata,traj,r,split=10,lamb=0):
     nts=traj.shape[0]
     vol = volumes.reshape((volumes.shape[0],-1))
     if not (len(kdata) == len(traj)):
@@ -119,7 +119,78 @@ def J(volumes,kdata,traj,r,split=10):
         grad[t_cur:t_next]=np.squeeze(np.matmul(F_cur_adj,np.expand_dims(current_res,axis=-1)))
     return res,grad
 
-res,grad=J(volumes,np.array(kdata),traj,r,split=1)
+def N(x,mu=1e-6):
+    return np.sum(np.sqrt(np.abs(x)+mu))
+
+
+def psi(m,type='db2',level=3,image_size=(256,256)):
+    init_shape=m.shape
+    m=m.reshape(image_size)
+    c = pywt.wavedec2(m, type, level=level, mode="periodization")
+    arr, slices = pywt.coeffs_to_array(c)
+    arr = arr.reshape(init_shape)
+    return arr,slices
+
+def inv_psi(arr,slices,type="db2",image_size=(256,256)):
+    init_shape = arr.shape
+    arr=arr.reshape(image_size)
+    coef = pywt.array_to_coeffs(arr, slices, output_format='wavedec2')
+    volumes_rebuilt = pywt.waverec2(coef, type)
+    volumes_rebuilt = volumes_rebuilt.reshape(init_shape)
+    return volumes_rebuilt
+
+
+def W(x,mu=1e-6):
+    return np.diag(1/np.sqrt(np.abs(x)+mu))
+
+
+def J_gpu(volumes,kdata,traj,r,split=10):
+    kdata = cp.asarray(kdata)
+    vol = cp.asarray(volumes.reshape((volumes.shape[0],-1)))
+    traj=cp.asarray(traj)
+    vol = cp.asarray(volumes.reshape((volumes.shape[0], -1)))
+    r = cp.asarray(r)
+
+    nts=traj.shape[0]
+
+    if not (len(kdata) == len(traj)):
+        kdata = kdata.reshape(len(traj), -1)
+    nsamples=traj.shape[1]
+    ngroups=int(nts/split)
+    res=cp.zeros((nts,nsamples),dtype=cp.complex64)
+    grad=cp.zeros((nts,vol.shape[-1]),dtype=cp.complex64)
+    for t in tqdm(range(ngroups)):
+        t_cur=t*split
+        t_next=cp.minimum((t+1)*split,nts)
+        traj_cur=traj[t_cur:t_next]
+
+        F_cur = cp.matmul(traj_cur, r)
+        F_cur_adj = F_cur.T.conj()
+        F_cur_adj=cp.moveaxis(F_cur_adj,-1,0)
+
+        M_cur=vol[t_cur:t_next]
+        M_cur=np.expand_dims(M_cur,axis=-1)
+
+        kdata_cur=kdata[t_cur:t_next]
+
+        current_res = (kdata_cur-cp.squeeze(cp.matmul(F_cur,M_cur)))
+        res[t_cur:t_next]=current_res
+
+        grad[t_cur:t_next]=cp.squeeze(cp.matmul(F_cur_adj,cp.expand_dims(current_res,axis=-1)))
+    return res.get(),grad.get()
+
+volumes0 = np.zeros(volumes.shape)
+
+res,grad=J(volumes0,np.array(kdata),traj,r,split=1)
+grad_image=grad.reshape((grad.shape[0],)+m.image_size)
+ts = 10
+plt.imshow(np.abs(grad_image[ts]))
+plt.colorbar()
+
+
+from utils_mrf import animate_images
+animate_images(grad_image)
+
 
 F = np.matmul(traj,r)
 
@@ -187,18 +258,12 @@ volumes_rebuilt = pywt.waverec2(c_test, 'db2')
 
 
 
-def FourierMatrix(traj,r):
-    dot_prod=
 
+import pywt
+image = np.eye(256,256)
 
-
-
-
-
-
-
-
-
+c = pywt.wavedec2(image, 'db2', level=3,mode="periodization")
+arr, slices = pywt.coeffs_to_array(c)
 
 
 

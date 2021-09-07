@@ -26,10 +26,15 @@ from tqdm import tqdm
 
 start = datetime.now()
 
-load=True
-load_maps=False
+
 load_paramMap=True
-build_ref_images=False
+build_ref_images=True
+load=True
+
+if not(load_paramMap):
+    load=False
+
+load_maps=True
 
 is_random=False
 
@@ -38,8 +43,8 @@ dictfile = "mrf175.dict"
 dictfile = "mrf175_CS.dict"
 #dictfile = "mrf175_SimReco2.dict"
 
-useGPU_simulation=True
-useGPU_dictsearch=True
+useGPU_simulation=False
+useGPU_dictsearch=False
 
 with open("mrf_sequence.json") as f:
     sequence_config = json.load(f)
@@ -62,12 +67,12 @@ region_size=16 #size of the regions with uniform values for params in pixel numb
 size=(256,256)
 mask_reduction_factor=1/4
 
-nb_slices= 64
-nb_empty_slices=8
+nb_slices= 16
+nb_empty_slices=4
 undersampling_factor=4
 repeat_slice=8
 
-gen_mode ="loop"
+gen_mode ="other"
 
 m = RandomMap3D("TestRandom3DMovement",dict_config,nb_slices=nb_slices,nb_empty_slices=nb_empty_slices,undersampling_factor=undersampling_factor,repeat_slice=repeat_slice,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor,gen_mode=gen_mode)
 
@@ -142,7 +147,7 @@ mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=useGPU_s
 
 #plt.imshow(mask[m.paramDict["nb_empty_slices"]-5,:,:])
 
-niter=1
+niter=2
 
 optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj_3D,split=2000,pca=True,threshold_pca=20,useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch,log=True,useAdjPred=False,verbose=False,gen_mode=gen_mode)
 
@@ -182,6 +187,8 @@ for iter in all_maps_adj.keys():
 
 size_slice = int(m.paramDict["nb_slices"]/m.paramDict["repeat_slice"])
 
+plot_evolution_params(m.paramMap,m.mask>0,all_maps_adj,maskROI,save=True)
+
 # iter =0
 # sl = 1
 #
@@ -197,8 +204,8 @@ move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
 
 m.add_movements([move])
 
-load=True
-load_maps=True
+load=False
+load_maps=False
 
 if not(load):
     kdata = m.generate_kdata(radial_traj_3D,useGPU=useGPU_simulation)
@@ -441,3 +448,154 @@ compare_paramMaps_3D(m.paramMap,all_maps_mvt_corrected[iter][0],m.mask>0,all_map
 # c = cp.sum(a*b, axis=-2)
 #
 # print('Complete.')
+
+
+#test kdatai
+
+
+#import matplotlib
+#matplotlib.use("TkAgg")
+from mrfsim import T1MRF
+from image_series import *
+from utils_mrf import *
+import json
+from finufft import nufft1d1,nufft1d2
+from scipy import signal,interpolate
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
+import matplotlib.pyplot as plt
+import numpy as np
+from movements import *
+import pickle
+from dictoptimizers import SimpleDictSearch
+from tqdm import tqdm
+#import pycuda.autoinit
+# from pycuda.gpuarray import GPUArray, to_gpu
+#
+# c_gpu = GPUArray((1, 10), dtype=np.complex64)
+# c_gpu.fill(0)
+# c = c_gpu.get()
+# c_gpu.gpudata.free()
+## Random map simulation
+
+start = datetime.now()
+
+load=True
+load_maps=False
+load_paramMap=True
+build_ref_images=False
+
+is_random=False
+
+
+dictfile = "mrf175.dict"
+dictfile = "mrf175_CS.dict"
+#dictfile = "mrf175_SimReco2.dict"
+
+useGPU_simulation=True
+useGPU_dictsearch=True
+
+with open("mrf_sequence.json") as f:
+    sequence_config = json.load(f)
+
+
+seq = T1MRF(**sequence_config)
+
+window = 8 #corresponds to nspoke by image
+size=(256,256)
+
+file_matlab_paramMap = "./data/KneePhantom/Phantom1/paramMap.mat"
+
+###### Building Map
+#m = MapFromFile3D("TestPhantomV1",nb_slices=64,nb_empty_slices=8,file=file_matlab_paramMap,rounding=True)
+
+with open("mrf_dictconf_CS.json") as f:
+    dict_config = json.load(f)
+dict_config["ff"]=np.arange(0.,1.05,0.05)
+region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
+size=(256,256)
+mask_reduction_factor=1/4
+
+nb_slices= 64
+nb_empty_slices=8
+undersampling_factor=4
+repeat_slice=8
+
+gen_mode ="loop"
+
+m = RandomMap3D("TestRandom3DMovement",dict_config,nb_slices=nb_slices,nb_empty_slices=nb_empty_slices,undersampling_factor=undersampling_factor,repeat_slice=repeat_slice,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor,gen_mode=gen_mode)
+
+if not(load_paramMap):
+    m.buildParamMap()
+    with open("paramMap_sl{}_{}.pkl".format(nb_slices+2*nb_empty_slices,m.name), "wb" ) as file:
+        pickle.dump(m.paramMap, file)
+
+else:
+    m.paramMap=pickle.load(open("paramMap_sl{}_{}.pkl".format(nb_slices+2*nb_empty_slices,m.name), "rb"))
+#m.plotParamMap("wT1")
+
+##### Simulating Ref Images
+if build_ref_images:
+    m.build_ref_images(seq)
+else:#still need to build the timeline for applying movement / movement correction
+    m.build_timeline(seq)
+
+
+npoint=512
+nspoke=8
+ntimesteps=175
+
+nb_total_slices=m.paramDict["nb_total_slices"]
+undersampling_factor = m.paramDict["undersampling_factor"]
+
+radial_traj_3D=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_total_slices,undersampling_factor=undersampling_factor,is_random=is_random)
+volumes = pickle.load( open( "volumes_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb" ) )
+volumes = volumes / np.linalg.norm(volumes, 2, axis=0)
+volumes0=volumes
+
+
+kdatai=np.load("./log/kdatai.npy")
+
+kdatai = np.array(kdatai)
+nans = np.nonzero(np.isnan(kdatai))
+if len(nans)>0:
+    print("Warning : Nan Values replaced by zeros in rebuilt kdata")
+    kdatai[nans]=0.0
+
+
+kdatai[np.abs(kdatai)>1e5]=1e5
+
+volumesi=simulate_radial_undersampled_images(kdatai,radial_traj_3D,m.image_size,useGPU=useGPU_simulation,density_adj=True)
+
+nans_volumes=np.argwhere(np.isnan(volumesi))
+if len(nans_volumes)>0:
+    raise ValueError("Error : Nan Values in volumes")
+
+sl=40
+ani = animate_images((volumesi[:,sl,:,:]))
+
+plt.figure()
+plt.imshow(np.abs(volumesi[1,sl,:,:]))
+
+volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
+
+new_volumes = [vol + (vol0 - voli) for vol, vol0, voli in zip(volumes, volumes0, volumesi)]
+new_volumes=np.array(new_volumes)
+
+kdata = pickle.load( open( "kdata_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb" ) )
+
+mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=useGPU_simulation)
+
+niter=0
+optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj_3D,split=2000,pca=True,threshold_pca=20,useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch,log=True,useAdjPred=False,verbose=False,gen_mode=gen_mode)
+
+all_maps_adj = optimizer.search_patterns(dictfile,new_volumes)
+
+
+save=True
+maskROI=buildROImask_unique(m.paramMap)
+
+for iter in all_maps_adj.keys():
+    regression_paramMaps_ROI(m.paramMap, all_maps_adj[iter][0], m.mask > 0, all_maps_adj[iter][1] > 0,maskROI=maskROI,
+                             title="Slices{}_US{} No movements ROI Orig vs Iteration {}".format(nb_total_slices,undersampling_factor,1), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,save=save)
+
