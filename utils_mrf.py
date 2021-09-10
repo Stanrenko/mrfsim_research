@@ -793,10 +793,16 @@ def voronoi_finite_polygons_2d(vor, radius=None):
     return new_regions, np.asarray(new_vertices)
 
 
-def voronoi_volumes(points,min_x=None,min_y=None,max_x=None,max_y=None,eps=0.1):
+def voronoi_volumes(points,min_x=None,min_y=None,max_x=None,max_y=None,min_z=None,max_z=None,eps=0.1):
+    dim =points.shape[1]
 
     vor = Voronoi(points)
-    regions, vertices = voronoi_finite_polygons_2d(vor)
+
+    if dim==3:
+        regions, vertices = voronoi_finite_polygons_2d(vor)
+
+    else:
+        regions, vertices = voronoi_finite_polygons_3d(vor)
 
     if min_x is None:
         min_x = vor.min_bound[0] - eps
@@ -812,9 +818,22 @@ def voronoi_volumes(points,min_x=None,min_y=None,max_x=None,max_y=None,eps=0.1):
         max_y = vor.max_bound[1] + eps
 
 
-    mins = np.tile((min_x, min_y), (vertices.shape[0], 1))
+    if dim==3:
+        if min_z is None:
+            min_z = vor.min_bound[2] - eps
+
+        if max_z is None:
+            max_z = vor.max_bound[2] + eps
+
+
+        mins = np.tile((min_x, min_y,min_z), (vertices.shape[0], 1))
+        maxs = np.tile((max_x, max_y,min_z), (vertices.shape[0], 1))
+
+    else:
+        mins = np.tile((min_x, min_y), (vertices.shape[0], 1))
+        maxs = np.tile((max_x, max_y), (vertices.shape[0], 1))
+
     bounded_vertices = np.max((vertices, mins), axis=0)
-    maxs = np.tile((max_x, max_y), (vertices.shape[0], 1))
     bounded_vertices = np.min((bounded_vertices, maxs), axis=0)
 
     vol = np.zeros(len(regions))
@@ -865,17 +884,17 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
     mask = False
 
     npoint=trajectory.paramDict["npoint"]
-    traj = trajectory.get_traj()
+    traj = trajectory.get_traj_for_reconstruction()
 
     # kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
 
     density = np.abs(np.linspace(-1, 1, npoint))
     kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
     # kdata = (normalize_image_series(np.array(kdata)))
-    kdata_all = np.reshape(kdata, (-1,))
+    kdata_all = np.concatenate(kdata)
+    traj_all = np.concatenate(list(traj))
+    if traj_all.shape[-1]==2: # For slices
 
-    if traj.shape[-1]==2: # For slices
-        traj_all = np.reshape(traj, (-1,2))
         if not(useGPU):
             volume_rebuilt = finufft.nufft2d1(traj_all[:,0], traj_all[:,1], kdata_all, size)
         else:
@@ -923,8 +942,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
         #mask = ndimage.binary_closing(mask, iterations=10)
 
 
-    elif traj.shape[-1]==3: # For volumes
-        traj_all = np.reshape(traj, (-1, 3))
+    elif traj_all.shape[-1]==3: # For volumes
         if not(useGPU):
             volume_rebuilt = finufft.nufft3d1(traj_all[:, 2],traj_all[:, 0], traj_all[:, 1], kdata_all, size)
         else:
@@ -1097,8 +1115,8 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
             for i in list(range(len(kdata))):
 
                 c_retrieved = kdata[i]
-                kx = traj[i, :, 0]
-                ky = traj[i, :, 1]
+                kx = traj[i][:, 0]
+                ky = traj[i][:, 1]
 
                 # Cast to desired datatype.
                 kx = kx.astype(dtype)
@@ -1140,9 +1158,9 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
             for i in list(range(len(kdata))):
                 fk_gpu = GPUArray((N1, N2, N3), dtype=complex_dtype)
                 c_retrieved = kdata[i]
-                kx = traj[i, :, 0]
-                ky = traj[i, :, 1]
-                kz = traj[i, :, 2]
+                kx = traj[i][ :, 0]
+                ky = traj[i][ :, 1]
+                kz = traj[i][ :, 2]
 
 
                 # Cast to desired datatype.
@@ -1188,25 +1206,30 @@ def simulate_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=F
     if density_adj:
         print("Performing density adjustment using Voronoi cells")
         #density = voronoi_volumes(np.transpose(np.array([traj[0,:, 0], traj[0,:, 1]])),min_x=-np.pi,min_y=-np.pi,max_x=np.pi,max_y=np.pi)[0]
-        density = [voronoi_volumes(np.transpose(np.array([traj[i,:, 0], traj[i,:, 1]])),min_x=-np.pi,min_y=-np.pi,max_x=np.pi,max_y=np.pi)[0] for i in tqdm(range(len(kdata)))]
+        #if traj[0].shape[-1] == 2:#2D
+        #    density = [voronoi_volumes(traj[i],min_x=-np.pi,min_y=-np.pi,max_x=np.pi,max_y=np.pi)[0] for i in tqdm(range(len(kdata)))]
+        #else:#3D
+        density = [
+                voronoi_volumes(traj[i], min_x=-np.pi, min_y=-np.pi,
+                                max_x=np.pi, max_y=np.pi, min_z=-np.pi, max_z=np.pi)[0] for i in
+                tqdm(range(len(kdata)))]
         kdata = np.array([k * density[i] for i, k in enumerate(kdata)])
 
     #kdata = (normalize_image_series(np.array(kdata)))
 
-    if traj.shape[-1] == 2:  # 2D
-        if not(useGPU):
+    if traj[0].shape[-1] == 2:  # 2D
+        if not (useGPU):
             images_series_rebuilt = [
-                finufft.nufft2d1(t[:,0], t[:,1], s, size)
+                finufft.nufft2d1(t[:, 0], t[:, 1], s, size)
                 for t, s in zip(traj, kdata)
             ]
         else:
             N1, N2 = size[0], size[1]
             dtype = np.float32  # Datatype (real)
             complex_dtype = np.complex64
-            fk_gpu = GPUArray((1, N1, N2), dtype=complex_dtype)
+            fk_gpu = GPUArray((N1, N2), dtype=complex_dtype)
             images_GPU = []
             for i in list(range(len(kdata))):
-
                 c_retrieved = kdata[i]
                 kx = traj[i, :, 0]
                 ky = traj[i, :, 1]
@@ -1217,7 +1240,6 @@ def simulate_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=F
                 c_retrieved = c_retrieved.astype(complex_dtype)
 
                 # Allocate memory for the uniform grid on the GPU.
-
 
                 # Initialize the plan and set the points.
                 plan = cufinufft(1, (N1, N2), 1, eps=eps, dtype=dtype)
@@ -1230,53 +1252,58 @@ def simulate_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=F
                 fk = np.squeeze(fk_gpu.get())
                 images_GPU.append(fk)
                 plan.__del__()
-            images_series_rebuilt=np.array(images_GPU)
-    elif traj.shape[-1] == 3:  # 3D
+            images_series_rebuilt = np.array(images_GPU)
+    elif traj[0].shape[-1] == 3:  # 3D
+        if not (useGPU):
+            # images_series_rebuilt = [
+            #    finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size)
+            #    for t, s in zip(traj, kdata)
+            # ]
 
-        raise ValueError("Generic undersampled trajectory simulation not covered yet for 3D")
-        # if not(useGPU):
-        #     images_series_rebuilt = [
-        #         finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size)
-        #         for t, s in zip(traj, kdata)
-        #     ]
-        #
-        # else:
-        #     N1, N2, N3 = size[0], size[1], size[2]
-        #     dtype = np.float32  # Datatype (real)
-        #     complex_dtype = np.complex64
-        #     fk_gpu = GPUArray((1, N1, N2, N3), dtype=complex_dtype)
-        #     images_GPU=[]
-        #     for i in list(range(len(kdata))):
-        #
-        #         c_retrieved = kdata[i]
-        #         kx = traj[i, :, 0]
-        #         ky = traj[i, :, 1]
-        #         kz = traj[i, :, 2]
-        #
-        #
-        #         # Cast to desired datatype.
-        #         kx = kx.astype(dtype)
-        #         ky = ky.astype(dtype)
-        #         kz = kz.astype(dtype)
-        #         c_retrieved = c_retrieved.astype(complex_dtype)
-        #
-        #         # Allocate memory for the uniform grid on the GPU.
-        #
-        #
-        #         # Initialize the plan and set the points.
-        #         plan = cufinufft(1, (N1, N2,N3), 1, eps=eps, dtype=dtype)
-        #         plan.set_pts(to_gpu(kz),to_gpu(kx), to_gpu(ky))
-        #
-        #         # Execute the plan, reading from the strengths array c and storing the
-        #         # result in fk_gpu.
-        #         plan.execute(to_gpu(c_retrieved), fk_gpu)
-        #
-        #         fk = np.squeeze(fk_gpu.get())
-        #         images_GPU.append(fk)
-        #         plan.__del__()
-        #     images_series_rebuilt = np.array(images_GPU)
+            images_series_rebuilt = []
+            for t, s in tqdm(zip(traj, kdata)):
+                images_series_rebuilt.append(finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], s, size))
 
-    #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+        else:
+            N1, N2, N3 = size[0], size[1], size[2]
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+
+            images_GPU = []
+            for i in list(range(len(kdata))):
+                fk_gpu = GPUArray((N1, N2, N3), dtype=complex_dtype)
+                c_retrieved = kdata[i]
+                kx = traj[i, :, 0]
+                ky = traj[i, :, 1]
+                kz = traj[i, :, 2]
+
+                # Cast to desired datatype.
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                kz = kz.astype(dtype)
+                c_retrieved = c_retrieved.astype(complex_dtype)
+
+                # Allocate memory for the uniform grid on the GPU.
+                c_retrieved_gpu = to_gpu(c_retrieved)
+
+                # Initialize the plan and set the points.
+                plan = cufinufft(1, (N1, N2, N3), 1, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+
+                # Execute the plan, reading from the strengths array c and storing the
+                # result in fk_gpu.
+                plan.execute(c_retrieved_gpu, fk_gpu)
+
+                fk = np.squeeze(fk_gpu.get())
+
+                fk_gpu.gpudata.free()
+                c_retrieved_gpu.gpudata.free()
+
+                images_GPU.append(fk)
+                plan.__del__()
+            images_series_rebuilt = np.array(images_GPU)
+
+    # images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
 
     return np.array(images_series_rebuilt)
 
@@ -1412,3 +1439,77 @@ def wavelet_denoising(image,retained_coef=0.99,level=3):
     coef_cut = pywt.array_to_coeffs(arr_cut, slices, output_format='wavedec2')
     image_cut = pywt.waverec2(coef_cut, 'db2')
     return image_cut
+
+def calculate_condition_mvt_correction(traj,t,transf,perc):
+
+
+    shifts = transf(t.flatten().reshape(-1, 1))[:, 1]
+
+    # traj_for_selection=traj_for_selection.reshape(t.shape+traj_for_selection.shape[-2:])
+    # traj_for_selection=traj_for_selection.reshape((m.paramDict["nb_rep"],ntimesteps,-1)+traj_for_selection.shape[-2:])
+    #
+    # kdata_for_selection=kdata_for_selection.reshape(t.shape+kdata_for_selection.shape[-1:])
+    # kdata_for_selection=kdata_for_selection.reshape((m.paramDict["nb_rep"],ntimesteps,-1)+kdata_for_selection.shape[-1:])
+
+    threshold = np.percentile(shifts, perc)
+    cond = (shifts > threshold)
+    return cond
+
+
+def correct_mvt_kdata(kdata,traj,cond,ntimesteps):
+
+    kdata=np.array(kdata)
+    traj=np.array(traj)
+
+    nb_rep = int(cond.shape[0]/traj.shape[0])
+    npoint = int(traj.shape[1] / nb_rep)
+    nspoke = int(traj.shape[0] / ntimesteps)
+
+    traj_for_selection = np.array(groupby(traj, npoint, axis=1))
+    kdata_for_selection = np.array(groupby(kdata, npoint, axis=1))
+
+    traj_for_selection = traj_for_selection.reshape(cond.shape[0], -1, 3)
+    kdata_for_selection = kdata_for_selection.reshape(cond.shape[0], -1)
+
+    indices = np.unravel_index(np.argwhere(cond).T,(nb_rep,ntimesteps,nspoke))
+    retained_indices = np.squeeze(np.array(indices).T)
+
+    print(retained_indices.shape)
+
+    traj_retained = traj_for_selection[cond, :, :]
+    kdata_retained = kdata_for_selection[cond, :]
+
+    dico_traj = {}
+    dico_kdata = {}
+    for i, index in enumerate(retained_indices):
+        curr_slice = index[0]
+        ts = index[1]
+        curr_spoke = index[2]
+        if ts not in dico_traj:
+            dico_traj[ts] = []
+            dico_kdata[ts] = []
+
+        # dico_traj[ts]=[*dico_traj[ts],*traj_retained[i]]
+        # dico_kdata[ts]=[*dico_kdata[ts],*kdata_retained[i]]
+
+        dico_traj[ts].append(traj_retained[i])
+        dico_kdata[ts].append(kdata_retained[i])
+
+    retained_timesteps = list(dico_traj.keys())
+    retained_timesteps.sort()
+
+    traj_retained_final = []
+    kdata_retained_final = []
+
+    # for ts in tqdm(range(len(retained_timesteps))):
+    #     traj_retained_final.append(np.array(dico_traj[ts]))
+    #     kdata_retained_final.append(np.array(dico_kdata[ts]))
+
+    for ts in tqdm(retained_timesteps):
+        traj_retained_final.append(np.array(dico_traj[ts]).flatten().reshape(-1, 3))
+        kdata_retained_final.append(np.array(dico_kdata[ts]).flatten())
+
+    traj_retained_final = np.array(traj_retained_final)
+    kdata_retained_final = np.array(kdata_retained_final)
+
+    return kdata_retained_final,traj_retained_final,retained_timesteps

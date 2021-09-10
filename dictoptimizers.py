@@ -1,7 +1,7 @@
 import numpy as np
 from scipy import ndimage
 from scipy.ndimage import affine_transform
-from utils_mrf import translation_breathing,build_mask_single_image,build_mask,simulate_radial_undersampled_images,read_mrf_dict,create_cuda_context
+from utils_mrf import translation_breathing,build_mask_single_image,build_mask,simulate_radial_undersampled_images,read_mrf_dict,create_cuda_context,correct_mvt_kdata
 from Transformers import PCAComplex
 from mutools.optim.dictsearch import dictsearch
 from tqdm import tqdm
@@ -35,7 +35,7 @@ class Optimizer(object):
 
 class SimpleDictSearch(Optimizer):
 
-    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,useGPU_simulation=True,**kwargs):
+    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,useGPU_simulation=True,movement_correction=False,cond=None,**kwargs):
         #transf is a function that takes as input timesteps arrays and outputs shifts as output
         super().__init__(**kwargs)
         self.paramDict["niter"]=niter
@@ -56,8 +56,11 @@ class SimpleDictSearch(Optimizer):
 
         self.paramDict["useGPU_dictsearch"]=useGPU_dictsearch
         self.paramDict["useGPU_simulation"] = useGPU_simulation
+        self.paramDict["movement_correction"]=movement_correction
+        self.paramDict["cond"]=cond
 
     def search_patterns(self,dictfile,volumes,retained_timesteps=None):
+
 
         if self.mask is None:
             mask = build_mask(volumes)
@@ -78,6 +81,14 @@ class SimpleDictSearch(Optimizer):
         log=self.paramDict["log"]
         useGPU_dictsearch=self.paramDict["useGPU_dictsearch"]
         useGPU_simulation = self.paramDict["useGPU_simulation"]
+
+        movement_correction=self.paramDict["movement_correction"]
+        cond=self.paramDict["cond"]
+
+        if movement_correction:
+            if cond is None:
+                raise ValueError("indices of retained kdata should be given in cond for movement correction")
+
 
         volumes = volumes / np.linalg.norm(volumes, 2, axis=0)
         all_signals = volumes[:, mask > 0]
@@ -398,14 +409,28 @@ class SimpleDictSearch(Optimizer):
 
             #volumesi = images_pred.simulate_radial_undersampled_images(trajectory, density_adj=True)
             kdatai = images_pred.generate_kdata(trajectory,useGPU=useGPU_simulation)
+
+            if movement_correction:
+                traj=trajectory.get_traj()
+                kdatai, traj_retained_final, _ = correct_mvt_kdata(kdatai, traj, cond,trajectory.paramDict["ntimesteps"])
+
             kdatai = np.array(kdatai)
-            nans = np.nonzero(np.isnan(kdatai))
+            #nans = np.nonzero(np.isnan(kdatai))
+            nans = [np.nonzero(np.isnan(k))[0] for k in kdatai]
+            nans_count = np.array([len(n) for n in nans]).sum()
 
-            if len(nans)>0:
+            if nans_count>0:
                 print("Warning : Nan Values replaced by zeros in rebuilt kdata")
-                kdatai[nans]=0.0
+                for i,k in enumerate(kdatai):
+                    kdatai[i][nans[i]]=0.0
 
-            volumesi = simulate_radial_undersampled_images(kdatai,trajectory,images_pred.image_size,useGPU=useGPU_simulation,density_adj=True)
+            if not(movement_correction):
+                volumesi = simulate_radial_undersampled_images(kdatai,trajectory,images_pred.image_size,useGPU=useGPU_simulation,density_adj=True)
+
+            else:
+                trajectory.traj_for_reconstruction=traj_retained_final
+                volumesi = simulate_radial_undersampled_images(kdatai, trajectory, images_pred.image_size,
+                                                               useGPU=useGPU_simulation, density_adj=True)
 
             nans_volumes = np.argwhere(np.isnan(volumesi))
             if len(nans_volumes) > 0:

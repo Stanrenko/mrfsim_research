@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 
 import pandas as pd
-from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series,build_mask,generate_kdata,build_mask_single_image,buildROImask
+from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series,build_mask,generate_kdata,build_mask_single_image,buildROImask,correct_mvt_kdata
 from mutools.optim.dictsearch import dictsearch
 import itertools
 from mrfsim import groupby,makevol,load_data,loadmat
@@ -269,7 +269,7 @@ class ImageSeries(object):
         self.list_movements=[*self.list_movements,*list_movements]
 
 
-    def generate_kdata(self,trajectory,useGPU=False,eps=1e-4):
+    def generate_kdata(self,trajectory,useGPU=False,eps=1e-4,movement_correction=False,perc=80):
         print("Generating kdata")
         #nspoke = trajectory.paramDict["nspoke"]
         #npoint = trajectory.paramDict["npoint"]
@@ -551,6 +551,13 @@ class ImageSeries(object):
         #kdata = np.array(kdata) / (npoint * self.paramDict["nb_rep"]) * dtheta
 
         # kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+        if movement_correction:
+            transf = self.list_movements[0].paramDict["transformation"]
+            t = self.t
+            kdata_corrected,traj_corrected,retained_timesteps = correct_mvt_kdata(kdata,traj,t,transf,perc)
+
+            return kdata_corrected,traj_corrected,retained_timesteps
+
         return kdata
 
 

@@ -272,6 +272,9 @@ for iter in all_maps_mvt.keys():
 load=False
 load_maps=False
 
+useGPU_simulation=False
+useGPU_dictsearch=True
+
 kdata = pickle.load( open( "kdata_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb" ) )
 kdata = np.array(kdata)
 
@@ -280,70 +283,16 @@ if not(load):
     t = m.t
     shifts = transf(t.flatten().reshape(-1,1))[:,1]
 
-
     traj=radial_traj_3D.get_traj()
     traj_for_reconstruction=radial_traj_3D.get_traj_for_reconstruction()
 
-    traj_for_selection = np.array(groupby(traj,npoint,axis=1))
-    kdata_for_selection = np.array(groupby(kdata,npoint,axis=1))
+    perc=60
+    cond=calculate_condition_mvt_correction(traj,t,transf,perc)
 
-    traj_for_selection=traj_for_selection.reshape(shifts.shape[0],-1,3)
-    kdata_for_selection=kdata_for_selection.reshape(shifts.shape[0],-1)
-
-    shifts_reshaped=shifts.reshape(t.shape)
-    shifts_reshaped=shifts.reshape(m.paramDict["nb_rep"],ntimesteps,-1)
-
-    # traj_for_selection=traj_for_selection.reshape(t.shape+traj_for_selection.shape[-2:])
-    # traj_for_selection=traj_for_selection.reshape((m.paramDict["nb_rep"],ntimesteps,-1)+traj_for_selection.shape[-2:])
-    #
-    # kdata_for_selection=kdata_for_selection.reshape(t.shape+kdata_for_selection.shape[-1:])
-    # kdata_for_selection=kdata_for_selection.reshape((m.paramDict["nb_rep"],ntimesteps,-1)+kdata_for_selection.shape[-1:])
-
-
-    perc=50
-    threshold = np.percentile(shifts,perc)
-    cond = (shifts>np.percentile(shifts,perc))
-    indices=np.where(shifts_reshaped>np.percentile(shifts,perc))
-
-    traj_retained=traj_for_selection[cond,:,:]
-    kdata_retained=kdata_for_selection[cond,:]
-
-
-    dico_traj={}
-    dico_kdata={}
-    for i,index in enumerate(np.array(indices).T):
-        curr_slice=index[0]
-        ts=index[1]
-        curr_spoke=index[2]
-        if ts not in dico_traj:
-            dico_traj[ts]= []
-            dico_kdata[ts] =[]
-
-        #dico_traj[ts]=[*dico_traj[ts],*traj_retained[i]]
-        #dico_kdata[ts]=[*dico_kdata[ts],*kdata_retained[i]]
-
-        dico_traj[ts].append(traj_retained[i])
-        dico_kdata[ts].append(kdata_retained[i])
-
-    retained_timesteps = list(dico_traj.keys())
-    retained_timesteps.sort()
-
-    traj_retained_final=[]
-    kdata_retained_final=[]
-
-    # for ts in tqdm(range(len(retained_timesteps))):
-    #     traj_retained_final.append(np.array(dico_traj[ts]))
-    #     kdata_retained_final.append(np.array(dico_kdata[ts]))
-
-    for ts in tqdm(retained_timesteps):
-        traj_retained_final.append(np.array(dico_traj[ts]).flatten().reshape(-1,3))
-        kdata_retained_final.append(np.array(dico_kdata[ts]).flatten())
-
-    traj_retained_final=np.array(traj_retained_final)
-    kdata_retained_final=np.array(kdata_retained_final)
+    kdata_retained_final,traj_retained_final,retained_timesteps=correct_mvt_kdata(kdata,traj,cond,ntimesteps)
 
     size_initial = traj_for_reconstruction.size / 3
-    size_retained_final = traj_retained_final.size / 3
+    size_retained_final = np.concatenate(traj_retained_final).shape[0]
     ratio=size_retained_final/size_initial
     print("Compression factor : {}%".format((1-ratio)*100))
 
@@ -351,7 +300,7 @@ if not(load):
     radial_traj_3D_corrected=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_total_slices,undersampling_factor=undersampling_factor)
     radial_traj_3D_corrected.traj_for_reconstruction=traj_retained_final
 
-    volumes_corrected = simulate_radial_undersampled_images(kdata_retained_final,radial_traj_3D_corrected,m.image_size,density_adj=True,useGPU=useGPU_simulation)
+    volumes_corrected = simulate_radial_undersampled_images(kdata_retained_final,radial_traj_3D_corrected,m.image_size,density_adj=True,useGPU=False)
 
     with open("volumes_mvt_corrected__perc{}sl{}us{}_{}.pkl".format(perc,nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
         pickle.dump(volumes_corrected, file)
@@ -363,12 +312,18 @@ else:
 #mask = build_mask_single_image(kdata_retained_final,radial_traj_3D_corrected,m.image_size,useGPU=False)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
 
 
+
 if not(load_maps):
 
-    mask = build_mask_single_image(kdata, radial_traj_3D, m.image_size,
+    niter=2
+    mask = build_mask_single_image(kdata_retained_final, radial_traj_3D_corrected, m.image_size,
                                    useGPU=useGPU_simulation)  # Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj_3D_corrected, split=1000,
-                                 pca=True, threshold_pca=15, useGPU=True, log=False, useAdjPred=False, verbose=False)
+
+    mask = build_mask_single_image(kdata, radial_traj_3D, m.image_size,
+                                   useGPU=useGPU_simulation)
+
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj_3D, split=1000,
+                                 pca=True, threshold_pca=15, useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch, log=False, useAdjPred=False, verbose=False,gen_mode="other",movement_correction=True,cond=cond)
 
     all_maps_mvt_corrected=optimizer.search_patterns(dictfile,volumes_corrected,retained_timesteps=retained_timesteps)
     file = open( "all_maps_mvt_corrected_perc{}_sl{}us{}_iter{}_{}.pkl".format(perc,nb_total_slices,undersampling_factor,niter,m.name), "wb" )
@@ -378,7 +333,7 @@ if not(load_maps):
     file.close()
 
 else:
-    all_maps_mvt = pickle.load(
+    all_maps_mvt_corrected = pickle.load(
         open("all_maps_mvt_corrected_perc{}_sl{}us{}_iter{}_{}.pkl".format(perc,nb_total_slices,undersampling_factor,niter,m.name), "rb"))
 
 #plt.close("all")
@@ -389,8 +344,10 @@ for iter in all_maps_mvt_corrected.keys():
     regression_paramMaps_ROI(m.paramMap, all_maps_mvt_corrected[iter][0], m.mask > 0, all_maps_mvt_corrected[iter][1] > 0,maskROI=maskROI,
                              title="Slices{}_US{} movement corrected perc {} ROI Orig vs Iteration {}".format(nb_total_slices,undersampling_factor,perc,iter), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,save=True)
 
-
 size_slice = int(m.paramDict["nb_slices"]/m.paramDict["repeat_slice"])
+
+plot_evolution_params(m.paramMap,m.mask>0,all_maps_mvt_corrected,maskROI,save=False)
+
 
 iter =0
 sl = 1
@@ -402,6 +359,111 @@ compare_paramMaps_3D(m.paramMap,all_maps_mvt_corrected[iter][0],m.mask>0,all_map
 
 
 
+
+
+
+nb_rep = m.paramDict["nb_rep"]
+
+df=pd.DataFrame(columns=["rep","ts","spoke","kz","theta"],index=range(nb_rep*ntimesteps*nspoke))
+df["rep"]=np.repeat(list(range(nb_rep)),ntimesteps*nspoke)
+df["ts"]=list(np.repeat(list(range(ntimesteps)),(nspoke)))*nb_rep
+df["spoke"]=list(range(nspoke))*nb_rep*ntimesteps
+
+np.repeat(np.repeat(list(range(ntimesteps)),(nspoke)),nb_rep).shape
+traj_for_selection = np.array(groupby(traj, npoint, axis=1))
+kdata_for_selection = np.array(groupby(kdata, npoint, axis=1))
+traj_for_selection = traj_for_selection.reshape(cond.shape[0], -1, 3)
+
+df["kz"]=traj_for_selection[:,:,2][:,0]
+golden_angle = 111.246*np.pi/180
+df["theta"]=np.mod(np.arange(0,df.shape[0])*golden_angle,2*np.pi)
+
+indices = np.unravel_index(np.argwhere(cond).T,(nb_rep,ntimesteps,nspoke))
+retained_indices = np.squeeze(np.array(indices).T)
+
+df_retained=df.iloc[np.nonzero(cond)]
+kz_by_timestep=df_retained.groupby("ts")["kz"].unique()
+theta_by_rep_timestep=df_retained.groupby(["ts","rep"])["theta"].unique()
+
+df_retained=df_retained.join(kz_by_timestep,on="ts",rsuffix="_s")
+df_retained=df_retained.join(theta_by_rep_timestep,on=["ts","rep"],rsuffix="_s")
+
+#Theta weighting
+
+df_retained["theta_s"]=df_retained["theta_s"].apply(lambda x:np.concatenate([x,np.mod(x+np.pi,2*np.pi)]))
+df_retained["theta_weight"]=(df_retained.theta-df_retained["theta_s"]).abs().apply(lambda x:np.sort(x.remove(np.pi).remove(-no.pi))[1:3].mean())
+df_retained.loc[df_retained["theta_weight"].isna(),"theta_weight"]=1.0
+sum_weights=df_retained.groupby(["ts","rep"])["theta_weight"].sum()
+df_retained=df_retained.join(sum_weights,on=["ts","rep"],rsuffix="_sum")
+df_retained["theta_weight"]=df_retained["theta_weight"]/df_retained["theta_weight_sum"]
+
+
+#KZ weighting
+df_retained["kz_s"]=df_retained["kz_s"].apply(lambda x:np.concatenate([[-np.pi],x,[np.pi]]))
+df_retained["kz_weight"]=(df_retained.kz-df_retained["kz_s"]).abs().apply(lambda x:np.sort(x)[1:3].mean())
+df_retained.loc[df_retained["kz_weight"].isna(),"kz_weight"]=1.0
+sum_weights=df_retained.groupby(["ts"])["kz_weight"].unique().apply(lambda x:x.sum())
+df_retained=df_retained.join(sum_weights,on=["ts"],rsuffix="_sum")
+df_retained["kz_weight"]=df_retained["kz_weight"]/df_retained["kz_weight_sum"]
+
+ts=139
+print(df_retained[df_retained.ts==ts][["ts","rep","spoke","theta","theta_weight","kz"]])
+traj_to_plot =traj_retained_final[ts][traj_retained_final[ts][:,2]==traj_retained_final[ts][-1,2]]
+plt.scatter(x=traj_to_plot[:,0],y=traj_to_plot[:,1])
+
+kdata=np.array(kdata)
+traj=np.array(traj)
+
+nb_rep = cond.shape[0]/traj.shape[0]
+npoint = int(traj.shape[1] / nb_rep)
+nspoke = int(traj.shape[0] / ntimesteps)
+
+traj_for_selection = np.array(groupby(traj, npoint, axis=1))
+kdata_for_selection = np.array(groupby(kdata, npoint, axis=1))
+
+traj_for_selection = traj_for_selection.reshape(cond.shape[0], -1, 3)
+kdata_for_selection = kdata_for_selection.reshape(cond.shape[0], -1)
+
+indices = np.unravel_index(np.argwhere(cond).T,(nb_rep,ntimesteps,nspoke))
+retained_indices = np.squeeze(np.array(indices).T)
+
+=(df_retained.theta-df_retained["theta_s"]).abs().apply(lambda x:np.sort(x)[1:3])
+
+
+print(retained_indices.shape)
+
+traj_retained = traj_for_selection[cond, :, :]
+kdata_retained = kdata_for_selection[cond, :]
+
+
+golden_angle = 111.246*np.pi/180
+
+for i, index in enumerate(indices):
+    curr_slice = index[0]
+    ts = index[1]
+    curr_spoke = index[2]
+
+points=traj_retained_final[0][:,:2]
+vor = Voronoi(points)
+
+
+new_regions = []
+new_vertices = vor.vertices.tolist()
+
+center = vor.points.mean(axis=0)
+radius = vor.points.ptp().max()*2
+all_ridges = {}
+for (p1, p2), (v1, v2) in zip(vor.ridge_points, vor.ridge_vertices):
+    all_ridges.setdefault(p1, []).append((p2, v1, v2))
+    all_ridges.setdefault(p2, []).append((p1, v1, v2))
+all_ridges = {}
+
+points = np.array([[0, 0], [0, 1], [0, 2],
+                   [1, 0], [1, 1], [1, 2],
+                   [2, 0], [2, 1], [2, 2]])
+
+
+vor = Voronoi(points)
 
 #
 # import pycuda.autoinit
