@@ -37,14 +37,14 @@ useGPU_dictsearch=False
 load_maps=False
 save_maps = False
 
-type="KneePhantom"
+type="SquarePhantom"
 
 for ph_num in tqdm([1]):
     print("##################### {} : PHANTOM {} #########################".format(type,ph_num))
     file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(type,ph_num)
 
     ###### Building Map
-    m = MapFromFile("{}{}".format(type,ph_num), image_size=size, file=file_matlab_paramMap, rounding=True,gen_mode="other")
+    m = MapFromFile("{}{}".format(type,ph_num), image_size=size, file=file_matlab_paramMap, rounding=True,gen_mode="loop")
     m.buildParamMap()
 
     if not(load_maps):
@@ -55,29 +55,35 @@ for ph_num in tqdm([1]):
         #### Rebuilding the map from undersampled images
         ntimesteps=175
         nspoke=8
-        npoint = 2*m.images_series.shape[1]
+        npoint = 512
 
         radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint)
         kdata = m.generate_kdata(radial_traj,useGPU=useGPU_simulation)
 
+        #np.save("./data/{}/Phantom{}/kdata.npy".format(type,ph_num),kdata)
+
+        #volumes_kdatamatlab = simulate_radial_undersampled_images(kdata_matlab,radial_traj,m.image_size,density_adj=True,useGPU=useGPU_simulation)
         volumes = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=useGPU_simulation)
         mask = build_mask_single_image(kdata,radial_traj,m.image_size)
 
+        #np.save("./data/{}/Phantom{}/volumes.npy".format(type,ph_num),volumes)
+        #np.save("./data/{}/Phantom{}/volumes_kdatamatlab.npy".format(type, ph_num), volumes_kdatamatlab)
+
         # savemat("kdata_python.mat",{"KData":np.array(kdata)})
         # savemat("images_ideal_python.mat", {"ImgIdeal": np.array(m.images_series)})
-        # savemat("images_rebuilt.mat", {"Img": np.array(volumes)})
+        #savemat("images_rebuilt.mat", {"Img": np.array(volumes)})
 
 
         # ani=animate_images([np.mean(gp, axis=0) for gp in groupby(m.images_series, nspoke)],cmap="gray")
         # ani = animate_images(volumes, cmap="gray")
 
-        ani1,ani2 =animate_multiple_images([np.mean(gp, axis=0) for gp in groupby(m.images_series, nspoke)],volumes,cmap="gray")
+        #ani1,ani2 =animate_multiple_images([np.mean(gp, axis=0) for gp in groupby(m.images_series, nspoke)],volumes,cmap="gray")
 
 
         # kdata_noGPU = m.generate_kdata(radial_traj, useGPU=False)
         # volumes_noGPU = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=False)
 
-        optimizer = SimpleDictSearch(mask=mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=False,useGPU_simulation=False)
+        optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=False,useGPU_simulation=False)
         all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
         if save_maps:
@@ -91,11 +97,14 @@ for ph_num in tqdm([1]):
         with open("all_maps_{}{}.pkl".format(type,ph_num), 'rb') as f:
             all_maps_adj = pickle.load(f)
     #### Finding Matlab files
-    file_names=glob.glob("./data/{}/Phantom{}/MRFmap8SpokesSVD15*".format(type,ph_num))
-
+    #file_names=glob.glob("./data/{}/Phantom{}/MRFmap8SpokesSVD15*".format(type,ph_num))
+    file_names=["./data/{}/Phantom{}/MRFmaps_recoBMy.mat".format(type,ph_num)]
     all_maps_matlab = {}
     for file in file_names :
-        it = int(str.split(file,"_")[1][-1])
+        try:
+            it = int(str.split(file,"_")[1][-1])
+        except:
+            it=0
         map_rebuilt_Matlab=MapFromFile("MapRebuiltMatlab",image_size=size,file=file,rounding=False,file_type="Result")
         map_rebuilt_Matlab.buildParamMap()
         all_maps_matlab[it]=(map_rebuilt_Matlab.paramMap,map_rebuilt_Matlab.mask)
@@ -144,7 +153,7 @@ for ph_num in tqdm([1]):
 
 
     df_res = pd.merge(df_python,df_matlab,left_index=True,right_index=True)
-    df_res.to_csv("{} {} : Results Summary Python vs Matlab v2.csv".format(type,ph_num))
+    df_res.to_csv("{} {} : Results Summary Python vs Matlab v3.csv".format(type,ph_num))
 
 
 #### COMPARISON GPU vs NO GPU FFT Python
@@ -411,10 +420,13 @@ plt.plot(np.abs(kx_python[0,:]-kx_matlab[0,:]),label="Error on base spoke")
 
 
 ############ CHECK KDATA###############################
+type="SquarePhantom"
+ph_num=1
 kdata_matlab=loadmat(r"./data/SquarePhantom/Phantom1/KSpaceData_TestCS4.mat")["KSpaceData"]
 #kdata_matlab=loadmat(r"./data/KneePhantom/Phantom1/KSpaceData_TestCS4.mat")["KSpaceData"]
 kdata_matlab=np.moveaxis(kdata_matlab,-1,0)
-kdata=list(kdata_matlab)
+#kdata=list(kdata_matlab)
+kdata=np.load("./data/{}/Phantom{}/kdata.npy".format(type,ph_num))
 
 kdata_python=np.array(kdata)
 
@@ -439,6 +451,7 @@ diff_list=list(diff)
 del diff_list[index_max[0]]
 index_2nd = np.unravel_index(np.array(diff_list).argmax(),np.array(diff_list).shape)
 del diff_list[index_2nd[0]]
+index_3rd = np.unravel_index(np.array(diff_list).argmax(),np.array(diff_list).shape)
 diff_adj = np.array(diff_list)
 
 plt.figure()
@@ -446,8 +459,21 @@ plt.plot(diff_adj,label="diff without outlier python vs matlab kdata over timest
 plt.legend()
 
 plt.figure()
+plt.title("Kdata diff max ts {}".format(index_max[0]))
 plt.plot(np.abs(kdata_python[index_max[0],:]),label="kdata Python max diff")
 plt.plot(np.abs(kdata_matlab[index_max[0],:]),label="kdata Matlab max diff")
+plt.legend()
+
+plt.figure()
+plt.title("Kdata diff 3rd ts {}".format(index_3rd[0]))
+plt.plot(np.abs(kdata_python[index_3rd[0],:]),label="kdata Python 3rd diff")
+plt.plot(np.abs(kdata_matlab[index_3rd[0],:]),label="kdata Matlab 3rd diff")
+plt.legend()
+
+plt.figure()
+plt.title("Kdata diff 2nd ts {}".format(index_2nd[0]))
+plt.plot(np.abs(kdata_python[index_2nd[0],:]),label="kdata Python 2nd diff")
+plt.plot(np.abs(kdata_matlab[index_2nd[0],:]),label="kdata Matlab 2nd diff")
 plt.legend()
 
 timestep=0
@@ -462,14 +488,20 @@ kdata[0]
 kdata_matlab[0]
 ############ CHECK UNDERSAMPLED IMAGE###############################
 import h5py
+import numpy as np
+#import matplotlib.pyplot as plt
 
-f = h5py.File(r"./data/SquarePhantom/Phantom1/ImgSeries8Spokes_block_iter0.mat","r")
-f = h5py.File(r"./data/KneePhantom/Phantom1/ImgSeries8Spokes_block_iter0_2.mat","r")
+f = h5py.File(r"./data/SquarePhantom/Phantom1/ImgSeries8Spokes_block_iter0_new.mat","r")
+#f = h5py.File(r"./data/KneePhantom/Phantom1/ImgSeries8Spokes_block_iter0_2.mat","r")
 volumes_matlab = f.get('ImgSeries')
 volumes_matlab = np.squeeze(np.array(volumes_matlab).view("complex"))
+volumes_matlab=np.moveaxis(volumes_matlab,-1,1)
 
-volumes_matlab=loadmat(r"./data/KneePhantom/Phantom1/ImgSeries8Spokes_block.mat")["ImgSeries"]
-volumes_matlab=np.moveaxis(volumes_matlab,-1,0)
+#volumes_matlab=loadmat(r"./data/KneePhantom/Phantom1/ImgSeries8Spokes_block.mat")["ImgSeries"]
+#volumes_matlab=np.moveaxis(volumes_matlab,-1,0)
+
+volumes=np.load("./data/SquarePhantom/Phantom1/volumes.npy")
+
 
 timestep = 0
 
@@ -479,10 +511,113 @@ image_original=m.images_series[timestep,:,:]
 
 plt.figure()
 plt.imshow(np.abs(image_python))
+plt.title("Python rebuilt")
 
 plt.figure()
 plt.imshow(np.abs(image_original))
-
+plt.title("Original")
 
 plt.figure()
 plt.imshow(np.abs(image_matlab))
+plt.title("Matlab rebuilt")
+
+
+
+volumes_matlab_normalized = (volumes_matlab)/np.std(volumes_matlab,axis=0)
+volumes_python_normalized = (volumes)/np.std(volumes,axis=0)
+
+
+plt.close("all")
+pixel=(0,0)
+plt.plot(volumes_python_normalized[:,pixel[0],pixel[1]],label="Python")
+plt.plot(volumes_matlab_normalized[:,pixel[0],pixel[1]],label="Matlab")
+plt.legend()
+
+error=np.linalg.norm(np.abs(volumes_python_normalized-volumes_matlab_normalized),axis=0)
+error_angle = np.linalg.norm(np.angle(volumes_python_normalized-volumes_matlab_normalized),axis=0)
+index_max=np.unravel_index(np.argmax(error),error.shape)
+index_min=np.unravel_index(np.argmin(error),error.shape)
+
+index_max_angle=np.unravel_index(np.argmax(error_angle),error.shape)
+index_min_angle=np.unravel_index(np.argmin(error_angle),error.shape)
+
+
+plt.close("all")
+pixel=index_max
+plt.title("Diff simulation Amp python vs matlab pixel {}".format(np.round(pixel,2)))
+plt.plot(np.abs(volumes_python_normalized[:,pixel[0],pixel[1]]),label="Python on max diff")
+plt.plot(np.abs(volumes_matlab_normalized[:,pixel[0],pixel[1]]),label="Matlab on max diff")
+plt.legend()
+
+plt.figure()
+pixel=index_max_angle
+plt.title("Diff simulation Phase python vs matlab pixel {}".format(np.round(pixel,2)))
+plt.plot(np.angle(volumes_python_normalized[:,pixel[0],pixel[1]]),label="Python on max diff")
+plt.plot(np.angle(volumes_matlab_normalized[:,pixel[0],pixel[1]]),label="Matlab on max diff")
+plt.legend()
+
+np.angle(volumes_python_normalized[-10:,pixel[0],pixel[1]])
+
+plt.close("all")
+pixel=index_min
+plt.title("Diff simulation python vs matlab pixel {}".format(np.round(index_min,2)))
+plt.plot(volumes_python_normalized[:,pixel[0],pixel[1]],label="Python on min diff")
+plt.plot(volumes_matlab_normalized[:,pixel[0],pixel[1]],label="Matlab on min diff")
+plt.legend()
+
+plt.close("all")
+plt.title("Diff simulation python vs matlab pixel {}".format(np.round(index_max,2)))
+plt.plot(volumes[:,pixel[0],pixel[1]],label="Python on max diff")
+
+#savemat("images_matlab_rebuilt_normalized.mat", {"Img": np.array(volumes_matlab_normalized)})
+#savemat("images_python_rebuilt_normalized.mat", {"Img": np.array(volumes_python_normalized)})
+
+################OPTIM on MATLAB volumes################
+
+size=(256,256)
+
+all_maps_adj = optimizer.search_patterns(dictfile,volumes_kdatamatlab)
+all_maps_adj_pythondata=optimizer.search_patterns(dictfile,volumes)
+all_maps_adj_matlabdata=optimizer.search_patterns(dictfile,volumes_matlab)
+
+
+all_maps_matlab={}
+it=0
+file="./data/SquarePhantom/Phantom1/MRFmaps_recoBMy_ImgSeriesBMy.mat"
+map_rebuilt_Matlab=MapFromFile("MapRebuiltMatlab",image_size=size,file=file,rounding=False,file_type="Result")
+map_rebuilt_Matlab.buildParamMap()
+all_maps_matlab[it]=(map_rebuilt_Matlab.paramMap,map_rebuilt_Matlab.mask)
+
+
+maskROI= buildROImask_unique(m.paramMap)
+#maskROI=buildROImask(m.paramMap)
+# plt.close("all")
+for it in [0]:#all_maps_adj.keys():
+    regression_paramMaps_ROI(m.paramMap, all_maps_adj[it][0], m.mask > 0, all_maps_adj[it][1] > 0,maskROI=maskROI,
+                                 title="{} {} : Matlab Data - ROI Orig vs Python Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=False)
+
+# plt.close("all")
+for it in [0]:#all_maps_matlab.keys():
+    regression_paramMaps_ROI(m.paramMap, all_maps_matlab[it][0], m.mask > 0, all_maps_matlab[it][1] > 0,maskROI=maskROI,
+                                 title="{} {} : Matlab Data - ROI Orig vs Matlab Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=False)
+# plt.close("all")
+
+ani1,ani2=animate_multiple_images(volumes,volumes_matlab)
+
+all_maps_adj_pythondata=optimizer.search_patterns(dictfile,volumes_python_normalized)
+all_maps_adj_matlabdata=optimizer.search_patterns(dictfile,volumes_matlab_normalized)
+
+maskROI= buildROImask_unique(m.paramMap)
+
+for it in [0]:#all_maps_adj.keys():
+    regression_paramMaps_ROI(m.paramMap, all_maps_adj[it][0], m.mask > 0, all_maps_adj[it][1] > 0,maskROI=maskROI,
+                                 title="{} {} : Python Data from Matlab Kdata - ROI Orig vs Python Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True)
+
+
+for it in [0]:#all_maps_adj.keys():
+    regression_paramMaps_ROI(m.paramMap, all_maps_adj_pythondata[it][0], m.mask > 0, all_maps_adj_pythondata[it][1] > 0,maskROI=maskROI,
+                                 title="{} {} : Python Data - ROI Orig vs Python Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=False)
+
+for it in [0]:#all_maps_adj.keys():
+    regression_paramMaps_ROI(m.paramMap, all_maps_adj_matlabdata[it][0], m.mask > 0, all_maps_adj_matlabdata[it][1] > 0,maskROI=maskROI,
+                                 title="{} {} : Matlab Data - ROI Orig vs Python Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=False)

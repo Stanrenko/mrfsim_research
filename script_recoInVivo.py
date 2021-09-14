@@ -19,14 +19,13 @@ import TwixObject
 filename="./data/InVivo/meas_MID00060_FID24042_JAMBES_raFin_CLI.dat"
 filename="./data/InVivo/meas_MID00094_FID24076_JAMBES_raFin_CLI.dat"
 
-
 Parsed_File = rT.map_VBVD(filename)
 
 idx_ok = rT.detect_TwixImg(Parsed_File)
 start_time = time.time()
 RawData = Parsed_File[str(idx_ok)]["image"].readImage()
-test=Parsed_File["0"]["noise"].readImage()
-test = np.squeeze(test)
+#test=Parsed_File["0"]["noise"].readImage()
+#test = np.squeeze(test)
 
 elapsed_time = time.time()
 elapsed_time = elapsed_time - start_time
@@ -41,10 +40,14 @@ data=np.moveaxis(data,1,-1)
 slice=2
 kdata_all_channels=data[slice,:,:,:]
 
+
 nb_channels = kdata_all_channels.shape[0]
 
-ch=3
+ch=2
 plt.plot(np.abs(kdata_all_channels)[ch,:,:].T)
+plt.imshow(np.real(kdata_all_channels)[ch,:,:])
+plt.colorbar()
+
 
 index=np.argwhere(np.abs(kdata_all_channels)[ch,:,:].flatten()>1e-3)
 len(np.unique(np.squeeze(np.unravel_index(index,kdata_all_channels.shape[1:])[1])))
@@ -58,29 +61,79 @@ for c in range(nb_channels):
         list_channels.append(c)
 
 #### Rebuilding the map from undersampled images
-ntimesteps=175
-nspoke=int(kdata.shape[0]/ntimesteps)
-npoint = kdata.shape[1]
-image_size = (256,256)
 
+ntimesteps=175
+nb_allspokes = kdata_all_channels.shape[1]
+nspoke=int(nb_allspokes/ntimesteps)
+npoint = kdata_all_channels.shape[2]
+image_size = (256,256)
 
 radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint)
 
-volumes_all_channels = np.zeros((nb_channels,ntimesteps)+image_size)
+density = np.abs(np.linspace(-1, 1, npoint))
+kdata_all_channels = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata_all_channels]
+kdata_all_channels=np.array(kdata_all_channels).reshape((nb_channels,nb_allspokes,npoint))
 
 
 traj_all=radial_traj.get_traj().reshape(-1,2)
-kdata_all = np.array(kdata_all_channels[ch].flatten(),dtype=np.complex128)
+
+
+ch=1
+kdata=kdata_all_channels[ch]
+
+kdata_all = np.array(kdata.flatten(),dtype=np.complex128)
 volume_rebuilt = finufft.nufft2d1(traj_all[:,0], traj_all[:,1], kdata_all, image_size)
-plt.imshow(np.abs(volume_rebuilt))
+plt.imshow(np.abs(volume_rebuilt),cmap="gray")
 
 plt.imshow(np.abs(kdata_all))
 
+volume_rebuilt = finufft.nufft2d1(traj_all[:,0], traj_all[:,1], kdata_all, image_size)
 
+
+
+
+volume_rebuilt_all_channels = np.zeros((nb_channels,)+image_size,dtype=np.complex128)
+for i in tqdm(range(nb_channels)):
+    kdata=kdata_all_channels[i]
+    kdata_all = np.array(kdata.flatten(), dtype=np.complex128)
+    volume_rebuilt_all_channels[i]=finufft.nufft2d1(traj_all[:,0], traj_all[:,1], kdata_all, image_size)
+
+from mpl_toolkits.axes_grid1 import ImageGrid
+
+fig = plt.figure(figsize=(10, 10))
+grid = ImageGrid(fig, 111,  # similar to subplot(111)
+                 nrows_ncols=(6,6),  # creates 2x2 grid of axes
+                 axes_pad=0.1,  # pad between axes in inch.
+                 )
+
+list_images = list(np.abs(volume_rebuilt_all_channels))
+list_images.append(None)
+list_images.append(None)
+
+
+for ax, im in zip(grid, list_images):
+    # Iterating over the grid returns the Axes.
+    if im is None:
+        continue
+    else:
+        ax.imshow(im)
+
+plt.show()
+
+
+
+
+kdata_all_reshaped = kdata_all_channels.reshape(nb_channels,-1)
+volume_rebuilt_all_channels=finufft.nufft2d1(traj_all[:,0], traj_all[:,1], kdata_all_reshaped, image_size)
+
+
+
+
+volumes_all_channels = np.zeros((nb_channels,ntimesteps)+image_size)
 for i in tqdm(range(nb_channels)):
     volumes_all_channels[i]=simulate_radial_undersampled_images(kdata_all_channels[i],radial_traj,image_size,density_adj=True,useGPU=True)
 
-
+ani=animate_images(volumes_all_channels[ch])
 
 volumes = np.sqrt(np.sum(np.abs(volumes_all_channels)**2,axis=0))
 

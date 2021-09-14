@@ -1077,12 +1077,20 @@ def buildROImask_unique(map):
 
     return maskROI
 
-def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6):
+def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6,is_theta_z_adjusted=False):
 
     traj=trajectory.get_traj_for_reconstruction()
     npoint = trajectory.paramDict["npoint"]
     nspoke = trajectory.paramDict["nspoke"]
-    dtheta = np.pi / nspoke
+
+    if not(is_theta_z_adjusted):
+        dtheta = np.pi / nspoke
+        dz = 1/trajectory.paramDict["nb_rep"]
+
+    else:
+        dtheta=np.pi
+        dz = 1
+
 
     if not(len(kdata)==len(traj)):
         kdata=np.array(kdata).reshape(len(traj),-1)
@@ -1090,7 +1098,7 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
     if not(kdata[0].shape[0]==traj[0].shape[0]):
         raise ValueError("Incompatible Kdata and Trajectory shapes")
 
-    kdata = [k / (npoint * trajectory.paramDict["nb_rep"]) * dtheta for k in kdata]
+    kdata = [k / (npoint)*dz * dtheta for k in kdata]
 
 
 
@@ -1474,10 +1482,44 @@ def correct_mvt_kdata(kdata,traj,cond,ntimesteps):
     indices = np.unravel_index(np.argwhere(cond).T,(nb_rep,ntimesteps,nspoke))
     retained_indices = np.squeeze(np.array(indices).T)
 
-    print(retained_indices.shape)
-
     traj_retained = traj_for_selection[cond, :, :]
     kdata_retained = kdata_for_selection[cond, :]
+
+    ## DENSITY CORRECTION
+    df = pd.DataFrame(columns=["rep", "ts", "spoke", "kz", "theta"], index=range(nb_rep * ntimesteps * nspoke))
+    df["rep"] = np.repeat(list(range(nb_rep)), ntimesteps * nspoke)
+    df["ts"] = list(np.repeat(list(range(ntimesteps)), (nspoke))) * nb_rep
+    df["spoke"] = list(range(nspoke)) * nb_rep * ntimesteps
+
+    df["kz"] = traj_for_selection[:, :, 2][:, 0]
+    golden_angle = 111.246 * np.pi / 180
+    df["theta"] = np.array(list(np.mod(np.arange(0, int(df.shape[0] / nb_rep)) * golden_angle, np.pi)) * nb_rep)
+
+    df_retained = df.iloc[np.nonzero(cond)]
+    kz_by_timestep = df_retained.groupby("ts")["kz"].unique()
+    theta_by_rep_timestep = df_retained.groupby(["ts", "rep"])["theta"].unique()
+
+    df_retained = df_retained.join(kz_by_timestep, on="ts", rsuffix="_s")
+    df_retained = df_retained.join(theta_by_rep_timestep, on=["ts", "rep"], rsuffix="_s")
+
+    # Theta weighting
+    df_retained["theta_s"] = df_retained["theta_s"].apply(lambda x: np.sort(x))
+    df_retained["theta_s"] = df_retained["theta_s"].apply(
+        lambda x: np.concatenate([[x[-1] - np.pi], x, [x[0] + np.pi]]))
+    df_retained["theta_weight"] = (df_retained.theta - df_retained["theta_s"]).abs().apply(
+        lambda x: np.sort(x)[1:3].mean())
+    df_retained.loc[df_retained["theta_weight"].isna(), "theta_weight"] = 1.0
+    sum_weights = df_retained.groupby(["ts", "rep"])["theta_weight"].sum()
+    df_retained = df_retained.join(sum_weights, on=["ts", "rep"], rsuffix="_sum")
+    df_retained["theta_weight"] = df_retained["theta_weight"] / df_retained["theta_weight_sum"]
+
+    # KZ weighting
+    df_retained["kz_s"] = df_retained["kz_s"].apply(lambda x: np.concatenate([[-np.pi], x, [np.pi]]))
+    df_retained["kz_weight"] = (df_retained.kz - df_retained["kz_s"]).abs().apply(lambda x: np.sort(x)[1:3].mean())
+    df_retained.loc[df_retained["kz_weight"].isna(), "kz_weight"] = 1.0
+    sum_weights = df_retained.groupby(["ts"])["kz_weight"].unique().apply(lambda x: x.sum())
+    df_retained = df_retained.join(sum_weights, on=["ts"], rsuffix="_sum")
+    df_retained["kz_weight"] = df_retained["kz_weight"] / df_retained["kz_weight_sum"]
 
     dico_traj = {}
     dico_kdata = {}
@@ -1492,8 +1534,11 @@ def correct_mvt_kdata(kdata,traj,cond,ntimesteps):
         # dico_traj[ts]=[*dico_traj[ts],*traj_retained[i]]
         # dico_kdata[ts]=[*dico_kdata[ts],*kdata_retained[i]]
 
+        theta_weight=df_retained.iloc[i]["theta_weight"]
+        kz_weight = df_retained.iloc[i]["kz_weight"]
+
         dico_traj[ts].append(traj_retained[i])
-        dico_kdata[ts].append(kdata_retained[i])
+        dico_kdata[ts].append(kdata_retained[i]*theta_weight*kz_weight)
 
     retained_timesteps = list(dico_traj.keys())
     retained_timesteps.sort()

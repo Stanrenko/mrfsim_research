@@ -430,7 +430,7 @@ class SimpleDictSearch(Optimizer):
             else:
                 trajectory.traj_for_reconstruction=traj_retained_final
                 volumesi = simulate_radial_undersampled_images(kdatai, trajectory, images_pred.image_size,
-                                                               useGPU=useGPU_simulation, density_adj=True)
+                                                               useGPU=useGPU_simulation, density_adj=True,is_theta_z_adjusted=True)
 
             nans_volumes = np.argwhere(np.isnan(volumesi))
             if len(nans_volumes) > 0:

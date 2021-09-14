@@ -185,7 +185,7 @@ class TwixObject:
                 self.freeParam = np.zeros((4, self.allocSize), dtype=np.float32)
 
             self.memPos = np.concatenate(
-                (self.memPos, np.zeros(self.allocSize))).astype(int)
+                (self.memPos, np.zeros(self.allocSize))).astype(np.int64)
 
         # save mdh information about current line
 
@@ -501,7 +501,7 @@ class TwixObject:
 
             raw = np.reshape(raw, (new_size[1], new_size[0]))
             raw = (raw[:, 0] + 1j * raw[:, 1]).astype("complex64")
-            raw = np.reshape(raw, np.asarray(readShape, dtype=int))
+            raw = np.reshape(raw, np.asarray(readShape, dtype=int),order="F")
             raw = raw[np.asarray(readCut, dtype="i"), :]
 
             # SRY apply raw data correction if necessary
