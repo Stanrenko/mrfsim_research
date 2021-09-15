@@ -19,6 +19,8 @@ import itertools
 from sigpy.mri import spiral
 import cv2
 import pywt
+from mpl_toolkits.axes_grid1 import ImageGrid
+
 
 try:
     import pycuda
@@ -982,6 +984,59 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
 
     return mask
 
+def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None):
+    '''
+
+    :param kdata: shape nchannels*ntimesteps*point_per_timestep
+    :param trajectory: shape ntimesteps * point_per_timestep * ndim (2 or 3)
+    :param size: image size
+    :param density_adj:
+    :param eps:
+    :param b1: coil sensitivity map
+    :return: mask of size size
+    '''
+    mask = False
+    nbchannels = kdata.shape[0]
+    npoint=trajectory.paramDict["npoint"]
+    traj = trajectory.get_traj_for_reconstruction()
+
+    # kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
+
+    if density_adj:
+        density = np.abs(np.linspace(-1, 1, npoint))
+        kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+    # kdata = (normalize_image_series(np.array(kdata)))
+    kdata_all = np.concatenate(kdata)
+    kdata_all=kdata_all.reshape(nbchannels,-1)
+    traj_all = np.concatenate(list(traj))
+    if traj_all.shape[-1]==2: # For slices
+
+        volume_rebuilt_all_channels = finufft.nufft2d1(traj_all[:,0], traj_all[:,1], kdata_all, size)
+        if b1 is None:
+            volume_rebuilt= np.sqrt(np.sum(np.abs(volume_rebuilt_all_channels) ** 2, axis=0))
+        else:
+            volume_rebuilt = np.sum(b1.conj() * volume_rebuilt_all_channels, axis=0)
+            volume_rebuilt = volume_rebuilt / np.sum(np.abs(b1) ** 2)
+        unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
+        mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 7])
+        #mask = ndimage.binary_closing(mask, iterations=10)
+
+
+    elif traj_all.shape[-1]==3: # For volumes
+
+        volume_rebuilt_all_channels = finufft.nufft3d1(traj_all[:, 2],traj_all[:, 0], traj_all[:, 1], kdata_all, size)
+
+        if b1 is None:
+            volume_rebuilt= np.sqrt(np.sum(np.abs(volume_rebuilt_all_channels) ** 2, axis=0))
+        else:
+            volume_rebuilt = np.sum(b1.conj() * volume_rebuilt_all_channels, axis=0)
+            volume_rebuilt = volume_rebuilt / np.sum(np.abs(b1) ** 2)
+
+        unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
+        mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 7])
+        mask = ndimage.binary_closing(mask, iterations=3)
+
+    return mask
 
 def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):
     traj=trajectory.get_traj()
@@ -1078,7 +1133,7 @@ def buildROImask_unique(map):
     return maskROI
 
 def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6,is_theta_z_adjusted=False):
-
+#Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
     traj=trajectory.get_traj_for_reconstruction()
     npoint = trajectory.paramDict["npoint"]
     nspoke = trajectory.paramDict["nspoke"]
@@ -1200,6 +1255,59 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
     #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
 
     return np.array(images_series_rebuilt)
+
+def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=True,eps=1e-6,is_theta_z_adjusted=False,b1=None):
+#Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
+    traj=trajectory.get_traj_for_reconstruction()
+    npoint = trajectory.paramDict["npoint"]
+    nspoke = trajectory.paramDict["nspoke"]
+
+    if not(is_theta_z_adjusted):
+        dtheta = np.pi / nspoke
+        dz = 1/trajectory.paramDict["nb_rep"]
+
+    else:
+        dtheta=np.pi
+        dz = 1
+
+
+    if not(kdata.shape[1]==len(traj)):
+        kdata=np.array(kdata).reshape(kdata.shape[0],len(traj),-1)
+
+    kdata = kdata / (npoint)*dz * dtheta
+
+
+    if density_adj:
+        density = np.abs(np.linspace(-1, 1, npoint))
+        kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+
+    #kdata = (normalize_image_series(np.array(kdata)))
+
+    if traj[0].shape[-1] == 2:  # 2D
+
+        images_series_rebuilt = [
+                finufft.nufft2d1(t[:,0], t[:,1], kdata[:,i,:], size)
+                for i,t in tqdm(enumerate(traj))
+            ]
+
+    elif traj[0].shape[-1] == 3:  # 3D
+
+        images_series_rebuilt = [
+            finufft.nufft2d1(t[:,2],t[:, 0], t[:, 1], kdata[:, i, :], size)
+            for i, t in tqdm(enumerate(traj))
+        ]
+
+
+    #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+    images_series_rebuilt=np.array(images_series_rebuilt)
+    images_series_rebuilt=np.moveaxis(images_series_rebuilt,0,1)
+    if b1 is None:
+        return np.sqrt(np.sum(np.abs(images_series_rebuilt)**2,axis=0))
+    else:
+        b1 = np.expand_dims(b1, axis=1)
+        images_series_rebuilt = np.sum(b1.conj() * images_series_rebuilt, axis=0)
+        images_series_rebuilt = images_series_rebuilt / np.sum(np.abs(b1) ** 2)
+    return images_series_rebuilt
 
 def simulate_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6):
     # Strong Assumption : from one time step to the other, the sampling is just rotated, hence voronoi volumes can be calculated only once
@@ -1448,7 +1556,7 @@ def wavelet_denoising(image,retained_coef=0.99,level=3):
     image_cut = pywt.waverec2(coef_cut, 'db2')
     return image_cut
 
-def calculate_condition_mvt_correction(traj,t,transf,perc):
+def calculate_condition_mvt_correction(t,transf,perc):
 
 
     shifts = transf(t.flatten().reshape(-1, 1))[:, 1]
@@ -1558,3 +1666,54 @@ def correct_mvt_kdata(kdata,traj,cond,ntimesteps):
     kdata_retained_final = np.array(kdata_retained_final)
 
     return kdata_retained_final,traj_retained_final,retained_timesteps
+
+
+def plot_image_grid(list_images,nb_row_col,figsize=(10,10),title=""):
+    fig = plt.figure(figsize=figsize)
+    plt.title(title)
+    grid = ImageGrid(fig, 111,  # similar to subplot(111)
+                     nrows_ncols=nb_row_col,  # creates 2x2 grid of axes
+                     axes_pad=0.1,  # pad between axes in inch.
+                     )
+
+    for ax, im in zip(grid, list_images):
+        ax.imshow(im)
+
+    plt.show()
+
+def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256)):
+    traj_all = trajectory.get_traj()
+    traj_all=traj_all.reshape(-1,traj_all.shape[-1])
+    npoint = kdata.shape[-1]
+    center_res = int(npoint / 2 - 1)
+    kdata_for_sensi = np.zeros(kdata.shape, dtype=np.complex128)
+
+    if kdata.ndim==3:#Tried :: syntax but somehow it introduces errors in the allocation
+        kdata_for_sensi[:,:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:,:,
+                                                                                   (center_res - int(res / 2)):(
+                                                                                               center_res + int(
+                                                                                           res / 2))]
+    else:
+        kdata_for_sensi[:, :,:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:, :,:,
+                                                                                         (center_res - int(res / 2)):(
+                                                                                                 center_res + int(
+                                                                                             res / 2))]
+
+    kdata_all = kdata_for_sensi.reshape(np.prod(kdata.shape[:-2]), -1)
+    print(traj_all.shape)
+    print(kdata_all.shape)
+    coil_sensitivity = finufft.nufft2d1(traj_all[:, 0], traj_all[:, 1], kdata_all, image_size)
+    coil_sensitivity=coil_sensitivity.reshape(*kdata.shape[:-2],*image_size)
+    print(coil_sensitivity.shape)
+
+    if coil_sensitivity.ndim==3:
+        print("Ndim 3)")
+        b1 = coil_sensitivity / np.linalg.norm(coil_sensitivity, axis=0)
+        b1 = b1 / np.max(np.abs(b1.flatten()))
+    else:#first dimension contains slices
+        print("Ndim > 3")
+        b1=coil_sensitivity.copy()
+        for i in range(coil_sensitivity.shape[0]):
+            b1[i]=coil_sensitivity[i] / np.linalg.norm(coil_sensitivity[i], axis=0)
+            b1[i]=b1[i] / np.max(np.abs(b1[i].flatten()))
+    return b1
