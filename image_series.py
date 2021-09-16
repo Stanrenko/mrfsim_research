@@ -223,6 +223,12 @@ class ImageSeries(object):
         #water_series = images_series.copy()
         #fat_series = images_series.copy()
 
+        map_all_with_ff = np.append(map_all_on_mask, map_ff_on_mask.reshape(-1, 1), axis=-1)
+        #unique_values, index_unique = np.unique(map_all_with_ff, return_inverse=True,axis=0)
+
+        #images_in_mask_unique = np.array(
+        #    [mrfdict[tuple(pixel_params[:-1])][:, 0] * (1 - pixel_params[-1]) + mrfdict[tuple(
+        #        pixel_params[:-1])][:, 1] * (pixel_params[-1]) for pixel_params in unique_values])
         print("Building image series")
         images_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0] * (1 - map_ff_on_mask[i]) + mrfdict[tuple(
             pixel_params)][:, 1] * (map_ff_on_mask[i]) for (i, pixel_params) in enumerate(map_all_on_mask)])

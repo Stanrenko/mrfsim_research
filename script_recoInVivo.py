@@ -11,6 +11,9 @@ import time
 
 filename="./data/InVivo/meas_MID00060_FID24042_JAMBES_raFin_CLI.dat"
 filename="./data/InVivo/meas_MID00094_FID24076_JAMBES_raFin_CLI.dat"
+#CS
+filename="./data/InVivo/meas_MID00315_FID33126_JAMBES_raFin_CLI.dat"
+filename="./data/InVivo/meas_MID00333_FID33144_CUISSES_raFin_CLI.dat"
 
 Parsed_File = rT.map_VBVD(filename)
 

@@ -67,7 +67,7 @@ region_size=16 #size of the regions with uniform values for params in pixel numb
 size=(256,256)
 mask_reduction_factor=1/4
 
-nb_slices= 40
+nb_slices= 64
 nb_empty_slices=8
 undersampling_factor=4
 repeat_slice=8
@@ -204,7 +204,7 @@ move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
 
 m.add_movements([move])
 
-load=True
+load=False
 load_maps=False
 
 if not(load):
