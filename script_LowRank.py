@@ -76,6 +76,68 @@ else:
 
 volumes = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=useGPU_simulation)
 
+traj=radial_traj.get_traj_for_reconstruction()
+
+if not(len(kdata)==len(traj)):
+    kdata=np.array(kdata).reshape(len(traj),-1)
+
+lambd=100
+
+volumes_new = np.zeros((ntimesteps,)+size,dtype=np.complex128)
+maxiter=100
+
+for j,current_kdata in tqdm(enumerate(kdata)):
+
+    # if j==0:
+    #     m0 = np.zeros(size, dtype=np.complex128)
+    #     maxiter=100
+    # else:
+    #     maxiter=10
+
+    m0 = np.zeros(size, dtype=np.complex128)
+
+
+    current_traj=traj[j]
+    def J(m):
+        global current_traj
+        global current_kdata
+        global lambd
+        return J_fourier(m,current_traj,current_kdata) + lambd*J_sparse(m)
+
+    def grad_J(m):
+        global current_traj
+        global current_kdata
+        global lambd
+        return grad_J_fourier(m,current_traj,current_kdata) + lambd*grad_J_sparse(m)
+
+    m_opt = conjgrad(J, grad_J, m0, maxiter=maxiter)
+    volumes_new[j]=m_opt
+    m0 = m_opt
+
+ani=animate_multiple_images(volumes,volumes_new)
+
+
+mask = build_mask_single_image(kdata,radial_traj,m.image_size)
+
+optimizer = SimpleDictSearch(mask=mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=False,useGPU_simulation=False)
+all_maps_volumes=optimizer.search_patterns(dictfile,volumes)
+all_maps_volumes_new=optimizer.search_patterns(dictfile,volumes_new)
+
+map_rebuilt=all_maps_adj[0][0]
+
+maskROI= buildROImask_unique(m.paramMap)
+    #maskROI=buildROImask(m.paramMap)
+    # plt.close("all")
+for i,mp in enumerate([all_maps_volumes,all_maps_volumes_new]):#all_maps_adj.keys():
+    regression_paramMaps_ROI(m.paramMap, mp[0][0], m.mask > 0, mp[0][1] > 0,maskROI=maskROI,
+                                 title="CompSens Test : ROI Orig vs Python {}".format(i), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=8,save=False)
+
+
+
+
+
+
+
 x=np.arange(-int(m.image_size[0]/2),int(m.image_size[0]/2),1.0)#+0.5
 y=np.arange(-int(m.image_size[1]/2),int(m.image_size[1]/2),1.0)#+0.5
 x=np.array(x,dtype=np.float16)

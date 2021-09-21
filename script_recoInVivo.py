@@ -61,7 +61,6 @@ slice=2
 kdata_all_channels=kdata_all_channels_all_slices[slice,:,:,:]
 b1=b1_all_slices[slice]
 
-
 ##volumes for slice taking into account coil sensi
 
 volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels,radial_traj,image_size,b1=b1,density_adj=False)

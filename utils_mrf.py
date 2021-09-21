@@ -1717,3 +1717,90 @@ def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256)):
             b1[i]=coil_sensitivity[i] / np.linalg.norm(coil_sensitivity[i], axis=0)
             b1[i]=b1[i] / np.max(np.abs(b1[i].flatten()))
     return b1
+
+
+def J_fourier(m, traj, kdata):
+    Fu_m = finufft.nufft2d2(traj[:, 0], traj[:, 1], m)
+    return np.linalg.norm(Fu_m - kdata) ** 2
+
+
+def J_sparse(m, typ="db4", mode="periodization", mu=1e-6):
+    return N(coef_to_array(psi(m, typ, mode=mode)), mu)
+
+
+def grad_J_sparse(m, typ="db4", mode="periodization", mu=1e-6):
+    psi_m = coef_to_array(psi(m, typ, mode=mode))
+    return inv_psi(array_to_coef(W(psi_m, mu) * psi_m))
+
+
+def grad_J_fourier(m, traj, kdata, npoint=512, density_adj=True):
+    image_size = m.shape
+    Fu_m = finufft.nufft2d2(traj[:, 0], traj[:, 1], m)
+    kdata_error = Fu_m - kdata
+    if density_adj:
+        density = np.abs(np.linspace(-1, 1, npoint))
+        kdata_error = (np.reshape(kdata_error, (-1, npoint)) * density).flatten()
+    error_volume = finufft.nufft2d1(traj[:, 0], traj[:, 1], kdata_error, image_size)
+
+    return 2 * error_volume
+
+def psi(m,typ='db4',mode="periodization"):
+    coef = pywt.dwt2(m, typ,mode=mode)
+    return coef
+
+def inv_psi(c,typ='db4',mode="periodization"):
+    m = pywt.idwt2(c, typ,mode=mode)
+    return m
+
+def N(x,mu=1e-6):
+    return np.sum(np.sqrt(np.abs(x)**2+mu))
+
+def W(x,mu=1e-6):
+    return 1/np.sqrt(np.abs(x)**2+mu)
+
+def coef_to_array(c):
+    cA, (cH, cV, cD) = c
+    image_1 = np.concatenate([cA,cH],axis=1)
+    image_2 = np.concatenate([cV,cD],axis=1)
+    psi_m = np.concatenate([image_1,image_2],axis=0)
+    return psi_m
+
+def array_to_coef(array):
+    N = array.shape[0]
+    mid = int(N/2)
+    cA = array[:mid,:mid]
+    cH = array[:mid,mid:N]
+    cV = array[mid:N,:mid]
+    cD = array[mid:N,mid:N]
+    c=cA, (cH, cV, cD)
+    return c
+
+
+def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6):
+    '''
+    J : function from W (domain of m) to R
+    grad_J : function from W to W - gradient of J
+    m0 : initial value of m
+    '''
+    k=0
+    m=m0
+    g=grad_J(m)
+    d_m=-g
+    print(d_m)
+    #store = [m]
+    while (np.linalg.norm(g)>tolgrad)and(k<maxiter):
+        if k%10==0:
+            print(k)
+        t = 1
+        while(J(m+t*d_m)>J(m)+alpha*t*np.real(np.dot(g.flatten(),d_m.flatten()))):
+            t = beta*t
+
+        m = m + t*d_m
+        g_prev = g
+        g = grad_J(m)
+        gamma = np.linalg.norm(g)**2/np.linalg.norm(g_prev)**2
+        d_m = -g + gamma*d_m
+        k=k+1
+        #store.append(m)
+
+    return m
