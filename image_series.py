@@ -656,7 +656,7 @@ class ImageSeries(object):
             fig,axes=plt.subplots(1,len(keys),figsize=(len(keys)*figsize[0],figsize[1]))
             for i,k in enumerate(keys):
                 im=axes[i].imshow(makevol(self.paramMap[k],(self.mask>0)))
-                axes[i].set_title("{} Map {}".format(k,self.name))
+                axes[i].set_title("{} Map {}".format(k,self.name),fontsize=fontsize+2)
                 axes[i].tick_params(axis='x', labelsize=fontsize)
                 axes[i].tick_params(axis='y', labelsize=fontsize)
                 cbar=fig.colorbar(im, ax=axes[i],fraction=0.046, pad=0.04)
@@ -667,7 +667,7 @@ class ImageSeries(object):
             fig,ax=plt.subplots(figsize=figsize)
 
             im=ax.imshow(makevol(self.paramMap[key],(self.mask>0)))
-            ax.set_title("{} Map {}".format(key,self.name))
+            ax.set_title("{} Map {}".format(key,self.name),fontsize=fontsize+2)
             ax.tick_params(axis='x', labelsize=fontsize)
             ax.tick_params(axis='y', labelsize=fontsize)
             cbar=fig.colorbar(im, ax=ax,fraction=0.046, pad=0.04)

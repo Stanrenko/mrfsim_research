@@ -984,7 +984,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
 
     return mask
 
-def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None):
+def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=1/7):
     '''
 
     :param kdata: shape nchannels*ntimesteps*point_per_timestep
@@ -1018,7 +1018,7 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
             volume_rebuilt = np.sum(b1.conj() * volume_rebuilt_all_channels, axis=0)
             volume_rebuilt = volume_rebuilt / np.sum(np.abs(b1) ** 2)
         unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
-        mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 7])
+        mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique) *threshold_factor)])
         #mask = ndimage.binary_closing(mask, iterations=10)
 
 
@@ -1033,7 +1033,7 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
             volume_rebuilt = volume_rebuilt / np.sum(np.abs(b1) ** 2)
 
         unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
-        mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 7])
+        mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique) *threshold_factor)])
         mask = ndimage.binary_closing(mask, iterations=3)
 
     return mask
