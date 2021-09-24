@@ -1106,7 +1106,7 @@ def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):
                 plan.__del__()
     return kdata
 
-def buildROImask(map):
+def buildROImask(map,max_clusters=40):
     # ROI using KNN clustering
     if "wT1" not in map:
         raise ValueError("wT1 should be in the param Map to build the ROI")
@@ -1114,7 +1114,7 @@ def buildROImask(map):
     #print(map["wT1"].shape)
     orig_data = map["wT1"].reshape(-1, 1)
     data = orig_data + np.random.normal(size=orig_data.shape,scale=0.1)
-    model = KMeans(n_clusters=np.minimum(len(np.unique(orig_data)),40))
+    model = KMeans(n_clusters=np.minimum(len(np.unique(orig_data)),max_clusters))
     model.fit(data)
     groups = model.labels_ + 1
     #print(groups.shape)

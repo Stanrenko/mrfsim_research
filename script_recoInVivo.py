@@ -72,6 +72,7 @@ mask=build_mask_single_image_multichannel(kdata_all_channels,radial_traj,image_s
 ## Dict mapping
 
 dictfile = "mrf175_SimReco2.dict"
+dictfile = "mrf175_Dico2_Invivo.dict"
 
 
 with open("mrf_sequence.json") as f:
@@ -82,7 +83,7 @@ seq = T1MRF(**sequence_config)
 
 niter = 0
 
-optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
+optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other")
 all_maps=optimizer.search_patterns(dictfile,volumes_all)
 
 iter=0
@@ -99,6 +100,15 @@ map_Python.buildParamMap()
 map_Python.plotParamMap()
 map_Python.plotParamMap("ff")
 map_Python.plotParamMap("wT1")
+
+import pickle
+
+file_map = filename.split(".dat")[0]+"_MRF_map.pkl"
+file = open( file_map, "wb" )
+    # dump information to that file
+pickle.dump(all_maps, file)
+    # close the file
+file.close()
 
 #Matlab
 file_matlab = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/3_Comp_Matlab/InVivo/meas_MID00333_FID33144_CUISSES_raFin_CLI/Reco8/MRFmaps0.mat"
@@ -136,8 +146,50 @@ for k in maps_python_current_slice.keys():
 all_maps_python_current_slice=(maps_python_current_slice,mask_python_current_slice)
 
 
-compare_paramMaps(all_maps_matlab_current_slice[0],all_maps_python_current_slice[0],all_maps_matlab_current_slice[1]>0,all_maps_python_current_slice[1]>0,title1="Matlab",title2="Python",proj_on_mask1=True,adj_wT1=True)
+compare_paramMaps(all_maps_matlab_current_slice[0],all_maps_python_current_slice[0],all_maps_matlab_current_slice[1]>0,all_maps_python_current_slice[1]>0,title1="Matlab",title2="Python",proj_on_mask1=True,adj_wT1=True,save=True)
 
-maskROI=buildROImask(all_maps_python_current_slice[0])
+maskROI=buildROImask(all_maps_python_current_slice[0],max_clusters=10)
 
 df = metrics_paramMaps_ROI(all_maps_python_current_slice[0],all_maps_matlab_current_slice[0],all_maps_python_current_slice[1]>0,all_maps_matlab_current_slice[1]>0,maskROI=maskROI,adj_wT1=True,proj_on_mask1=True)
+
+regression_paramMaps_ROI(all_maps_python_current_slice[0],all_maps_matlab_current_slice[0],all_maps_python_current_slice[1]>0,all_maps_matlab_current_slice[1]>0,maskROI=maskROI)
+
+#regression_paramMaps(all_maps_python_current_slice[0],all_maps_matlab_current_slice[0],all_maps_python_current_slice[1]>0,all_maps_matlab_current_slice[1]>0,mode="Boxplot")
+
+# Check Dict
+dict_conf = "mrf_dictconf_SimReco2.json"
+file=loadmat(r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/2_Codes_info/Matlab/MRF_reco_linux/Dictionaries/Config_Dico_2D.mat")
+
+import h5py
+f = h5py.File(r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/2_Codes_info/Matlab/MRF_reco_linux/Dictionaries/Config_Dico_2D.mat","r")
+paramsH5py_Matlab=f.get("paramDico")
+
+paramMatlab = {}
+for k in paramDico_Matlab.keys():
+    paramMatlab[k]=np.array(paramsH5py_Matlab.get(k))
+
+paramDico_Matlab ={}
+
+paramDico_Matlab["water_T1"] =list(np.array(f[paramMatlab["T1"][0,0]]).flatten())
+paramDico_Matlab["water_T2"] =list(np.array(f[paramMatlab["T2"][0,0]]).flatten())
+paramDico_Matlab["fat_T1"] =list(np.array(f[paramMatlab["T1"][1,0]]).flatten())
+paramDico_Matlab["fat_T2"] =list(np.array(f[paramMatlab["T2"][1,0]]).flatten())
+paramDico_Matlab["ff"] = list(paramMatlab["FF"].flatten())
+paramDico_Matlab["B1_att"] = list(paramMatlab["FA"].flatten())
+paramDico_Matlab["delta_freqs"] = list(paramMatlab["Df"].flatten())
+paramDico_Matlab["fat_amp"] = list(paramMatlab["FatAmp"].flatten())
+paramDico_Matlab["fat_cshift"] = list(paramMatlab["FatShift"].flatten())
+
+with open(dict_conf) as file:
+    paramDico_Python = json.load(file)
+
+k = "water_T1"
+
+print(np.max(np.abs(np.array(paramDico_Matlab[k])-np.array(paramDico_Python[k]))))
+
+print(paramDico_Matlab[k])
+print(paramDico_Python[k])
+
+
+print(len(paramDico_Matlab[k]))
+print(len(paramDico_Python[k]))
