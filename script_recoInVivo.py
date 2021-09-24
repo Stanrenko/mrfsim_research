@@ -67,7 +67,7 @@ volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels,radial_
 
 ##MASK
 
-mask=build_mask_single_image_multichannel(kdata_all_channels,radial_traj,image_size,b1=b1,density_adj=False)
+mask=build_mask_single_image_multichannel(kdata_all_channels,radial_traj,image_size,b1=b1,density_adj=False,threshold_factor=1/15)
 
 ## Dict mapping
 
@@ -82,7 +82,7 @@ seq = T1MRF(**sequence_config)
 
 niter = 0
 
-optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other")
+optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
 all_maps=optimizer.search_patterns(dictfile,volumes_all)
 
 iter=0
@@ -93,10 +93,56 @@ keys_simu = list(map_rebuilt.keys())
 values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
 map_for_sim = dict(zip(keys_simu, values_simu))
 
-m = MapFromDict("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
-m.buildParamMap()
+map_Python = MapFromDict("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+map_Python.buildParamMap()
 
-m.plotParamMap()
-m.plotParamMap("ff")
-m.plotParamMap("wT1")
+map_Python.plotParamMap()
+map_Python.plotParamMap("ff")
+map_Python.plotParamMap("wT1")
 
+#Matlab
+file_matlab = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/3_Comp_Matlab/InVivo/meas_MID00333_FID33144_CUISSES_raFin_CLI/Reco8/MRFmaps0.mat"
+map_Matlab=MapFromFile("MapRebuiltMatlab",image_size=(5,256,256),file=file_matlab,rounding=False,file_type="Result")
+map_Matlab.buildParamMap()
+
+map_Matlab.plotParamMap("ff",sl=slice)
+
+all_maps_matlab_current_slice={}
+all_maps_matlab_current_slice[0]={}
+all_maps_matlab_current_slice[1]=map_Matlab.mask[slice,:,:]
+
+for k in map_Matlab.paramMap.keys():
+    current_volume = makevol(map_Matlab.paramMap[k],map_Matlab.mask>0)[slice,:,:]
+    all_maps_matlab_current_slice[0][k]=current_volume[all_maps_matlab_current_slice[1]>0]
+
+maps_python_current_slice=all_maps[0][0]
+mask_python_current_slice=all_maps[0][1]
+mask_python_current_slice=np.flip(np.rot90(mask_python_current_slice),axis=1)
+
+for k in maps_python_current_slice.keys():
+    current_volume = makevol(maps_python_current_slice[k],all_maps[0][1]>0)
+    plt.figure()
+    plt.imshow(current_volume)
+    current_volume = np.flip(np.rot90(current_volume),axis=1)
+    plt.figure()
+    plt.imshow(current_volume)
+
+    plt.figure()
+
+    maps_python_current_slice[k]=current_volume[mask_python_current_slice>0]
+
+
+
+all_maps_python_current_slice=(maps_python_current_slice,mask_python_current_slice)
+
+
+compare_paramMaps(all_maps_matlab_current_slice[0],all_maps_python_current_slice[0],all_maps_matlab_current_slice[1]>0,all_maps_python_current_slice[1]>0,title1="Matlab",title2="Python",proj_on_mask1=True,adj_wT1=True)
+
+
+
+maps = loadmat(file_matlab)["MRFmaps"]
+ff_map = maps["FF_map"][0][0]
+
+plt.close("all")
+plt.imshow(mask)
+plt.imshow(np.flip(mask))

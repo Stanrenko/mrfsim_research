@@ -1256,6 +1256,136 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
 
     return np.array(images_series_rebuilt)
 
+def simulate_radial_undersampled_images_density_optim(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6,is_theta_z_adjusted=False):
+#Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
+    traj=trajectory.get_traj_for_reconstruction()
+    npoint = trajectory.paramDict["npoint"]
+    nspoke = trajectory.paramDict["nspoke"]
+
+    if not(is_theta_z_adjusted):
+        dtheta = np.pi / nspoke
+        dz = 1/trajectory.paramDict["nb_rep"]
+
+    else:
+        dtheta=np.pi
+        dz = 1
+
+
+    if not(len(kdata)==len(traj)):
+        kdata=np.array(kdata).reshape(len(traj),-1)
+
+    if not(kdata[0].shape[0]==traj[0].shape[0]):
+        raise ValueError("Incompatible Kdata and Trajectory shapes")
+
+    kdata = [k / (npoint)*dz * dtheta for k in kdata]
+
+    if density_adj:
+        traj_left=np.moveaxis(traj,1,-1)
+        traj_right=np.expand_dims(traj_left,axis=-1)
+        traj_right=np.moveaxis(traj_right,2,-1)
+        traj_left = np.expand_dims(traj_left,axis=-1)
+        for ts in tqdm(range(traj.shape[0])):
+            density=traj_left[ts]-traj_right[ts]
+            density=np.sinc(density)**2
+            density=np.prod(density,axis=0)
+            density = 1/np.sum(density,axis=1)
+            kdata[ts] = kdata[ts]*density
+
+    #kdata = (normalize_image_series(np.array(kdata)))
+
+    if traj[0].shape[-1] == 2:  # 2D
+        if not(useGPU):
+            images_series_rebuilt = [
+                finufft.nufft2d1(t[:,0], t[:,1], s, size)
+                for t, s in zip(traj, kdata)
+            ]
+        else:
+            N1, N2 = size[0], size[1]
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+            fk_gpu = GPUArray((N1, N2), dtype=complex_dtype)
+            images_GPU = []
+            for i in list(range(len(kdata))):
+
+                c_retrieved = kdata[i]
+                kx = traj[i][:, 0]
+                ky = traj[i][:, 1]
+
+                # Cast to desired datatype.
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                c_retrieved = c_retrieved.astype(complex_dtype)
+
+                # Allocate memory for the uniform grid on the GPU.
+
+
+                # Initialize the plan and set the points.
+                plan = cufinufft(1, (N1, N2), 1, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kx), to_gpu(ky))
+
+                # Execute the plan, reading from the strengths array c and storing the
+                # result in fk_gpu.
+                plan.execute(to_gpu(c_retrieved), fk_gpu)
+
+                fk = np.squeeze(fk_gpu.get())
+                images_GPU.append(fk)
+                plan.__del__()
+            images_series_rebuilt=np.array(images_GPU)
+    elif traj[0].shape[-1] == 3:  # 3D
+        if not(useGPU):
+            #images_series_rebuilt = [
+            #    finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size)
+            #    for t, s in zip(traj, kdata)
+            #]
+
+            images_series_rebuilt=[]
+            for t,s in tqdm(zip(traj,kdata)):
+                images_series_rebuilt.append(finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size))
+
+        else:
+            N1, N2, N3 = size[0], size[1], size[2]
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+
+            images_GPU=[]
+            for i in list(range(len(kdata))):
+                fk_gpu = GPUArray((N1, N2, N3), dtype=complex_dtype)
+                c_retrieved = kdata[i]
+                kx = traj[i][ :, 0]
+                ky = traj[i][ :, 1]
+                kz = traj[i][ :, 2]
+
+
+                # Cast to desired datatype.
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                kz = kz.astype(dtype)
+                c_retrieved = c_retrieved.astype(complex_dtype)
+
+                # Allocate memory for the uniform grid on the GPU.
+                c_retrieved_gpu = to_gpu(c_retrieved)
+
+                # Initialize the plan and set the points.
+                plan = cufinufft(1, (N1, N2,N3), 1, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kz),to_gpu(kx), to_gpu(ky))
+
+                # Execute the plan, reading from the strengths array c and storing the
+                # result in fk_gpu.
+                plan.execute(c_retrieved_gpu, fk_gpu)
+
+                fk = np.squeeze(fk_gpu.get())
+
+                fk_gpu.gpudata.free()
+                c_retrieved_gpu.gpudata.free()
+
+                images_GPU.append(fk)
+                plan.__del__()
+            images_series_rebuilt = np.array(images_GPU)
+
+    #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+
+    return np.array(images_series_rebuilt)
+
 def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=True,eps=1e-6,is_theta_z_adjusted=False,b1=None):
 #Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
     traj=trajectory.get_traj_for_reconstruction()
@@ -1572,7 +1702,7 @@ def calculate_condition_mvt_correction(t,transf,perc):
     return cond
 
 
-def correct_mvt_kdata(kdata,traj,cond,ntimesteps):
+def correct_mvt_kdata(kdata,traj,cond,ntimesteps,density_adj=True):
 
     kdata=np.array(kdata)
     traj=np.array(traj)
@@ -1594,40 +1724,41 @@ def correct_mvt_kdata(kdata,traj,cond,ntimesteps):
     kdata_retained = kdata_for_selection[cond, :]
 
     ## DENSITY CORRECTION
-    df = pd.DataFrame(columns=["rep", "ts", "spoke", "kz", "theta"], index=range(nb_rep * ntimesteps * nspoke))
-    df["rep"] = np.repeat(list(range(nb_rep)), ntimesteps * nspoke)
-    df["ts"] = list(np.repeat(list(range(ntimesteps)), (nspoke))) * nb_rep
-    df["spoke"] = list(range(nspoke)) * nb_rep * ntimesteps
+    if density_adj:
+        df = pd.DataFrame(columns=["rep", "ts", "spoke", "kz", "theta"], index=range(nb_rep * ntimesteps * nspoke))
+        df["rep"] = np.repeat(list(range(nb_rep)), ntimesteps * nspoke)
+        df["ts"] = list(np.repeat(list(range(ntimesteps)), (nspoke))) * nb_rep
+        df["spoke"] = list(range(nspoke)) * nb_rep * ntimesteps
 
-    df["kz"] = traj_for_selection[:, :, 2][:, 0]
-    golden_angle = 111.246 * np.pi / 180
-    df["theta"] = np.array(list(np.mod(np.arange(0, int(df.shape[0] / nb_rep)) * golden_angle, np.pi)) * nb_rep)
+        df["kz"] = traj_for_selection[:, :, 2][:, 0]
+        golden_angle = 111.246 * np.pi / 180
+        df["theta"] = np.array(list(np.mod(np.arange(0, int(df.shape[0] / nb_rep)) * golden_angle, np.pi)) * nb_rep)
 
-    df_retained = df.iloc[np.nonzero(cond)]
-    kz_by_timestep = df_retained.groupby("ts")["kz"].unique()
-    theta_by_rep_timestep = df_retained.groupby(["ts", "rep"])["theta"].unique()
+        df_retained = df.iloc[np.nonzero(cond)]
+        kz_by_timestep = df_retained.groupby("ts")["kz"].unique()
+        theta_by_rep_timestep = df_retained.groupby(["ts", "rep"])["theta"].unique()
 
-    df_retained = df_retained.join(kz_by_timestep, on="ts", rsuffix="_s")
-    df_retained = df_retained.join(theta_by_rep_timestep, on=["ts", "rep"], rsuffix="_s")
+        df_retained = df_retained.join(kz_by_timestep, on="ts", rsuffix="_s")
+        df_retained = df_retained.join(theta_by_rep_timestep, on=["ts", "rep"], rsuffix="_s")
 
-    # Theta weighting
-    df_retained["theta_s"] = df_retained["theta_s"].apply(lambda x: np.sort(x))
-    df_retained["theta_s"] = df_retained["theta_s"].apply(
-        lambda x: np.concatenate([[x[-1] - np.pi], x, [x[0] + np.pi]]))
-    df_retained["theta_weight"] = (df_retained.theta - df_retained["theta_s"]).abs().apply(
-        lambda x: np.sort(x)[1:3].mean())
-    df_retained.loc[df_retained["theta_weight"].isna(), "theta_weight"] = 1.0
-    sum_weights = df_retained.groupby(["ts", "rep"])["theta_weight"].sum()
-    df_retained = df_retained.join(sum_weights, on=["ts", "rep"], rsuffix="_sum")
-    df_retained["theta_weight"] = df_retained["theta_weight"] / df_retained["theta_weight_sum"]
+        # Theta weighting
+        df_retained["theta_s"] = df_retained["theta_s"].apply(lambda x: np.sort(x))
+        df_retained["theta_s"] = df_retained["theta_s"].apply(
+            lambda x: np.concatenate([[x[-1] - np.pi], x, [x[0] + np.pi]]))
+        df_retained["theta_weight"] = (df_retained.theta - df_retained["theta_s"]).abs().apply(
+            lambda x: np.sort(x)[1:3].mean())
+        df_retained.loc[df_retained["theta_weight"].isna(), "theta_weight"] = 1.0
+        sum_weights = df_retained.groupby(["ts", "rep"])["theta_weight"].sum()
+        df_retained = df_retained.join(sum_weights, on=["ts", "rep"], rsuffix="_sum")
+        df_retained["theta_weight"] = df_retained["theta_weight"] / df_retained["theta_weight_sum"]
 
-    # KZ weighting
-    df_retained["kz_s"] = df_retained["kz_s"].apply(lambda x: np.concatenate([[-np.pi], x, [np.pi]]))
-    df_retained["kz_weight"] = (df_retained.kz - df_retained["kz_s"]).abs().apply(lambda x: np.sort(x)[1:3].mean())
-    df_retained.loc[df_retained["kz_weight"].isna(), "kz_weight"] = 1.0
-    sum_weights = df_retained.groupby(["ts"])["kz_weight"].unique().apply(lambda x: x.sum())
-    df_retained = df_retained.join(sum_weights, on=["ts"], rsuffix="_sum")
-    df_retained["kz_weight"] = df_retained["kz_weight"] / df_retained["kz_weight_sum"]
+        # KZ weighting
+        df_retained["kz_s"] = df_retained["kz_s"].apply(lambda x: np.concatenate([[-np.pi], x, [np.pi]]))
+        df_retained["kz_weight"] = (df_retained.kz - df_retained["kz_s"]).abs().apply(lambda x: np.sort(x)[1:3].mean())
+        df_retained.loc[df_retained["kz_weight"].isna(), "kz_weight"] = 1.0
+        sum_weights = df_retained.groupby(["ts"])["kz_weight"].unique().apply(lambda x: x.sum())
+        df_retained = df_retained.join(sum_weights, on=["ts"], rsuffix="_sum")
+        df_retained["kz_weight"] = df_retained["kz_weight"] / df_retained["kz_weight_sum"]
 
     dico_traj = {}
     dico_kdata = {}
@@ -1642,11 +1773,15 @@ def correct_mvt_kdata(kdata,traj,cond,ntimesteps):
         # dico_traj[ts]=[*dico_traj[ts],*traj_retained[i]]
         # dico_kdata[ts]=[*dico_kdata[ts],*kdata_retained[i]]
 
-        theta_weight=df_retained.iloc[i]["theta_weight"]
-        kz_weight = df_retained.iloc[i]["kz_weight"]
+
 
         dico_traj[ts].append(traj_retained[i])
-        dico_kdata[ts].append(kdata_retained[i]*theta_weight*kz_weight)
+        if density_adj:
+            theta_weight = df_retained.iloc[i]["theta_weight"]
+            kz_weight = df_retained.iloc[i]["kz_weight"]
+            dico_kdata[ts].append(kdata_retained[i]*theta_weight*kz_weight)
+        else:
+            dico_kdata[ts].append(kdata_retained[i])
 
     retained_timesteps = list(dico_traj.keys())
     retained_timesteps.sort()
@@ -1730,7 +1865,7 @@ def J_sparse(m, typ="db4", mode="periodization", mu=1e-6):
 
 def grad_J_sparse(m, typ="db4", mode="periodization", mu=1e-6):
     psi_m = coef_to_array(psi(m, typ, mode=mode))
-    return inv_psi(array_to_coef(W(psi_m, mu) * psi_m))
+    return np.real(inv_psi(array_to_coef(W(psi_m, mu) * psi_m)))
 
 
 def grad_J_fourier(m, traj, kdata, npoint=512, density_adj=True):
@@ -1742,7 +1877,7 @@ def grad_J_fourier(m, traj, kdata, npoint=512, density_adj=True):
         kdata_error = (np.reshape(kdata_error, (-1, npoint)) * density).flatten()
     error_volume = finufft.nufft2d1(traj[:, 0], traj[:, 1], kdata_error, image_size)
 
-    return 2 * error_volume
+    return 2 * np.real(error_volume)
 
 def psi(m,typ='db4',mode="periodization"):
     coef = pywt.dwt2(m, typ,mode=mode)

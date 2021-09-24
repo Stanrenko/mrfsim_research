@@ -650,31 +650,63 @@ class ImageSeries(object):
     def buildParamMap(self,mask=None):
         raise ValueError("should be implemented in child")
 
-    def plotParamMap(self,key=None,figsize=(5,5),fontsize=5,save=False):
-        if key is None:
-            keys=list(self.paramMap.keys())
-            fig,axes=plt.subplots(1,len(keys),figsize=(len(keys)*figsize[0],figsize[1]))
-            for i,k in enumerate(keys):
-                im=axes[i].imshow(makevol(self.paramMap[k],(self.mask>0)))
-                axes[i].set_title("{} Map {}".format(k,self.name),fontsize=fontsize+2)
-                axes[i].tick_params(axis='x', labelsize=fontsize)
-                axes[i].tick_params(axis='y', labelsize=fontsize)
-                cbar=fig.colorbar(im, ax=axes[i],fraction=0.046, pad=0.04)
+    def plotParamMap(self,key=None,figsize=(5,5),fontsize=5,save=False,sl=None):
+        if len(self.image_size)==2:
+            if key is None:
+                keys=list(self.paramMap.keys())
+                fig,axes=plt.subplots(1,len(keys),figsize=(len(keys)*figsize[0],figsize[1]))
+                for i,k in enumerate(keys):
+                    im=axes[i].imshow(makevol(self.paramMap[k],(self.mask>0)))
+                    axes[i].set_title("{} Map {}".format(k,self.name))
+                    axes[i].tick_params(axis='x', labelsize=fontsize)
+                    axes[i].tick_params(axis='y', labelsize=fontsize)
+                    cbar=fig.colorbar(im, ax=axes[i],fraction=0.046, pad=0.04)
+                    cbar.ax.tick_params(labelsize=fontsize)
+                if save:
+                    plt.savefig("./figures/ParamMap_{}_all".format(self.name, key))
+            else:
+                fig,ax=plt.subplots(figsize=figsize)
+
+                im=ax.imshow(makevol(self.paramMap[key],(self.mask>0)))
+                ax.set_title("{} Map {}".format(key,self.name))
+                ax.tick_params(axis='x', labelsize=fontsize)
+                ax.tick_params(axis='y', labelsize=fontsize)
+                cbar=fig.colorbar(im, ax=ax,fraction=0.046, pad=0.04)
                 cbar.ax.tick_params(labelsize=fontsize)
-            if save:
-                plt.savefig("./figures/ParamMap_{}_all".format(self.name, key))
-        else:
-            fig,ax=plt.subplots(figsize=figsize)
 
-            im=ax.imshow(makevol(self.paramMap[key],(self.mask>0)))
-            ax.set_title("{} Map {}".format(key,self.name),fontsize=fontsize+2)
-            ax.tick_params(axis='x', labelsize=fontsize)
-            ax.tick_params(axis='y', labelsize=fontsize)
-            cbar=fig.colorbar(im, ax=ax,fraction=0.046, pad=0.04)
-            cbar.ax.tick_params(labelsize=fontsize)
+                if save:
+                    plt.savefig("./figures/ParamMap_{}_{}".format(self.name,key))
+        elif len(self.image_size)==3:
+            if sl is None:
+                print("WARNING : plotting the paramMap for slice 0 as sl number was not provided")
+                sl=0
 
-            if save:
-                plt.savefig("./figures/ParamMap_{}_{}".format(self.name,key))
+            if key is None:
+                keys = list(self.paramMap.keys())
+                fig, axes = plt.subplots(1, len(keys), figsize=(len(keys) * figsize[0], figsize[1]))
+                for i, k in enumerate(keys):
+                    im = axes[i].imshow(makevol(self.paramMap[k], (self.mask > 0))[sl,:,:])
+                    axes[i].set_title("{} Map {} Slice {}".format(k, self.name,sl))
+                    axes[i].tick_params(axis='x', labelsize=fontsize)
+                    axes[i].tick_params(axis='y', labelsize=fontsize)
+                    cbar = fig.colorbar(im, ax=axes[i], fraction=0.046, pad=0.04)
+                    cbar.ax.tick_params(labelsize=fontsize)
+                if save:
+                    plt.savefig("./figures/ParamMap_{}_sl_{}_all".format(self.name, key,sl))
+            else:
+                fig, ax = plt.subplots(figsize=figsize)
+
+                im = ax.imshow(makevol(self.paramMap[key], (self.mask > 0))[sl,:,:])
+                ax.set_title("{} Map {}".format(key, self.name))
+                ax.tick_params(axis='x', labelsize=fontsize)
+                ax.tick_params(axis='y', labelsize=fontsize)
+                cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+                cbar.ax.tick_params(labelsize=fontsize)
+
+                if save:
+                    plt.savefig("./figures/ParamMap_{}_{}_sl_{}".format(self.name, key,sl))
+
+
 
 
         plt.show()
@@ -800,6 +832,12 @@ class MapFromFile(ImageSeries):
             map_df = matobj["Df_map"][0, 0]
             map_attB1 = matobj["FA_map"][0, 0]
             map_ff = matobj["FF_map"][0, 0]
+            if map_wT1.ndim==3:
+                map_wT1 = np.moveaxis(map_wT1,-1,0)
+                map_df = np.moveaxis(map_df, -1, 0)
+                map_attB1 = np.moveaxis(map_attB1, -1, 0)
+                map_ff = np.moveaxis(map_ff, -1, 0)
+
         else:
             raise ValueError("file_type can only be GroundTruth or Result")
 
@@ -818,8 +856,12 @@ class MapFromFile(ImageSeries):
             map_fT1 = mask*self.paramDict["default_fT1"]
         elif self.paramDict["file_type"] == "Result":
             map_fT1 = matobj["T1fat_map"][0][0]
+            if map_fT1.ndim==3:
+                map_fT1 = np.moveaxis(map_fT1, -1, 0)
         else:
             raise ValueError("file_type can only be GroundTruth or Result")
+
+
 
         map_all = np.stack((map_wT1, map_wT2, map_fT1, map_fT2, map_attB1, map_df, map_ff), axis=-1)
         map_all_on_mask = map_all[mask > 0]
@@ -963,7 +1005,7 @@ class ImageSeries3D(ImageSeries):
     #
     #     return np.array(images_series_rebuilt)
 
-    def plotParamMap(self, key, figsize=(5, 5), fontsize=5, interval=200):
+    def animParamMap(self, key, figsize=(5, 5), fontsize=5, interval=200):
 
         nb_frames = self.mask.shape[0]
         all_images = makevol(self.paramMap[key],self.mask>0)

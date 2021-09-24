@@ -123,8 +123,6 @@ optimizer = SimpleDictSearch(mask=mask,niter=0,seq=seq,trajectory=radial_traj,sp
 all_maps_volumes=optimizer.search_patterns(dictfile,volumes)
 all_maps_volumes_new=optimizer.search_patterns(dictfile,volumes_new)
 
-map_rebuilt=all_maps_adj[0][0]
-
 maskROI= buildROImask_unique(m.paramMap)
     #maskROI=buildROImask(m.paramMap)
     # plt.close("all")
@@ -134,8 +132,8 @@ for i,mp in enumerate([all_maps_volumes,all_maps_volumes_new]):#all_maps_adj.key
 
 
 
-
-
+compare_paramMaps(m.paramMap,all_maps_volumes_new[0][0],m.mask>0,all_maps_volumes_new[0][1]>0,adj_wT1=True,fat_threshold=0.7,title1="Orig",title2="Python Rebuilt CS",figsize=(30,10),fontsize=15,save=False,proj_on_mask1=True)
+compare_paramMaps(m.paramMap,all_maps_volumes[0][0],m.mask>0,all_maps_volumes[0][1]>0,adj_wT1=True,fat_threshold=0.7,title1="Orig",title2="Python Rebuilt ",figsize=(30,10),fontsize=15,save=False,proj_on_mask1=True)
 
 
 x=np.arange(-int(m.image_size[0]/2),int(m.image_size[0]/2),1.0)#+0.5

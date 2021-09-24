@@ -34,7 +34,7 @@ load=True
 if not(load_paramMap):
     load=False
 
-load_maps=False
+load_maps=True
 
 is_random=False
 
@@ -67,9 +67,9 @@ region_size=16 #size of the regions with uniform values for params in pixel numb
 size=(256,256)
 mask_reduction_factor=1/4
 
-nb_slices= 64
-nb_empty_slices=8
-undersampling_factor=4
+nb_slices= 32
+nb_empty_slices=4
+undersampling_factor=1
 repeat_slice=8
 
 gen_mode ="other"
@@ -147,7 +147,7 @@ mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=useGPU_s
 
 #plt.imshow(mask[m.paramDict["nb_empty_slices"]-5,:,:])
 
-niter=2
+niter=0
 
 optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj_3D,split=2000,pca=True,threshold_pca=20,useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch,log=False,useAdjPred=False,verbose=False,gen_mode=gen_mode)
 
@@ -233,7 +233,7 @@ else:
 
 mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=useGPU_simulation)#Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
 
-niter=2
+niter=0
 
 optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj_3D,split=2000,pca=True,threshold_pca=20,useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch,log=False,useAdjPred=False,verbose=False,gen_mode=gen_mode)
 
@@ -292,9 +292,11 @@ if not(load):
     traj_for_reconstruction=radial_traj_3D.get_traj_for_reconstruction()
 
     perc=60
-    cond=calculate_condition_mvt_correction(traj,t,transf,perc)
+    cond=calculate_condition_mvt_correction(t,transf,perc)
 
-    kdata_retained_final,traj_retained_final,retained_timesteps=correct_mvt_kdata(kdata,traj,cond,ntimesteps)
+    kdata_retained_final,traj_retained_final,retained_timesteps=correct_mvt_kdata(kdata,traj,cond,ntimesteps,density_adj=True)
+
+    kdata_retained_final=kdata_retained_final.astype(np.complex128)
 
     size_initial = traj_for_reconstruction.size / 3
     size_retained_final = np.concatenate(traj_retained_final).shape[0]
@@ -305,7 +307,7 @@ if not(load):
     radial_traj_3D_corrected=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_total_slices,undersampling_factor=undersampling_factor)
     radial_traj_3D_corrected.traj_for_reconstruction=traj_retained_final
 
-    volumes_corrected = simulate_radial_undersampled_images(kdata_retained_final,radial_traj_3D_corrected,m.image_size,density_adj=True,useGPU=False,is_theta_z_adjusted=True)
+    volumes_corrected = simulate_radial_undersampled_images(kdata_retained_final,radial_traj_3D_corrected,m.image_size,density_adj=False,useGPU=False,is_theta_z_adjusted=True)
 
     with open("volumes_mvt_corrected_perc{}sl{}us{}_{}.pkl".format(perc,nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
         pickle.dump(volumes_corrected, file)
@@ -320,7 +322,7 @@ else:
 
 if not(load_maps):
 
-    niter=2
+    niter=0
     mask = build_mask_single_image(kdata_retained_final, radial_traj_3D_corrected, m.image_size,
                                    useGPU=useGPU_simulation)  # Not great - lets make both simulate_radial_.. and build_mask_single.. have kdata as input and call generate_kdata upstream
 
