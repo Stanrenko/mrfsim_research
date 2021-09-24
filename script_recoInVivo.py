@@ -138,11 +138,6 @@ all_maps_python_current_slice=(maps_python_current_slice,mask_python_current_sli
 
 compare_paramMaps(all_maps_matlab_current_slice[0],all_maps_python_current_slice[0],all_maps_matlab_current_slice[1]>0,all_maps_python_current_slice[1]>0,title1="Matlab",title2="Python",proj_on_mask1=True,adj_wT1=True)
 
+maskROI=buildROImask(all_maps_python_current_slice[0])
 
-
-maps = loadmat(file_matlab)["MRFmaps"]
-ff_map = maps["FF_map"][0][0]
-
-plt.close("all")
-plt.imshow(mask)
-plt.imshow(np.flip(mask))
+df = metrics_paramMaps_ROI(all_maps_python_current_slice[0],all_maps_matlab_current_slice[0],all_maps_python_current_slice[1]>0,all_maps_matlab_current_slice[1]>0,maskROI=maskROI,adj_wT1=True,proj_on_mask1=True)
