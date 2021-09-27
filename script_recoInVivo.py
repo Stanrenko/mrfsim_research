@@ -110,6 +110,11 @@ pickle.dump(all_maps, file)
     # close the file
 file.close()
 
+#######################################################################################################################################################
+#Comp matlab vs Python
+
+
+
 #Matlab
 file_matlab = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/3_Comp_Matlab/InVivo/meas_MID00333_FID33144_CUISSES_raFin_CLI/Reco8/MRFmaps0.mat"
 map_Matlab=MapFromFile("MapRebuiltMatlab",image_size=(5,256,256),file=file_matlab,rounding=False,file_type="Result")
