@@ -550,9 +550,14 @@ def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression 
 
 def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, title="Maps regression plots",
                              fontsize=5, adj_wT1=False, fat_threshold=0.8, mode="Standard", proj_on_mask1=True,plt_std=False,
-                             figsize=(15, 10),save=False):
+                             figsize=(15, 10),save=False,kept_keys=None):
+
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
+    if kept_keys is not None:
+        keys_1 = keys_1 & set(kept_keys)
+        keys_2 = keys_2 & set(kept_keys)
+
     nb_keys = len(keys_1 & keys_2)
 
     if maskROI is None:
@@ -560,7 +565,7 @@ def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, t
 
     fig, ax = plt.subplots(1, nb_keys, figsize=figsize)
 
-    for i, k in enumerate(keys_1 & keys_2):
+    for i, k in enumerate(sorted(keys_1 & keys_2)):
         obs = map1[k]
         pred = map2[k]
 

@@ -32,9 +32,9 @@ seq = T1MRF(**sequence_config)
 
 size=(256,256)
 useGPU_simulation=False
-useGPU_dictsearch=False
+useGPU_dictsearch=True
 
-load_maps=False
+load_maps=True
 save_maps = False
 
 type="SquarePhantom"
@@ -44,7 +44,7 @@ for ph_num in tqdm([1]):
     file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(type,ph_num)
 
     ###### Building Map
-    m = MapFromFile("{}{}".format(type,ph_num), image_size=size, file=file_matlab_paramMap, rounding=True,gen_mode="loop")
+    m = MapFromFile("{}{}".format(type,ph_num), image_size=size, file=file_matlab_paramMap, rounding=True,gen_mode="other")
     m.buildParamMap()
 
     if not(load_maps):
@@ -97,8 +97,8 @@ for ph_num in tqdm([1]):
         with open("all_maps_{}{}.pkl".format(type,ph_num), 'rb') as f:
             all_maps_adj = pickle.load(f)
     #### Finding Matlab files
-    #file_names=glob.glob("./data/{}/Phantom{}/MRFmap8SpokesSVD15*".format(type,ph_num))
-    file_names=["./data/{}/Phantom{}/MRFmaps_recoBMy.mat".format(type,ph_num)]
+    file_names=glob.glob("./data/{}/Phantom{}/MRFmap8SpokesSVD15*".format(type,ph_num))
+    #file_names=["./data/{}/Phantom{}/MRFmaps_recoBMy.mat".format(type,ph_num)]
     all_maps_matlab = {}
     for file in file_names :
         try:
@@ -115,25 +115,25 @@ for ph_num in tqdm([1]):
     # plt.close("all")
     for it in [0]:#all_maps_adj.keys():
         regression_paramMaps_ROI(m.paramMap, all_maps_adj[it][0], m.mask > 0, all_maps_adj[it][1] > 0,maskROI=maskROI,
-                                 title="{} {} : ROI Orig vs Python Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=8,save=False)
+                                 title="{} {} : Python End to End Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=False,kept_keys=["attB1","df","wT1","ff"])
 
     # plt.close("all")
     for it in [0]:#all_maps_matlab.keys():
         regression_paramMaps_ROI(m.paramMap, all_maps_matlab[it][0], m.mask > 0, all_maps_matlab[it][1] > 0,maskROI=maskROI,
-                                 title="{} {} : ROI Orig vs Matlab Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=8,save=False)
+                                 title="{} {} : Matlab End to End Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=False,kept_keys=["attB1","df","wT1","ff"])
     # plt.close("all")
 
     plot_evolution_params(m.paramMap,m.mask>0,all_maps_adj,maskROI=maskROI,metric="R2",title="{} {} : Python Evolution v2".format(type,ph_num),fontsize=10,adj_wT1=True,save=True)
     plot_evolution_params(m.paramMap,m.mask>0,all_maps_matlab,maskROI=maskROI,metric="R2",title="{} {} : Matlab Evolution v2".format(type,ph_num),fontsize=10,adj_wT1=True,save=True)
     #plt.close("all")
 
-    # for it in all_maps_adj.keys():
-    #     compare_paramMaps(m.paramMap,all_maps_adj[it][0],m.mask>0,all_maps_adj[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="{} {} Orig".format(type,ph_num),title2="Python Rebuilt It {}".format(it),figsize=(30,10),fontsize=15,save=True,proj_on_mask1=True)
-    #     plt.close("all")
-    #
-    # for it in all_maps_matlab.keys():
-    #     compare_paramMaps(m.paramMap,all_maps_matlab[it][0],m.mask>0,all_maps_matlab[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="{} {} Orig".format(type,ph_num),title2="Matlab Rebuilt It {}".format(it),figsize=(30,10),fontsize=15,save=True,proj_on_mask1=True)
-    #     plt.close("all")
+    for it in [0]:
+        compare_paramMaps(m.paramMap,all_maps_adj[it][0],m.mask>0,all_maps_adj[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="{} {} Orig".format(type,ph_num),title2="Python Rebuilt It {}".format(it),figsize=(30,10),fontsize=15,save=False,proj_on_mask1=True)
+        #plt.close("all")
+
+    for it in [0,4]:
+        compare_paramMaps(m.paramMap,all_maps_matlab[it][0],m.mask>0,all_maps_matlab[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="{} {} Orig".format(type,ph_num),title2="Matlab Rebuilt It {}".format(it),figsize=(30,10),fontsize=15,save=False,proj_on_mask1=True)
+        #plt.close("all")
 
     df_python = pd.DataFrame()
     for it in [0,5,10]:

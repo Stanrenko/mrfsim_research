@@ -828,10 +828,17 @@ class MapFromFile(ImageSeries):
             map_ff = matobj["FF"][0, 0]
         elif self.paramDict["file_type"]=="Result":
             matobj = loadmat(self.paramDict["file"])["MRFmaps"]
-            map_wT1 = matobj["T1water_map"][0][0]
-            map_df = matobj["Df_map"][0, 0]
-            map_attB1 = matobj["FA_map"][0, 0]
-            map_ff = matobj["FF_map"][0, 0]
+            try:
+                map_wT1 = matobj["T1water"][0][0]
+                map_df = matobj["Df"][0, 0]
+                map_attB1 = matobj["B1"][0, 0]
+                map_ff = matobj["FF"][0, 0]
+            except:
+                map_wT1 = matobj["T1water_map"][0][0]
+                map_df = matobj["Df_map"][0, 0]
+                map_attB1 = matobj["FA_map"][0, 0]
+                map_ff = matobj["FF_map"][0, 0]
+
             if map_wT1.ndim==3:
                 map_wT1 = np.moveaxis(map_wT1,-1,0)
                 map_df = np.moveaxis(map_df, -1, 0)
@@ -855,7 +862,11 @@ class MapFromFile(ImageSeries):
         if self.paramDict["file_type"]=="GroundTruth":
             map_fT1 = mask*self.paramDict["default_fT1"]
         elif self.paramDict["file_type"] == "Result":
-            map_fT1 = matobj["T1fat_map"][0][0]
+            try:
+                map_fT1 = matobj["T1fat"][0][0]
+            except:
+                map_fT1 = matobj["T1fat_map"][0][0]
+
             if map_fT1.ndim==3:
                 map_fT1 = np.moveaxis(map_fT1, -1, 0)
         else:
