@@ -191,12 +191,12 @@ class SimpleDictSearch(Optimizer):
                         transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
 
                         sig_ws_all_unique = np.matmul(transformed_array_water_unique,
-                                                      transformed_all_signals_water[:, j_signal:j_signal_next].conj()).real
+                                                      transformed_all_signals_water[:, j_signal:j_signal_next].conj())
                         sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
-                                                      transformed_all_signals_fat[:, j_signal:j_signal_next].conj()).real
+                                                      transformed_all_signals_fat[:, j_signal:j_signal_next].conj())
                     else:
-                        sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, j_signal:j_signal_next].conj()).real
-                        sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, j_signal:j_signal_next].conj()).real
+                        sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, j_signal:j_signal_next].conj())
+                        sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, j_signal:j_signal_next].conj())
 
 
                 else:
@@ -210,16 +210,16 @@ class SimpleDictSearch(Optimizer):
 
                         sig_ws_all_unique = (cp.matmul(cp.asarray(transformed_array_water_unique),
                                                       cp.asarray(transformed_all_signals_water)[:,
-                                                      j_signal:j_signal_next].conj()).real).get()
+                                                      j_signal:j_signal_next].conj())).get()
                         sig_fs_all_unique = (cp.matmul(cp.asarray(transformed_array_fat_unique),
                                                       cp.asarray(transformed_all_signals_fat)[:,
-                                                      j_signal:j_signal_next].conj()).real).get()
+                                                      j_signal:j_signal_next].conj())).get()
                     else:
 
                         sig_ws_all_unique = (cp.matmul(cp.asarray(array_water_unique),
-                                                      cp.asarray(all_signals_unique)[:, j_signal:j_signal_next].conj()).real).get()
+                                                      cp.asarray(all_signals_unique)[:, j_signal:j_signal_next].conj())).get()
                         sig_fs_all_unique = (cp.matmul(cp.asarray(array_fat_unique),
-                                                      cp.asarray(all_signals_unique)[:, j_signal:j_signal_next].conj()).real).get()
+                                                      cp.asarray(all_signals_unique)[:, j_signal:j_signal_next].conj())).get()
 
 
                 if self.verbose:
@@ -230,8 +230,13 @@ class SimpleDictSearch(Optimizer):
                     print("Extracting all sig_ws and sig_fs")
                     start = datetime.now()
 
-                current_sig_ws = sig_ws_all_unique[index_water_unique, :]
-                current_sig_fs = sig_fs_all_unique[index_fat_unique, :]
+
+
+                current_sig_ws_for_phase = sig_ws_all_unique[index_water_unique, :]
+                current_sig_fs_for_phase = sig_fs_all_unique[index_fat_unique, :]
+
+                current_sig_ws = current_sig_ws_for_phase.real
+                current_sig_fs = current_sig_fs_for_phase.real
 
                 if self.verbose:
                     end = datetime.now()
@@ -247,12 +252,22 @@ class SimpleDictSearch(Optimizer):
 
                     start = datetime.now()
                     current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
+
+                    phase_adj=np.angle((1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase)
+
+
                     end=datetime.now()
                     print(end-start)
 
                     # alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
                     print("Calculating cost for all signals")
                     start = datetime.now()
+                    current_sig_ws = (current_sig_ws_for_phase*np.exp(-1j*phase_adj)).real
+                    current_sig_fs = (current_sig_fs_for_phase * np.exp(-1j * phase_adj)).real
+
+                    del current_sig_ws_for_phase
+                    del current_sig_fs_for_phase
+
                     J_all = ((
                                      1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
                         (
@@ -264,6 +279,9 @@ class SimpleDictSearch(Optimizer):
                     if verbose:
                         print("Calculating alpha optim and flooring")
                         start = datetime.now()
+
+                    current_sig_ws_for_phase = cp.asarray(current_sig_ws_for_phase)
+                    current_sig_fs_for_phase = cp.asarray(current_sig_fs_for_phase)
 
                     current_sig_ws=cp.asarray(current_sig_ws)
                     current_sig_fs=cp.asarray(current_sig_fs)
@@ -279,6 +297,9 @@ class SimpleDictSearch(Optimizer):
                         start = datetime.now()
                     current_alpha_all_unique = cp.minimum(cp.maximum(current_alpha_all_unique, 0.0), 1.0)
 
+                    phase_adj = np.angle((
+                                                     1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase)
+
                     if verbose:
                         end = datetime.now()
                         print(end - start)
@@ -287,6 +308,10 @@ class SimpleDictSearch(Optimizer):
                     if verbose:
                         print("Calculating cost for all signals")
                         start = datetime.now()
+
+                    current_sig_ws = (current_sig_ws_for_phase * np.exp(-1j * phase_adj)).real
+                    current_sig_fs = (current_sig_fs_for_phase * np.exp(-1j * phase_adj)).real
+
                     J_all = ((
                                      1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
                         (
