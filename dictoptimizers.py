@@ -235,8 +235,8 @@ class SimpleDictSearch(Optimizer):
                 current_sig_ws_for_phase = sig_ws_all_unique[index_water_unique, :]
                 current_sig_fs_for_phase = sig_fs_all_unique[index_fat_unique, :]
 
-                current_sig_ws = current_sig_ws_for_phase.real
-                current_sig_fs = current_sig_fs_for_phase.real
+                #current_sig_ws = current_sig_ws_for_phase.real
+                #current_sig_fs = current_sig_fs_for_phase.real
 
                 if self.verbose:
                     end = datetime.now()
@@ -244,11 +244,46 @@ class SimpleDictSearch(Optimizer):
 
                 if not(useGPU_dictsearch):
                     print("Calculating alpha optim and flooring")
-                    start = datetime.now()
-                    current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
-                            (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
-                    end=datetime.now()
-                    print(end-start)
+                    # start = datetime.now()
+                    # current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
+                    #         (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
+                    # end=datetime.now()
+                    # print(end-start)
+
+                    ### Testing direct phase solving
+                    A = sig_wf*current_sig_ws_for_phase-var_w*current_sig_fs_for_phase
+                    B = (current_sig_ws_for_phase + current_sig_fs_for_phase) * sig_wf - var_w * current_sig_fs_for_phase - var_f * current_sig_ws_for_phase
+                    beta = B.real*current_sig_fs_for_phase.real-B.imag*current_sig_fs_for_phase.imag
+                    delta = B.imag*current_sig_ws_for_phase.imag - B.real*current_sig_ws_for_phase.real
+                    gamma=A.real*current_sig_ws_for_phase.real - A.imag*current_sig_ws_for_phase.imag
+                    nu = A.imag*current_sig_fs_for_phase.imag-A.real*current_sig_fs_for_phase.real
+
+                    a = beta + delta
+                    b = gamma-delta+nu
+                    c=-gamma
+
+                    del beta
+                    del delta
+                    del gamma
+                    del nu
+
+
+                    discr = b**2-4*a*c
+                    alpha1 = (-b + np.sqrt(discr)) / (2 * a)
+                    alpha2 = (-b - np.sqrt(discr)) / (2 * a)
+
+                    del a
+                    del b
+                    del c
+                    del discr
+
+                    current_alpha_all_unique=(1 * (alpha1 >= 0) & (alpha1 <= 1)) * alpha1 + (1 - (1*(alpha1 >= 0) & (alpha1 <= 1))) * alpha2
+
+                    #current_alpha_all_unique_2 = (1 * (alpha2 >= 0) & (alpha2 <= 1)) * alpha2 + (
+                    #            1 - (1*(alpha2 >= 0) & (alpha2 <= 1))) * alpha1
+
+                    del alpha1
+                    del alpha2
 
                     start = datetime.now()
                     current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
@@ -265,6 +300,7 @@ class SimpleDictSearch(Optimizer):
                     current_sig_ws = (current_sig_ws_for_phase*np.exp(-1j*phase_adj)).real
                     current_sig_fs = (current_sig_fs_for_phase * np.exp(-1j * phase_adj)).real
 
+                    del phase_adj
                     del current_sig_ws_for_phase
                     del current_sig_fs_for_phase
 

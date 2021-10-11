@@ -16,6 +16,8 @@ filename="./data/InVivo/meas_MID00094_FID24076_JAMBES_raFin_CLI.dat"
 filename="./data/InVivo/meas_MID00315_FID33126_JAMBES_raFin_CLI.dat"
 filename="./data/InVivo/meas_MID00333_FID33144_CUISSES_raFin_CLI.dat"
 
+save_volume=True
+
 Parsed_File = rT.map_VBVD(filename)
 
 idx_ok = rT.detect_TwixImg(Parsed_File)
@@ -68,6 +70,15 @@ volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels,radial_
 if (save_volume):
     np.save(filename.split(".dat")[0] + "_volumes.npy",volumes_all)
 
+#radial_traj_allspokes=Radial(ntimesteps=1,nspoke=1400,npoint=npoint)
+
+# volumes_all_spokes=simulate_radial_undersampled_images_multi(kdata_all_channels,radial_traj_allspokes,image_size,b1=b1,density_adj=False)
+# plt.figure()
+# plt.title("Approximation : rebuilt image all data")
+# plt.imshow(np.abs(np.squeeze(volumes_all_spokes)),cmap="gray")
+
+#ani = animate_images(volumes_all)
+
 ##MASK
 
 mask=build_mask_single_image_multichannel(kdata_all_channels,radial_traj,image_size,b1=b1,density_adj=False,threshold_factor=1/15)
@@ -85,13 +96,13 @@ with open("mrf_sequence.json") as f:
 seq = T1MRF(**sequence_config)
 
 
-load_map=True
+load_map=False
 save_map=False
 
 if not(load_map):
     niter = 0
 
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=250,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=250,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other")
     all_maps=optimizer.search_patterns(dictfile,volumes_all)
 
     if(save_map):
@@ -121,9 +132,12 @@ map_for_sim = dict(zip(keys_simu, values_simu))
 map_Python = MapFromDict("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
 map_Python.buildParamMap()
 
-#map_Python.plotParamMap()
-#map_Python.plotParamMap("ff")
+map_Python.plotParamMap()
+map_Python.plotParamMap("ff")
 map_Python.plotParamMap("df")
+map_Python.plotParamMap("attB1")
+map_Python.plotParamMap("wT1")
+
 map_Python.build_ref_images(seq=seq)
 rebuilt_image_series = map_Python.images_series
 rebuilt_image_series= [np.mean(gp, axis=0) for gp in groupby(rebuilt_image_series, 8)]
