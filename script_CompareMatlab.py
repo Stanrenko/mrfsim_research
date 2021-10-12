@@ -34,7 +34,7 @@ size=(256,256)
 useGPU_simulation=False
 useGPU_dictsearch=True
 
-load_maps=True
+load_maps=False
 save_maps = False
 
 type="SquarePhantom"
@@ -44,7 +44,7 @@ for ph_num in tqdm([1]):
     file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(type,ph_num)
 
     ###### Building Map
-    m = MapFromFile("{}{}".format(type,ph_num), image_size=size, file=file_matlab_paramMap, rounding=True,gen_mode="other")
+    m = MapFromFile("{}{}".format(type,ph_num), image_size=size, file=file_matlab_paramMap, rounding=True,gen_mode="loop")
     m.buildParamMap()
 
     if not(load_maps):
@@ -83,7 +83,7 @@ for ph_num in tqdm([1]):
         # kdata_noGPU = m.generate_kdata(radial_traj, useGPU=False)
         # volumes_noGPU = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=False)
 
-        optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=False,useGPU_simulation=False)
+        optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=useGPU_dictsearch,useGPU_simulation=useGPU_simulation)
         all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
         if save_maps:

@@ -319,11 +319,136 @@ class SimpleDictSearch(Optimizer):
                     current_sig_ws_for_phase = cp.asarray(current_sig_ws_for_phase)
                     current_sig_fs_for_phase = cp.asarray(current_sig_fs_for_phase)
 
-                    current_sig_ws=cp.asarray(current_sig_ws)
-                    current_sig_fs=cp.asarray(current_sig_fs)
+                    #current_sig_ws=cp.asarray(current_sig_ws)
+                    #current_sig_fs=cp.asarray(current_sig_fs)
 
-                    current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
-                            (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
+
+
+                    #current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
+                    #        (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
+
+                    ### Testing direct phase solving
+                    A = sig_wf * current_sig_ws_for_phase - var_w * current_sig_fs_for_phase
+                    B = (
+                                    current_sig_ws_for_phase + current_sig_fs_for_phase) * sig_wf - var_w * current_sig_fs_for_phase - var_f * current_sig_ws_for_phase
+                    # beta = B.real * current_sig_fs_for_phase.real - B.imag * current_sig_fs_for_phase.imag
+                    # delta = B.imag * current_sig_ws_for_phase.imag - B.real * current_sig_ws_for_phase.real
+                    # gamma = A.real * current_sig_ws_for_phase.real - A.imag * current_sig_ws_for_phase.imag
+                    # nu = A.imag * current_sig_fs_for_phase.imag - A.real * current_sig_fs_for_phase.real
+                    #
+                    # a = beta + delta
+                    # b = gamma - delta + nu
+                    # c = -gamma
+
+                    a = B.real * current_sig_fs_for_phase.real + B.imag * current_sig_fs_for_phase.imag - B.imag * current_sig_ws_for_phase.imag - B.real * current_sig_ws_for_phase.real
+                    b = A.real * current_sig_ws_for_phase.real + A.imag * current_sig_ws_for_phase.imag +B.imag * current_sig_ws_for_phase.imag + B.real * current_sig_ws_for_phase.real - A.imag * current_sig_fs_for_phase.imag - A.real * current_sig_fs_for_phase.real
+                    c = -A.real * current_sig_ws_for_phase.real - A.imag * current_sig_ws_for_phase.imag
+
+                    del A
+                    del B
+
+                    #del beta
+                    #del delta
+                    #del gamma
+                    #del nu
+
+                    discr = b ** 2 - 4 * a * c
+                    alpha1 = (-b + np.sqrt(discr)) / (2 * a)
+                    alpha2 = (-b - np.sqrt(discr)) / (2 * a)
+
+                    # def P_alpha_pixel(alpha, i, j):
+                    #     global a, b, c
+                    #     return a.get()[i, j] * alpha ** 2 + b.get()[i, j] * alpha + c.get()[i, j]
+                    #
+                    # P_alpha = lambda alpha: P_alpha_pixel(alpha, i, j)
+
+
+##############################################################################################################################
+                    # def J_alpha_pixel(alpha,phi, i, j):
+                    #
+                    #     current_sig_ws = (current_sig_ws_for_phase[i,j] * np.exp(1j * phi)).real
+                    #     current_sig_fs = (current_sig_fs_for_phase[i,j] * np.exp(1j * phi)).real
+                    #     return ((
+                    #              1 - alpha) * current_sig_ws + alpha * current_sig_fs) / np.sqrt(
+                    #         (
+                    #                 1 - alpha) ** 2 * var_w[i] + alpha ** 2 * var_f[i] + 2 * alpha * (
+                    #                 1 - alpha) * sig_wf[i])
+                    #
+                    # phi = cp.arange(-np.pi,np.pi,np.pi/30)
+                    # alpha = cp.arange(-0.5,1.5,0.01)
+                    # alphav, phiv = cp.meshgrid(alpha, phi, sparse=False, indexing='ij')
+                    #
+                    # i=-2
+                    # j=0
+                    #
+                    # n,m = alphav.shape
+                    # result=cp.zeros(alphav.shape)
+                    #
+                    # for p in tqdm(range(n)):
+                    #     for q in range(m):
+                    #         result[p,q]=cp.asnumpy(J_alpha_pixel(alphav[p,q],phiv[p,q],i,j))[0]
+                    #
+                    # result_np =result.get()
+                    # alphav_np = alphav.get()
+                    # phiv_np = phiv.get()
+                    #
+                    # import matplotlib.pyplot as plt
+                    # fig = plt.figure()
+                    # ax = fig.add_subplot(111, projection='3d')
+                    #
+                    # ax.plot_surface(alphav_np, phiv_np, result_np,alpha=0.5)
+                    #
+                    #
+                    #
+                    # index_min_p,index_min_q = np.unravel_index(np.argmin(result_np), result_np.shape)
+                    # alpha_min = alphav_np[index_min_p,index_min_q]
+                    # phi_min = phiv_np[index_min_p, index_min_q]
+                    # result_min = result_np[index_min_p, index_min_q]
+                    #
+                    #
+                    # print("Min alpha on surface : {}".format(np.round(alpha_min,2)))
+                    # print("Alpha 1 : {}".format(np.round(alpha1[i,j],2)))
+                    # print("Alpha 2 : {}".format(np.round(alpha2[i,j],2)))
+                    #
+                    #
+                    # phi_calc1 = np.angle((
+                    #                              1 - alpha1.get()[i,j]) * current_sig_ws_for_phase.get()[i,j] + alpha1.get()[i,j] * current_sig_ws_for_phase.get()[i,j])
+                    # phi_calc2 = np.angle((
+                    #                              1 - alpha2.get()[i, j]) * current_sig_ws_for_phase.get()[i, j] +  alpha2.get()[i, j] *
+                    #                      current_sig_ws_for_phase.get()[i, j])
+                    #
+                    # phi_form_1 = -np.arctan(((1 - alpha1.get()[i,j]) * current_sig_ws_for_phase.get()[i,j].imag + alpha1.get()[i,j] * current_sig_ws_for_phase.get()[i,j].imag)/((1 - alpha1.get()[i,j]) * current_sig_ws_for_phase.get()[i,j].real + alpha1.get()[i,j] * current_sig_ws_for_phase.get()[i,j].real))
+                    # phi_form_2 = -np.arctan(((1 - alpha2.get()[i, j]) * current_sig_ws_for_phase.get()[i, j].imag +
+                    #                          alpha2.get()[i, j] * current_sig_ws_for_phase.get()[i, j].imag) / (
+                    #                                     (1 - alpha2.get()[i, j]) * current_sig_ws_for_phase.get()[
+                    #                                 i, j].real + alpha2.get()[i, j] * current_sig_ws_for_phase.get()[
+                    #                                         i, j].real))
+                    #
+                    # print("Min phi on surface : {}".format(np.round(phi_min, 2)))
+                    # print("Phi Ideal 1 : {}".format(np.round(phi_calc1, 2)))
+                    # print("Phi Ideal 2 : {}".format(np.round(phi_calc2, 2)))
+                    # print("Phi Formula 1 : {}".format(np.round(phi_form_1, 2)))
+                    # print("Phi Formula 2 : {}".format(np.round(phi_form_2, 2)))
+                    #
+                    # ax.plot(alpha_min,phi_min,result_min,marker="x")
+                    # ax.plot(alpha1.get()[i,j], phi_form_1, cp.asnumpy(J_alpha_pixel(alpha1[i,j],phi_form_1,i,j))[0], marker="o")
+                    # ax.plot(alpha2.get()[i,j], phi_form_2,
+                    #         cp.asnumpy(J_alpha_pixel(alpha2[i, j], phi_form_2, i, j))[0], marker="o")
+#################################################################################################################################""""
+                    del a
+                    del b
+                    del c
+                    del discr
+
+                    current_alpha_all_unique = (1 * (alpha1 >= 0) & (alpha1 <= 1)) * alpha1 + (
+                                1 - (1 * (alpha1 >= 0) & (alpha1 <= 1))) * alpha2
+
+                    # current_alpha_all_unique_2 = (1 * (alpha2 >= 0) & (alpha2 <= 1)) * alpha2 + (
+                    #            1 - (1*(alpha2 >= 0) & (alpha2 <= 1))) * alpha1
+
+                    del alpha1
+                    del alpha2
+
 
                     if verbose:
                         end = datetime.now()
@@ -331,10 +456,15 @@ class SimpleDictSearch(Optimizer):
 
                     if verbose:
                         start = datetime.now()
+
                     current_alpha_all_unique = cp.minimum(cp.maximum(current_alpha_all_unique, 0.0), 1.0)
 
-                    phase_adj = np.angle((
-                                                     1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase)
+                    #phase_adj = np.angle((
+                    #                                 1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase)
+
+                    phase_adj=cp.arctan(((1 - current_alpha_all_unique) * current_sig_ws_for_phase.imag +
+                                             current_alpha_all_unique * current_sig_ws_for_phase.imag) / (
+                                                        (1 - current_alpha_all_unique) * current_sig_ws_for_phase.real + current_alpha_all_unique * current_sig_ws_for_phase.real))
 
                     if verbose:
                         end = datetime.now()
@@ -347,6 +477,12 @@ class SimpleDictSearch(Optimizer):
 
                     current_sig_ws = (current_sig_ws_for_phase * np.exp(-1j * phase_adj)).real
                     current_sig_fs = (current_sig_fs_for_phase * np.exp(-1j * phase_adj)).real
+
+
+
+                    del phase_adj
+                    del current_sig_ws_for_phase
+                    del current_sig_fs_for_phase
 
                     J_all = ((
                                      1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
