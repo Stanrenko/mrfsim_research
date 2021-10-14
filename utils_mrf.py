@@ -887,7 +887,7 @@ def build_mask(volumes):
     return mask*1
 
 
-def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
+def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6,threshold_factor=1/7):
     mask = False
 
     npoint=trajectory.paramDict["npoint"]
@@ -945,7 +945,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
 
 
         unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
-        mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 7])
+        mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique)*threshold_factor)])
         #mask = ndimage.binary_closing(mask, iterations=10)
 
 
@@ -984,7 +984,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6):
             plan.__del__()
 
         unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
-        mask = mask | (np.abs(volume_rebuilt) > unique[len(unique) // 7])
+        mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique)*threshold_factor)])
         mask = ndimage.binary_closing(mask, iterations=3)
 
     return mask

@@ -34,7 +34,7 @@ load=True
 if not(load_paramMap):
     load=False
 
-load_maps=True
+load_maps=False
 
 is_random=False
 
@@ -44,7 +44,7 @@ dictfile = "mrf175_CS.dict"
 #dictfile = "mrf175_SimReco2.dict"
 
 useGPU_simulation=False
-useGPU_dictsearch=True
+useGPU_dictsearch=False
 
 with open("mrf_sequence.json") as f:
     sequence_config = json.load(f)
@@ -67,8 +67,8 @@ region_size=16 #size of the regions with uniform values for params in pixel numb
 size=(256,256)
 mask_reduction_factor=1/4
 
-nb_slices= 32
-nb_empty_slices=4
+nb_slices= 8
+nb_empty_slices=2
 undersampling_factor=1
 repeat_slice=8
 
@@ -149,7 +149,7 @@ mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=useGPU_s
 
 niter=0
 
-optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj_3D,split=2000,pca=True,threshold_pca=20,useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch,log=False,useAdjPred=False,verbose=False,gen_mode=gen_mode)
+optimizer = SimpleDictSearch(mask=m.mask,niter=niter,seq=seq,trajectory=radial_traj_3D,split=250,pca=True,threshold_pca=20,useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch,log=False,useAdjPred=False,verbose=False,gen_mode=gen_mode,adj_phase=True)
 
 
 if not(load_maps):
@@ -182,20 +182,26 @@ maskROI=buildROImask_unique(m.paramMap)
 
 for iter in all_maps_adj.keys():
     regression_paramMaps_ROI(m.paramMap, all_maps_adj[iter][0], m.mask > 0, all_maps_adj[iter][1] > 0,maskROI=maskROI,
-                             title="Slices{}_US{} No movements ROI Orig vs Iteration {}".format(nb_total_slices,undersampling_factor,iter), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,save=True)
+                             title="Slices{}_US{} No movements ROI Orig vs Iteration {}".format(nb_total_slices,undersampling_factor,iter), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,save=False)
 
+
+pd.DataFrame(m.paramMap["ff"]-all_maps_adj[0][0]["ff"]).describe(
+)
+
+
+all_maps_adj[0][1]
 
 size_slice = int(m.paramDict["nb_slices"]/m.paramDict["repeat_slice"])
 
-plot_evolution_params(m.paramMap,m.mask>0,all_maps_adj,maskROI,save=True)
+#plot_evolution_params(m.paramMap,m.mask>0,all_maps_adj,maskROI,save=True)
 
-# iter =0
-# sl = 1
+iter =0
+sl = 2
 #
-# compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl-1)*size_slice+int(size_slice/2),title1="Slices{}_US{} No movements Orig".format(nb_total_slices,undersampling_factor),title2="Mid Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
-# compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl)*size_slice,title1="Slices{}_US{} No movements Orig".format(nb_total_slices,undersampling_factor),title2="Border Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl-1)*size_slice+int(size_slice/2),title1="Slices{}_US{} No movements Orig".format(nb_total_slices,undersampling_factor),title2="Mid Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
+compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl)*size_slice,title1="Slices{}_US{} No movements Orig".format(nb_total_slices,undersampling_factor),title2="Border Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
 
-#plt.close("all")
+plt.close("all")
 
 
 ##### ADDING MOVEMENT
@@ -208,7 +214,7 @@ load=False
 load_maps=False
 
 if not(load):
-    kdata = m.generate_kdata(radial_traj_3D,useGPU=True)
+    kdata = m.generate_kdata(radial_traj_3D,useGPU=useGPU_simulation)
     #kdata_noGPU=m.generate_radial_kdata(radial_traj_3D,useGPU=False)
     with open("kdata_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "wb" ) as file:
         pickle.dump(kdata, file)
@@ -235,7 +241,7 @@ mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=useGPU_s
 
 niter=0
 
-optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj_3D,split=2000,pca=True,threshold_pca=20,useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch,log=False,useAdjPred=False,verbose=False,gen_mode=gen_mode)
+optimizer = SimpleDictSearch(mask=m.mask,niter=niter,seq=seq,trajectory=radial_traj_3D,split=250,pca=True,threshold_pca=20,useGPU_simulation=useGPU_simulation,useGPU_dictsearch=useGPU_dictsearch,log=False,useAdjPred=False,verbose=False,gen_mode=gen_mode,adj_phase=True)
 
 
 if not(load_maps):
