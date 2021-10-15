@@ -12,21 +12,28 @@ import glob
 from mutools import io
 
 
-folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/MT"
+#folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/MT"
+folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/CLI"
+
 #thighs / legs
 folder_results_matlab =r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/3_Data/Patients"
 
-load_volumes=False
 save_volumes=True
+save_maps=True
 
-ROI_folder_names = glob.glob(folder_ROI+"/MT*")
+#ROI_folder_names = glob.glob(folder_ROI+"/MT*")
+ROI_folder_names = glob.glob(folder_ROI+"/*")
 
 patient_names=np.unique([str.split(str.split(p,"/")[-1],".")[0] for p in ROI_folder_names])
+#patient_names=np.concatenate([["MTTX"],patient_names[4:]])
 
+exam_types=["legs","thighs"]
+
+# patient_names=["MTUH"]
+# exam_types=["thighs"]
+
+exam_type="legs"
 p = patient_names[0]
-
-exam_types=["thighs","legs"]
-exam_type = "thighs"
 
 for p in patient_names:
     for exam_type in exam_types:
@@ -43,21 +50,29 @@ for p in patient_names:
 
         file_roi = folder_ROI+"/{}.{}/roi_T1/roi.mhd".format(p,exam_type)
 
+        try:
+            filename = sorted(glob.glob(folder_results_matlab+"/{}*/*_{}_*.dat".format(p,image_type)))[0]
+            folder_results = sorted(glob.glob(folder_results_matlab+"/{}*/*_{}_*[!.dat]".format(p,image_type)))[0]
 
-        filename = glob.glob(folder_results_matlab+"/{}*/*_{}_*.dat".format(p,image_type))[0]
-        folder_results = glob.glob(folder_results_matlab+"/{}*/*_{}_*[!.dat]".format(p,image_type))[0]
-
-        folder_reco = sorted(glob.glob(folder_results+"/Reco[!_]*"))[-1]
-        matlab_map = folder_reco+"/MRFmaps0.mat"
+            folder_reco = sorted(glob.glob(folder_results+"/Reco[!_]*"))[-1]
+        except:
+            print("Could not load kdata or reco folder {} {}".format(p,exam_type))
+            continue
 
         try:
+            matlab_map = folder_reco + "/MRFmaps0.mat"
             map_Matlab=MapFromFile("MapRebuiltMatlab",image_size=None,file=matlab_map,rounding=False,file_type="Result")
             map_Matlab.buildParamMap()
         except:
             print("Could not load map for {} {}".format(p,exam_type))
             continue
 
-        maskROI = io.read(file_roi)
+        try:
+            maskROI = io.read(file_roi)
+        except:
+            print("Could not load ROI file for {} {}".format(p,exam_type))
+            continue
+
         maskROI = np.moveaxis(maskROI,-1,0)
         maskROI = np.moveaxis(maskROI,-1,1)
         maskROI=np.array(maskROI)
@@ -71,7 +86,7 @@ for p in patient_names:
             Parsed_File = rT.map_VBVD(filename)
 
             idx_ok = rT.detect_TwixImg(Parsed_File)
-            start_time = time.time()
+            #start_time = time.time()
             RawData = Parsed_File[str(idx_ok)]["image"].readImage()
             #test=Parsed_File["0"]["noise"].readImage()
             #test = np.squeeze(test)
@@ -113,19 +128,83 @@ for p in patient_names:
 
         # Selecting one slice
 
-        for sl in range(1,maskROI.shape[0]-1):
-
+        for sl in range(0,maskROI.shape[0]):
+        #for sl in [3]:
+            print("Processing slice {} out of {}".format(sl,maskROI.shape[0]-1))
             kdata_all_channels=kdata_all_channels_all_slices[sl,:,:,:]
             b1=b1_all_slices[sl]
 
-            if not(load_volumes):
+            if not(str.split(filename,"/")[-1].split(".dat")[0] + "_volumes_sl_{}.npy".format(sl) in glob.glob("*")):
                 volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels,radial_traj,image_size,b1=b1,density_adj=False)
                 if (save_volumes):
-                    np.save(filename.split(".dat")[0] + "_volumes.npy",volumes_all)
+                    np.save(str.split(filename,"/")[-1].split(".dat")[0] + "_volumes_sl_{}.npy".format(sl),volumes_all)
             else:
-                volumes_all = np.load(filename.split(".dat")[0] + "_volumes.npy")
+                volumes_all = np.load(str.split(filename,"/")[-1].split(".dat")[0] + "_volumes_sl_{}.npy".format(sl))
 
             mask=build_mask_single_image_multichannel(kdata_all_channels,radial_traj,image_size,b1=b1,density_adj=False,threshold_factor=1/15)
+
+            volume_rebuilt = build_single_image_multichannel(kdata_all_channels, radial_traj,
+                                                         image_size, b1=b1, density_adj=False)
+            volume_rebuilt = np.flip(np.rot90(volume_rebuilt), axis=1)
+            plt.figure();
+            plt.imshow(np.abs(volume_rebuilt));
+            plt.imshow(maskROI[sl], alpha=0.2)
+            plt.title("Check ROI")
+
+            # sl_test = 4
+            # volume_rebuilt=build_single_image_multichannel(kdata_all_channels_all_slices[sl_test,:,:,:], radial_traj, image_size, b1=b1_all_slices[sl_test], density_adj=False)
+            # volume_rebuilt=np.flip(np.rot90(volume_rebuilt), axis=1)
+            #
+            # plt.figure();
+            # plt.imshow(np.abs(volume_rebuilt));
+            # plt.imshow(maskROI[sl_test], alpha=0.2)
+            # plt.title("Original")
+            #
+            # plt.figure();
+            # plt.imshow(np.abs(np.abs(np.flip(volume_rebuilt,axis=1))));
+            # plt.imshow(maskROI[sl_test], alpha=0.2)
+            # plt.title("Flipped")
+
+            # masks=[]
+            # for j in range(maskROI.shape[0]):
+            #     kdata_all_channels = kdata_all_channels_all_slices[j, :, :, :]
+            #     b1 = b1_all_slices[j]
+            #     masks.append(np.flip(np.rot90(build_mask_single_image_multichannel(kdata_all_channels,radial_traj,image_size,b1=b1,density_adj=False,threshold_factor=1/15)),axis=1))
+            #
+            # animate_multiple_images(masks,map_Matlab.mask)
+            # plt.figure()
+            # plt.imshow(masks[0])
+            # plt.figure()
+            # plt.imshow(map_Matlab.mask[0])
+
+            # plt.figure()
+            # plt.imshow(mask)
+            #
+            # plt.figure()
+            # plt.imshow(np.flip(np.rot90(map_Matlab.mask[1]),axis=1))
+            #
+            # error_mask = np.array(masks) - np.array(map_Matlab.mask)
+            # plt.figure()
+            # plt.imshow(error_mask[1])
+            #
+            # animate_images(error_mask)
+            #
+            # error_mask = np.array(masks[1:])-np.array(map_Matlab.mask[:-1])
+            # plt.figure()
+            # plt.imshow(error_mask[0])
+            #
+            # animate_images(error_mask)
+            #
+            # error_mask = np.array(masks[:-1]) - np.array(map_Matlab.mask[1:])
+            # plt.figure()
+            # plt.imshow(error_mask[0])
+            #
+            # error_mask = np.array(masks[2:]) - np.array(map_Matlab.mask[:-2])
+            # plt.figure()
+            # plt.imshow(error_mask[0])
+            #
+            #
+            # animate_images(error_mask)
 
             ## Dict mapping
 
@@ -140,19 +219,16 @@ for p in patient_names:
             seq = T1MRF(**sequence_config)
 
 
-            load_map=False
-            save_map=True
-
-            if not(load_map):
+            if not(str.split(filename,"/")[-1].split(".dat")[0] + "_MRF_map_sl_{}.pkl".format(sl) in glob.glob("*")):
                 niter = 0
 
                 optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
                 all_maps=optimizer.search_patterns(dictfile,volumes_all)
 
-                if(save_map):
+                if(save_maps):
                     import pickle
 
-                    file_map = filename.split(".dat")[0] + "_MRF_map_sl_{}.pkl".format(sl)
+                    file_map = str.split(filename,"/")[-1].split(".dat")[0] + "_MRF_map_sl_{}.pkl".format(sl)
                     file = open(file_map, "wb")
                     # dump information to that file
                     pickle.dump(all_maps, file)
@@ -161,7 +237,7 @@ for p in patient_names:
 
             else:
                 import pickle
-                file_map = filename.split(".dat")[0] + "_MRF_map_sl_{}.pkl".format(sl)
+                file_map = str.split(filename,"/")[-1].split(".dat")[0] + "_MRF_map_sl_{}.pkl".format(sl)
                 file = open(file_map, "rb")
                 all_maps = pickle.load(file)
 
@@ -197,6 +273,10 @@ for p in patient_names:
             plt.close("all")
 
             compare_paramMaps(all_maps_matlab_current_slice[0],all_maps_python_current_slice[0],all_maps_matlab_current_slice[1]>0,all_maps_python_current_slice[1]>0,title1="{} {} Matlab {}".format(p,exam_type,sl),title2="{} {} Python {}".format(p,exam_type,sl),proj_on_mask1=True,adj_wT1=True,save=True)
+
+            # plt.figure();plt.imshow(makevol(maskROI_current,all_maps_python_current_slice[1]>0))
+            # plt.figure();
+            # plt.imshow(makevol(maskROI_current==20, all_maps_python_current_slice[1] > 0))
 
             try:
                 df_python = metrics_paramMaps_ROI(all_maps_python_current_slice[0],all_maps_matlab_current_slice[0],all_maps_python_current_slice[1]>0,all_maps_matlab_current_slice[1]>0,maskROI=maskROI_current,adj_wT1=True,proj_on_mask1=True)

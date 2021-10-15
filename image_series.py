@@ -30,6 +30,7 @@ except:
     pass
 
 import gc
+import h5py
 
 DEFAULT_wT2 = 40
 DEFAULT_fT1 = 300
@@ -827,19 +828,26 @@ class MapFromFile(ImageSeries):
             map_attB1 = matobj["B1"][0, 0]
             map_ff = matobj["FF"][0, 0]
         elif self.paramDict["file_type"]=="Result":
-            matobj = loadmat(self.paramDict["file"])["MRFmaps"]
+            try:
+                matobj = loadmat(self.paramDict["file"])["MRFmaps"]
+            except:
+                print("Warning : Had to read Matlab MRF Map with H5 reader")
+                matobj_inter = h5py.File(self.paramDict["file"],"r").get("MRFmaps")
+                matobj={}
+                for k in matobj_inter.keys():
+                    matobj[k]=[[np.flip(np.rot90(np.array(matobj_inter.get(k)),axes=(2,1)),axis=2)]]
             try:
                 map_wT1 = matobj["T1water"][0][0]
-                map_df = matobj["Df"][0, 0]
-                map_attB1 = matobj["B1"][0, 0]
-                map_ff = matobj["FF"][0, 0]
+                map_df = matobj["Df"][0][0]
+                map_attB1 = matobj["B1"][0][0]
+                map_ff = matobj["FF"][0][0]
             except:
                 map_wT1 = matobj["T1water_map"][0][0]
-                map_df = matobj["Df_map"][0, 0]
-                map_attB1 = matobj["FA_map"][0, 0]
-                map_ff = matobj["FF_map"][0, 0]
+                map_df = matobj["Df_map"][0][0]
+                map_attB1 = matobj["FA_map"][0][0]
+                map_ff = matobj["FF_map"][0][0]
 
-            if map_wT1.ndim==3:
+            if (map_wT1.ndim==3)and(map_wT1.shape[-1]<map_wT1.shape[0]):
                 map_wT1 = np.moveaxis(map_wT1,-1,0)
                 map_df = np.moveaxis(map_df, -1, 0)
                 map_attB1 = np.moveaxis(map_attB1, -1, 0)
@@ -867,7 +875,7 @@ class MapFromFile(ImageSeries):
             except:
                 map_fT1 = matobj["T1fat_map"][0][0]
 
-            if map_fT1.ndim==3:
+            if (map_fT1.ndim==3) and(map_fT1.shape[-1]<map_fT1.shape[0]):
                 map_fT1 = np.moveaxis(map_fT1, -1, 0)
         else:
             raise ValueError("file_type can only be GroundTruth or Result")

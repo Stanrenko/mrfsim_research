@@ -115,7 +115,7 @@ for ph_num in tqdm([1]):
     # plt.close("all")
     for it in [0]:#all_maps_adj.keys():
         regression_paramMaps_ROI(m.paramMap, all_maps_adj[it][0], m.mask > 0, all_maps_adj[it][1] > 0,maskROI=maskROI,
-                                 title="{} {} : Python End to End Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=False,kept_keys=["attB1","df","wT1","ff"])
+                                 title="{} {} :Phase adj Python End to End Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True,kept_keys=["attB1","df","wT1","ff"])
 
     # plt.close("all")
     for it in [0]:#all_maps_matlab.keys():

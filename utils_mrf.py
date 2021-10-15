@@ -20,8 +20,8 @@ from sigpy.mri import spiral
 import cv2
 import pywt
 from mpl_toolkits.axes_grid1 import ImageGrid
-
-
+from skimage.metrics import structural_similarity as ssim
+import collections
 try:
     import pycuda
     import pycuda.autoinit
@@ -550,7 +550,7 @@ def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression 
 
 def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, title="Maps regression plots",
                              fontsize=5, adj_wT1=False, fat_threshold=0.8, mode="Standard", proj_on_mask1=True,plt_std=False,
-                             figsize=(15, 10),save=False,kept_keys=None):
+                             figsize=(15, 10),save=False,kept_keys=None,min_ROI_count=5):
 
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
@@ -562,6 +562,10 @@ def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, t
 
     if maskROI is None:
         maskROI = buildROImask(map1)
+
+    #Removing ROIs with less than min_ROI_count values
+    freq = collections.Counter(maskROI)
+    maskROI = np.array([ele if freq[ele] > min_ROI_count else 0 for ele in maskROI])
 
     fig, ax = plt.subplots(1, nb_keys, figsize=figsize)
 
@@ -647,7 +651,7 @@ def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, t
         plt.savefig("./figures/{}".format(title))
 
 def metrics_paramMaps_ROI(map_ref, map2, mask_ref=None, mask2=None, maskROI=None,
-                              adj_wT1=False, fat_threshold=0.8, proj_on_mask1=True,name="Result",
+                              adj_wT1=False, fat_threshold=0.8, proj_on_mask1=True,name="Result",min_ROI_count=5
                              ):
 
     df = pd.DataFrame(columns=[name])
@@ -659,9 +663,12 @@ def metrics_paramMaps_ROI(map_ref, map2, mask_ref=None, mask2=None, maskROI=None
     if maskROI is None:
         maskROI = buildROImask(map_ref)
 
+    # Removing ROIs with less than min_ROI_count values
+    freq = collections.Counter(maskROI)
+    maskROI = np.array([ele if freq[ele] > min_ROI_count else 0 for ele in maskROI])
+
     for i, k in enumerate(keys_1 & keys_2):
         print(i)
-
 
         mask_union = mask_ref | mask2
         mat_obs = makevol(map_ref[k], mask_ref)
@@ -684,12 +691,16 @@ def metrics_paramMaps_ROI(map_ref, map2, mask_ref=None, mask2=None, maskROI=None
             pred = pred[ff < fat_threshold]
             maskROI_current = maskROI_current[ff < fat_threshold]
 
-        df_obs = pd.DataFrame(columns=["Data", "Groups"],
-                              data=np.stack([obs.flatten(), maskROI_current.flatten()], axis=-1))
-        df_pred = pd.DataFrame(columns=["Data", "Groups"],
-                               data=np.stack([pred.flatten(), maskROI_current.flatten()], axis=-1))
-        mean_obs = np.array(df_obs.groupby("Groups").mean())[1:]
-        mean_pred = np.array(df_pred.groupby("Groups").mean())[1:]
+        df_all = pd.DataFrame(columns=["Data_Obs", "Data_Pred", "Groups"],
+                              data=np.stack([obs.flatten(), pred.flatten(), maskROI_current.flatten()], axis=-1))
+
+        ssim_values = df_all.groupby("Groups").apply(lambda x: ssim(x.Data_Obs, x.Data_Pred))
+        mean_ssim = ssim_values.mean()
+        std_ssim = ssim_values.std()
+
+        mean_obs = np.array(df_all[["Data_Obs","Groups"]].groupby("Groups").mean())[1:]
+        mean_pred = np.array(df_all[["Data_Pred", "Groups"]].groupby("Groups").mean())[1:]
+
 
         x_min = np.min(mean_obs)
         x_max = np.max(mean_obs)
@@ -716,6 +727,8 @@ def metrics_paramMaps_ROI(map_ref, map2, mask_ref=None, mask2=None, maskROI=None
         df=df.append(pd.DataFrame(columns=[name], index=["Bias {}".format(k)], data=bias))
         df=df.append(pd.DataFrame(columns=[name], index=["mean RMSE {}".format(k)], data=error))
         df=df.append(pd.DataFrame(columns=[name], index=["std RMSE {}".format(k)], data=std_error))
+        df = df.append(pd.DataFrame(columns=[name], index=["mean SSIM {}".format(k)], data=mean_ssim))
+        df = df.append(pd.DataFrame(columns=[name], index=["std SSIM {}".format(k)], data=std_ssim))
 
     return df
 
@@ -1001,6 +1014,37 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
     :return: mask of size size
     '''
     mask = False
+    volume_rebuilt = build_single_image_multichannel(kdata,trajectory,size,density_adj,eps,b1)
+    traj = trajectory.get_traj_for_reconstruction()
+
+
+    if traj.shape[-1]==2: # For slices
+
+        unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
+        mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique) *threshold_factor)])
+        #mask = ndimage.binary_closing(mask, iterations=10)
+
+
+    elif traj.shape[-1]==3: # For volumes
+
+        unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
+        mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique) *threshold_factor)])
+        mask = ndimage.binary_closing(mask, iterations=3)
+
+    return mask
+
+
+def build_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None):
+    '''
+
+    :param kdata: shape nchannels*ntimesteps*point_per_timestep
+    :param trajectory: shape ntimesteps * point_per_timestep * ndim (2 or 3)
+    :param size: image size
+    :param density_adj:
+    :param eps:
+    :param b1: coil sensitivity map
+    :return: mask of size size
+    '''
     nbchannels = kdata.shape[0]
     npoint=trajectory.paramDict["npoint"]
     traj = trajectory.get_traj_for_reconstruction()
@@ -1022,8 +1066,6 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
         else:
             volume_rebuilt = np.sum(b1.conj() * volume_rebuilt_all_channels, axis=0)
             volume_rebuilt = volume_rebuilt / np.sum(np.abs(b1) ** 2)
-        unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
-        mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique) *threshold_factor)])
         #mask = ndimage.binary_closing(mask, iterations=10)
 
 
@@ -1037,11 +1079,8 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
             volume_rebuilt = np.sum(b1.conj() * volume_rebuilt_all_channels, axis=0)
             volume_rebuilt = volume_rebuilt / np.sum(np.abs(b1) ** 2)
 
-        unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
-        mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique) *threshold_factor)])
-        mask = ndimage.binary_closing(mask, iterations=3)
 
-    return mask
+    return volume_rebuilt
 
 def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):
     traj=trajectory.get_traj()

@@ -220,7 +220,7 @@ def map_VBVD(filename, *options):
                     time_left,
                 )
 
-                print(progress_str)
+                #print(progress_str)
             # fprintf([repmat('\b',1,prevLength) '%s'],progress_str)
         # buf = "C = %d\n" % c
 
