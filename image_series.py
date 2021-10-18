@@ -46,6 +46,16 @@ DEFAULT_ROUNDING_ff=2
 
 DEFAULT_IMAGE_SIZE =(256,256)
 
+UNITS ={
+    "attB1":"a.u",
+    "df":"kHz",
+    "wT1":"ms",
+    "fT1":"ms",
+    "wT2":"ms",
+    "fT2":"ms",
+    "ff":"a.u"
+}
+
 def dump_function(func):
     """
     Decorator to print function call details.

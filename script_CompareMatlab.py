@@ -34,7 +34,7 @@ size=(256,256)
 useGPU_simulation=False
 useGPU_dictsearch=True
 
-load_maps=False
+load_maps=True
 save_maps = False
 
 type="SquarePhantom"
@@ -85,7 +85,7 @@ for ph_num in tqdm([1]):
 
         optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=useGPU_dictsearch,useGPU_simulation=useGPU_simulation)
         all_maps_adj=optimizer.search_patterns(dictfile,volumes)
-
+        save_maps=False
         if save_maps:
             file = open("all_maps_{}.pkl".format(m.name), "wb")
             # dump information to that file
@@ -115,24 +115,24 @@ for ph_num in tqdm([1]):
     # plt.close("all")
     for it in [0]:#all_maps_adj.keys():
         regression_paramMaps_ROI(m.paramMap, all_maps_adj[it][0], m.mask > 0, all_maps_adj[it][1] > 0,maskROI=maskROI,
-                                 title="{} {} :Phase adj Python End to End Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True,kept_keys=["attB1","df","wT1","ff"])
+                                 title="{} {} : New Method".format(type,ph_num), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True,kept_keys=["attB1","df","wT1","ff"],units=UNITS)
 
     # plt.close("all")
     for it in [0]:#all_maps_matlab.keys():
         regression_paramMaps_ROI(m.paramMap, all_maps_matlab[it][0], m.mask > 0, all_maps_matlab[it][1] > 0,maskROI=maskROI,
-                                 title="{} {} : Matlab End to End Iteration {}".format(type,ph_num,it), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=False,kept_keys=["attB1","df","wT1","ff"])
+                                 title="{} {} : Ref Method".format(type,ph_num), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True,kept_keys=["attB1","df","wT1","ff"],units=UNITS)
     # plt.close("all")
 
     plot_evolution_params(m.paramMap,m.mask>0,all_maps_adj,maskROI=maskROI,metric="R2",title="{} {} : Python Evolution v2".format(type,ph_num),fontsize=10,adj_wT1=True,save=True)
     plot_evolution_params(m.paramMap,m.mask>0,all_maps_matlab,maskROI=maskROI,metric="R2",title="{} {} : Matlab Evolution v2".format(type,ph_num),fontsize=10,adj_wT1=True,save=True)
-    #plt.close("all")
+    plt.close("all")
 
     for it in [0]:
-        compare_paramMaps(m.paramMap,all_maps_adj[it][0],m.mask>0,all_maps_adj[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="{} {} Orig".format(type,ph_num),title2="Python Rebuilt It {}".format(it),figsize=(30,10),fontsize=15,save=False,proj_on_mask1=True)
+        compare_paramMaps(m.paramMap,all_maps_adj[it][0],m.mask>0,all_maps_adj[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="{} {} Ground Truth".format(type,ph_num),title2="Retrieved New Method",figsize=(30,10),fontsize=5,save=True,proj_on_mask1=True,units=UNITS)
         #plt.close("all")
 
-    for it in [0,4]:
-        compare_paramMaps(m.paramMap,all_maps_matlab[it][0],m.mask>0,all_maps_matlab[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="{} {} Orig".format(type,ph_num),title2="Matlab Rebuilt It {}".format(it),figsize=(30,10),fontsize=15,save=False,proj_on_mask1=True)
+    for it in [0]:
+        compare_paramMaps(m.paramMap,all_maps_matlab[it][0],m.mask>0,all_maps_matlab[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="{} {} Ground Truth".format(type,ph_num),title2="Retrieved Ref Method",figsize=(30,10),fontsize=5,save=True,proj_on_mask1=True,units=UNITS)
         #plt.close("all")
 
     df_python = pd.DataFrame()
