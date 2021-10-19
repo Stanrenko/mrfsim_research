@@ -298,7 +298,7 @@ for p in patient_names:
                 #df_python = metrics_paramMaps_ROI(all_maps_matlab_current_slice[0],all_maps_python_current_slice[0],all_maps_matlab_current_slice[1]>0,all_maps_python_current_slice[1]>0,maskROI=maskROI_current,adj_wT1=True,proj_on_mask1=proj_mask>0)
                 #df_python.to_csv("{} {} : Results_Comparison_Invivo slice {}".format(p,exam_type,sl))
                 #regression_paramMaps_ROI(all_maps_matlab_current_slice[0],all_maps_python_current_slice[0],all_maps_matlab_current_slice[1]>0,all_maps_python_current_slice[1]>0,maskROI=maskROI_current,save=True,title="{} {}: Python vs Matlab Invivo slice {}".format(p,exam_type,sl),kept_keys=["attB1","df","wT1","ff"],adj_wT1=True,fat_threshold=0.7,proj_on_mask1=proj_mask>0)
-                results = get_ROI_values(all_maps_matlab_current_slice[0],all_maps_python_current_slice[0],all_maps_matlab_current_slice[1]>0,all_maps_python_current_slice[1]>0,maskROI=maskROI_current,kept_keys=["attB1","df","wT1","ff"],adj_wT1=True,fat_threshold=0.7,proj_on_mask1=proj_mask>0)
+                results = get_ROI_values(all_maps_matlab_current_slice[0],all_maps_python_current_slice[0],all_maps_matlab_current_slice[1]>0,all_maps_python_current_slice[1]>0,maskROI=maskROI_current,kept_keys=["attB1","df","wT1","ff"],adj_wT1=False,fat_threshold=0.7,proj_on_mask1=proj_mask>0)
                 if all_results=={}:
                     all_results=results
                 else:
@@ -311,8 +311,10 @@ for p in patient_names:
                 continue
 
 import pickle
-
-file_all_results = "CL_ROI_All_results.pkl"
+#
+file_all_results = "CL_ROI_All_results_no_wT1adj.pkl"
+#file_all_results = "MT_ROI_All_results_no_wT1adj.pkl"
+#
 file = open(file_all_results, "wb")
 # dump information to that file
 pickle.dump(all_results, file)
@@ -320,25 +322,77 @@ pickle.dump(all_results, file)
 file.close()
 
 import pickle
+import pandas as pd
 
-file_all_results = "CL_ROI_All_results.pkl"
-file=open(file_all_results,"rb")
-all_results = pickle.load(file)
+file_all_results_CL = "CL_ROI_All_results.pkl"
+file_all_results_MT = "MT_ROI_All_results.pkl"
+file_all_results_CL = "CL_ROI_All_results_no_wT1adj.pkl"
+file_all_results_MT = "MT_ROI_All_results_no_wT1adj.pkl"
+
+file=open(file_all_results_CL,"rb")
+all_results_CL = pickle.load(file)
 file.close()
+
+
+file=open(file_all_results_MT,"rb")
+all_results_MT = pickle.load(file)
+file.close()
+
+df_combined = pd.DataFrame(columns=["ff","wT1","group"])
+
+df_MT =  pd.DataFrame(columns=["ff","wT1","group"])
+df_MT["ff"]=all_results_MT["ff"][all_results_MT["ff"][:,0]<0.7,0]
+df_MT["wT1"]=all_results_MT["wT1"][all_results_MT["ff"][:,0]<0.7,0]
+df_MT["group"]="Control"
+
+df_CL =  pd.DataFrame(columns=["ff","wT1","group"])
+df_CL["ff"]=all_results_CL["ff"][all_results_CL["ff"][:,0]<0.7,0]
+df_CL["wT1"]=all_results_CL["wT1"][all_results_CL["ff"][:,0]<0.7,0]
+df_CL["group"]="NMD"
+
+df_combined = df_combined.append(df_CL)
+df_combined = df_combined.append(df_MT)
+
+
+import seaborn as sns
+g=sns.pairplot(df_combined,diag_kind="kde",hue="group",plot_kws={'alpha':0.01})
+g.fig.suptitle("Ref Method")
+
+
+df_combined = pd.DataFrame(columns=["ff","wT1","group"])
+
+df_MT =  pd.DataFrame(columns=["ff","wT1","group"])
+df_MT["ff"]=all_results_MT["ff"][all_results_MT["ff"][:,1]<0.7,1]
+df_MT["wT1"]=all_results_MT["wT1"][all_results_MT["ff"][:,1]<0.7,1]
+df_MT["group"]="Control"
+
+df_CL =  pd.DataFrame(columns=["ff","wT1","group"])
+df_CL["ff"]=all_results_CL["ff"][all_results_CL["ff"][:,1]<0.7,1]
+df_CL["wT1"]=all_results_CL["wT1"][all_results_CL["ff"][:,1]<0.7,1]
+df_CL["group"]="NMD"
+
+df_combined = df_combined.append(df_CL)
+df_combined = df_combined.append(df_MT)
+
+
+import seaborn as sns
+g=sns.pairplot(df_combined,diag_kind="kde",hue="group",plot_kws={'alpha':0.01})
+g.fig.suptitle("New Method")
+
 
 import seaborn as sns
 sns.pairplot(pd.DataFrame(all_results["ff"],columns=["ff ref","ff new"]),diag_kind="kde")
 
 sns.histplot(pd.DataFrame(all_results["ff"],columns=["ff ref method","ff new method"])).set_title("Histogram of fat fraction over all NMD patients")
 
-process_ROI_values(all_results,title="Comparison new vs ref all ROIs on NMD patients",save=True,units=UNITS)
-df_metrics_all=metrics_ROI_values(all_results,units=UNITS,name="All NMD patients")
-df_metrics_all.to_csv("CL_ROI_All_results.csv")
+process_ROI_values(all_results,title="Comparison new vs ref all ROIs on Control patients",save=True,units=UNITS)
+df_metrics_all=metrics_ROI_values(all_results,units=UNITS,name="All Control patients")
+df_metrics_all.to_csv("MT_ROI_All_results.csv")
 
 import glob
 import pandas as pd
 import numpy as np
-list_exams=glob.glob("./figures/[!MT]*Python vs Matlab Invivo slice*.png")
+list_exams=glob.glob("./figures/[MT]*Python vs Matlab Invivo slice*.png")
 count_exams = len(list_exams)
 df_exams=pd.DataFrame(columns=["Patient","Exam Type","Slice"])
 for e in list_exams:

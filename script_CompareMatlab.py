@@ -34,12 +34,16 @@ size=(256,256)
 useGPU_simulation=False
 useGPU_dictsearch=True
 
-load_maps=True
-save_maps = False
+load_maps=False
+save_maps = True
 
 type="SquarePhantom"
 
-for ph_num in tqdm([1]):
+all_results ={}
+all_results_matlab ={}
+all_results_python ={}
+
+for ph_num in tqdm([1,2,3,4,5]):
     print("##################### {} : PHANTOM {} #########################".format(type,ph_num))
     file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(type,ph_num)
 
@@ -85,7 +89,7 @@ for ph_num in tqdm([1]):
 
         optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=useGPU_dictsearch,useGPU_simulation=useGPU_simulation)
         all_maps_adj=optimizer.search_patterns(dictfile,volumes)
-        save_maps=False
+        #save_maps=False
         if save_maps:
             file = open("all_maps_{}.pkl".format(m.name), "wb")
             # dump information to that file
@@ -112,7 +116,7 @@ for ph_num in tqdm([1]):
 
     maskROI= buildROImask_unique(m.paramMap)
     #maskROI=buildROImask(m.paramMap)
-    # plt.close("all")
+    plt.close("all")
     for it in [0]:#all_maps_adj.keys():
         regression_paramMaps_ROI(m.paramMap, all_maps_adj[it][0], m.mask > 0, all_maps_adj[it][1] > 0,maskROI=maskROI,
                                  title="{} {} : New Method".format(type,ph_num), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True,kept_keys=["attB1","df","wT1","ff"],units=UNITS)
@@ -123,9 +127,9 @@ for ph_num in tqdm([1]):
                                  title="{} {} : Ref Method".format(type,ph_num), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True,kept_keys=["attB1","df","wT1","ff"],units=UNITS)
     # plt.close("all")
 
-    plot_evolution_params(m.paramMap,m.mask>0,all_maps_adj,maskROI=maskROI,metric="R2",title="{} {} : Python Evolution v2".format(type,ph_num),fontsize=10,adj_wT1=True,save=True)
-    plot_evolution_params(m.paramMap,m.mask>0,all_maps_matlab,maskROI=maskROI,metric="R2",title="{} {} : Matlab Evolution v2".format(type,ph_num),fontsize=10,adj_wT1=True,save=True)
-    plt.close("all")
+    #plot_evolution_params(m.paramMap,m.mask>0,all_maps_adj,maskROI=maskROI,metric="R2",title="{} {} : Python Evolution v2".format(type,ph_num),fontsize=10,adj_wT1=True,save=True)
+    #plot_evolution_params(m.paramMap,m.mask>0,all_maps_matlab,maskROI=maskROI,metric="R2",title="{} {} : Matlab Evolution v2".format(type,ph_num),fontsize=10,adj_wT1=True,save=True)
+    #plt.close("all")
 
     for it in [0]:
         compare_paramMaps(m.paramMap,all_maps_adj[it][0],m.mask>0,all_maps_adj[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="{} {} Ground Truth".format(type,ph_num),title2="Retrieved New Method",figsize=(30,10),fontsize=5,save=True,proj_on_mask1=True,units=UNITS)
@@ -135,25 +139,117 @@ for ph_num in tqdm([1]):
         compare_paramMaps(m.paramMap,all_maps_matlab[it][0],m.mask>0,all_maps_matlab[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="{} {} Ground Truth".format(type,ph_num),title2="Retrieved Ref Method",figsize=(30,10),fontsize=5,save=True,proj_on_mask1=True,units=UNITS)
         #plt.close("all")
 
+    it=0
+    results_matlab = get_ROI_values(m.paramMap,all_maps_matlab[it][0],m.mask > 0,
+                             all_maps_matlab[it][1] > 0,
+                             maskROI=maskROI, kept_keys=["attB1", "df", "wT1", "ff"], adj_wT1=True,
+                             fat_threshold=0.7, proj_on_mask1=True)
+
+    results_python = get_ROI_values(m.paramMap, all_maps_adj[it][0],
+                             m.mask > 0, all_maps_adj[it][1] > 0,
+                             maskROI=maskROI, kept_keys=["attB1", "df", "wT1", "ff"], adj_wT1=True,
+                             fat_threshold=0.7, proj_on_mask1=True)
+
+
+    if all_results_matlab == {}:
+        all_results_matlab = results_matlab
+    else:
+        for k in all_results_matlab.keys():
+            all_results_matlab[k] = np.concatenate([results_matlab[k], all_results_matlab[k]], axis=0)
+
+    if all_results_python == {}:
+        all_results_python = results_python
+    else:
+        for k in all_results_python.keys():
+            all_results_python[k] = np.concatenate([results_python[k], all_results_python[k]], axis=0)
+
     df_python = pd.DataFrame()
-    for it in [0,5,10]:
-        df_current = metrics_paramMaps_ROI(m.paramMap,all_maps_adj[it][0],m.mask>0,all_maps_adj[it][1]>0,maskROI=maskROI,adj_wT1=True, fat_threshold=0.7, proj_on_mask1=True,name="Phantom {} Python Iteration {}".format(ph_num,it))
+    for it in [0]:
+        df_current = metrics_paramMaps_ROI(m.paramMap,all_maps_adj[it][0],m.mask>0,all_maps_adj[it][1]>0,maskROI=maskROI,adj_wT1=True, fat_threshold=0.7, proj_on_mask1=True,name="{} {} New Method".format(type,ph_num))
         if df_python.empty:
             df_python = df_current
         else:
             df_python = pd.merge(df_python,df_current,left_index=True,right_index=True)
 
     df_matlab = pd.DataFrame()
-    for it in [0,4]:
-        df_current = metrics_paramMaps_ROI(m.paramMap,all_maps_matlab[it][0],m.mask>0,all_maps_matlab[it][1]>0,maskROI=maskROI,adj_wT1=True, fat_threshold=0.7, proj_on_mask1=True,name="Phantom {} Matlab Iteration {}".format(ph_num,it))
+    for it in [0]:
+        df_current = metrics_paramMaps_ROI(m.paramMap,all_maps_matlab[it][0],m.mask>0,all_maps_matlab[it][1]>0,maskROI=maskROI,adj_wT1=True, fat_threshold=0.7, proj_on_mask1=True,name="Phantom {} Ref".format(type,ph_num))
         if df_matlab.empty:
             df_matlab = df_current
         else:
             df_matlab = pd.merge(df_matlab,df_current,left_index=True,right_index=True)
 
 
+
     df_res = pd.merge(df_python,df_matlab,left_index=True,right_index=True)
-    df_res.to_csv("{} {} : Results Summary Python vs Matlab v3.csv".format(type,ph_num))
+    df_res.to_csv("{} {} : Results Summary Ref vs New.csv".format(type,ph_num))
+
+
+
+#import pickle
+
+#file_all_results = "CL_ROI_All_results.pkl"
+#file_all_results = "{}_ROI_All_results.pkl".format(type)
+
+#file = open(file_all_results, "wb")
+# dump information to that file
+#pickle.dump(all_results, file)
+# close the file
+#file.close()
+
+import pickle
+
+#file_all_results = "CL_ROI_All_results.pkl"
+file_all_results = "{}_ROI_All_results_matlab.pkl".format(type)
+
+file = open(file_all_results, "wb")
+# dump information to that file
+pickle.dump(all_results_matlab, file)
+# close the file
+file.close()
+
+#file_all_results = "CL_ROI_All_results.pkl"
+file_all_results = "{}_ROI_All_results_python.pkl".format(type)
+
+file = open(file_all_results, "wb")
+# dump information to that file
+pickle.dump(all_results_python, file)
+# close the file
+file.close()
+
+
+filename = "{}_ROI_All_results.pkl".format(type)
+file = open(filename, "rb")
+# dump information to that file
+all_results=pickle.load(file)
+file.close()
+
+filename = "{}_ROI_All_results_matlab.pkl".format(type)
+file = open(filename, "rb")
+# dump information to that file
+all_results_matlab=pickle.load(file)
+file.close()
+
+filename = "{}_ROI_All_results_python.pkl".format(type)
+file = open(filename, "rb")
+# dump information to that file
+all_results_python=pickle.load(file)
+file.close()
+
+
+process_ROI_values(all_results,title="Comparison new vs ref all ROIs on all {}s".format(type),save=True,units=UNITS)
+process_ROI_values(all_results_python,title="Comparison new vs ground truth all ROIs on all {}s".format(type),save=True,units=UNITS)
+process_ROI_values(all_results_matlab,title="Comparison ref vs ground truth all ROIs on all {}s".format(type),save=True,units=UNITS)
+
+
+df_metrics_all=metrics_ROI_values(all_results,units=UNITS,name="All {}s".format(type))
+df_metrics_all.to_csv("{}_ROI_All_results.csv".format(type))
+
+df_metrics_all=metrics_ROI_values(all_results_matlab,units=UNITS,name="All {}s".format(type))
+df_metrics_all.to_csv("{}_ROI_All_results_matlab.csv".format(type))
+
+df_metrics_all=metrics_ROI_values(all_results_python,units=UNITS,name="All {}s".format(type))
+df_metrics_all.to_csv("{}_ROI_All_results_python.csv".format(type))
 
 
 #### COMPARISON GPU vs NO GPU FFT Python
