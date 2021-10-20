@@ -594,9 +594,17 @@ class SimpleDictSearch(Optimizer):
                     #phase_adj = np.angle((
                     #                                 1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase)
 
-                    phase_adj=cp.arctan(((1 - current_alpha_all_unique) * current_sig_ws_for_phase.imag +
-                                             current_alpha_all_unique * current_sig_ws_for_phase.imag) / (
-                                                        (1 - current_alpha_all_unique) * current_sig_ws_for_phase.real + current_alpha_all_unique * current_sig_ws_for_phase.real))
+
+                    d = (1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase
+                    phase_adj=-cp.arctan(d.imag / d.real)
+                    cond = cp.sin(phase_adj)*d.imag-cp.cos(phase_adj)*d.real<=0
+
+                    del d
+
+                    phase_adj=phase_adj*(1*(cond))+(phase_adj+np.pi)*(1*(1-cond))
+
+                    del cond
+
 
                     if verbose:
                         end = datetime.now()
@@ -607,8 +615,8 @@ class SimpleDictSearch(Optimizer):
                         print("Calculating cost for all signals")
                         start = datetime.now()
 
-                    current_sig_ws = (current_sig_ws_for_phase * np.exp(-1j * phase_adj)).real
-                    current_sig_fs = (current_sig_fs_for_phase * np.exp(-1j * phase_adj)).real
+                    current_sig_ws = (current_sig_ws_for_phase * np.exp(1j * phase_adj)).real
+                    current_sig_fs = (current_sig_fs_for_phase * np.exp(1j * phase_adj)).real
 
 
 
