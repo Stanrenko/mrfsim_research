@@ -84,6 +84,7 @@ class SimpleDictSearch(Optimizer):
 
         movement_correction=self.paramDict["movement_correction"]
         cond=self.paramDict["cond"]
+        adj_phase=self.paramDict["adj_phase"]
 
         if movement_correction:
             if cond is None:
@@ -243,66 +244,197 @@ class SimpleDictSearch(Optimizer):
                     print(end-start)
 
                 if not(useGPU_dictsearch):
-                    print("Calculating alpha optim and flooring")
-                    # start = datetime.now()
-                    # current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
-                    #         (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
-                    # end=datetime.now()
-                    # print(end-start)
+                    if adj_phase:
+                        print("Adjusting Phase")
+                        print("Calculating alpha optim and flooring")
+                        # start = datetime.now()
+                        # current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
+                        #         (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
+                        # end=datetime.now()
+                        # print(end-start)
 
-                    ### Testing direct phase solving
-                    A = sig_wf*current_sig_ws_for_phase-var_w*current_sig_fs_for_phase
-                    B = (current_sig_ws_for_phase + current_sig_fs_for_phase) * sig_wf - var_w * current_sig_fs_for_phase - var_f * current_sig_ws_for_phase
-                    beta = B.real*current_sig_fs_for_phase.real-B.imag*current_sig_fs_for_phase.imag
-                    delta = B.imag*current_sig_ws_for_phase.imag - B.real*current_sig_ws_for_phase.real
-                    gamma=A.real*current_sig_ws_for_phase.real - A.imag*current_sig_ws_for_phase.imag
-                    nu = A.imag*current_sig_fs_for_phase.imag-A.real*current_sig_fs_for_phase.real
+                        ### Testing direct phase solving
+                        A = sig_wf*current_sig_ws_for_phase-var_w*current_sig_fs_for_phase
+                        B = (current_sig_ws_for_phase + current_sig_fs_for_phase) * sig_wf - var_w * current_sig_fs_for_phase - var_f * current_sig_ws_for_phase
+                        # beta = B.real*current_sig_fs_for_phase.real+B.imag*current_sig_fs_for_phase.imag
+                        # delta = -B.imag*current_sig_ws_for_phase.imag - B.real*current_sig_ws_for_phase.real
+                        # gamma=A.real*current_sig_ws_for_phase.real - A.imag*current_sig_ws_for_phase.imag
+                        # nu = A.imag*current_sig_fs_for_phase.imag-A.real*current_sig_fs_for_phase.real
 
-                    a = beta + delta
-                    b = gamma-delta+nu
-                    c=-gamma
+                        a = B.real * current_sig_fs_for_phase.real + B.imag * current_sig_fs_for_phase.imag - B.imag * current_sig_ws_for_phase.imag - B.real * current_sig_ws_for_phase.real
+                        b = A.real * current_sig_ws_for_phase.real + A.imag * current_sig_ws_for_phase.imag + B.imag * current_sig_ws_for_phase.imag + B.real * current_sig_ws_for_phase.real - A.imag * current_sig_fs_for_phase.imag - A.real * current_sig_fs_for_phase.real
+                        c = -A.real * current_sig_ws_for_phase.real - A.imag * current_sig_ws_for_phase.imag
 
-                    del beta
-                    del delta
-                    del gamma
-                    del nu
+                        # a = beta + delta
+                        # b = gamma-delta+nu
+                        # c=-gamma
 
-
-                    discr = b**2-4*a*c
-                    alpha1 = (-b + np.sqrt(discr)) / (2 * a)
-                    alpha2 = (-b - np.sqrt(discr)) / (2 * a)
-
-                    del a
-                    del b
-                    del c
-                    del discr
-
-                    current_alpha_all_unique=(1 * (alpha1 >= 0) & (alpha1 <= 1)) * alpha1 + (1 - (1*(alpha1 >= 0) & (alpha1 <= 1))) * alpha2
-
-                    #current_alpha_all_unique_2 = (1 * (alpha2 >= 0) & (alpha2 <= 1)) * alpha2 + (
-                    #            1 - (1*(alpha2 >= 0) & (alpha2 <= 1))) * alpha1
-
-                    del alpha1
-                    del alpha2
-
-                    start = datetime.now()
-                    current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
-
-                    phase_adj=np.angle((1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase)
+                        # del beta
+                        # del delta
+                        # del gamma
+                        # del nu
 
 
-                    end=datetime.now()
-                    print(end-start)
+                        discr = b**2-4*a*c
+                        alpha1 = (-b + np.sqrt(discr)) / (2 * a)
+                        alpha2 = (-b - np.sqrt(discr)) / (2 * a)
 
-                    # alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
-                    print("Calculating cost for all signals")
-                    start = datetime.now()
-                    current_sig_ws = (current_sig_ws_for_phase*np.exp(-1j*phase_adj)).real
-                    current_sig_fs = (current_sig_fs_for_phase * np.exp(-1j * phase_adj)).real
+                        ##############################################################################################################################
+                        # def J_alpha_pixel(alpha,phi, i, j):
+                        #
+                        #     current_sig_ws = (current_sig_ws_for_phase[i,j] * np.exp(1j * phi)).real
+                        #     current_sig_fs = (current_sig_fs_for_phase[i,j] * np.exp(1j * phi)).real
+                        #     return ((
+                        #              1 - alpha) * current_sig_ws + alpha * current_sig_fs) / np.sqrt(
+                        #         (
+                        #                 1 - alpha) ** 2 * var_w[i] + alpha ** 2 * var_f[i] + 2 * alpha * (
+                        #                 1 - alpha) * sig_wf[i])
+                        #
+                        # phi = np.arange(-2*np.pi,2*np.pi,np.pi/10)
+                        # alpha = np.arange(-0.5,1.5,0.05)
+                        # alphav_np, phiv_np = np.meshgrid(alpha, phi, sparse=False, indexing='ij')
+                        #
+                        # i=10
+                        # j=15
+                        #
+                        # i = 0
+                        # j = 0
+                        #
+                        # s,t=current_sig_ws_for_phase.shape
+                        # n,m = alphav_np.shape
+                        # result_np=np.zeros(alphav_np.shape)
+                        # i,j=np.unravel_index(np.random.choice(np.arange(s*t)),(s,t))
+                        #
+                        # i=59081
+                        # j=0
+                        # for p in tqdm(range(n)):
+                        #     for q in range(m):
+                        #         result_np[p,q]=J_alpha_pixel(alphav_np[p,q],phiv_np[p,q],i,j)
+                        #
+                        #
+                        # import matplotlib.pyplot as plt
+                        # fig = plt.figure()
+                        # ax = fig.add_subplot(111, projection='3d')
+                        #
+                        # ax.plot_surface(alphav_np, phiv_np, result_np,alpha=0.5)
+                        #
+                        #
+                        #
+                        # index_min_p,index_min_q = np.unravel_index(np.argmax(result_np), result_np.shape)
+                        # alpha_min = alphav_np[index_min_p,index_min_q]
+                        # phi_min = phiv_np[index_min_p, index_min_q]
+                        # result_min = result_np[index_min_p, index_min_q]
+                        #
+                        # alpha_ = (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1)) * alpha1[i, j] + (
+                        #             1 - (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1))) * alpha2[i, j]
+                        #
+                        # print("Max alpha on surface : {}".format(np.round(alpha_min,2)))
+                        # #print("Alpha 1 : {}".format(np.round(alpha1[i,j],2)))
+                        # #print("Alpha 2 : {}".format(np.round(alpha2[i,j],2)))
+                        # print("Alpha : {}".format(np.round(alpha_, 2)))
+                        #
+                        # phi_calc = -np.angle((
+                        #                               1 - alpha_) * current_sig_ws_for_phase[i, j] + alpha_ * current_sig_fs_for_phase[i, j])
+                        #
+                        # d = (1 - alpha_) * current_sig_ws_for_phase[i, j] + alpha_ * \
+                        #      current_sig_fs_for_phase[i, j]
+                        # phi_form = -np.arctan(d.imag / d.real)
+                        # phi_form = (phi_form) * (
+                        #             1 * (np.sin(phi_form) * d.imag - np.cos(phi_form) * d.real) <= 0) + (
+                        #                  np.mod(phi_form + np.pi, 2 * np.pi)) * (
+                        #                          1 * (np.sin(phi_form) * d.imag - np.cos(phi_form) * d.real) > 0)
+                        #
+                        # # phi_calc1 = -np.angle((
+                        # #                              1 - alpha1[i,j]) * current_sig_ws_for_phase[i,j] + alpha1[i,j] * current_sig_fs_for_phase[i,j])
+                        # # phi_calc2 = -np.angle((
+                        # #                              1 - alpha2[i, j]) * current_sig_ws_for_phase[i, j] +  alpha2[i, j] *
+                        # #                      current_sig_fs_for_phase[i, j])
+                        # #
+                        # # d1 = (1 - alpha1[i,j]) * current_sig_ws_for_phase[i,j] + alpha1[i,j] * current_sig_fs_for_phase[i,j]
+                        # # phi_form_1 = -np.arctan(d1.imag/d1.real)
+                        # # d2 = (1 - alpha2[i, j]) * current_sig_ws_for_phase[i, j] + alpha2[i, j] * current_sig_fs_for_phase[
+                        # #     i, j]
+                        # # phi_form_2 = -np.arctan(d2.imag/d2.real)
+                        # #
+                        # # phi_form_1 = (phi_form_1)*(1*(np.sin(phi_form_1)*d1.imag-np.cos(phi_form_1)*d1.real)<=0)+(np.mod(phi_form_1+np.pi,2*np.pi))*(1*(np.sin(phi_form_1)*d1.imag-np.cos(phi_form_1)*d1.real)>0)
+                        # # phi_form_2 = (phi_form_2) * (
+                        # #             1 * (np.sin(phi_form_2) * d2.imag - np.cos(phi_form_2) * d2.real) <= 0) + (
+                        # #                  np.mod(phi_form_2 + np.pi, 2 * np.pi)) * (
+                        # #                          1 * (np.sin(phi_form_2) * d2.imag - np.cos(phi_form_2) * d2.real) > 0)
+                        #
+                        # print("Max phi on surface : {}".format(np.round(phi_min, 2)))
+                        # # print("Phi Ideal 1 : {}".format(np.round(phi_calc1, 2)))
+                        # # print("Phi Ideal 2 : {}".format(np.round(phi_calc2, 2)))
+                        # # print("Phi Formula 1 : {}".format(np.round(phi_form_1, 2)))
+                        # # print("Phi Formula 2 : {}".format(np.round(phi_form_2, 2)))
+                        # print("Phi ideal: {}".format(np.round(phi_calc, 2)))
+                        # print("Phi : {}".format(np.round(phi_form, 2)))
+                        #
+                        # print("Max correl on surface {}".format(np.round(result_min,2)))
+                        # print("Retrieved correl on surface {}".format(np.round( J_alpha_pixel(alpha_, phi_form, i, j)[0],2)))
+                        #
+                        # ax.plot(alpha_min,phi_min,result_min,marker="x")
+                        # ax.plot(alpha_, phi_form, J_alpha_pixel(alpha_, phi_form, i, j)[0], marker="o")
+                        # ax.set_title("Signal {},{}".format(i,j))
+                        # # ax.plot(alpha1[i,j], phi_form_1, J_alpha_pixel(alpha1[i,j],phi_form_1,i,j)[0], marker="o")
+                        # # ax.plot(alpha2[i,j], phi_form_2,
+                        # #         J_alpha_pixel(alpha2[i, j], phi_form_2, i, j)[0], marker="o")
+                        #################################################################################################################################""""
 
-                    del phase_adj
-                    del current_sig_ws_for_phase
-                    del current_sig_fs_for_phase
+                        del a
+                        del b
+                        del c
+                        del discr
+
+                        current_alpha_all_unique=(1 * (alpha1 >= 0) & (alpha1 <= 1)) * alpha1 + (1 - (1*(alpha1 >= 0) & (alpha1 <= 1))) * alpha2
+
+                        #current_alpha_all_unique_2 = (1 * (alpha2 >= 0) & (alpha2 <= 1)) * alpha2 + (
+                        #            1 - (1*(alpha2 >= 0) & (alpha2 <= 1))) * alpha1
+
+                        del alpha1
+                        del alpha2
+
+                        start = datetime.now()
+                        current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
+
+                        #phase_adj=np.angle((1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase)
+
+
+                        d = (1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase
+                        phase_adj = -np.arctan(d.imag /d.real)
+                        cond = np.sin(phase_adj) * d.imag - np.cos(phase_adj) * d.real
+                        del d
+
+                        phase_adj = (phase_adj) * (
+                                    1 * (cond) <= 0) + (phase_adj + np.pi) * (
+                                                 1 * (cond) > 0)
+
+                        del cond
+
+                        end=datetime.now()
+                        print(end-start)
+
+                        # alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
+                        print("Calculating cost for all signals")
+                        start = datetime.now()
+
+                        current_sig_ws = (current_sig_ws_for_phase*np.exp(1j*phase_adj)).real
+                        current_sig_fs = (current_sig_fs_for_phase * np.exp(1j * phase_adj)).real
+
+                        del phase_adj
+
+
+                    else:
+                        print("Not Adjusting Phase")
+                        current_sig_ws = current_sig_ws_for_phase.real
+                        current_sig_fs = current_sig_fs_for_phase.real
+
+                        del current_sig_ws_for_phase
+                        del current_sig_fs_for_phase
+
+                        current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
+                                     (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
+                        current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
 
                     J_all = ((
                                      1 - current_alpha_all_unique) * current_sig_ws + current_alpha_all_unique * current_sig_fs) / np.sqrt(
@@ -507,6 +639,7 @@ class SimpleDictSearch(Optimizer):
                     start = datetime.now()
 
                 idx_max_all_current = np.argmax(J_all, axis=0)
+                #check_max_correl=np.max(J_all,axis=0)
 
                 if verbose:
                     end = datetime.now()

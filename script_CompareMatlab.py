@@ -32,7 +32,7 @@ seq = T1MRF(**sequence_config)
 
 size=(256,256)
 useGPU_simulation=False
-useGPU_dictsearch=True
+useGPU_dictsearch=False
 
 load_maps=False
 save_maps = False
@@ -79,11 +79,10 @@ for ph_num in tqdm([1]):
 
         #ani1,ani2 =animate_multiple_images([np.mean(gp, axis=0) for gp in groupby(m.images_series, nspoke)],volumes,cmap="gray")
 
-
         # kdata_noGPU = m.generate_kdata(radial_traj, useGPU=False)
         # volumes_noGPU = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=False)
 
-        optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=useGPU_dictsearch,useGPU_simulation=useGPU_simulation)
+        optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=useGPU_dictsearch,useGPU_simulation=useGPU_simulation,adj_phase=True)
         all_maps_adj=optimizer.search_patterns(dictfile,volumes)
 
         if save_maps:
