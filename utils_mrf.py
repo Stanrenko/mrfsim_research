@@ -402,15 +402,20 @@ def basicDictSearch(all_signals,dictfile):
 
 
 
-def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8,proj_on_mask1=False,save=False,figsize=(30,10),units=None):
+def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8,proj_on_mask1=False,save=False,figsize=(30,10),units=None,vmax_error=None,extent=None,kept_keys=None):
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
+
+    if kept_keys is not None:
+        keys_1 = keys_1 & set(kept_keys)
+        keys_2 = keys_2 & set(kept_keys)
     if mask2 is None:
         mask2 = mask1
     for k in (keys_1 & keys_2):
         fig,axes=plt.subplots(1,3,figsize=figsize)
         vol1 = makevol(map1[k],mask1)
         vol2= makevol(map2[k],mask2)
+
         if proj_on_mask1 is not None:
             if type(proj_on_mask1) is bool:#Projection on mask 1
                 vol2=vol2*(mask1*1)
@@ -433,28 +438,48 @@ def compare_paramMaps(map1,map2,mask1,mask2=None,fontsize=5,title1="Orig Map",ti
             graph_title2 = title2 + " {} ({})".format(k, units[k])
             error_title = "Error {} ({})".format(k,units[k])
 
-        im1=axes[0].imshow(vol1)
-        axes[0].set_title(graph_title1)
-        axes[0].tick_params(axis='x', labelsize=fontsize)
-        axes[0].tick_params(axis='y', labelsize=fontsize)
-        cbar1 = fig.colorbar(im1, ax=axes[0], fraction=0.046, pad=0.04)
-        cbar1.ax.tick_params(labelsize=fontsize)
 
-        im2 = axes[1].imshow(vol2)
-        axes[1].set_title(graph_title2)
-        axes[1].tick_params(axis='x', labelsize=fontsize)
-        axes[1].tick_params(axis='y', labelsize=fontsize)
+        if extent is not None:
+            centrum_x=int(vol1.shape[0]/2)
+            centrum_y = int(vol2.shape[1] / 2)
+            vol1=vol1[centrum_x-extent:centrum_x+extent,centrum_y-extent:centrum_y+extent]
+            vol2 = vol2[centrum_x - extent:centrum_x + extent, centrum_y - extent:centrum_y + extent]
+            error = error[centrum_x - extent:centrum_x + extent, centrum_y - extent:centrum_y + extent]
+
+        minmin=np.min([np.min(vol1),np.min(vol2)])
+        maxmax=np.max([np.max(vol1),np.max(vol2)])
+
+        im1=axes[0].imshow(vol1,vmin=minmin,vmax=maxmax,aspect="auto")
+        axes[0].set_title(graph_title1,fontdict={"fontsize":fontsize})
+        axes[0].xaxis.set_visible(False)
+        axes[0].yaxis.set_visible(False)
+        #cbar1 = fig.colorbar(im1, ax=axes[0], fraction=0.046, pad=0.04)
+        #cbar1.ax.tick_params(labelsize=fontsize)
+
+        im2 = axes[1].imshow(vol2,vmin=minmin,vmax=maxmax,aspect="auto")
+        axes[1].set_title(graph_title2,fontdict={"fontsize":fontsize})
+        axes[1].xaxis.set_visible(False)
+        axes[1].yaxis.set_visible(False)
+
+
+        if (vmax_error is None):
+            im3 = axes[2].imshow(error,aspect="auto")
+        else:
+            im3 = axes[2].imshow(error,vmin=-vmax_error[k],vmax=vmax_error[k],aspect="auto")
+        axes[2].set_title(error_title,fontdict={"fontsize":fontsize})
+        axes[2].xaxis.set_visible(False)
+        axes[2].yaxis.set_visible(False)
+
+        #fig.subplots_adjust(bottom=0.1, top=0.9, left=0.1, right=0.8,
+        #                    wspace=0.08, hspace=0.02)
+
         cbar2 = fig.colorbar(im2, ax=axes[1], fraction=0.046, pad=0.04)
         cbar2.ax.tick_params(labelsize=fontsize)
 
-        im3 = axes[2].imshow(error)
-        axes[2].set_title(error_title)
-        axes[2].tick_params(axis='x', labelsize=fontsize)
-        axes[2].tick_params(axis='y', labelsize=fontsize)
         cbar3 = fig.colorbar(im3, ax=axes[2], fraction=0.046, pad=0.04)
         cbar3.ax.tick_params(labelsize=fontsize)
         if save:
-            plt.savefig("./figures/{}_vs_{}_{}".format(title1,title2,k))
+            fig.savefig("./figures/{}_vs_{}_{}".format(title1,title2,k))
 
 def compare_paramMaps_3D(map1,map2,mask1,mask2=None,slice=0,fontsize=5,title1="Orig Map",title2="Rebuilt Map",adj_wT1=False,fat_threshold=0.8,proj_on_mask1=False,save=False):
     keys_1 = set(map1.keys())
@@ -564,7 +589,7 @@ def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression 
 
 def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, title="Maps regression plots",
                              fontsize=5, adj_wT1=False, fat_threshold=0.8, mode="Standard", proj_on_mask1=True,plt_std=False,
-                             figsize=(15, 10),save=False,kept_keys=None,min_ROI_count=15,units=None):
+                             figsize=(15, 10),save=False,kept_keys=None,min_ROI_count=15,units=None,fontsize_axis=None):
 
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
@@ -666,15 +691,22 @@ def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, t
             graph_title = k + " R2:{} Bias:{} ({})".format(np.round(r_2, 4), np.round(bias, 3), units[k])
 
         ax[i].set_title(graph_title, fontsize=2 * fontsize)
-        ax[i].tick_params(axis='x', labelsize=fontsize)
-        ax[i].tick_params(axis='y', labelsize=fontsize)
+
+        if fontsize_axis is None:
+            ax[i].tick_params(axis='x', labelsize=fontsize)
+            ax[i].tick_params(axis='y', labelsize=fontsize)
+
+        else:
+            ax[i].tick_params(axis='x', labelsize=fontsize_axis)
+            ax[i].tick_params(axis='y', labelsize=fontsize_axis)
+
 
     plt.suptitle(title)
     if save:
-        plt.savefig("./figures/{}".format(title))
+        fig.savefig("./figures/{}".format(title))
 
 
-def process_ROI_values(all_results, save=False,mode="Standard",title="Results comparison all ROIs",plt_std=False,figsize=(15, 10),fontsize=5,units=None):
+def process_ROI_values(all_results, save=False,mode="Standard",title="Results comparison all ROIs",plt_std=False,figsize=(15, 10),fontsize=5,fontsize_axis=None,units=None):
 
     nb_keys=len(all_results.keys())
     fig, ax = plt.subplots(1, nb_keys, figsize=figsize)
@@ -719,9 +751,13 @@ def process_ROI_values(all_results, save=False,mode="Standard",title="Results co
         else :
             graph_title = k + " R2:{} Bias:{} ({})".format(np.round(r_2, 4), np.round(bias, 3),units[k])
         ax[i].set_title(graph_title, fontsize=2 * fontsize)
-        ax[i].tick_params(axis='x', labelsize=fontsize)
-        ax[i].tick_params(axis='y', labelsize=fontsize)
 
+        if fontsize_axis is None:
+            ax[i].tick_params(axis='x', labelsize=fontsize)
+            ax[i].tick_params(axis='y', labelsize=fontsize)
+        else:
+            ax[i].tick_params(axis='x', labelsize=fontsize_axis)
+            ax[i].tick_params(axis='y', labelsize=fontsize_axis)
 
     plt.suptitle(title)
     if save:

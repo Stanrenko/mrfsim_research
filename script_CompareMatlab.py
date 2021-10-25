@@ -34,8 +34,8 @@ size=(256,256)
 useGPU_simulation=False
 useGPU_dictsearch=False
 
-load_maps=False
-save_maps = True
+load_maps=True
+save_maps = False
 
 type="SquarePhantom"
 
@@ -43,7 +43,15 @@ all_results ={}
 all_results_matlab ={}
 all_results_python ={}
 
-for ph_num in tqdm([1,2,3,4,5]):
+
+error_extent={
+    "wT1":600,
+    "ff":0.2,
+    "df":0.03,
+    "attB1":0.1
+}
+
+for ph_num in tqdm([1]):
     print("##################### {} : PHANTOM {} #########################".format(type,ph_num))
     file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(type,ph_num)
 
@@ -90,14 +98,14 @@ for ph_num in tqdm([1,2,3,4,5]):
         all_maps_adj=optimizer.search_patterns(dictfile,volumes)
         #save_maps=False
         if save_maps:
-            file = open("all_maps_{}.pkl".format(m.name), "wb")
+            file = open("./maps/all_maps_{}.pkl".format(m.name), "wb")
             # dump information to that file
             pickle.dump(all_maps_adj, file)
             # close the file
             file.close()
 
     else:
-        with open("all_maps_{}{}.pkl".format(type,ph_num), 'rb') as f:
+        with open("./maps/all_maps_{}{}.pkl".format(type,ph_num), 'rb') as f:
             all_maps_adj = pickle.load(f)
     #### Finding Matlab files
     file_names=glob.glob("./data/{}/Phantom{}/MRFmap8SpokesSVD15*".format(type,ph_num))
@@ -118,12 +126,12 @@ for ph_num in tqdm([1,2,3,4,5]):
     plt.close("all")
     for it in [0]:#all_maps_adj.keys():
         regression_paramMaps_ROI(m.paramMap, all_maps_adj[it][0], m.mask > 0, all_maps_adj[it][1] > 0,maskROI=maskROI,
-                                 title="{} {} : New Method".format(type,ph_num), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True,kept_keys=["attB1","df","wT1","ff"],units=UNITS)
+                                 title="New Method", proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True,kept_keys=["attB1","df","wT1","ff"],units=UNITS,fontsize_axis=8)
 
     # plt.close("all")
     for it in [0]:#all_maps_matlab.keys():
         regression_paramMaps_ROI(m.paramMap, all_maps_matlab[it][0], m.mask > 0, all_maps_matlab[it][1] > 0,maskROI=maskROI,
-                                 title="{} {} : Ref Method".format(type,ph_num), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True,kept_keys=["attB1","df","wT1","ff"],units=UNITS)
+                                 title="Ref Method", proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True,kept_keys=["attB1","df","wT1","ff"],units=UNITS,fontsize_axis=8)
     # plt.close("all")
 
     #plot_evolution_params(m.paramMap,m.mask>0,all_maps_adj,maskROI=maskROI,metric="R2",title="{} {} : Python Evolution v2".format(type,ph_num),fontsize=10,adj_wT1=True,save=True)
@@ -131,11 +139,11 @@ for ph_num in tqdm([1,2,3,4,5]):
     #plt.close("all")
 
     for it in [0]:
-        compare_paramMaps(m.paramMap,all_maps_adj[it][0],m.mask>0,all_maps_adj[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="{} {} Ground Truth".format(type,ph_num),title2="Retrieved New Method",figsize=(30,10),fontsize=5,save=True,proj_on_mask1=True,units=UNITS)
+        compare_paramMaps(m.paramMap,all_maps_adj[it][0],m.mask>0,all_maps_adj[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="Ground Truth".format(type,ph_num),title2="Retrieved New Method".format(type,ph_num),figsize=(30,10),fontsize=25,save=True,proj_on_mask1=True,units=UNITS,extent=70,vmax_error=error_extent,kept_keys=["attB1","df","wT1","ff"])
         #plt.close("all")
 
     for it in [0]:
-        compare_paramMaps(m.paramMap,all_maps_matlab[it][0],m.mask>0,all_maps_matlab[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="{} {} Ground Truth".format(type,ph_num),title2="Retrieved Ref Method",figsize=(30,10),fontsize=5,save=True,proj_on_mask1=True,units=UNITS)
+        compare_paramMaps(m.paramMap,all_maps_matlab[it][0],m.mask>0,all_maps_matlab[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="Ground Truth".format(type,ph_num),title2="Retrieved Ref Method".format(type,ph_num),figsize=(30,10),fontsize=25,save=True,proj_on_mask1=True,units=UNITS,extent=70,vmax_error=error_extent,kept_keys=["attB1","df","wT1","ff"])
         #plt.close("all")
 
     it=0
@@ -199,22 +207,21 @@ for ph_num in tqdm([1,2,3,4,5]):
 import pickle
 
 #file_all_results = "CL_ROI_All_results.pkl"
-file_all_results = "{}_ROI_All_results_matlab.pkl".format(type)
+#file_all_results = "{}_ROI_All_results_matlab.pkl".format(type)
 
-file = open(file_all_results, "wb")
+#file = open(file_all_results, "wb")
 # dump information to that file
-pickle.dump(all_results_matlab, file)
+#pickle.dump(all_results_matlab, file)
 # close the file
-file.close()
+#file.close()
 
-#file_all_results = "CL_ROI_All_results.pkl"
-file_all_results = "{}_ROI_All_results_python.pkl".format(type)
+#file_all_results = "{}_ROI_All_results_python.pkl".format(type)
 
-file = open(file_all_results, "wb")
+#file = open(file_all_results, "wb")
 # dump information to that file
-pickle.dump(all_results_python, file)
+#pickle.dump(all_results_python, file)
 # close the file
-file.close()
+#file.close()
 
 
 filename = "{}_ROI_All_results.pkl".format(type)
@@ -222,6 +229,9 @@ file = open(filename, "rb")
 # dump information to that file
 all_results=pickle.load(file)
 file.close()
+
+process_ROI_values(all_results,title="Comparison new vs ref all ROIs on all {}s".format(type),save=True,units=UNITS,fontsize=5,fontsize_axis=8)
+
 
 filename = "{}_ROI_All_results_matlab.pkl".format(type)
 file = open(filename, "rb")
@@ -236,9 +246,8 @@ all_results_python=pickle.load(file)
 file.close()
 
 
-process_ROI_values(all_results,title="Comparison new vs ref all ROIs on all {}s".format(type),save=True,units=UNITS)
-process_ROI_values(all_results_python,title="Comparison new vs ground truth all ROIs on all {}s".format(type),save=True,units=UNITS)
-process_ROI_values(all_results_matlab,title="Comparison ref vs ground truth all ROIs on all {}s".format(type),save=True,units=UNITS)
+process_ROI_values(all_results_python,title="Comparison new vs ground truth all ROIs on all {}s".format(type),save=True,units=UNITS,fontsize=5,fontsize_axis=8)
+process_ROI_values(all_results_matlab,title="Comparison ref vs ground truth all ROIs on all {}s".format(type),save=True,units=UNITS,fontsize=5,fontsize_axis=8)
 
 
 df_metrics_all=metrics_ROI_values(all_results,units=UNITS,name="All {}s".format(type))

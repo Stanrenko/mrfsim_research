@@ -19,8 +19,10 @@ from tqdm import tqdm
 import pickle
 from scipy.io import savemat
 from Transformers import PCAComplex
-import cupy as cp
-
+try:
+    import cupy as cp
+except:
+    pass
 ## Random map simulation
 
 dictfile = "./mrf175_SimReco2_mid_point.dict"
@@ -41,9 +43,9 @@ useGPU_dictsearch=False
 load_maps=False
 save_maps = False
 
-load=True
+load=False
 
-type="KneePhantom"
+type="SquarePhantom"
 
 ph_num=1
 
