@@ -38,14 +38,14 @@ seq = T1MRF(**sequence_config)
 
 size=(256,256)
 useGPU_simulation=False
-useGPU_dictsearch=False
+useGPU_dictsearch=True
 
 load_maps=False
 save_maps = False
 
-load=False
+load=True
 
-type="SquarePhantom"
+type="KneePhantom"
 
 ph_num=1
 
@@ -58,6 +58,12 @@ m.buildParamMap()
 
 ##### Simulating Ref Images
 m.build_ref_images(seq)
+
+##### ADDING MOVEMENT
+direction=np.array([0.0,4.0])
+move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
+
+m.add_movements([move])
 
 #### Rebuilding the map from undersampled images
 ntimesteps=175
@@ -72,7 +78,9 @@ if not(load):
         pickle.dump(kdata, file)
 
 else:
-    kdata = pickle.load( open( "kdata_forLowRank_{}.pkl".format(m.name), "rb" ) )
+    file=open( "kdata_forLowRank_{}.pkl".format(m.name), "rb" )
+    kdata = pickle.load( file )
+    file.close()
 
 ## Compressed sensing test
 
@@ -86,7 +94,7 @@ if not(len(kdata)==len(traj)):
 lambd=100
 
 volumes_new = np.zeros((ntimesteps,)+size,dtype=np.complex128)
-maxiter=100
+maxiter=10
 
 for j,current_kdata in tqdm(enumerate(kdata)):
 
@@ -100,19 +108,40 @@ for j,current_kdata in tqdm(enumerate(kdata)):
 
 
     current_traj=traj[j]
+
     def J(m):
         global current_traj
         global current_kdata
         global lambd
-        return J_fourier(m,current_traj,current_kdata) + lambd*J_sparse(m)
+        start = time.time()
+        j_fourier = J_fourier(m,current_traj,current_kdata)
+        end=time.time()
+        print("Time spent in Fourier : {}s".format(end-start))
+
+        start = time.time()
+        j_sparse=J_sparse(m)
+        end = time.time()
+        print("Time spent in Sparse : {}s".format(end - start))
+        return j_fourier + lambd*j_sparse
 
     def grad_J(m):
         global current_traj
         global current_kdata
         global lambd
-        return grad_J_fourier(m,current_traj,current_kdata) + lambd*grad_J_sparse(m)
 
-    m_opt = conjgrad(J, grad_J, m0, maxiter=maxiter)
+        start = time.time()
+        g_j_fourier = grad_J_fourier(m,current_traj,current_kdata)
+        end = time.time()
+        print("Time spent in Grad Fourier : {}s".format(end - start))
+
+        start = time.time()
+        g_j_sparse = grad_J_sparse(m)
+        end = time.time()
+        print("Time spent in Grad Sparse : {}s".format(end - start))
+
+        return g_j_fourier + lambd*g_j_sparse
+
+    m_opt = conjgrad(J, grad_J, m0, maxiter=maxiter,beta=0.000001)
     volumes_new[j]=m_opt
     m0 = m_opt
 
@@ -121,7 +150,7 @@ ani=animate_multiple_images(volumes,volumes_new)
 
 mask = build_mask_single_image(kdata,radial_traj,m.image_size)
 
-optimizer = SimpleDictSearch(mask=mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=False,useGPU_simulation=False)
+optimizer = SimpleDictSearch(mask=mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=True,useGPU_simulation=False)
 all_maps_volumes=optimizer.search_patterns(dictfile,volumes)
 all_maps_volumes_new=optimizer.search_patterns(dictfile,volumes_new)
 

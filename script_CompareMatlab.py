@@ -17,6 +17,7 @@ import glob
 from tqdm import tqdm
 import pickle
 from scipy.io import savemat
+import time
 
 ## Random map simulation
 
@@ -34,7 +35,7 @@ size=(256,256)
 useGPU_simulation=False
 useGPU_dictsearch=False
 
-load_maps=True
+load_maps=False
 save_maps = False
 
 type="SquarePhantom"
@@ -94,8 +95,12 @@ for ph_num in tqdm([1]):
         # kdata_noGPU = m.generate_kdata(radial_traj, useGPU=False)
         # volumes_noGPU = simulate_radial_undersampled_images(kdata,radial_traj,m.image_size,density_adj=True,useGPU=False)
 
-        optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=useGPU_dictsearch,useGPU_simulation=useGPU_simulation,adj_phase=True)
+        optimizer = SimpleDictSearch(mask=m.mask,niter=0,seq=seq,trajectory=radial_traj,split=500,pca=True,threshold_pca=15,log=False,useAdjPred=False,useGPU_dictsearch=True,useGPU_simulation=useGPU_simulation,adj_phase=True)
+        start_time=time.time()
         all_maps_adj=optimizer.search_patterns(dictfile,volumes)
+        end_time=time.time()
+
+        print("Total Time Dict Search : {}".format(end_time-start_time))
         #save_maps=False
         if save_maps:
             file = open("./maps/all_maps_{}.pkl".format(m.name), "wb")

@@ -11,11 +11,15 @@ import time
 import glob
 from mutools import io
 from skimage.morphology import area_opening
+
 plt.ioff()
 plt.ion()
+
+
+
 UNITS
 folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/MT"
-folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/CLI"
+#folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/CLI"
 
 #thighs / legs
 folder_results_matlab =r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/3_Data/Patients"
@@ -24,7 +28,7 @@ save_volumes=True
 save_maps=True
 
 ROI_folder_names = glob.glob(folder_ROI+"/MT*")
-ROI_folder_names = glob.glob(folder_ROI+"/*")
+#ROI_folder_names = glob.glob(folder_ROI+"/*")
 
 patient_names=np.unique([str.split(str.split(p,"/")[-1],".")[0] for p in ROI_folder_names])
 #patient_names=np.concatenate([["MTTX"],patient_names[4:]])
@@ -37,8 +41,8 @@ exam_types=["legs","thighs"]
 exam_type="legs"
 p = patient_names[0]
 
-#patient_names=["CL1JO"]
-#exam_types=["legs"]
+patient_names=["MTTS"]
+exam_types=["thighs"]
 all_results={}
 for p in patient_names:
     for exam_type in exam_types:
@@ -134,7 +138,10 @@ for p in patient_names:
         # Selecting one slice
 
         for sl in range(0,maskROI.shape[0]):
-        #for sl in [4]:
+        #for sl in [0]:
+            #sl=4
+
+
             print("Processing slice {} out of {}".format(sl,maskROI.shape[0]-1))
             kdata_all_channels=kdata_all_channels_all_slices[sl,:,:,:]
             b1=b1_all_slices[sl]
@@ -223,13 +230,23 @@ for p in patient_names:
 
             seq = T1MRF(**sequence_config)
 
+            niter = 0
+            start_time = time.time()
+            optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=50, pca=True,
+                                         threshold_pca=15, log=False, useGPU_dictsearch=True, useGPU_simulation=False,
+                                         gen_mode="other")
+            all_maps = optimizer.search_patterns(dictfile, volumes_all)
+            end_time = time.time()
+            print("Time taken for slice {} : {}".format(sl, end_time - start_time))
+
 
             if not(str.split(filename,"/")[-1].split(".dat")[0] + "_MRF_map_sl_{}.pkl".format(sl) in glob.glob("*")):
                 niter = 0
-
-                optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
+                start_time=time.time()
+                optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other")
                 all_maps=optimizer.search_patterns(dictfile,volumes_all)
-
+                end_time=time.time()
+                print("Time taken for slice {} : {}".format(sl,end_time-start_time))
                 if(save_maps):
                     import pickle
 
@@ -288,7 +305,7 @@ for p in patient_names:
 
             plt.close("all")
 
-            #compare_paramMaps(all_maps_matlab_current_slice[0],all_maps_python_current_slice[0],all_maps_matlab_current_slice[1]>0,all_maps_python_current_slice[1]>0,title1="{} {} Matlab {}".format(p,exam_type,sl),title2="{} {} Python {}".format(p,exam_type,sl),proj_on_mask1=proj_mask>0,adj_wT1=True,save=True)
+            compare_paramMaps(all_maps_matlab_current_slice[0],all_maps_python_current_slice[0],all_maps_matlab_current_slice[1]>0,all_maps_python_current_slice[1]>0,title1="{} {} Matlab {}".format(p,exam_type,sl),title2="{} {} Python {}".format(p,exam_type,sl),proj_on_mask1=proj_mask>0,adj_wT1=True,save=True,fontsize=15,figsize=(40,10))
 
             # plt.figure();plt.imshow(makevol(maskROI_current,all_maps_python_current_slice[1]>0))
             # plt.figure();
@@ -437,6 +454,4 @@ param = "attB1"
 plt.figure()
 plt.hist(df_all.loc[metric+" "+param,:])
 plt.title("Histogram of {} new vs ref".format(metric+" "+param))
-
-
 

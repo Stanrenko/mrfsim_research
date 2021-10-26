@@ -44,8 +44,6 @@ class Radial(Trajectory):
 
         return self.traj
 
-
-
 class Radial3D(Trajectory):
 
     def __init__(self,ntimesteps=175,nspoke=8,npoint=512,undersampling_factor=4,is_random=False,**kwargs):
@@ -115,3 +113,32 @@ class VariableSpiral(Trajectory):
         return self.traj
 
 
+class Navigator3D(Trajectory):
+
+    def __init__(self,direction=[1.0,0.0,0.0],ntimesteps=1400,npoint=512,nb_slices=1,nspoke=1,undersampling_factor=4,**kwargs):
+        super().__init__(**kwargs)
+        self.paramDict["ntimesteps"] = ntimesteps
+        self.paramDict["npoint"] = npoint
+        self.paramDict["direction"] = direction
+        self.paramDict["nb_slices"] = nb_slices
+        self.paramDict["nspoke"] = nspoke
+        self.paramDict["undersampling_factor"] = undersampling_factor
+        self.paramDict["nb_rep"] = int(self.paramDict["nb_slices"] / self.paramDict["undersampling_factor"])
+
+    def get_traj(self):
+        if self.traj is None:
+            npoint = self.paramDict["npoint"]
+            ntimesteps = self.paramDict["ntimesteps"]
+            nb_slices=self.paramDict["nb_slices"]
+            nspoke = self.paramDict["nspoke"]
+            total_nspoke = nspoke * self.paramDict["ntimesteps"]
+            direction=self.paramDict["direction"]
+            nb_rep=self.paramDict["nb_rep"]
+
+            k_max=np.pi
+
+            base_spoke=(-k_max+np.arange(npoint)*2*k_max/(npoint-1)).reshape(-1,1)*np.array(direction).reshape(1,-1)
+            self.traj=np.repeat(np.expand_dims(base_spoke,axis=0),axis=0,repeats=nb_rep*total_nspoke)
+
+
+        return self.traj

@@ -1491,6 +1491,8 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
 
             images_series_rebuilt=[]
             for t,s in tqdm(zip(traj,kdata)):
+                s=s.astype(np.complex64)
+                t=t.astype(np.float32)
                 images_series_rebuilt.append(finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size))
 
         else:
@@ -2136,6 +2138,7 @@ def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256)):
 
 
 def J_fourier(m, traj, kdata):
+
     Fu_m = finufft.nufft2d2(traj[:, 0], traj[:, 1], m)
     return np.linalg.norm(Fu_m - kdata) ** 2
 
@@ -2202,13 +2205,13 @@ def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6):
     m=m0
     g=grad_J(m)
     d_m=-g
-    print(d_m)
     #store = [m]
     while (np.linalg.norm(g)>tolgrad)and(k<maxiter):
         if k%10==0:
             print(k)
         t = 1
         while(J(m+t*d_m)>J(m)+alpha*t*np.real(np.dot(g.flatten(),d_m.flatten()))):
+            print(t)
             t = beta*t
 
         m = m + t*d_m
@@ -2220,3 +2223,18 @@ def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6):
         #store.append(m)
 
     return m
+
+
+def simulate_image_series_from_maps(map_rebuilt,mask_rebuilt,window=8):
+    keys_simu = list(map_rebuilt.keys())
+    values_simu = [makevol(map_rebuilt[k], mask_rebuilt > 0) for k in keys_simu]
+    map_for_sim = dict(zip(keys_simu, values_simu))
+
+    map_ = MapFromDict("RebuiltMapFromParam", paramMap=map_for_sim)
+    map_.buildParamMap()
+
+    map_.build_ref_images(seq=seq)
+    rebuilt_image_series = map_.images_series
+    rebuilt_image_series= [np.mean(gp, axis=0) for gp in groupby(rebuilt_image_series, window)]
+    rebuilt_image_series=np.array(rebuilt_image_series)
+    return rebuilt_image_series,map_for_sim

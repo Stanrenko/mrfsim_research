@@ -399,7 +399,7 @@ class ImageSeries(object):
                     c_gpu = GPUArray((M), dtype=complex_dtype)
                     # Initialize the plan and set the points.
                     kdata = []
-                    for i in tqdm(list(range(m.images_series.shape[0]))):
+                    for i in tqdm(list(range(self.images_series.shape[0]))):
                         fk = images_series.iloc[i]
                         kx = traj[i, :, 0]
                         ky = traj[i, :, 1]
