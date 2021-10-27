@@ -298,7 +298,10 @@ class ImageSeries(object):
             raise ValueError("Trajectory dimension does not match Image Space dimension")
 
         size = self.image_size
-        images_series = self.images_series
+        if trajectory.applied_timesteps is None:
+            images_series = self.images_series
+        else:
+            images_series=self.images_series[trajectory.applied_timesteps]
         # images_series =normalize_image_series(self.images_series)
 
         if traj.shape[-1] == 2:  # 2D
@@ -443,10 +446,16 @@ class ImageSeries(object):
                         for movements in self.list_movements:
                             df = movements.apply(df, useGPU)
 
-                        values = np.array(list(current_data.groupby("KZ").apply(
-                            lambda grp: finufft.nufft3d2(grp.KZ, grp.KX, grp.KY,
-                                                         df.Images[np.unique(grp.rep_number)[0]])).values)).flatten()
-                        kdata.append(values)
+                        if not(trajectory.reconstruct_each_partition):
+                            values = np.array(list(current_data.groupby("KZ").apply(
+                                lambda grp: finufft.nufft3d2(grp.KZ, grp.KX, grp.KY,
+                                                             df.Images[np.unique(grp.rep_number)[0]])).values)).flatten()
+                            kdata.append(values)
+                        else:#outputs kdata for each repetition of the sequence separately - typically for navigators
+                            values=[finufft.nufft3d2(current_data.KZ, current_data.KX, current_data.KY,
+                                                             image) for image in df.Images]
+                            kdata.append(values)
+
             else:
 
                 if self.list_movements == []:

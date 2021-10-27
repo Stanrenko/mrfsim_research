@@ -1413,9 +1413,9 @@ def buildROImask_unique(map):
 
     return maskROI
 
-def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6,is_theta_z_adjusted=False):
+def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6,is_theta_z_adjusted=False,ntimesteps=175):
 #Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
-    traj=trajectory.get_traj_for_reconstruction()
+    traj=trajectory.get_traj_for_reconstruction(ntimesteps)
     npoint = trajectory.paramDict["npoint"]
     nspoke = trajectory.paramDict["nspoke"]
 

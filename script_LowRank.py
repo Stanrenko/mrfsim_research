@@ -178,6 +178,7 @@ r = np.vstack((X,Y))
 
 traj=radial_traj.get_traj_for_reconstruction()
 
+
 def J(volumes,kdata,traj,r,split=10,lamb=0):
     nts=traj.shape[0]
     vol = volumes.reshape((volumes.shape[0],-1))
@@ -214,19 +215,19 @@ def N(x,mu=1e-6):
     return np.sum(np.sqrt(np.abs(x)+mu))
 
 
-def psi(m,type='db2',level=3,image_size=(256,256)):
+def psi(m,type='db2',mode="periodization",level=3,image_size=(256,256)):
     init_shape=m.shape
     m=m.reshape(image_size)
-    c = pywt.wavedec2(m, type, level=level, mode="periodization")
+    c = pywt.wavedec2(m, type, level=level,mode=mode)
     arr, slices = pywt.coeffs_to_array(c)
     arr = arr.reshape(init_shape)
     return arr,slices
 
-def inv_psi(arr,slices,type="db2",image_size=(256,256)):
+def inv_psi(arr,slices,type="db2",mode="periodization",image_size=(256,256)):
     init_shape = arr.shape
     arr=arr.reshape(image_size)
     coef = pywt.array_to_coeffs(arr, slices, output_format='wavedec2')
-    volumes_rebuilt = pywt.waverec2(coef, type)
+    volumes_rebuilt = pywt.waverec2(coef, type,mode=mode)
     volumes_rebuilt = volumes_rebuilt.reshape(init_shape)
     return volumes_rebuilt
 
@@ -270,7 +271,31 @@ def J_gpu(volumes,kdata,traj,r,split=10):
         grad[t_cur:t_next]=cp.squeeze(cp.matmul(F_cur_adj,cp.expand_dims(current_res,axis=-1)))
     return res.get(),grad.get()
 
-volumes0 = np.zeros(volumes.shape)
+nts=traj.shape[0]
+volumes0 = np.zeros((nts,)+size,dtype=np.complex64)
+volumes0=volumes0.reshape((nts,-1))
+
+lambd=0.5
+ts=0
+M=volumes0[ts]
+
+if not (len(kdata) == len(traj)):
+    kdata = np.array(kdata).reshape(len(traj), -1)
+
+psi_m,slices=psi(M)
+W_cur=W(psi_m)
+grad_norm1=lambd*inv_psi(np.matmul(W_cur,psi_m),slices)
+
+traj_cur=traj[ts]
+kdata_cur=kdata[ts]
+F_cur = np.matmul(traj_cur, r)
+#F_cur_adj=np.moveaxis(F_cur_adj,-1,0)
+
+M_cur=np.expand_dims(M,axis=-1)
+
+current_res = (kdata_cur-np.squeeze(np.matmul(F_cur,M_cur)))
+current_grad=np.squeeze(np.matmul(F_cur.T.conj(),np.expand_dims(current_res,axis=-1)))+grad_norm1
+current_f=np.linalg.norm((kdata_cur-np.squeeze(np.matmul(F_cur,M_cur))))+lambd*np.linalg.norm(psi_m,ord=1)
 
 res,grad=J(volumes0,np.array(kdata),traj,r,split=1)
 grad_image=grad.reshape((grad.shape[0],)+m.image_size)

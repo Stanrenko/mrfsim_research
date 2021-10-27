@@ -24,17 +24,19 @@ from tqdm import tqdm
 # c_gpu.gpudata.free()
 ## Random map simulation
 
+
+
 start = datetime.now()
 
 
-load_paramMap=False
+load_paramMap=True
 build_ref_images=True
-load=False
+load=True
 
 if not(load_paramMap):
     load=False
 
-load_maps=False
+load_maps=True
 
 is_random=False
 
@@ -46,7 +48,7 @@ dictfile = "mrf175_CS.dict"
 #dictfile = "mrf175_SimReco2.dict"
 
 useGPU_simulation=False
-useGPU_dictsearch=True
+useGPU_dictsearch=False
 
 with open("mrf_sequence.json") as f:
     sequence_config = json.load(f)
@@ -69,10 +71,10 @@ region_size=16 #size of the regions with uniform values for params in pixel numb
 size=(256,256)
 mask_reduction_factor=1/4
 
-nb_slices= 64
-nb_empty_slices=8
+nb_slices= 8
+nb_empty_slices=2
 undersampling_factor=1
-repeat_slice=8
+repeat_slice=4
 
 gen_mode ="other"
 
@@ -84,7 +86,9 @@ if not(load_paramMap):
         pickle.dump(m.paramMap, file)
 
 else:
-    m.paramMap=pickle.load(open(folder_3D+"paramMap_sl{}_rp{}_{}.pkl".format(nb_slices+2*nb_empty_slices,repeat_slice,m.name), "rb"))
+    file=open(folder_3D+"paramMap_sl{}_rp{}_{}.pkl".format(nb_slices+2*nb_empty_slices,repeat_slice,m.name), "rb")
+    m.paramMap=pickle.load(file)
+    file.close()
 #m.plotParamMap("wT1")
 
 ##### Simulating Ref Images
@@ -95,13 +99,15 @@ else:#still need to build the timeline for applying movement / movement correcti
 
 
 npoint=512
-nspoke=8
-ntimesteps=175
+nspoke=8 #nspokes per z encoding
+all_spokes=1400 #spokes for each partition
+ntimesteps=int(all_spokes/nspoke)
+
 
 nb_total_slices=m.paramDict["nb_total_slices"]
 undersampling_factor = m.paramDict["undersampling_factor"]
 
-radial_traj_3D=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_total_slices,undersampling_factor=undersampling_factor,is_random=is_random)
+radial_traj_3D=Radial3D(total_nspokes=all_spokes,nspoke_per_z_encoding=nspoke,npoint=npoint,nb_slices=nb_total_slices,undersampling_factor=undersampling_factor,is_random=is_random)
 
 if not(load):
 
@@ -116,10 +122,13 @@ if not(load):
 
 else:
     if not(is_random):
-        kdata = pickle.load( open( folder_3D+"kdata_no_mvt_sl{}rp{}us{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,m.name), "rb" ) )
+        file=open( folder_3D+"kdata_no_mvt_sl{}rp{}us{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,m.name), "rb" )
+        kdata = pickle.load(file)
+        file.close()
     else:
-        kdata = pickle.load(
-            open(folder_3D+"kdata_random_no_mvt_sl{}rp{}us{}_{}.pkl".format(nb_total_slices, repeat_slice,undersampling_factor, m.name), "rb"))
+        file=open(folder_3D+"kdata_random_no_mvt_sl{}rp{}us{}_{}.pkl".format(nb_total_slices, repeat_slice,undersampling_factor, m.name), "rb")
+        kdata = pickle.load(file)
+        file.close()
 
 # nav_y=Navigator3D(direction=[0.0,1.0,0.0])
 # nav_x = Navigator3D(direction=[1.0,0.0,0.0])
@@ -154,9 +163,13 @@ if not(load):
 else:
     if not(is_random):
         volumes = pickle.load( open( folder_3D+"volumes_no_mvt_sl{}rp{}us{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,m.name), "rb" ) )
+        file= open( "volumes_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb" )
+        volumes = pickle.load(file)
+        file.close()
     else:
-        volumes = pickle.load(
-            open(folder_3D+"volumes_random_no_mvt_sl{}rp{}us{}_{}.pkl".format(nb_total_slices, repeat_slice,undersampling_factor, m.name), "rb"))
+        file=open(folder_3D+"volumes_random_no_mvt_sl{}rp{}us{}_{}.pkl".format(nb_total_slices, repeat_slice,undersampling_factor, m.name), "rb")
+        volumes = pickle.load(file)
+        file.close()
 #volumes_noGPU = simulate_radial_undersampled_images(kdata_noGPU,radial_traj_3D,m.image_size,density_adj=True,useGPU=True)
 #ani,ani1=animate_multiple_images(volumes[:,4,:,:],volumes_noGPU[:,4,:,:])
 
@@ -187,11 +200,14 @@ if not(load_maps):
     file.close()
 else:
     if not(is_random):
-        all_maps_adj = pickle.load( open(folder_3D+"all_maps_no_mvt_sl{}rp{}us{}_iter{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,niter,m.name), "rb" ))
+        file = open(folder_3D+"all_maps_no_mvt_sl{}rp{}us{}_iter{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,niter,m.name), "rb" )
+        all_maps_adj = pickle.load(file )
+        file.close()
     else:
-        all_maps_adj = pickle.load(
-            open(folder_3D+"all_maps_random_no_mvt_sl{}rp{}us{}_iter{}_{}.pkl".format(nb_total_slices, repeat_slice,undersampling_factor, niter, m.name),
-                 "rb"))
+        file=open(folder_3D+"all_maps_random_no_mvt_sl{}rp{}us{}_iter{}_{}.pkl".format(nb_total_slices, repeat_slice,undersampling_factor, niter, m.name),
+                 "rb")
+        all_maps_adj = pickle.load(file)
+        file.close()
 
 end=datetime.now()
 print(end-start)
@@ -213,21 +229,21 @@ size_slice = int(m.paramDict["repeat_slice"])
 iter =0
 sl = 1
 #
-compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl-1)*size_slice+int(size_slice/2),title1="Slices{}_US{} No movements Orig".format(nb_total_slices,undersampling_factor),title2="Mid Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
-compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl)*size_slice,title1="Slices{}_US{} No movements Orig".format(nb_total_slices,undersampling_factor),title2="Border Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
+#compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl-1)*size_slice+int(size_slice/2),title1="Slices{}_US{} No movements Orig".format(nb_total_slices,undersampling_factor),title2="Mid Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
+#compare_paramMaps_3D(m.paramMap,all_maps_adj[iter][0],m.mask>0,all_maps_adj[iter][1]>0,slice=m.paramDict["nb_empty_slices"]+(sl)*size_slice,title1="Slices{}_US{} No movements Orig".format(nb_total_slices,undersampling_factor),title2="Border Slice {} Iter {}".format(sl,iter),proj_on_mask1=True,save=True,adj_wT1=True,fat_threshold=0.7)
 
-plt.close("all")
+#plt.close("all")
 
 
 ##### ADDING MOVEMENT
-direction=np.array([2.0,0.0,0.0])
+direction=np.array([1.0,0.0,0.0])
 move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
 
 m.add_movements([move])
 
-load=False
-load_maps=False
-useGPU_simulation=True
+load=True
+load_maps=True
+useGPU_simulation=False
 #
 # kdata_nav_y_mvt = m.generate_kdata(nav_y,useGPU=useGPU_simulation)
 # kdata_nav_x_mvt= m.generate_kdata(nav_x,useGPU=useGPU_simulation)
@@ -252,15 +268,51 @@ if not(load):
         pickle.dump(kdata_mvt, file)
 
 else:
-    kdata_mvt = pickle.load(
-        open(folder_3D+"kdata_mvt_sl{}rp{}us{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,m.name), "rb"))
+    file=open(folder_3D+"kdata_mvt_sl{}rp{}us{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,m.name), "rb")
+    kdata_mvt = pickle.load(file)
+    file.close()
 
 
 useGPU_simulation=False
 
+nav_z=Navigator3D(direction=[0.0,0.0,1.0],applied_timesteps=[1399])
+kdata_nav = m.generate_kdata(nav_z,useGPU=useGPU_simulation)
+
+kdata_nav = np.array(kdata_nav[0])
+plt.close("all")
+
+ind=-2
+#np.sort(np.mod(np.angle(kdata_nav[2,:]),np.pi))
+dz=-np.angle(kdata_nav[:,ind])/nav_z.get_traj()[0,ind,2]
+phase_correction=np.exp(1j*np.unique(radial_traj_3D.get_traj()[:,:,2],axis=1)*dz[np.newaxis,:])
+
+kdata_mvt_corrected=np.array(kdata_mvt)
+kdata_mvt_corrected=kdata_mvt_corrected.reshape(kdata_mvt_corrected.shape[0],m.paramDict["nb_rep"],-1)
+kdata_mvt_corrected = kdata_mvt_corrected*phase_correction[:,:,np.newaxis]
+
+
+volumes_corrected = simulate_radial_undersampled_images(kdata_mvt_corrected,radial_traj_3D,m.image_size,density_adj=True,useGPU=useGPU_simulation)
+
+all_maps_mvt=optimizer.search_patterns(dictfile,volumes_corrected)
+file = open( folder_3D+"all_maps_mvt_corrected_sl{}rp{}us{}_iter{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,niter,m.name), "wb" )
+# dump information to that file
+pickle.dump(all_maps_mvt, file)
+    # close the file
+file.close()
+
+
+plt.plot(-np.angle(kdata_nav[:,0]).T/np.pi)
+
+
+
+plt.figure()
+plt.plot()
+
+dz =
 
 # volumes_mvt_nav_x = simulate_radial_undersampled_images(kdata_nav_x_mvt,nav_x,m.image_size,density_adj=False,useGPU=useGPU_simulation,is_theta_z_adjusted=True)
 # volumes_mvt_nav_y = simulate_radial_undersampled_images(kdata_nav_y_mvt,nav_y,m.image_size,density_adj=False,useGPU=useGPU_simulation)
+
 
 if not(load):
     #kdata_noGPU=m.generate_radial_kdata(radial_traj_3D,useGPU=False)
@@ -294,7 +346,9 @@ if not(load_maps):
     file.close()
 
 else:
-    all_maps_mvt = pickle.load(  open(folder_3D+"all_maps_mvt_sl{}rp{}us{}_iter{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,niter,m.name), "rb" ))
+    file =open(folder_3D+"all_maps_mvt_sl{}rp{}us{}_iter{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,niter,m.name), "rb" )
+    all_maps_mvt = pickle.load( file )
+    file.close()
 
 #
 # regression_paramMaps_ROI(m.paramMap, all_maps_adj[4][0], m.mask > 0, all_maps_adj[4][1] > 0,maskROI=maskROI,
@@ -308,7 +362,7 @@ maskROI=buildROImask_unique(m.paramMap)
 
 for iter in all_maps_mvt.keys():
     regression_paramMaps_ROI(m.paramMap, all_maps_mvt[iter][0], m.mask > 0, all_maps_mvt[iter][1] > 0,maskROI=maskROI,
-                             title="Slices{}_US{} movement ROI Orig vs Iteration {}".format(nb_total_slices,undersampling_factor,iter), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,save=True)
+                             title="Slices{}_US{} movement corrected ROI Orig vs Iteration {}".format(nb_total_slices,undersampling_factor,iter), proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,save=True)
 
 
 plt.close("all")
@@ -352,6 +406,137 @@ plt.legend()
 
 
 
+
+kdata_for_mvt_analysis_no_mvt=np.array(groupby(np.array(kdata),512,axis=1))
+kdata_for_mvt_analysis_no_mvt=kdata_for_mvt_analysis_no_mvt[5]
+kdata_for_mvt_analysis_no_mvt=kdata_for_mvt_analysis_no_mvt.reshape(-1,512)
+
+kdata_for_mvt_analysis=np.array(groupby(np.array(kdata_mvt),512,axis=1))
+kdata_for_mvt_analysis=kdata_for_mvt_analysis[5]
+kdata_for_mvt_analysis=kdata_for_mvt_analysis.reshape(-1,512)
+
+
+plt.close("all")
+plt.figure()
+plt.plot(np.angle(kdata_for_mvt_analysis_no_mvt[200:250,255]),label="No mvt")
+plt.plot(np.angle(kdata_for_mvt_analysis[200:250,255]),label="mvt")
+plt.legend()
+
+plt.figure()
+plt.plot(np.angle(kdata_for_mvt_analysis[:,255])-np.angle(kdata_for_mvt_analysis_no_mvt[:,255]))
+
+
+
+plt.figure()
+plt.plot(np.abs(kdata_for_mvt_analysis_no_mvt[:,255]))
+plt.figure()
+plt.plot(np.abs(kdata_for_mvt_analysis_no_mvt[:,256]))
+plt.figure()
+plt.plot(np.abs(kdata_for_mvt_analysis_no_mvt[:,255]+kdata_for_mvt_analysis_no_mvt[:,256]))
+
+
+plt.figure()
+plt.plot(np.abs(kdata_for_mvt_analysis[:,255]))
+plt.figure()
+plt.plot(np.abs(kdata_for_mvt_analysis[:,256]))
+plt.figure()
+plt.plot(np.abs(kdata_for_mvt_analysis[:,255]+kdata_for_mvt_analysis[:,256]))
+
+ind=255
+wind=3
+metric=np.angle
+
+plt.close("all")
+
+kdata_centrum=kdata_for_mvt_analysis[:,ind-wind:ind+wind]
+pca=PCAComplex()
+pca.fit(kdata_centrum.T)
+
+kdata_centrum_no_mvt=kdata_for_mvt_analysis_no_mvt[:,ind-wind:ind+wind]
+pca_no_mvt=PCAComplex()
+pca_no_mvt.fit(kdata_centrum_no_mvt.T)
+
+
+comp=0
+fig, ax1 = plt.subplots()
+ax2=ax1.twinx()
+
+ax1.plot(metric(pca.components_[:,comp]),label="Kdata Movement comp {}".format(comp))
+ax1.plot(metric(pca_no_mvt.components_[:,comp]),label="Kdata No movement comp {}".format(comp))
+ax1.legend()
+ax2.plot(move.paramDict["transformation"](m.t[5,:].reshape(-1,1))[:,1],label="Movement shape")
+ax2.legend()
+
+comp=1
+fig, ax1 = plt.subplots()
+ax2=ax1.twinx()
+ax1.plot(metric(pca.components_[:,comp]),label="Kdata Movement comp {}".format(comp))
+ax1.plot(metric(pca_no_mvt.components_[:,comp]),label="Kdata No movement comp {}".format(comp))
+ax1.legend()
+ax2.plot(move.paramDict["transformation"](m.t[5,:].reshape(-1,1))[:,1],label="Movement shape")
+ax2.legend()
+
+wind=8
+
+##############################################
+kdata_for_mvt_analysis_no_mvt=np.array(groupby(np.array(kdata),512,axis=1))
+kdata_for_mvt_analysis=np.array(groupby(np.array(kdata_mvt),512,axis=1))
+traj=radial_traj_3D.get_traj()
+traj_for_mvt_analysis =np.array(groupby(traj,512,axis=1))
+
+
+dtheta = np.pi / nspoke
+dz = 1/1
+
+kdata_current = kdata_for_mvt_analysis_no_mvt
+kdata_normalized = kdata_current / (npoint)*dz * dtheta
+
+density = np.abs(np.linspace(-1, 1, npoint))[np.newaxis,np.newaxis,:]
+kdata_normalized =kdata_normalized*density
+
+images_reps=np.zeros((kdata_normalized.shape[0],175,m.image_size[0],m.image_size[1],m.image_size[2]),dtype=np.complex128)
+
+for j in tqdm(range(kdata_normalized.shape[0])):
+    traj_rep = traj_for_mvt_analysis[j]
+    kdata_rep = kdata_normalized[j]
+    traj_rep=traj_rep.reshape(175,-1,3)
+    kdata_rep=kdata_rep.reshape(175,-1)
+    images=np.zeros((175,m.image_size[0],m.image_size[1],m.image_size[2]),dtype=np.complex128)
+    for i,x in tqdm(enumerate(zip(traj_rep, kdata_rep))):
+        t=x[0]
+        s=x[1]
+        images[i] = (finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], s, (m.image_size[0],m.image_size[1],m.image_size[2])))
+    images_reps[j]=images
+
+
+##############################################
+kdata_for_mvt_analysis_no_mvt=np.array(groupby(np.array(kdata),512,axis=1))
+kdata_for_mvt_analysis_no_mvt=kdata_for_mvt_analysis_no_mvt[5]
+
+kdata_for_mvt_analysis=np.array(groupby(np.array(kdata_mvt),512,axis=1))
+kdata_for_mvt_analysis=kdata_for_mvt_analysis[5]
+
+traj=radial_traj_3D.get_traj()
+traj_for_mvt_analysis =np.array(groupby(traj,512,axis=1))
+traj_for_mvt_analysis=traj_for_mvt_analysis[5]
+
+kdata_for_mvt_analysis_filtered=np.zeros(kdata_for_mvt_analysis.shape,dtype=np.complex128)
+kdata_for_mvt_analysis_no_mvt_filtered=np.zeros(kdata_for_mvt_analysis_no_mvt.shape,dtype=np.complex128)
+
+kdata_for_mvt_analysis_filtered[:,255-wind:255+wind]=kdata_for_mvt_analysis[:,255-wind:255+wind]
+kdata_for_mvt_analysis_no_mvt_filtered[:,255-wind:255+wind]=kdata_for_mvt_analysis_no_mvt[:,255-wind:255+wind]
+
+dtheta = np.pi / nspoke
+dz = 1/1
+
+kdata_ = [k / (npoint)*dz * dtheta for k in kdata_for_mvt_analysis_filtered]
+
+density = np.abs(np.linspace(-1, 1, npoint))
+kdata_ = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata_]
+
+images_series_rebuilt=[]
+for t,s in tqdm(zip(traj_for_mvt_analysis,kdata_)):
+    images_series_rebuilt.append(finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, m.image_size))
 #####CORRECTION
 
 load=False
@@ -384,7 +569,7 @@ if not(load):
     print("Compression factor : {}%".format((1-ratio)*100))
 
 
-    radial_traj_3D_corrected=Radial3D(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint,nb_slices=nb_total_slices,undersampling_factor=undersampling_factor)
+    radial_traj_3D_corrected=Radial3D(total_nspokes=all_spokes,nspoke_per_z_encoding=nspoke,npoint=npoint,nb_slices=nb_total_slices,undersampling_factor=undersampling_factor)
     radial_traj_3D_corrected.traj_for_reconstruction=traj_retained_final
 
     volumes_corrected = simulate_radial_undersampled_images(kdata_retained_final,radial_traj_3D_corrected,m.image_size,density_adj=False,useGPU=False,is_theta_z_adjusted=True)
