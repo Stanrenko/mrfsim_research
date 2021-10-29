@@ -540,37 +540,65 @@ class ImageSeries(object):
 
                         kdata_current=[]
 
-                        for j,g in enumerate(groups):
-                            name = g[0]
-                            group = g[1]
-                            fk = df.Images[j]
-                            kx = np.array(group["KX"])
-                            ky = np.array(group["KY"])
-                            kz = np.array(group["KZ"])
+                        if not (trajectory.reconstruct_each_partition):
+                            for j,g in enumerate(groups):
+                                name = g[0]
+                                group = g[1]
+                                fk = df.Images[j]
+                                kx = np.array(group["KX"])
+                                ky = np.array(group["KY"])
+                                kz = np.array(group["KZ"])
 
-                            # Initialize the plan and set the points.
+                                # Initialize the plan and set the points.
+
+                                kx = kx.astype(dtype)
+                                ky = ky.astype(dtype)
+                                kz = kz.astype(dtype)
+                                fk = fk.astype(complex_dtype)
+
+                                c_gpu = GPUArray((kx.shape[0]), dtype=complex_dtype)
+                                #fk_gpu = GPUArray(fk.shape, dtype=complex_dtype)
+                                #fk_gpu.fill(fk)
+                                fk_gpu = to_gpu(fk)
+
+
+                                plan = cufinufft(2, (N1, N2,N3), 1, eps=eps, dtype=dtype)
+                                plan.set_pts(to_gpu(kz),to_gpu(kx), to_gpu(ky))
+                                plan.execute(c_gpu, fk_gpu)
+                                c = np.squeeze(c_gpu.get())
+                                kdata_current.append(c)
+                                fk_gpu.gpudata.free()
+                                c_gpu.gpudata.free()
+                                plan.__del__()
+
+                            kdata_current=np.array(kdata_current).flatten()
+
+                        else:# For navigators
+                            kx = np.array(current_data.KX)
+                            ky = np.array(current_data.KY)
+                            kz = np.array(current_data.KZ)
 
                             kx = kx.astype(dtype)
                             ky = ky.astype(dtype)
                             kz = kz.astype(dtype)
-                            fk = fk.astype(complex_dtype)
 
-                            c_gpu = GPUArray((kx.shape[0]), dtype=complex_dtype)
-                            #fk_gpu = GPUArray(fk.shape, dtype=complex_dtype)
-                            #fk_gpu.fill(fk)
-                            fk_gpu = to_gpu(fk)
+                            for image in df.Images:
+                                fk = image
+                                fk = fk.astype(complex_dtype)
+                                c_gpu = GPUArray((kx.shape[0]), dtype=complex_dtype)
+                                # fk_gpu = GPUArray(fk.shape, dtype=complex_dtype)
+                                # fk_gpu.fill(fk)
+                                fk_gpu = to_gpu(fk)
 
+                                plan = cufinufft(2, (N1, N2, N3), 1, eps=eps, dtype=dtype)
+                                plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+                                plan.execute(c_gpu, fk_gpu)
+                                c = np.squeeze(c_gpu.get())
+                                kdata_current.append(c)
+                                fk_gpu.gpudata.free()
+                                c_gpu.gpudata.free()
+                                plan.__del__()
 
-                            plan = cufinufft(2, (N1, N2,N3), 1, eps=eps, dtype=dtype)
-                            plan.set_pts(to_gpu(kz),to_gpu(kx), to_gpu(ky))
-                            plan.execute(c_gpu, fk_gpu)
-                            c = np.squeeze(c_gpu.get())
-                            kdata_current.append(c)
-                            fk_gpu.gpudata.free()
-                            c_gpu.gpudata.free()
-                            plan.__del__()
-
-                        kdata_current=np.array(kdata_current).flatten()
                         kdata.append(kdata_current)
 
         #dtheta = np.pi / nspoke

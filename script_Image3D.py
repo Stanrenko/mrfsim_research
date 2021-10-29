@@ -47,7 +47,7 @@ dictfile = "mrf175.dict"
 dictfile = "mrf175_CS.dict"
 #dictfile = "mrf175_SimReco2.dict"
 
-useGPU_simulation=False
+useGPU_simulation=True
 useGPU_dictsearch=False
 
 with open("mrf_sequence.json") as f:
@@ -71,10 +71,10 @@ region_size=16 #size of the regions with uniform values for params in pixel numb
 size=(256,256)
 mask_reduction_factor=1/4
 
-nb_slices= 8
-nb_empty_slices=2
+nb_slices= 64
+nb_empty_slices=8
 undersampling_factor=1
-repeat_slice=4
+repeat_slice=8
 
 gen_mode ="other"
 
@@ -162,8 +162,8 @@ if not(load):
             pickle.dump(volumes, file)
 else:
     if not(is_random):
-        volumes = pickle.load( open( folder_3D+"volumes_no_mvt_sl{}rp{}us{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,m.name), "rb" ) )
-        file= open( "volumes_no_mvt_sl{}us{}_{}.pkl".format(nb_total_slices,undersampling_factor,m.name), "rb" )
+        #volumes = pickle.load( open( folder_3D+"volumes_no_mvt_sl{}rp{}us{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,m.name), "rb" ) )
+        file= open( folder_3D+"volumes_no_mvt_sl{}rp{}us{}_{}.pkl".format(nb_total_slices,repeat_slice,undersampling_factor,m.name), "rb" )
         volumes = pickle.load(file)
         file.close()
     else:
@@ -222,6 +222,7 @@ for iter in all_maps_adj.keys():
 
 
 
+
 size_slice = int(m.paramDict["repeat_slice"])
 
 #plot_evolution_params(m.paramMap,m.mask>0,all_maps_adj,maskROI,save=True)
@@ -236,14 +237,14 @@ sl = 1
 
 
 ##### ADDING MOVEMENT
-direction=np.array([1.0,0.0,0.0])
+direction=np.array([4.0,0.0,0.0])
 move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
 
 m.add_movements([move])
 
 load=True
-load_maps=True
-useGPU_simulation=False
+load_maps=False
+useGPU_simulation=True
 #
 # kdata_nav_y_mvt = m.generate_kdata(nav_y,useGPU=useGPU_simulation)
 # kdata_nav_x_mvt= m.generate_kdata(nav_x,useGPU=useGPU_simulation)
@@ -273,9 +274,11 @@ else:
     file.close()
 
 
-useGPU_simulation=False
+useGPU_simulation=True
 
-nav_z=Navigator3D(direction=[0.0,0.0,1.0],applied_timesteps=[1399])
+timesteps = list(np.arange(1400)[::-25][::-1])
+
+nav_z=Navigator3D(direction=[0.0,0.0,1.0],applied_timesteps=timesteps)
 kdata_nav = m.generate_kdata(nav_z,useGPU=useGPU_simulation)
 
 kdata_nav = np.array(kdata_nav[0])
