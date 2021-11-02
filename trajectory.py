@@ -34,7 +34,7 @@ class Radial(Trajectory):
         if self.traj is None:
             npoint = self.paramDict["npoint"]
             total_nspokes = self.paramDict["total_nspokes"]
-            all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
+            all_spokes = radial_golden_angle_traj(total_nspokes, npoint)
             #traj = np.reshape(groupby(all_spokes, nspoke), (-1, npoint * nspoke))
             traj = all_spokes
             traj=np.stack([traj.real,traj.imag],axis=-1)

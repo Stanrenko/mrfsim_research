@@ -16,10 +16,13 @@ filename="./data/InVivo/meas_MID00094_FID24076_JAMBES_raFin_CLI.dat"
 filename="./data/InVivo/meas_MID00315_FID33126_JAMBES_raFin_CLI.dat"
 filename="./data/InVivo/meas_MID00333_FID33144_CUISSES_raFin_CLI.dat"
 
+filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
+
+
 save_volume=True
 
-save_volume=False
-load_volume=True
+save_volume=True
+load_volume=False
 
 Parsed_File = rT.map_VBVD(filename)
 
@@ -42,8 +45,8 @@ data=np.moveaxis(data,1,-1)
 nb_channels = data.shape[1]
 
 ntimesteps=175
+
 nb_allspokes = data.shape[-2]
-nspoke=int(nb_allspokes/ntimesteps)
 npoint = data.shape[-1]
 image_size = (256,256)
 
@@ -52,7 +55,7 @@ density = np.abs(np.linspace(-1, 1, npoint))
 kdata_all_channels_all_slices = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in data]
 kdata_all_channels_all_slices=np.array(kdata_all_channels_all_slices).reshape(data.shape)
 
-radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint)
+radial_traj=Radial(total_nspokes=1400,npoint=npoint)
 
 #Coil sensi estimation for all slices
 res=16
@@ -70,7 +73,7 @@ b1=b1_all_slices[slice]
 ##volumes for slice taking into account coil sensi
 
 if not(load_volume):
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels,radial_traj,image_size,b1=b1,density_adj=False)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels,radial_traj,image_size,b1=b1,density_adj=False,ntimesteps=ntimesteps)
     if (save_volume):
         np.save(filename.split(".dat")[0] + "_volumes.npy",volumes_all)
 else:
@@ -107,8 +110,8 @@ save_map=True
 if not(load_map):
     niter = 0
 
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
-    all_maps=optimizer.search_patterns(dictfile,volumes_matlab_slice)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other")
+    all_maps=optimizer.search_patterns(dictfile,volumes_all)
 
     if(save_map):
         import pickle

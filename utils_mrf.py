@@ -1417,7 +1417,8 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
 #Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
     traj=trajectory.get_traj_for_reconstruction(ntimesteps)
     npoint = trajectory.paramDict["npoint"]
-    nspoke = trajectory.paramDict["nspoke"]
+    nb_allspokes = trajectory.paramDict["total_nspokes"]
+    nspoke = int(nb_allspokes / ntimesteps)
 
     if not(is_theta_z_adjusted):
         dtheta = np.pi / nspoke
@@ -1539,11 +1540,12 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
 
     return np.array(images_series_rebuilt)
 
-def simulate_radial_undersampled_images_density_optim(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6,is_theta_z_adjusted=False):
+def simulate_radial_undersampled_images_density_optim(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6,is_theta_z_adjusted=False,ntimesteps=175):
 #Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
     traj=trajectory.get_traj_for_reconstruction()
     npoint = trajectory.paramDict["npoint"]
-    nspoke = trajectory.paramDict["nspoke"]
+    nb_allspokes=trajectory.paramDict["total_nspokes"]
+    nspoke=int(nb_allspokes/ntimesteps)
 
     if not(is_theta_z_adjusted):
         dtheta = np.pi / nspoke
@@ -1669,11 +1671,12 @@ def simulate_radial_undersampled_images_density_optim(kdata,trajectory,size,dens
 
     return np.array(images_series_rebuilt)
 
-def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=True,eps=1e-6,is_theta_z_adjusted=False,b1=None):
+def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=True,eps=1e-6,is_theta_z_adjusted=False,b1=None,ntimesteps=175):
 #Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
-    traj=trajectory.get_traj_for_reconstruction()
+    traj=trajectory.get_traj_for_reconstruction(ntimesteps)
     npoint = trajectory.paramDict["npoint"]
-    nspoke = trajectory.paramDict["nspoke"]
+    nb_allspokes=trajectory.paramDict["total_nspokes"]
+    nspoke=int(nb_allspokes/ntimesteps)
 
     if not(is_theta_z_adjusted):
         dtheta = np.pi / nspoke
