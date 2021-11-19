@@ -188,13 +188,13 @@ class SimpleDictSearch(Optimizer):
                 if not(useGPU_dictsearch):
 
                     if pca:
-                        transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique)))
-                        transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique)))
+                        transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique[:, j_signal:j_signal_next])))
+                        transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique[:, j_signal:j_signal_next])))
 
                         sig_ws_all_unique = np.matmul(transformed_array_water_unique,
-                                                      transformed_all_signals_water[:, j_signal:j_signal_next].conj())
+                                                      transformed_all_signals_water.conj())
                         sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
-                                                      transformed_all_signals_fat[:, j_signal:j_signal_next].conj())
+                                                      transformed_all_signals_fat.conj())
                     else:
                         sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, j_signal:j_signal_next].conj())
                         sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, j_signal:j_signal_next].conj())
@@ -206,15 +206,13 @@ class SimpleDictSearch(Optimizer):
                     if pca:
 
                         transformed_all_signals_water = cp.transpose(
-                            pca_water.transform(cp.transpose(cp.asarray(all_signals_unique)))).get()
-                        transformed_all_signals_fat = cp.transpose(pca_fat.transform(cp.transpose(cp.asarray(all_signals_unique)))).get()
+                            pca_water.transform(cp.transpose(cp.asarray(all_signals_unique[:, j_signal:j_signal_next])))).get()
+                        transformed_all_signals_fat = cp.transpose(pca_fat.transform(cp.transpose(cp.asarray(all_signals_unique[:, j_signal:j_signal_next])))).get()
 
                         sig_ws_all_unique = (cp.matmul(cp.asarray(transformed_array_water_unique),
-                                                      cp.asarray(transformed_all_signals_water)[:,
-                                                      j_signal:j_signal_next].conj())).get()
+                                                      cp.asarray(transformed_all_signals_water).conj())).get()
                         sig_fs_all_unique = (cp.matmul(cp.asarray(transformed_array_fat_unique),
-                                                      cp.asarray(transformed_all_signals_fat)[:,
-                                                      j_signal:j_signal_next].conj())).get()
+                                                      cp.asarray(transformed_all_signals_fat).conj())).get()
                     else:
 
                         sig_ws_all_unique = (cp.matmul(cp.asarray(array_water_unique),

@@ -9,19 +9,24 @@ import json
 import readTwix as rT
 import time
 import os
+from numpy.lib.format import open_memmap
+from numpy import memmap
+import pickle
 
-filename="./data/InVivo/meas_MID00060_FID24042_JAMBES_raFin_CLI.dat"
-filename="./data/InVivo/meas_MID00094_FID24076_JAMBES_raFin_CLI.dat"
-#CS
-filename="./data/InVivo/meas_MID00315_FID33126_JAMBES_raFin_CLI.dat"
-filename="./data/InVivo/meas_MID00333_FID33144_CUISSES_raFin_CLI.dat"
 
 filename="./data/InVivo/3D/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
+filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00044_FID42066_raFin_3D_tra_1x1x5mm_us4_vivo.dat"
+#filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
+
 
 filename_save=str.split(filename,".dat") [0]+".npy"
 folder = "/".join(str.split(filename,"/")[:-1])
 
 
+filename_b1 = str.split(filename,".dat") [0]+"_b1.npy"
+filename_volume = str.split(filename,".dat") [0]+"_volumes.npy"
+filename_kdata = str.split(filename,".dat") [0]+"_kdata.npy"
+filename_mask= str.split(filename,".dat") [0]+"_mask.npy"
 
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
@@ -29,9 +34,10 @@ folder = "/".join(str.split(filename,"/")[:-1])
 save_volume=True
 load_volume=False
 
-Parsed_File = rT.map_VBVD(filename)
+
 
 if str.split(filename_save,"/")[-1] not in os.listdir(folder):
+    Parsed_File = rT.map_VBVD(filename)
     idx_ok = rT.detect_TwixImg(Parsed_File)
     start_time = time.time()
     RawData = Parsed_File[str(idx_ok)]["image"].readImage()
@@ -47,67 +53,112 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
     ## Random map simulation
 
     data = np.squeeze(RawData)
+    data = np.moveaxis(data, 0, -1)
 
     np.save(filename_save,data)
 
 else :
     data = np.load(filename_save)
 
-data=np.moveaxis(data,-1,0)
-data=np.moveaxis(data,1,-1)
+#data = np.moveaxis(data, 0, -1)
+# data=np.moveaxis(data,-2,-1)
 
-nb_channels = data.shape[1]
+data_shape = data.shape
 
-ntimesteps=175
+nb_channels = data_shape[0]
 
-nb_allspokes = data.shape[-2]
-npoint = data.shape[-1]
-image_size = (256,256)
+ntimesteps = 175
 
-# Density adjustment all slices
-density = np.abs(np.linspace(-1, 1, npoint))
-kdata_all_channels_all_slices = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in data]
-kdata_all_channels_all_slices=np.array(kdata_all_channels_all_slices).reshape(data.shape)
+nb_allspokes = data_shape[1]
+npoint = data_shape[-1]
+nb_slices = data_shape[2]
+image_size = (nb_slices, int(npoint/2), int(npoint/2))
+undersampling_factor=1
 
-radial_traj=Radial(total_nspokes=1400,npoint=npoint)
 
-#Coil sensi estimation for all slices
-res=16
-b1_all_slices=calculate_sensitivity_map(kdata_all_channels_all_slices,radial_traj,res,image_size)
-# sl=2
-# list_images = list(np.abs(b1_all_slices[sl]))
-# plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
+if str.split(filename_kdata,"/")[-1] in os.listdir(folder):
+    del data
 
-# Selecting one slice
-slice=2
+radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices)
 
-kdata_all_channels=kdata_all_channels_all_slices[slice,:,:,:]
-b1=b1_all_slices[slice]
+if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
+    # Density adjustment all slices
+    print("Performing Density Adjustment....")
+    density = np.abs(np.linspace(-1, 1, npoint))
+    kdata_all_channels_all_slices = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in data]
+    kdata_all_channels_all_slices=np.array(kdata_all_channels_all_slices).reshape(data_shape)
+    np.save(filename_kdata, kdata_all_channels_all_slices)
+    del kdata_all_channels_all_slices
+    del data
+
+kdata_all_channels_all_slices=open_memmap(filename_kdata)
+
+
+
+
+
+
+
+
+# Coil sensi estimation for all slices
+print("Calculating Coil Sensitivity....")
+
+if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
+    res = 16
+    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False)
+    np.save(filename_b1,b1_all_slices)
+else:
+    b1_all_slices=np.load(filename_b1)
+
+sl=20
+list_images = list(np.abs(b1_all_slices[sl]))
+plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
+
+# volumes_all_spokes=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1)
+# sl=10
+# plt.figure()
+# plt.title("Approximation : rebuilt image all data")
+# plt.imshow(np.abs(np.squeeze(volumes_all_spokes)[sl,:,:]),cmap="gray")
+#
+# animate_images((np.squeeze(volumes_all_spokes)),interval=1000)
 
 ##volumes for slice taking into account coil sensi
 
-if not(load_volume):
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels,radial_traj,image_size,b1=b1,density_adj=False,ntimesteps=ntimesteps)
-    if (save_volume):
-        np.save(filename.split(".dat")[0] + "_volumes.npy",volumes_all)
-else:
-    volumes_all = np.load(filename.split(".dat")[0] + "_volumes.npy")
+print("Building Volumes....")
+if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=True,normalize_kdata=True,memmap_file=None)
+    np.save(filename_volume,volumes_all)
+    # sl=20
+    # ani = animate_images(volumes_all[:,sl,:,:])
+    del volumes_all
 
-volumes_all_spokes=simulate_radial_undersampled_images_multi(kdata_all_channels,radial_traj,image_size,b1=b1,density_adj=False,ntimesteps=1)
-plt.figure()
-plt.title("Approximation : rebuilt image all data")
-plt.imshow(np.abs(np.squeeze(volumes_all_spokes)),cmap="gray")
-
-#ani = animate_images(volumes_all)
 
 ##MASK
+print("Building Mask....")
+if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
+    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/15)
+    np.save(filename_mask,mask)
+    del mask
 
-mask=build_mask_single_image_multichannel(kdata_all_channels,radial_traj,image_size,b1=b1,density_adj=False,threshold_factor=1/15)
+del kdata_all_channels_all_slices
+del b1_all_slices
 
-## Dict mapping
+
+
+
+########################## Dict mapping ########################################
 
 dictfile = "mrf175_SimReco2.dict"
 dictfile = "mrf175_Dico2_Invivo.dict"
+
+volumes_all = np.load(filename_volume)
+mask = np.load(filename_mask)
+
+sl=20
+ani = animate_images(volumes_all[:,sl,:,:])
+#
+# plt.figure()
+# plt.plot(volumes_all[:,sl,200,200])
 
 
 with open("mrf_sequence.json") as f:
@@ -123,13 +174,13 @@ save_map=True
 if not(load_map):
     niter = 0
 
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=250,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
     all_maps=optimizer.search_patterns(dictfile,volumes_all)
 
     if(save_map):
         import pickle
 
-        file_map = filename.split(".dat")[0] + "_MRF_map_matlab_volumes_3.pkl"
+        file_map = filename.split(".dat")[0] + "_MRF_map_matlab_volumes.pkl"
         file = open(file_map, "wb")
         # dump information to that file
         pickle.dump(all_maps, file)

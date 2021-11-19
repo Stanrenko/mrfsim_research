@@ -22,6 +22,7 @@ import pywt
 from mpl_toolkits.axes_grid1 import ImageGrid
 from skimage.metrics import structural_similarity as ssim
 import collections
+import gc
 try:
     import pycuda
     import pycuda.autoinit
@@ -1671,11 +1672,12 @@ def simulate_radial_undersampled_images_density_optim(kdata,trajectory,size,dens
 
     return np.array(images_series_rebuilt)
 
-def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=True,eps=1e-6,is_theta_z_adjusted=False,b1=None,ntimesteps=175):
+def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=True,eps=1e-6,is_theta_z_adjusted=False,b1=None,ntimesteps=175,useGPU=False,memmap_file=None,normalize_kdata=False):
 #Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
     traj=trajectory.get_traj_for_reconstruction(ntimesteps)
     npoint = trajectory.paramDict["npoint"]
     nb_allspokes=trajectory.paramDict["total_nspokes"]
+    nb_channels=kdata.shape[0]
     nspoke=int(nb_allspokes/ntimesteps)
 
     if not(is_theta_z_adjusted):
@@ -1688,41 +1690,105 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
 
 
     if not(kdata.shape[1]==len(traj)):
-        kdata=np.array(kdata).reshape(kdata.shape[0],len(traj),-1)
+        kdata=kdata.reshape(kdata.shape[0],len(traj),-1)
 
-    kdata = kdata / (npoint)*dz * dtheta
+    kdata *= dz * dtheta/npoint
 
 
     if density_adj:
         density = np.abs(np.linspace(-1, 1, npoint))
         kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
 
+
+    if normalize_kdata:
+        C = np.mean(np.linalg.norm(kdata.reshape(nb_channels,ntimesteps,-1),axis=1),axis=-1)
+        kdata /= np.expand_dims(C,axis=(1,2))
+
     #kdata = (normalize_image_series(np.array(kdata)))
+
+
+    output_shape = (ntimesteps,)+size
+
+    if memmap_file is not None :
+        images_series_rebuilt = np.memmap(memmap_file,dtype="complex64",mode="w+",shape=output_shape)
+    else:
+        images_series_rebuilt = np.zeros(output_shape,dtype=np.complex64)
+
 
     if traj[0].shape[-1] == 2:  # 2D
 
-        images_series_rebuilt = [
-                finufft.nufft2d1(t[:,0], t[:,1], kdata[:,i,:], size)
-                for i,t in tqdm(enumerate(traj))
-            ]
+        for i,t in tqdm(enumerate(traj)):
+            images_series_rebuilt[i]=finufft.nufft2d1(t[:,0], t[:,1], kdata[:,i,:], size)
+
+        images_series_rebuilt = np.moveaxis(images_series_rebuilt, 0, 1)
+        if b1 is None:
+            return np.sqrt(np.sum(np.abs(images_series_rebuilt) ** 2, axis=0))
+        else:
+            b1 = np.expand_dims(b1, axis=1)
+            images_series_rebuilt = np.sum(b1.conj() * images_series_rebuilt, axis=0)
+            images_series_rebuilt = images_series_rebuilt / np.sum(np.abs(b1) ** 2)
 
     elif traj[0].shape[-1] == 3:  # 3D
+        if not (useGPU):
+            for i, t in tqdm(enumerate(traj)):
+                fk = finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], kdata[:, i, :], size)
+                if b1 is None:
+                    images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+                else:
+                    images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
 
-        images_series_rebuilt = [
-            finufft.nufft2d1(t[:,2],t[:, 0], t[:, 1], kdata[:, i, :], size)
-            for i, t in tqdm(enumerate(traj))
-        ]
+
+        else:
+            N1, N2, N3 = size[0], size[1], size[2]
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+
+            for i in tqdm(list(range(kdata.shape[1]))):
+                fk_gpu = GPUArray((nb_channels,N1, N2, N3), dtype=complex_dtype)
+                c_retrieved = kdata[:,i,:]
+                kx = traj[i][:, 0]
+                ky = traj[i][:, 1]
+                kz = traj[i][:, 2]
+
+                # Cast to desired datatype.
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                kz = kz.astype(dtype)
+                c_retrieved = c_retrieved.astype(complex_dtype)
+
+                # Allocate memory for the uniform grid on the GPU.
+                c_retrieved_gpu = to_gpu(c_retrieved)
+
+                # Initialize the plan and set the points.
+                plan = cufinufft(1, (N1, N2, N3), nb_channels, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+
+                # Execute the plan, reading from the strengths array c and storing the
+                # result in fk_gpu.
+                plan.execute(c_retrieved_gpu, fk_gpu)
+
+                fk = np.squeeze(fk_gpu.get())
+
+                fk_gpu.gpudata.free()
+                c_retrieved_gpu.gpudata.free()
+
+                if b1 is None:
+                    images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+                else:
+                    images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
+
+                plan.__del__()
+
+        del kdata
+        gc.collect()
+
+        if b1 is not None :
+            images_series_rebuilt = images_series_rebuilt / np.sum(np.abs(b1) ** 2)
 
 
     #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
-    images_series_rebuilt=np.array(images_series_rebuilt)
-    images_series_rebuilt=np.moveaxis(images_series_rebuilt,0,1)
-    if b1 is None:
-        return np.sqrt(np.sum(np.abs(images_series_rebuilt)**2,axis=0))
-    else:
-        b1 = np.expand_dims(b1, axis=1)
-        images_series_rebuilt = np.sum(b1.conj() * images_series_rebuilt, axis=0)
-        images_series_rebuilt = images_series_rebuilt / np.sum(np.abs(b1) ** 2)
+
+
     return images_series_rebuilt
 
 def simulate_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6):
@@ -2137,6 +2203,60 @@ def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256)):
         for i in range(coil_sensitivity.shape[0]):
             b1[i]=coil_sensitivity[i] / np.linalg.norm(coil_sensitivity[i], axis=0)
             b1[i]=b1[i] / np.max(np.abs(b1[i].flatten()))
+    return b1
+
+def calculate_sensitivity_map_3D(kdata,trajectory,res=16,image_size=(1,256,256),useGPU=False,eps=1e-6):
+    traj_all = trajectory.get_traj()
+    traj_all = traj_all.reshape(-1, traj_all.shape[-1])
+    npoint = kdata.shape[-1]
+    nb_channels = kdata.shape[0]
+    center_res = int(npoint / 2 - 1)
+    kdata_for_sensi = np.zeros(kdata.shape, dtype=np.complex128)
+    kdata_for_sensi[:, :, :, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:,
+                                                                                        :, :,
+                                                                                        (center_res - int(res / 2)):(
+                                                                                                center_res + int(
+                                                                                            res / 2))]
+
+    del kdata
+    kdata_for_sensi = kdata_for_sensi.reshape(nb_channels, -1)
+
+    if not(useGPU):
+        coil_sensitivity = finufft.nufft3d1(traj_all[:, 2], traj_all[:, 0], traj_all[:, 1], kdata_for_sensi, image_size)
+
+    else:
+        N1, N2, N3 = image_size[0], image_size[1], image_size[2]
+        dtype = np.float32  # Datatype (real)
+        complex_dtype = np.complex64
+
+        fk_gpu = GPUArray((nb_channels, N1, N2, N3), dtype=complex_dtype)
+
+        kx = traj_all[:, 0]
+        ky = traj_all[:, 1]
+        kz = traj_all[:, 2]
+
+        kx = kx.astype(dtype)
+        ky = ky.astype(dtype)
+        kz = kz.astype(dtype)
+
+        c_retrieved_gpu = to_gpu(kdata_for_sensi.astype(complex_dtype))
+        plan = cufinufft(1, (N1, N2, N3), nb_channels, eps=eps, dtype=dtype)
+        plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+
+        plan.execute(c_retrieved_gpu, fk_gpu)
+
+        coil_sensitivity = np.squeeze(fk_gpu.get())
+
+        fk_gpu.gpudata.free()
+        c_retrieved_gpu.gpudata.free()
+        plan.__del__()
+
+    del kdata_for_sensi
+
+    b1 = coil_sensitivity / np.linalg.norm(coil_sensitivity, axis=0)
+    del coil_sensitivity
+    b1 = b1 / np.max(np.abs(b1.flatten()))
+
     return b1
 
 
