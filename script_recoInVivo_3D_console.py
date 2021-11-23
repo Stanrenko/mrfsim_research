@@ -1,7 +1,11 @@
 
 #import matplotlib
 #matplotlib.use("TkAgg")
-
+import matplotlib
+from importlib import reload
+matplotlib.use("Agg")
+matplotlib=reload(matplotlib)
+matplotlib.use("TkAgg")
 
 import sys, getopt
 

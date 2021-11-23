@@ -13,9 +13,25 @@ from numpy.lib.format import open_memmap
 from numpy import memmap
 import pickle
 
+base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
+base_folder = "./data/InVivo/3D"
 
-filename="./data/InVivo/3D/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
-filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00044_FID42066_raFin_3D_tra_1x1x5mm_us4_vivo.dat"
+
+#localfile ="/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
+#localfile = "/20211122_EV_MRF/meas_MID00146_FID42269_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
+#localfile = "/20211122_EV_MRF/meas_MID00147_FID42270_raFin_3D_tra_1x1x5mm_FULL_incoherent.dat"
+#localfile = "/20211122_EV_MRF/meas_MID00148_FID42271_raFin_3D_tra_1x1x5mm_FULL_high_res.dat"
+#localfile = "/20211122_EV_MRF/meas_MID00149_FID42272_raFin_3D_tra_1x1x5mm_USx2.dat"
+
+localfile = "/20211123_Phantom_MRF/meas_MID00317_FID42440_raFin_3D_tra_1x1x5mm_FULL_optimRG_vitro.dat"
+localfile = "/20211123_Phantom_MRF/meas_MID00318_FID42441_raFin_3D_tra_1x1x5mm_FULL_standardRG_vitro.dat"
+localfile = "/20211123_Phantom_MRF/meas_MID00319_FID42442_raFin_3D_tra_1x1x5mm_FULL_optimRNoG_vitro.dat"
+localfile = "/20211123_Phantom_MRF/meas_MID00320_FID42443_raFin_3D_tra_1x1x5mm_FULL_optimG_vitro.dat"
+localfile = "/20211123_Phantom_MRF/meas_MID00321_FID42444_raFin_3D_tra_1x1x5mm_FULL_standardRNoG_vitro.dat"
+
+filename = base_folder+localfile
+
+#filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00044_FID42066_raFin_3D_tra_1x1x5mm_us4_vivo.dat"
 #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
 
 
@@ -31,9 +47,11 @@ filename_mask= str.split(filename,".dat") [0]+"_mask.npy"
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
-save_volume=True
-load_volume=False
+save_kdata=False
 
+incoherent=False
+use_GPU = True
+light_memory_usage=False
 
 
 if str.split(filename_save,"/")[-1] not in os.listdir(folder):
@@ -79,21 +97,26 @@ undersampling_factor=1
 if str.split(filename_kdata,"/")[-1] in os.listdir(folder):
     del data
 
-radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices)
+radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent)
+
 
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
     # Density adjustment all slices
     print("Performing Density Adjustment....")
     density = np.abs(np.linspace(-1, 1, npoint))
-    kdata_all_channels_all_slices = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in data]
-    kdata_all_channels_all_slices=np.array(kdata_all_channels_all_slices).reshape(data_shape)
-    np.save(filename_kdata, kdata_all_channels_all_slices)
-    del kdata_all_channels_all_slices
+    kdata_all_channels_all_slices = data.reshape(-1, npoint)
     del data
+    kdata_all_channels_all_slices = (kdata_all_channels_all_slices*density).reshape(data_shape)
+    #kdata_all_channels_all_slices = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in data]
+    #kdata_all_channels_all_slices=np.array(kdata_all_channels_all_slices).reshape(data_shape)
 
-kdata_all_channels_all_slices=open_memmap(filename_kdata)
+    if save_kdata:
+        np.save(filename_kdata, kdata_all_channels_all_slices)
+        del kdata_all_channels_all_slices
+        kdata_all_channels_all_slices=open_memmap(filename_kdata)
 
-
+else:
+    kdata_all_channels_all_slices = open_memmap(filename_kdata)
 
 
 
@@ -105,10 +128,25 @@ print("Calculating Coil Sensitivity....")
 
 if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     res = 16
-    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False)
+    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage)
     np.save(filename_b1,b1_all_slices)
 else:
     b1_all_slices=np.load(filename_b1)
+
+
+#build out of phase spokes image
+# radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent)
+# radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
+# volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None)
+# np.save(str.split(filename,".dat") [0]+"_volumeoutofphase.npy",volume_outofphase)
+# animate_images(volume_outofphase[0],cmap="gray")
+# list_images = list(np.angle(volume_outofphase)[0][:])
+# plot_image_grid(list_images,(8,6),title="Anatomic Image Out Of Phase Spokes",cmap="gray")
+
+# from mutools import io
+# file_mha = filename.split(".dat")[0] + "_volumesoutofphase.mha"
+# io.write(file_mha,np.abs(volume_outofphase)[0],tags={"spacing":[5,1,1]})
+
 
 sl=20
 list_images = list(np.abs(b1_all_slices[sl]))
@@ -126,7 +164,7 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=True,normalize_kdata=True,memmap_file=None)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=use_GPU,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage)
     np.save(filename_volume,volumes_all)
     # sl=20
     # ani = animate_images(volumes_all[:,sl,:,:])

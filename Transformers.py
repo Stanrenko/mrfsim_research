@@ -5,8 +5,10 @@ try:
     import cupy as cp
 except:
     pass
-import matplotlib.pyplot as plt
-
+try:
+    import matplotlib.pyplot as plt
+except:
+    pass 
 
 class PCAComplex(BaseEstimator,TransformerMixin):
 

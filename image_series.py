@@ -1,13 +1,15 @@
 try:
     import matplotlib
     matplotlib.use('TkAgg')
+
+    import matplotlib.pyplot as plt
 except:
     pass
 
 from scipy import ndimage
 from scipy.optimize import minimize
 from scipy.ndimage import affine_transform
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from datetime import datetime
 
 import pandas as pd
