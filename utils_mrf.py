@@ -146,7 +146,7 @@ def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slic
     nb_rep = int(nb_slices / undersampling_factor)
     all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
     golden_angle = 111.246 * np.pi / 180
-    all_rotations = np.exp(1j * np.arange(nb_rep) * golden_angle)
+    all_rotations = np.exp(1j * np.arange(nb_rep) * total_nspoke * golden_angle)
     all_spokes = np.repeat(np.expand_dims(all_spokes, axis=1), nb_rep, axis=1)
     traj = all_rotations[np.newaxis, :, np.newaxis] * all_spokes
 

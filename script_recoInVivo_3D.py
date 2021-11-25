@@ -19,8 +19,8 @@ base_folder = "./data/InVivo/3D"
 
 #localfile ="/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
 #localfile = "/20211122_EV_MRF/meas_MID00146_FID42269_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
-#localfile = "/20211122_EV_MRF/meas_MID00147_FID42270_raFin_3D_tra_1x1x5mm_FULL_incoherent.dat"
-localfile = "/20211122_EV_MRF/meas_MID00148_FID42271_raFin_3D_tra_1x1x5mm_FULL_high_res.dat"
+localfile = "/20211122_EV_MRF/meas_MID00147_FID42270_raFin_3D_tra_1x1x5mm_FULL_incoherent.dat"
+#localfile = "/20211122_EV_MRF/meas_MID00148_FID42271_raFin_3D_tra_1x1x5mm_FULL_high_res.dat"
 #localfile = "/20211122_EV_MRF/meas_MID00149_FID42272_raFin_3D_tra_1x1x5mm_USx2.dat"
 
 # localfile = "/20211123_Phantom_MRF/meas_MID00317_FID42440_raFin_3D_tra_1x1x5mm_FULL_optimRG_vitro.dat"
@@ -47,9 +47,9 @@ filename_mask= str.split(filename,".dat") [0]+"_mask.npy"
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
-save_kdata=False
+save_kdata=True
 
-incoherent=False
+incoherent=True
 use_GPU = True
 light_memory_usage=False
 
@@ -172,13 +172,17 @@ if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
     del volumes_all
 
 
+ #animate_images(np.abs(volumes_all[:,24,:,:]))
+
 ##MASK
 
 print("Building Mask....")
 if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
-    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/15, normalize_kdata=True)
+    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/15, normalize_kdata=True,light_memory_usage=True)
     np.save(filename_mask,mask)
     del mask
+
+animate_images(mask)
 
 del kdata_all_channels_all_slices
 del b1_all_slices
