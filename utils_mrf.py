@@ -1270,7 +1270,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6,threshol
 
     return mask
 
-def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=1/7):
+def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=1/7,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False):
     '''
 
     :param kdata: shape nchannels*ntimesteps*point_per_timestep
@@ -1282,7 +1282,7 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
     :return: mask of size size
     '''
     mask = False
-    volume_rebuilt = build_single_image_multichannel(kdata,trajectory,size,density_adj,eps,b1)
+    volume_rebuilt = build_single_image_multichannel(kdata,trajectory,size,density_adj,eps,b1,useGPU=useGPU,normalize_kdata=normalize_kdata,light_memory_usage=light_memory_usage,is_theta_z_adjusted=is_theta_z_adjusted)
     traj = trajectory.get_traj_for_reconstruction()
 
 
@@ -1302,7 +1302,7 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
     return mask
 
 
-def build_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None):
+def build_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False):
     '''
 
     :param kdata: shape nchannels*ntimesteps*point_per_timestep
@@ -1313,40 +1313,8 @@ def build_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1
     :param b1: coil sensitivity map
     :return: mask of size size
     '''
-    nbchannels = kdata.shape[0]
-    npoint=trajectory.paramDict["npoint"]
-    traj = trajectory.get_traj_for_reconstruction()
 
-    # kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
-
-    if density_adj:
-        density = np.abs(np.linspace(-1, 1, npoint))
-        kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
-    # kdata = (normalize_image_series(np.array(kdata)))
-    kdata_all = np.concatenate(kdata)
-    kdata_all=kdata_all.reshape(nbchannels,-1)
-    traj_all = np.concatenate(list(traj))
-    if traj_all.shape[-1]==2: # For slices
-
-        volume_rebuilt_all_channels = finufft.nufft2d1(traj_all[:,0], traj_all[:,1], kdata_all, size)
-        if b1 is None:
-            volume_rebuilt= np.sqrt(np.sum(np.abs(volume_rebuilt_all_channels) ** 2, axis=0))
-        else:
-            volume_rebuilt = np.sum(b1.conj() * volume_rebuilt_all_channels, axis=0)
-            volume_rebuilt = volume_rebuilt / np.sum(np.abs(b1) ** 2)
-        #mask = ndimage.binary_closing(mask, iterations=10)
-
-
-    elif traj_all.shape[-1]==3: # For volumes
-
-        volume_rebuilt_all_channels = finufft.nufft3d1(traj_all[:, 2],traj_all[:, 0], traj_all[:, 1], kdata_all, size)
-
-        if b1 is None:
-            volume_rebuilt= np.sqrt(np.sum(np.abs(volume_rebuilt_all_channels) ** 2, axis=0))
-        else:
-            volume_rebuilt = np.sum(b1.conj() * volume_rebuilt_all_channels, axis=0)
-            volume_rebuilt = volume_rebuilt / np.sum(np.abs(b1) ** 2)
-
+    volume_rebuilt=simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj,eps,is_theta_z_adjusted,b1,1,useGPU,None,normalize_kdata,light_memory_usage)[0]
 
     return volume_rebuilt
 
@@ -1704,6 +1672,10 @@ def simulate_radial_undersampled_images_density_optim(kdata,trajectory,size,dens
 
 def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=True,eps=1e-6,is_theta_z_adjusted=False,b1=None,ntimesteps=175,useGPU=False,memmap_file=None,normalize_kdata=False,light_memory_usage=False):
 #Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
+
+    #if light_memory_usage and not(useGPU):
+    #    print("Warning : light memory usage is not used without GPU")
+
     traj=trajectory.get_traj_for_reconstruction(ntimesteps)
     npoint = trajectory.paramDict["npoint"]
     nb_allspokes=trajectory.paramDict["total_nspokes"]
@@ -1732,10 +1704,14 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
 
     if normalize_kdata:
         print("Normalizing Kdata")
-        C = np.mean(np.linalg.norm(kdata,axis=1),axis=-1)
-        kdata /= np.expand_dims(C,axis=(1,2))
-    else:
-        kdata *= dz * dtheta / npoint
+        if not(light_memory_usage):
+            C = np.mean(np.linalg.norm(kdata,axis=1),axis=-1)
+            kdata /= np.expand_dims(C,axis=(1,2))
+        else:
+            for i in tqdm(range(nb_channels)):
+                kdata[i]/=np.mean(np.linalg.norm(kdata[i],axis=0))
+    #else:
+    #    kdata *= dz * dtheta / npoint
 
     #kdata = (normalize_image_series(np.array(kdata)))
 
@@ -1764,13 +1740,24 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
     elif traj[0].shape[-1] == 3:  # 3D
         if not (useGPU):
             for i, t in tqdm(enumerate(traj)):
-                fk = finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], kdata[:, i, :], size)
-                if b1 is None:
-                    images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+                if not(light_memory_usage):
+                    fk = finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], kdata[:, i, :], size)
+                    if b1 is None:
+                        images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+                    else:
+                        images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
+
                 else:
-                    images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
+                    for j in tqdm(range(nb_channels)):
+                        fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j, i, :], size)
+                        if b1 is None:
+                            images_series_rebuilt[i] += np.abs(fk) ** 2
+                        else:
+                            images_series_rebuilt[i] += b1[j].conj() * fk
 
 
+                    if b1 is None:
+                        images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
         else:
             N1, N2, N3 = size[0], size[1], size[2]
             dtype = np.float32  # Datatype (real)
