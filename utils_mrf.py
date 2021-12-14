@@ -141,12 +141,17 @@ def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersa
     result = np.stack([traj.real,traj.imag, k_z], axis=-1)
     return result.reshape(result.shape[0],-1,result.shape[-1])
 
-def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4):
+def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,mode="old"):
     timesteps = int(total_nspoke / nspoke)
     nb_rep = int(nb_slices / undersampling_factor)
     all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
     golden_angle = 111.246 * np.pi / 180
-    all_rotations = np.exp(1j * np.arange(nb_rep) * total_nspoke * golden_angle)
+    if mode=="old":
+        all_rotations = np.exp(1j * np.arange(nb_rep) * total_nspoke * golden_angle)
+    elif mode=="new":
+        all_rotations = np.exp(1j * np.arange(nb_rep) * golden_angle)
+    else:
+        raise ValueError("Unknown value for mode")
     all_spokes = np.repeat(np.expand_dims(all_spokes, axis=1), nb_rep, axis=1)
     traj = all_rotations[np.newaxis, :, np.newaxis] * all_spokes
 
@@ -1270,7 +1275,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6,threshol
 
     return mask
 
-def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=1/7,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False):
+def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=None,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False):
     '''
 
     :param kdata: shape nchannels*ntimesteps*point_per_timestep
@@ -1282,18 +1287,26 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
     :return: mask of size size
     '''
     mask = False
+
+
     volume_rebuilt = build_single_image_multichannel(kdata,trajectory,size,density_adj,eps,b1,useGPU=useGPU,normalize_kdata=normalize_kdata,light_memory_usage=light_memory_usage,is_theta_z_adjusted=is_theta_z_adjusted)
     traj = trajectory.get_traj_for_reconstruction()
 
 
     if traj.shape[-1]==2: # For slices
 
+        if threshold_factor is None:
+            threshold_factor = 1/7
+
         unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
         mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique) *threshold_factor)])
-        #mask = ndimage.binary_closing(mask, iterations=10)
+        #mask = ndimage.binary_closing(mask, iterations=3)
 
 
     elif traj.shape[-1]==3: # For volumes
+
+        if threshold_factor is None:
+            threshold_factor = 1/15
 
         unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
         mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique) *threshold_factor)])
@@ -1314,7 +1327,7 @@ def build_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1
     :return: mask of size size
     '''
 
-    volume_rebuilt=simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj,eps,is_theta_z_adjusted,b1,1,useGPU,None,normalize_kdata,light_memory_usage)[0]
+    volume_rebuilt=simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj,eps,is_theta_z_adjusted,b1,1,useGPU,None,normalize_kdata,light_memory_usage,True)[0]
 
     return volume_rebuilt
 
@@ -1670,7 +1683,7 @@ def simulate_radial_undersampled_images_density_optim(kdata,trajectory,size,dens
 
     return np.array(images_series_rebuilt)
 
-def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=True,eps=1e-6,is_theta_z_adjusted=False,b1=None,ntimesteps=175,useGPU=False,memmap_file=None,normalize_kdata=False,light_memory_usage=False):
+def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=True,eps=1e-6,is_theta_z_adjusted=False,b1=None,ntimesteps=175,useGPU=False,memmap_file=None,normalize_kdata=False,light_memory_usage=False,normalize_volumes=True):
 #Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
 
     #if light_memory_usage and not(useGPU):
@@ -1710,8 +1723,8 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
         else:
             for i in tqdm(range(nb_channels)):
                 kdata[i]/=np.mean(np.linalg.norm(kdata[i],axis=0))
-    #else:
-    #    kdata *= dz * dtheta / npoint
+    else:
+        kdata *= dz * dtheta / npoint
 
     #kdata = (normalize_image_series(np.array(kdata)))
 
@@ -1727,15 +1740,13 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
     if traj[0].shape[-1] == 2:  # 2D
 
         for i,t in tqdm(enumerate(traj)):
-            images_series_rebuilt[i]=finufft.nufft2d1(t[:,0], t[:,1], kdata[:,i,:], size)
+            fk = finufft.nufft2d1(t[:,0], t[:,1], kdata[:,i,:], size)
 
-        images_series_rebuilt = np.moveaxis(images_series_rebuilt, 0, 1)
-        if b1 is None:
-            return np.sqrt(np.sum(np.abs(images_series_rebuilt) ** 2, axis=0))
-        else:
-            b1 = np.expand_dims(b1, axis=1)
-            images_series_rebuilt = np.sum(b1.conj() * images_series_rebuilt, axis=0)
-            images_series_rebuilt = images_series_rebuilt / np.sum(np.abs(b1) ** 2)
+            #images_series_rebuilt = np.moveaxis(images_series_rebuilt, 0, 1)
+            if b1 is None:
+                images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+            else:
+                images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
 
     elif traj[0].shape[-1] == 3:  # 3D
         if not (useGPU):
@@ -1845,9 +1856,14 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
         del kdata
         gc.collect()
 
-        if b1 is not None :
+        if (normalize_volumes)and(b1 is not None):
             print("Normalizing by Coil Sensi")
-            images_series_rebuilt = images_series_rebuilt / np.sum(np.abs(b1) ** 2)
+            if light_memory_usage:
+                b1_norm = np.sum(np.abs(b1) ** 2)
+                for i in tqdm(range(images_series_rebuilt.shape[0])):
+                    images_series_rebuilt[i] = images_series_rebuilt[i] / b1_norm
+            else:
+                images_series_rebuilt /= np.sum(np.abs(b1) ** 2)
 
 
     #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))

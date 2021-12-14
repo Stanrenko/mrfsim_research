@@ -18,8 +18,8 @@ base_folder = "./data/InVivo/3D"
 
 
 #localfile ="/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
-#localfile = "/20211122_EV_MRF/meas_MID00146_FID42269_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
-localfile = "/20211122_EV_MRF/meas_MID00147_FID42270_raFin_3D_tra_1x1x5mm_FULL_incoherent.dat"
+localfile = "/20211122_EV_MRF/meas_MID00146_FID42269_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
+#localfile = "/20211122_EV_MRF/meas_MID00147_FID42270_raFin_3D_tra_1x1x5mm_FULL_incoherent.dat"
 #localfile = "/20211122_EV_MRF/meas_MID00148_FID42271_raFin_3D_tra_1x1x5mm_FULL_high_res.dat"
 #localfile = "/20211122_EV_MRF/meas_MID00149_FID42272_raFin_3D_tra_1x1x5mm_USx2.dat"
 
@@ -28,6 +28,12 @@ localfile = "/20211122_EV_MRF/meas_MID00147_FID42270_raFin_3D_tra_1x1x5mm_FULL_i
 # localfile = "/20211123_Phantom_MRF/meas_MID00319_FID42442_raFin_3D_tra_1x1x5mm_FULL_optimRNoG_vitro.dat"
 # localfile = "/20211123_Phantom_MRF/meas_MID00320_FID42443_raFin_3D_tra_1x1x5mm_FULL_optimG_vitro.dat"
 # localfile = "/20211123_Phantom_MRF/meas_MID00321_FID42444_raFin_3D_tra_1x1x5mm_FULL_standardRNoG_vitro.dat"
+
+# localfile = "/20211129_BM/meas_MID00085_FID43316_raFin_3D_FULL_highRES_incoh.dat"
+# localfile = "/20211129_BM/meas_MID00086_FID43317_raFin_3D_FULL_new_highRES_inco.dat"
+# localfile = "/20211129_BM/meas_MID00087_FID43318_raFin_3D_FULL_new_highRES_stack.dat"
+localfile = "/20211209_AL_Tongue/meas_MID00258_FID45162_raFin_3D_tra_1x1x5mm_FULl.dat"
+
 
 filename = base_folder+localfile
 
@@ -40,16 +46,18 @@ folder = "/".join(str.split(filename,"/")[:-1])
 
 
 filename_b1 = str.split(filename,".dat") [0]+"_b1.npy"
-filename_volume = str.split(filename,".dat") [0]+"_volumes.npy"
+filename_volume = str.split(filename,".dat") [0]+"_volumes_no_norm.npy"
 filename_kdata = str.split(filename,".dat") [0]+"_kdata.npy"
 filename_mask= str.split(filename,".dat") [0]+"_mask.npy"
 
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
-save_kdata=True
 
 incoherent=True
+mode="old"
+
+save_kdata=True
 use_GPU = True
 light_memory_usage=False
 
@@ -97,7 +105,7 @@ undersampling_factor=1
 if str.split(filename_kdata,"/")[-1] in os.listdir(folder):
     del data
 
-radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent)
+radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 
 
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
@@ -149,8 +157,8 @@ else:
 # io.write(file_mha,np.abs(volume_outofphase)[0],tags={"spacing":[5,1,1]})
 
 
-sl=20
-list_images = list(np.abs(b1_all_slices[sl]))
+sl=int(nb_slices/2)
+list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
 plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
 
 # volumes_all_spokes=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1)
@@ -165,7 +173,7 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=use_GPU,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=use_GPU,normalize_kdata=True,memmap_file=None,light_memory_usage=False,normalize_volumes=True)
     np.save(filename_volume,volumes_all)
     # sl=20
     # ani = animate_images(volumes_all[:,sl,:,:])
@@ -182,10 +190,16 @@ if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
     np.save(filename_mask,mask)
     del mask
 
-animate_images(mask)
+#animate_images(mask)
 
 del kdata_all_channels_all_slices
 del b1_all_slices
+
+
+
+
+
+
 
 
 
@@ -218,7 +232,7 @@ save_map=True
 if not(load_map):
     niter = 0
 
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=250,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
     all_maps=optimizer.search_patterns(dictfile,volumes_all)
 
     if(save_map):

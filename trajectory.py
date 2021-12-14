@@ -44,7 +44,7 @@ class Radial(Trajectory):
 
 class Radial3D(Trajectory):
 
-    def __init__(self,total_nspokes=1400,nspoke_per_z_encoding=8,npoint=512,undersampling_factor=4,incoherent=False,is_random=False,**kwargs):
+    def __init__(self,total_nspokes=1400,nspoke_per_z_encoding=8,npoint=512,undersampling_factor=4,incoherent=False,is_random=False,mode="old",**kwargs):
         super().__init__(**kwargs)
         self.paramDict["total_nspokes"] = total_nspokes
         self.paramDict["nspoke"] = nspoke_per_z_encoding
@@ -53,12 +53,13 @@ class Radial3D(Trajectory):
         self.paramDict["nb_rep"]=int(self.paramDict["nb_slices"]/self.paramDict["undersampling_factor"])
         self.paramDict["random"]=is_random
         self.paramDict["incoherent"]=incoherent
-
+        self.paramDict["mode"] = mode
 
     def get_traj(self):
         if self.traj is None:
             nspoke = self.paramDict["nspoke"]
             npoint = self.paramDict["npoint"]
+            mode = self.paramDict["mode"]
 
             total_nspokes = self.paramDict["total_nspokes"]
             nb_slices=self.paramDict["nb_slices"]
@@ -71,7 +72,7 @@ class Radial3D(Trajectory):
                                                                    undersampling_factor)
             else:
                 if self.paramDict["incoherent"]:
-                    self.traj=radial_golden_angle_traj_3D_incoherent(total_nspokes, npoint, nspoke, nb_slices, undersampling_factor)
+                    self.traj=radial_golden_angle_traj_3D_incoherent(total_nspokes, npoint, nspoke, nb_slices, undersampling_factor,mode)
                 else:
                     self.traj = radial_golden_angle_traj_3D(total_nspokes, npoint, nspoke, nb_slices,
                                                             undersampling_factor)
