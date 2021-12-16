@@ -390,7 +390,6 @@ class ImageSeries(object):
 
                 if not(useGPU):
 
-
                     kdata = [
                         finufft.nufft2d2(t[:, 0], t[:, 1], p)
                         for t, p in zip(traj, images_series)
@@ -1030,7 +1029,7 @@ class ImageSeries3D(ImageSeries):
         if "resting_time" not in self.paramDict:
             self.paramDict["resting_time"]=0.0
         if "nb_empty_slices" not in self.paramDict:#Empty slices on both sides of the stack
-            self.paramDict["nb_empty_slices"]=10
+            self.paramDict["nb_empty_slices"]=0
 
         self.paramDict["nb_total_slices"]=2*self.paramDict["nb_empty_slices"]+self.paramDict["nb_slices"]
         self.paramDict["nb_rep"]=int(self.paramDict["nb_total_slices"]/self.paramDict["undersampling_factor"])
@@ -1163,6 +1162,66 @@ class MapFromFile3D(ImageSeries3D):
             "df": -map_all_on_mask[:, 5] / 1000,
             "ff": map_all_on_mask[:, 6]
         }
+
+
+class MapFromDict3D(ImageSeries3D):
+
+    def __init__(self, name, **kwargs):
+
+        if "paramMap" not in kwargs:
+            raise ValueError("paramMap key value argument containing param map file path should be given for MapFromFile")
+
+        nb_slices = kwargs["paramMap"]["wT1"].shape[0]
+
+        super().__init__(name, nb_slices=nb_slices, **kwargs)
+
+
+
+
+        if "default_wT2" not in self.paramDict:
+            self.paramDict["default_wT2"]=DEFAULT_wT2
+        if "default_fT2" not in self.paramDict:
+            self.paramDict["default_fT2"]=DEFAULT_fT2
+        if "default_fT1" not in self.paramDict:
+            self.paramDict["default_fT1"]=DEFAULT_fT1
+
+    @wrapper_rounding
+    def buildParamMap(self):
+
+
+
+        paramMap = self.paramDict["paramMap"]
+
+        map_wT1=paramMap["wT1"]
+        self.image_size=map_wT1.shape
+
+        if "mask" in self.paramDict:
+            mask=self.paramDict["mask"]
+
+        else:
+            mask = np.zeros(self.image_size)
+            mask[map_wT1>0]=1.0
+
+        self.mask=mask
+
+        map_wT2 = mask*self.paramDict["default_wT2"]
+        map_fT1 = mask*self.paramDict["default_fT1"]
+        map_fT2 = mask*self.paramDict["default_fT2"]
+
+        map_all = np.stack((paramMap["wT1"], map_wT2, map_fT1, map_fT2, paramMap["attB1"], paramMap["df"], paramMap["ff"]), axis=-1)
+        map_all_on_mask = map_all[mask > 0]
+
+        self.paramMap = {
+            "wT1": map_all_on_mask[:, 0],
+            "wT2": map_all_on_mask[:, 1],
+            "fT1": map_all_on_mask[:, 2],
+            "fT2": map_all_on_mask[:, 3],
+            "attB1": map_all_on_mask[:, 4],
+            "df": map_all_on_mask[:, 5],
+            "ff": map_all_on_mask[:, 6]
+        }
+
+
 
 class RandomMap3D(ImageSeries3D):
 

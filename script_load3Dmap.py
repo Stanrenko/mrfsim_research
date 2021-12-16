@@ -15,6 +15,16 @@ import pickle
 filename="./data/InVivo/3D/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
 filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
 filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00044_FID42066_raFin_3D_tra_1x1x5mm_us4_vivo.dat"
+filename="./data/InVivo/3D/20211122_EV_MRF/meas_MID00146_FID42269_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
+filename="./data/InVivo/3D/20211122_EV_MRF/meas_MID00149_FID42272_raFin_3D_tra_1x1x5mm_USx2.dat"
+filename="./data/InVivo/3D/20211122_EV_MRF/meas_MID00147_FID42270_raFin_3D_tra_1x1x5mm_FULL_incoherent.dat"
+filename="./data/InVivo/3D/20211122_EV_MRF/meas_MID00148_FID42271_raFin_3D_tra_1x1x5mm_FULL_high_res.dat"
+filename="./data/InVivo/3D/20211129_BM/meas_MID00085_FID43316_raFin_3D_FULL_highRES_incoh.dat"
+filename="./data/InVivo/3D/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
+filename="./data/InVivo/3D/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro_volumes_norm_vol.dat"
+filename="./data/InVivo/3D/20211122_EV_MRF/meas_MID00146_FID42269_raFin_3D_tra_1x1x5mm_FULL_vitro_test.dat"
+#filename="./data/InVivo/3D/20211209_AL_Tongue/meas_MID00258_FID45162_raFin_3D_tra_1x1x5mm_FULl.dat"
+
 
 file_map = filename.split(".dat")[0] + "_volumes_MRF_map.pkl"
 file = open(file_map, "rb")
@@ -43,8 +53,6 @@ map_Python.animParamMap("wT1")
 map_Python.animParamMap("attB1")
 map_Python.animParamMap("df")
 
-
-
 path = r"C:/Users/c.slioussarenko/PythonRepositories"
 sys.path.append(path+"/epgpy")
 sys.path.append(path+"/machines")
@@ -53,9 +61,26 @@ sys.path.append(path+"/dicomstack")
 
 from mutools import io
 
-key="ff"
-file_mha = filename.split(".dat")[0] + "_MRF_map_{}.mha".format(key)
-io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+for key in ["ff","wT1","df","attB1"]:
 
+    file_mha = filename.split(".dat")[0] + "_MRF_map_{}.mha".format(key)
+    io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+
+
+folder =r"\\192.168.0.1\RMN_FILES"
+file ="\meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro_mask_norm_vol.npy"
+
+file_path = folder+file
+
+mask = np.load(file_path)
+animate_images(mask)
+
+folder=r"\\192.168.0.1\RMN_FILES\0_Wip\New\1_Methodological_Developments\1_Methodologie_3T\&0_2021_MR_MyoMaps\3_Data\4_3D\Invivo\20211105_TestCS_MRF"
+file="\meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro_mask.npy"
+file_path = folder+file
+
+mask_base = np.load(file_path)
+
+animate_images(mask_base)
 
 

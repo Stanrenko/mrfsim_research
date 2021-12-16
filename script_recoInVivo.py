@@ -26,6 +26,9 @@ folder = "/".join(str.split(filename,"/")[:-1])
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
+filename="./data/InVivo/3D/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
+
+
 save_volume=True
 load_volume=False
 
@@ -129,7 +132,7 @@ if not(load_map):
     if(save_map):
         import pickle
 
-        file_map = filename.split(".dat")[0] + "_MRF_map_matlab_volumes_3.pkl"
+        file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
         file = open(file_map, "wb")
         # dump information to that file
         pickle.dump(all_maps, file)
@@ -150,11 +153,12 @@ keys_simu = list(map_rebuilt.keys())
 values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
 map_for_sim = dict(zip(keys_simu, values_simu))
 
-map_Python = MapFromDict("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
 map_Python.buildParamMap()
 
 map_Python.plotParamMap()
 map_Python.plotParamMap("ff")
+
 map_Python.plotParamMap("df")
 map_Python.plotParamMap("attB1")
 map_Python.plotParamMap("wT1")
