@@ -52,6 +52,8 @@ error_extent={
     "attB1":0.1
 }
 
+keys_title={"attB1":"attB1","df":"Df","wT1":"$\mathregular{T1_{H2O}}$","ff":"FF"}
+
 for ph_num in tqdm([1]):
     print("##################### {} : PHANTOM {} #########################".format(type,ph_num))
     file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(type,ph_num)
@@ -131,7 +133,7 @@ for ph_num in tqdm([1]):
     plt.close("all")
     for it in [0]:#all_maps_adj.keys():
         regression_paramMaps_ROI(m.paramMap, all_maps_adj[it][0], m.mask > 0, all_maps_adj[it][1] > 0,maskROI=maskROI,
-                                 title="New Method", proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True,kept_keys=["attB1","df","wT1","ff"],units=UNITS,fontsize_axis=8)
+                                 title="Novel Method", proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,figsize=(30,15),fontsize=5,save=True,kept_keys=["attB1","df","wT1","ff"],units=UNITS,fontsize_axis=8)
 
     # plt.close("all")
     for it in [0]:#all_maps_matlab.keys():
@@ -144,11 +146,11 @@ for ph_num in tqdm([1]):
     #plt.close("all")
 
     for it in [0]:
-        compare_paramMaps(m.paramMap,all_maps_adj[it][0],m.mask>0,all_maps_adj[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="Ground Truth".format(type,ph_num),title2="Retrieved New Method".format(type,ph_num),figsize=(30,10),fontsize=25,save=True,proj_on_mask1=True,units=UNITS,extent=70,vmax_error=error_extent,kept_keys=["attB1","df","wT1","ff"])
+        compare_paramMaps(m.paramMap,all_maps_adj[it][0],m.mask>0,all_maps_adj[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="Ground Truth".format(type,ph_num),title2="Retrieved Proposed Method".format(type,ph_num),figsize=(30,10),fontsize=25,save=True,proj_on_mask1=True,units=UNITS,extent=70,vmax_error=error_extent,kept_keys=["attB1","df","wT1","ff"],keys_title=keys_title)
         #plt.close("all")
 
     for it in [0]:
-        compare_paramMaps(m.paramMap,all_maps_matlab[it][0],m.mask>0,all_maps_matlab[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="Ground Truth".format(type,ph_num),title2="Retrieved Ref Method".format(type,ph_num),figsize=(30,10),fontsize=25,save=True,proj_on_mask1=True,units=UNITS,extent=70,vmax_error=error_extent,kept_keys=["attB1","df","wT1","ff"])
+        compare_paramMaps(m.paramMap,all_maps_matlab[it][0],m.mask>0,all_maps_matlab[it][1]>0,adj_wT1=True,fat_threshold=0.7,title1="Ground Truth".format(type,ph_num),title2="Retrieved Reference Method".format(type,ph_num),figsize=(30,10),fontsize=25,save=True,proj_on_mask1=True,units=UNITS,extent=70,vmax_error=error_extent,kept_keys=["attB1","df","wT1","ff"],keys_title=keys_title)
         #plt.close("all")
 
     it=0
@@ -251,8 +253,8 @@ all_results_python=pickle.load(file)
 file.close()
 
 
-process_ROI_values(all_results_python,title="Comparison new vs ground truth all ROIs on all {}s".format(type),save=True,units=UNITS,fontsize=5,fontsize_axis=8)
-process_ROI_values(all_results_matlab,title="Comparison ref vs ground truth all ROIs on all {}s".format(type),save=True,units=UNITS,fontsize=5,fontsize_axis=8)
+process_ROI_values(all_results_python,title="Comparison proposed method vs ground truth all ROIs on all {}s".format(type),save=True,units=UNITS,fontsize=5,fontsize_axis=8,keys_title=keys_title)
+process_ROI_values(all_results_matlab,title="Comparison reference method vs ground truth all ROIs on all {}s".format(type),save=True,units=UNITS,fontsize=5,fontsize_axis=8,keys_title=keys_title)
 
 
 df_metrics_all=metrics_ROI_values(all_results,units=UNITS,name="All {}s".format(type))
