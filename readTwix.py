@@ -390,7 +390,7 @@ def read_twix_hdr(fid):
 
     prot = dict()
 
-    for b in range(1, nbuffers, 1):
+    for b in range(0, nbuffers, 1):
         namesz = 0
         byte = 1
         while byte != 0:  # look for NULL-character

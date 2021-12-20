@@ -39,6 +39,7 @@ try:
 except:
     pass
 
+from copy import copy
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
@@ -1275,7 +1276,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6,threshol
 
     return mask
 
-def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=None,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False):
+def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=None,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False,in_phase_spokes_only=False):
     '''
 
     :param kdata: shape nchannels*ntimesteps*point_per_timestep
@@ -1288,8 +1289,16 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
     '''
     mask = False
 
+    if (in_phase_spokes_only):
+        trajectory_for_mask = copy(trajectory)
+        in_phase_indices = np.r_[20:800,1200:1400]
+        trajectory_for_mask.traj = trajectory.get_traj()[in_phase_indices]
+        kdata = kdata[:,in_phase_indices,:,:]
 
-    volume_rebuilt = build_single_image_multichannel(kdata,trajectory,size,density_adj,eps,b1,useGPU=useGPU,normalize_kdata=normalize_kdata,light_memory_usage=light_memory_usage,is_theta_z_adjusted=is_theta_z_adjusted)
+    else:
+        trajectory_for_mask = trajectory
+
+    volume_rebuilt = build_single_image_multichannel(kdata,trajectory_for_mask,size,density_adj,eps,b1,useGPU=useGPU,normalize_kdata=normalize_kdata,light_memory_usage=light_memory_usage,is_theta_z_adjusted=is_theta_z_adjusted)
     traj = trajectory.get_traj_for_reconstruction()
 
 
@@ -1310,7 +1319,7 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
 
         unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
         mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique) *threshold_factor)])
-        mask = ndimage.binary_closing(mask, iterations=3)
+        #mask = ndimage.binary_closing(mask, iterations=3)
 
     return mask
 
@@ -1326,6 +1335,7 @@ def build_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1
     :param b1: coil sensitivity map
     :return: mask of size size
     '''
+
 
     volume_rebuilt=simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj,eps,is_theta_z_adjusted,b1,1,useGPU,None,normalize_kdata,light_memory_usage,True)[0]
 

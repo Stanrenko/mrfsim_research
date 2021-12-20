@@ -28,9 +28,10 @@ from machines import machine, Toolbox, Config, set_parameter, set_output, printe
 
 @machine
 @set_parameter("filename", str, default=None, description="Siemens K-space data .dat file")
-def build_kdata(filename):
+@set_parameter("suffix",str,default="")
+def build_kdata(filename,suffix):
 
-    filename_kdata = str.split(filename, ".dat")[0] + "_kdata.npy"
+    filename_kdata = str.split(filename, ".dat")[0] + suffix + "_kdata.npy"
     filename_save = str.split(filename, ".dat")[0] + ".npy"
     folder = "/".join(str.split(filename, "/")[:-1])
 
@@ -74,10 +75,11 @@ def build_kdata(filename):
 @set_parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
 @set_parameter("sampling_mode", ["stack","incoherent_old","incoherent_new"], default="stack", description="Radial sampling strategy over partitions")
 @set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
-def build_coil_sensi(filename_kdata,sampling_mode,undersampling_factor):
+@set_parameter("suffix",str,default="")
+def build_coil_sensi(filename_kdata,sampling_mode,undersampling_factor,suffix):
 
     kdata_all_channels_all_slices = np.load(filename_kdata)
-    filename_b1 = str.split(filename_kdata, "_kdata.npy")[0] + "_b1.npy"
+    filename_b1 = str.split(filename_kdata, "_kdata.npy")[0] + "_b1" + suffix +".npy"
 
     sampling_mode_list = str.split(sampling_mode,"_")
 
@@ -86,7 +88,7 @@ def build_coil_sensi(filename_kdata,sampling_mode,undersampling_factor):
     else:
         incoherent=True
 
-    if len(sampling_mode_list)>0:
+    if len(sampling_mode_list)>1:
         mode=sampling_mode_list[1]
     else:
         mode="old"

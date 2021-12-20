@@ -24,9 +24,9 @@ filename="./data/InVivo/3D/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_t
 filename="./data/InVivo/3D/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro_volumes_norm_vol.dat"
 filename="./data/InVivo/3D/20211122_EV_MRF/meas_MID00146_FID42269_raFin_3D_tra_1x1x5mm_FULL_vitro_test.dat"
 #filename="./data/InVivo/3D/20211209_AL_Tongue/meas_MID00258_FID45162_raFin_3D_tra_1x1x5mm_FULl.dat"
+filename="./data/InVivo/3D/20211220_Phantom_MRF/meas_MID00026_FID47383_raFin_3D_tra_1x1x5mm_FULl.dat"
 
-
-file_map = filename.split(".dat")[0] + "_volumes_MRF_map.pkl"
+file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
 file = open(file_map, "rb")
 all_maps = pickle.load(file)
 
@@ -53,11 +53,8 @@ map_Python.animParamMap("wT1")
 map_Python.animParamMap("attB1")
 map_Python.animParamMap("df")
 
-path = r"C:/Users/c.slioussarenko/PythonRepositories"
-sys.path.append(path+"/epgpy")
-sys.path.append(path+"/machines")
-sys.path.append(path+"/mutools")
-sys.path.append(path+"/dicomstack")
+
+
 
 from mutools import io
 
