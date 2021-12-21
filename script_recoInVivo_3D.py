@@ -38,12 +38,19 @@ localfile = "/20211129_BM/meas_MID00085_FID43316_raFin_3D_FULL_highRES_incoh.dat
 
 #localfile = "/20211217_Phantom_MRF/meas_MID00252_FID47293_raFin_3D_tra_1x1x5mm_FULl.dat"
 #localfile = "/20211220_Phantom_MRF/meas_MID00026_FID47383_raFin_3D_tra_1x1x5mm_FULl.dat"
-# localfile = "/20211220_Phantom_MRF/meas_MID00027_FID47384_raFin_3D_tra_1x1x5mm_FULl_reduced_zFOV.dat"
-localfile = "/20211220_Phantom_MRF/meas_MID00028_FID47385_raFin_3D_tra_1x1x5mm_FULL_newpulse.dat"
+#localfile = "/20211220_Phantom_MRF/meas_MID00027_FID47384_raFin_3D_tra_1x1x5mm_FULl_reduced_zFOV.dat"
+#localfile = "/20211220_Phantom_MRF/meas_MID00028_FID47385_raFin_3D_tra_1x1x5mm_FULL_newpulse.dat"
 # localfile = "/20211220_Phantom_MRF/meas_MID00029_FID47386_raFin_3D_tra_1x1x5mm_FULL_newpulse_reducedzFOV.dat"
 # localfile = "/20211220_Phantom_MRF/meas_MID00038_FID47395_raFin_3D_tra_1x1x5mm_FULl_reducedzFOV.dat"
 # localfile = "/20211220_Phantom_MRF/meas_MID00040_FID47397_raFin_3D_tra_1x1x5mm_FULL_newpulse_reducedzFOV.dat"
 # localfile = "/20211220_Phantom_MRF/meas_MID00032_FID47389_raFin_3D_tra_1x1x5mm_FULL_newpulse_reducedxyzFOV.dat"
+
+# localfile = "/20211221_Phantom_Flash/meas_MID00025_FID47488_ra_3D_tra_1x1x5mm_FULl.dat"
+# localfile = "/20211221_Phantom_Flash/meas_MID00023_FID47486_ra_3D_tra_1x1x3mm_FULL_new.dat"
+# localfile = "/20211221_Phantom_Flash/meas_MID00027_FID47490_ra_3D_tra_1x1x5mm_FULl_reducedFOV.dat"
+# localfile = "/20211221_Phantom_Flash/meas_MID00026_FID47489_ra_3D_tra_1x1x3mm_FULL_new_reducedFOV.dat"
+
+
 
 filename = base_folder+localfile
 
@@ -87,8 +94,8 @@ if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):
     file.close()
 
 else:
-    file = open(file_map, "rb")
-    dico_seqParams = pickle.load(filename_seqParams)
+    file = open(filename_seqParams, "rb")
+    dico_seqParams = pickle.load(file)
 
 
 meas_sampling_mode=dico_seqParams["alFree"][12]
@@ -208,10 +215,20 @@ if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
 else:
     b1_all_slices=np.load(filename_b1)
 
-
-# sl=int(b1_all_slices.shape[1]/2)
-# list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
-# plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
+sl=int(b1_all_slices.shape[1]/2)
+list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
+plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
+#
+#
+# volume_rebuilt = build_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,density_adj=False,eps=1e-6,b1=b1_all_slices,useGPU=True,normalize_kdata=True,light_memory_usage=True,is_theta_z_adjusted=False)
+# np.save(str.split(filename,".dat") [0]+"_volume_allspokes.npy",volume_rebuilt)
+#
+# from mutools import io
+# file_mha = filename.split(".dat")[0] + "_volume_allspokes.mha"
+# io.write(file_mha,np.abs(volume_rebuilt),tags={"spacing":[dz,dx,dy]})
+# animate_images(volume_rebuilt,cmap="gray")
+#
+#
 #
 #
 # #build out of phase spokes image
@@ -261,7 +278,8 @@ if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
 
 print("Building Mask....")
 if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
-    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/40, normalize_kdata=True,light_memory_usage=True,in_phase_spokes_only=False)
+    selected_spokes = np.r_[10:400]
+    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=None, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
     np.save(filename_mask,mask)
     animate_images(mask)
     #del mask

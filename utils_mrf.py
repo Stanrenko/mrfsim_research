@@ -1276,7 +1276,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6,threshol
 
     return mask
 
-def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=None,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False,in_phase_spokes_only=False):
+def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=None,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False,selected_spokes=None):
     '''
 
     :param kdata: shape nchannels*ntimesteps*point_per_timestep
@@ -1289,11 +1289,11 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
     '''
     mask = False
 
-    if (in_phase_spokes_only):
+    if (selected_spokes is not None):
         trajectory_for_mask = copy(trajectory)
-        in_phase_indices = np.r_[20:800,1200:1400]
-        trajectory_for_mask.traj = trajectory.get_traj()[in_phase_indices]
-        kdata = kdata[:,in_phase_indices,:,:]
+        #selected_spokes = np.r_[20:800,1200:1400]
+        trajectory_for_mask.traj = trajectory.get_traj()[selected_spokes]
+        kdata = kdata[:,selected_spokes,:,:]
 
     else:
         trajectory_for_mask = trajectory
@@ -1315,7 +1315,7 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
     elif traj.shape[-1]==3: # For volumes
 
         if threshold_factor is None:
-            threshold_factor = 1/15
+            threshold_factor = 1/20
 
         unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
         mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique) *threshold_factor)])
