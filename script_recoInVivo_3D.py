@@ -50,12 +50,17 @@ localfile = "/20211129_BM/meas_MID00085_FID43316_raFin_3D_FULL_highRES_incoh.dat
 # localfile = "/20211221_Phantom_Flash/meas_MID00027_FID47490_ra_3D_tra_1x1x5mm_FULl_reducedFOV.dat"
 # localfile = "/20211221_Phantom_Flash/meas_MID00026_FID47489_ra_3D_tra_1x1x3mm_FULL_new_reducedFOV.dat"
 
+localfile = "/20211221_EV/meas_MID00044_FID47507_raFin_3D_FULL_new_highRES_inco_new.dat"
+#localfile = "/20211221_EV/meas_MID00045_FID47508_raFin_3D_FULL_new_highRES_inco.dat"
+#localfile = "/20211221_EV_/meas_MID00046_FID47509_raFin_3D_FULL_new_highRES_stack.dat"
 
 
 filename = base_folder+localfile
 
-#filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00044_FID42066_raFin_3D_tra_1x1x5mm_us4_vivo.dat"
+#filename="./data/InVivo/3D/20211221_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
 #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
+#filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
+
 
 
 filename_save=str.split(filename,".dat") [0]+".npy"
@@ -73,14 +78,16 @@ filename_mask= str.split(filename,".dat") [0]+"_mask.npy"
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 save_kdata=True
-use_GPU = True
-light_memory_usage=False
+use_GPU = False
+light_memory_usage=True
 #Parsed_File = rT.map_VBVD(filename)
 #idx_ok = rT.detect_TwixImg(Parsed_File)
 #RawData = Parsed_File[str(idx_ok)]["image"].readImage()
 
 if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):
+
     twix = twixtools.read_twix(filename,optional_additional_maps=["sWipMemBlock","sKSpace"],optional_additional_arrays=["SliceThickness"])
+
 
     alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
     x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
@@ -88,6 +95,8 @@ if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):
     z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
 
     dico_seqParams = {"alFree":alFree,"x_FOV":x_FOV,"y_FOV":y_FOV,"z_FOV":z_FOV}
+
+    del alFree
 
     file = open(filename_seqParams, "wb")
     pickle.dump(dico_seqParams, file)
@@ -103,6 +112,7 @@ x_FOV = dico_seqParams["x_FOV"]
 y_FOV = dico_seqParams["y_FOV"]
 z_FOV = dico_seqParams["z_FOV"]
 
+del dico_seqParams
 
 if meas_sampling_mode==1:
     incoherent=False
@@ -116,9 +126,14 @@ elif meas_sampling_mode==3:
 
 
 if str.split(filename_save,"/")[-1] not in os.listdir(folder):
+    if 'twix' not in locals():
+        print("Re-loading raw data")
+        twix = twixtools.read_twix(filename)
+
     mapped = twixtools.map_twix(twix)
-    im_data = mapped[-1]['image']
-    data = im_data[:].squeeze()
+    data = mapped[-1]['image']
+    del mapped
+    data = data[:].squeeze()
     data = np.moveaxis(data, 0, -2)
     data = np.moveaxis(data, 1, 0)
 
@@ -282,7 +297,7 @@ if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
     mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=None, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
     np.save(filename_mask,mask)
     animate_images(mask)
-    #del mask
+    del mask
 
 
 

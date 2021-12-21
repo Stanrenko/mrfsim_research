@@ -1293,12 +1293,18 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
         trajectory_for_mask = copy(trajectory)
         #selected_spokes = np.r_[20:800,1200:1400]
         trajectory_for_mask.traj = trajectory.get_traj()[selected_spokes]
-        kdata = kdata[:,selected_spokes,:,:]
-
     else:
         trajectory_for_mask = trajectory
 
-    volume_rebuilt = build_single_image_multichannel(kdata,trajectory_for_mask,size,density_adj,eps,b1,useGPU=useGPU,normalize_kdata=normalize_kdata,light_memory_usage=light_memory_usage,is_theta_z_adjusted=is_theta_z_adjusted)
+    if (selected_spokes is not None):
+        volume_rebuilt = build_single_image_multichannel(kdata[:,selected_spokes,:,:],trajectory_for_mask,size,density_adj,eps,b1,useGPU=useGPU,normalize_kdata=normalize_kdata,light_memory_usage=light_memory_usage,is_theta_z_adjusted=is_theta_z_adjusted)
+    else:
+        volume_rebuilt = build_single_image_multichannel(kdata, trajectory_for_mask, size,
+                                                         density_adj, eps, b1, useGPU=useGPU,
+                                                         normalize_kdata=normalize_kdata,
+                                                         light_memory_usage=light_memory_usage,
+                                                         is_theta_z_adjusted=is_theta_z_adjusted)
+
     traj = trajectory.get_traj_for_reconstruction()
 
 
