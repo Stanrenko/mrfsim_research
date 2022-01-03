@@ -51,9 +51,8 @@ localfile = "/20211129_BM/meas_MID00085_FID43316_raFin_3D_FULL_highRES_incoh.dat
 # localfile = "/20211221_Phantom_Flash/meas_MID00026_FID47489_ra_3D_tra_1x1x3mm_FULL_new_reducedFOV.dat"
 
 localfile = "/20211221_EV/meas_MID00044_FID47507_raFin_3D_FULL_new_highRES_inco_new.dat"
-#localfile = "/20211221_EV/meas_MID00045_FID47508_raFin_3D_FULL_new_highRES_inco.dat"
+localfile = "/20211221_EV/meas_MID00045_FID47508_raFin_3D_FULL_new_highRES_inco.dat"
 #localfile = "/20211221_EV_/meas_MID00046_FID47509_raFin_3D_FULL_new_highRES_stack.dat"
-
 
 filename = base_folder+localfile
 
@@ -77,7 +76,6 @@ filename_mask= str.split(filename,".dat") [0]+"_mask.npy"
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
-save_kdata=True
 use_GPU = False
 light_memory_usage=True
 #Parsed_File = rT.map_VBVD(filename)
@@ -131,6 +129,10 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
         twix = twixtools.read_twix(filename)
 
     mapped = twixtools.map_twix(twix)
+    try:
+        del twix
+    except:
+        pass
     data = mapped[-1]['image']
     del mapped
     data = data[:].squeeze()
@@ -198,19 +200,17 @@ radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampli
 
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
     # Density adjustment all slices
-    print("Performing Density Adjustment....")
-    density = np.abs(np.linspace(-1, 1, npoint))
-    kdata_all_channels_all_slices = data.reshape(-1, npoint)
-    del data
-    kdata_all_channels_all_slices = (kdata_all_channels_all_slices*density).reshape(data_shape)
-    #kdata_all_channels_all_slices = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in data]
-    #kdata_all_channels_all_slices=np.array(kdata_all_channels_all_slices).reshape(data_shape)
 
-    if save_kdata:
-        np.save(filename_kdata, kdata_all_channels_all_slices)
-        del kdata_all_channels_all_slices
-        #kdata_all_channels_all_slices=open_memmap(filename_kdata)
-        kdata_all_channels_all_slices = np.load(filename_kdata)
+    density = np.abs(np.linspace(-1, 1, npoint))
+    density = np.expand_dims(density,tuple(range(data.ndim-1)))
+    #kdata_all_channels_all_slices = data.reshape(-1, npoint)
+    #del data
+    print("Performing Density Adjustment....")
+    data *= density
+    np.save(filename_kdata, data)
+    del data
+
+    kdata_all_channels_all_slices = np.load(filename_kdata)
 
 else:
     #kdata_all_channels_all_slices = open_memmap(filename_kdata)
@@ -250,22 +250,22 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 # radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 # radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
 # volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
-# np.save(str.split(filename,".dat") [0]+"_volumeoutofphase.npy",volume_outofphase)
 # animate_images(volume_outofphase[0],cmap="gray")
-# list_images = list(np.abs(volume_outofphase)[0][:])
-# plot_image_grid(list_images,(8,8),title="Anatomic Image Out Of Phase Spokes",cmap="gray")
+# # list_images = list(np.abs(volume_outofphase)[0][:])
+# # plot_image_grid(list_images,(8,8),title="Anatomic Image Out Of Phase Spokes",cmap="gray")
+# #
+# #
+# # path = r"C:/Users/c.slioussarenko/PythonRepositories"
+# # sys.path.append(path+"/epgpy")
+# # sys.path.append(path+"/machines")
+# # sys.path.append(path+"/mutools")
+# # sys.path.append(path+"/dicomstack")
+# #
 #
-#
-# path = r"C:/Users/c.slioussarenko/PythonRepositories"
-# sys.path.append(path+"/epgpy")
-# sys.path.append(path+"/machines")
-# sys.path.append(path+"/mutools")
-# sys.path.append(path+"/dicomstack")
-#
-
 # from mutools import io
 # file_mha = filename.split(".dat")[0] + "_volumesoutofphase.mha"
 # io.write(file_mha,np.abs(volume_outofphase)[0],tags={"spacing":[dz,dx,dy]})
+#
 
 
 
@@ -306,13 +306,6 @@ del b1_all_slices
 
 
 
-
-
-
-
-
-
-
 ########################## Dict mapping ########################################
 
 dictfile = "mrf175_SimReco2.dict"
@@ -340,13 +333,13 @@ save_map=True
 if not(load_map):
     niter = 0
 
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
     all_maps=optimizer.search_patterns(dictfile,volumes_all)
 
     if(save_map):
         import pickle
 
-        file_map = filename.split(".dat")[0] + "_MRF_map_volumes.pkl"
+        file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
         file = open(file_map, "wb")
         # dump information to that file
         pickle.dump(all_maps, file)
