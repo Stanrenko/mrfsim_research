@@ -39,6 +39,8 @@ try:
 except:
     pass
 
+from copy import copy
+import psutil
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
@@ -1275,7 +1277,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6,threshol
 
     return mask
 
-def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=None,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False):
+def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=None,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False,selected_spokes=None):
     '''
 
     :param kdata: shape nchannels*ntimesteps*point_per_timestep
@@ -1288,8 +1290,22 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
     '''
     mask = False
 
+    if (selected_spokes is not None):
+        trajectory_for_mask = copy(trajectory)
+        #selected_spokes = np.r_[20:800,1200:1400]
+        trajectory_for_mask.traj = trajectory.get_traj()[selected_spokes]
+    else:
+        trajectory_for_mask = trajectory
 
-    volume_rebuilt = build_single_image_multichannel(kdata,trajectory,size,density_adj,eps,b1,useGPU=useGPU,normalize_kdata=normalize_kdata,light_memory_usage=light_memory_usage,is_theta_z_adjusted=is_theta_z_adjusted)
+    if (selected_spokes is not None):
+        volume_rebuilt = build_single_image_multichannel(kdata[:,selected_spokes,:,:],trajectory_for_mask,size,density_adj,eps,b1,useGPU=useGPU,normalize_kdata=normalize_kdata,light_memory_usage=light_memory_usage,is_theta_z_adjusted=is_theta_z_adjusted)
+    else:
+        volume_rebuilt = build_single_image_multichannel(kdata, trajectory_for_mask, size,
+                                                         density_adj, eps, b1, useGPU=useGPU,
+                                                         normalize_kdata=normalize_kdata,
+                                                         light_memory_usage=light_memory_usage,
+                                                         is_theta_z_adjusted=is_theta_z_adjusted)
+
     traj = trajectory.get_traj_for_reconstruction()
 
 
@@ -1306,11 +1322,11 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
     elif traj.shape[-1]==3: # For volumes
 
         if threshold_factor is None:
-            threshold_factor = 1/15
+            threshold_factor = 1/20
 
         unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
         mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique) *threshold_factor)])
-        mask = ndimage.binary_closing(mask, iterations=3)
+        #mask = ndimage.binary_closing(mask, iterations=3)
 
     return mask
 
@@ -1326,6 +1342,7 @@ def build_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1
     :param b1: coil sensitivity map
     :return: mask of size size
     '''
+
 
     volume_rebuilt=simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj,eps,is_theta_z_adjusted,b1,1,useGPU,None,normalize_kdata,light_memory_usage,True)[0]
 
@@ -1695,6 +1712,11 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
     nb_channels=kdata.shape[0]
     nspoke=int(nb_allspokes/ntimesteps)
 
+
+    if kdata.dtype=="complex64":
+        traj=traj.astype(np.float32)
+
+
     if not(is_theta_z_adjusted):
         dtheta = np.pi / nspoke
         dz = 1/trajectory.paramDict["nb_rep"]
@@ -1731,8 +1753,14 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
 
     output_shape = (ntimesteps,)+size
 
+    flushed=False
+
     if memmap_file is not None :
-        images_series_rebuilt = np.memmap(memmap_file,dtype="complex64",mode="w+",shape=output_shape)
+        from tempfile import mkdtemp
+        import os.path as path
+        file_memmap=path.join(mkdtemp(),"memmap_volumes.dat")
+        images_series_rebuilt = np.memmap(file_memmap,dtype="complex64",mode="w+",shape=output_shape)
+
     else:
         images_series_rebuilt = np.zeros(output_shape,dtype=np.complex64)
 
@@ -1759,16 +1787,39 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
                         images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
 
                 else:
-                    for j in tqdm(range(nb_channels)):
-                        fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j, i, :], size)
+                    flush_condition=(memmap_file is not None)and((psutil.virtual_memory().cached+psutil.virtual_memory().free)/1e9<2)and(not(flushed))
+                    if flush_condition:
+                        print("Flushed Memory")
+                        offset=i*images_series_rebuilt.itemsize*i*np.prod(images_series_rebuilt.shape[1:])
+                        i0 = i
+                        new_shape=(output_shape[0]-i,)+output_shape[1:]
+                        images_series_rebuilt.flush()
+                        del images_series_rebuilt
+                        flushed=True
+                        normalize_volumes = False
+                        images_series_rebuilt = np.memmap(memmap_file,dtype="complex64",mode="r+",shape=new_shape,offset=offset)
+
+                    if flushed :
+                        for j in tqdm(range(nb_channels)):
+                            fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j, i, :], size)
+                            if b1 is None:
+                                images_series_rebuilt[i-i0] += np.abs(fk) ** 2
+                            else:
+                                images_series_rebuilt[i-i0] += b1[j].conj() * fk
+
                         if b1 is None:
-                            images_series_rebuilt[i] += np.abs(fk) ** 2
-                        else:
-                            images_series_rebuilt[i] += b1[j].conj() * fk
+                            images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
 
+                    else:
+                        for j in tqdm(range(nb_channels)):
+                            fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j, i, :], size)
+                            if b1 is None:
+                                images_series_rebuilt[i] += np.abs(fk) ** 2
+                            else:
+                                images_series_rebuilt[i] += b1[j].conj() * fk
 
-                    if b1 is None:
-                        images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
+                        if b1 is None:
+                            images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
         else:
             N1, N2, N3 = size[0], size[1], size[2]
             dtype = np.float32  # Datatype (real)
@@ -1856,6 +1907,11 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
         del kdata
         gc.collect()
 
+        if flushed:
+            images_series_rebuilt.flush()
+            del images_series_rebuilt
+            images_series_rebuilt=np.memmap(memmap_file,dtype="complex64",mode="r",shape=output_shape)
+
         if (normalize_volumes)and(b1 is not None):
             print("Normalizing by Coil Sensi")
             if light_memory_usage:
@@ -1866,7 +1922,9 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
                 images_series_rebuilt /= np.sum(np.abs(b1) ** 2)
 
 
+
     #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+
 
 
     return images_series_rebuilt
@@ -2350,11 +2408,15 @@ def calculate_sensitivity_map_3D(kdata,trajectory,res=16,image_size=(1,256,256),
 
     del kdata_for_sensi
     print("Normalizing sensi")
-    b1 = coil_sensitivity / np.linalg.norm(coil_sensitivity, axis=0)
-    del coil_sensitivity
-    b1 = b1 / np.max(np.abs(b1.flatten()))
 
-    return b1
+    #b1 = coil_sensitivity / np.linalg.norm(coil_sensitivity, axis=0)
+    #del coil_sensitivity
+    #b1 = b1 / np.max(np.abs(b1.flatten()))
+    coil_sensitivity /= np.linalg.norm(coil_sensitivity, axis=0)
+    coil_sensitivity /= np.max(np.abs(coil_sensitivity.flatten()))
+
+
+    return coil_sensitivity
 
 
 def J_fourier(m, traj, kdata):

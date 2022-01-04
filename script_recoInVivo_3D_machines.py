@@ -12,6 +12,7 @@ import os
 from numpy.lib.format import open_memmap
 from numpy import memmap
 import pickle
+import twixtools
 
 # machines
 path = r"/home/cslioussarenko/PythonRepositories"
@@ -28,45 +29,74 @@ from machines import machine, Toolbox, Config, set_parameter, set_output, printe
 
 @machine
 @set_parameter("filename", str, default=None, description="Siemens K-space data .dat file")
-def build_kdata(filename):
+@set_parameter("suffix",str,default="")
+def build_kdata(filename,suffix):
 
-    filename_kdata = str.split(filename, ".dat")[0] + "_kdata.npy"
+    filename_kdata = str.split(filename, ".dat")[0] + suffix + "_kdata.npy"
     filename_save = str.split(filename, ".dat")[0] + ".npy"
+    filename_seqParams = str.split(filename, ".dat")[0] + "_seqParams.pkl"
+
     folder = "/".join(str.split(filename, "/")[:-1])
 
-    if str.split(filename_save, "/")[-1] not in os.listdir(folder):
-        Parsed_File = rT.map_VBVD(filename)
-        idx_ok = rT.detect_TwixImg(Parsed_File)
-        start_time = time.time()
-        RawData = Parsed_File[str(idx_ok)]["image"].readImage()
-        # test=Parsed_File["0"]["noise"].readImage()
-        # test = np.squeeze(test)
+    if str.split(filename_seqParams, "/")[-1] not in os.listdir(folder):
 
-        elapsed_time = time.time()
-        elapsed_time = elapsed_time - start_time
-        progress_str = "Data read in %f s \n" % round(elapsed_time, 2)
-        print(progress_str)
-        ## Random map simulation
+        twix = twixtools.read_twix(filename, optional_additional_maps=["sWipMemBlock", "sKSpace"],
+                                   optional_additional_arrays=["SliceThickness"])
 
-        kdata = np.squeeze(RawData)
-        kdata = np.moveaxis(kdata, 0, -1)
+        alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
+        x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
+        y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
+        z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
 
-        np.save(filename_save, kdata)
+        dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV, "z_FOV": z_FOV}
+
+        del alFree
+
+        file = open(filename_seqParams, "wb")
+        pickle.dump(dico_seqParams, file)
+        file.close()
 
     else:
-        kdata = np.load(filename_save)
+        file = open(filename_seqParams, "rb")
+        dico_seqParams = pickle.load(file)
 
-    kdata_shape=kdata.shape
-    npoint = kdata_shape[-1]
+    if str.split(filename_save, "/")[-1] not in os.listdir(folder):
+        if 'twix' not in locals():
+            print("Re-loading raw data")
+            twix = twixtools.read_twix(filename)
+
+        mapped = twixtools.map_twix(twix)
+
+        try:
+            del twix
+        except:
+            pass
+
+        data = mapped[-1]['image']
+        del mapped
+
+        data = data[:].squeeze()
+        data = np.moveaxis(data, 0, -2)
+        data = np.moveaxis(data, 1, 0)
+
+        np.save(filename_save, data)
+
+    else:
+        data = np.load(filename_save)
+
+    try:
+        del twix
+    except:
+        pass
+
+    npoint = data.shape[-1]
     #image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
 
     print("Performing Density Adjustment....")
     density = np.abs(np.linspace(-1, 1, npoint))
-    kdata.shape = (-1, npoint)
-    #del data
-    kdata = (kdata * density)
-    kdata.shape=kdata_shape
-    np.save(filename_kdata, kdata)
+    density = np.expand_dims(density, tuple(range(data.ndim - 1)))
+    data *= density
+    np.save(filename_kdata, data)
 
     return
 
@@ -74,10 +104,11 @@ def build_kdata(filename):
 @set_parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
 @set_parameter("sampling_mode", ["stack","incoherent_old","incoherent_new"], default="stack", description="Radial sampling strategy over partitions")
 @set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
-def build_coil_sensi(filename_kdata,sampling_mode,undersampling_factor):
+@set_parameter("suffix",str,default="")
+def build_coil_sensi(filename_kdata,sampling_mode,undersampling_factor,suffix):
 
     kdata_all_channels_all_slices = np.load(filename_kdata)
-    filename_b1 = str.split(filename_kdata, "_kdata.npy")[0] + "_b1.npy"
+    filename_b1 = str.split(filename_kdata, "_kdata.npy")[0] + "_b1" + suffix +".npy"
 
     sampling_mode_list = str.split(sampling_mode,"_")
 
@@ -86,7 +117,7 @@ def build_coil_sensi(filename_kdata,sampling_mode,undersampling_factor):
     else:
         incoherent=True
 
-    if len(sampling_mode_list)>0:
+    if len(sampling_mode_list)>1:
         mode=sampling_mode_list[1]
     else:
         mode="old"
@@ -151,7 +182,7 @@ def build_volumes(filename_kdata,sampling_mode,undersampling_factor,ntimesteps,u
 
     volumes_all = simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices, radial_traj, image_size,
                                                             b1=b1_all_slices, density_adj=False, ntimesteps=ntimesteps,
-                                                            useGPU=use_GPU, normalize_kdata=True, memmap_file=None,
+                                                            useGPU=use_GPU, normalize_kdata=True, memmap_file=True,
                                                             light_memory_usage=light_mem,normalize_volumes=True)
     np.save(filename_volume, volumes_all)
     return
@@ -192,9 +223,11 @@ def build_mask(filename_kdata,sampling_mode,undersampling_factor,suffix):
     radial_traj = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=undersampling_factor, npoint=npoint,
                            nb_slices=nb_slices, incoherent=incoherent, mode=mode)
 
+    selected_spokes=np.r_[10:400] 
+    selected_spokes=None 
     mask = build_mask_single_image_multichannel(kdata_all_channels_all_slices, radial_traj, image_size,
-                                                b1=b1_all_slices, density_adj=False, threshold_factor=1 / 15,
-                                                normalize_kdata=True, light_memory_usage=True)
+                                                b1=b1_all_slices, density_adj=False, threshold_factor=None,
+                                                normalize_kdata=True, light_memory_usage=True,selected_spokes=selected_spokes)
     np.save(filename_mask, mask)
     return
 

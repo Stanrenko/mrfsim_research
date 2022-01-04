@@ -35,13 +35,14 @@ class Optimizer(object):
 
 class SimpleDictSearch(Optimizer):
 
-    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,useGPU_simulation=True,movement_correction=False,cond=None,**kwargs):
+    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,useGPU_simulation=True,movement_correction=False,cond=None,remove_duplicate_signals=False,**kwargs):
         #transf is a function that takes as input timesteps arrays and outputs shifts as output
         super().__init__(**kwargs)
         self.paramDict["niter"]=niter
         self.paramDict["split"] = split
         self.paramDict["pca"] = pca
         self.paramDict["threshold_pca"] = threshold_pca
+        self.paramDict["remove_duplicate_signals"] = remove_duplicate_signals
         #self.paramDict["useAdjPred"]=useAdjPred
 
         if niter>0:
@@ -84,6 +85,7 @@ class SimpleDictSearch(Optimizer):
 
         movement_correction=self.paramDict["movement_correction"]
         cond=self.paramDict["cond"]
+        remove_duplicates = self.paramDict["remove_duplicate_signals"]
         #adj_phase=self.paramDict["adj_phase"]
 
         if movement_correction:
@@ -91,10 +93,14 @@ class SimpleDictSearch(Optimizer):
                 raise ValueError("indices of retained kdata should be given in cond for movement correction")
 
 
-        volumes = volumes / np.linalg.norm(volumes, 2, axis=0)
+        volumes /= np.linalg.norm(volumes, 2, axis=0)
         all_signals = volumes[:, mask > 0]
-        volumes0 = volumes
-
+        
+        if niter >0:
+            volumes0 = volumes
+        else:
+	        del volumes
+	
         if log:
             now = datetime.now()
             date_time = now.strftime("%Y%m%d_%H%M%S")
@@ -159,27 +165,26 @@ class SimpleDictSearch(Optimizer):
             print("################# ITERATION : Number {} out of {} ####################".format(i, niter))
 
             print("Calculating optimal fat fraction and best pattern per signal for iteration {}".format(i))
-            all_signals_unique, index_signals_unique = np.unique(all_signals, axis=1, return_inverse=True)
-            nb_signals_unique = all_signals_unique.shape[1]
             nb_signals = all_signals.shape[1]
 
-            print("There are {} unique signals to match along {} water and {} fat components".format(nb_signals_unique,array_water_unique.shape[0],array_fat_unique.shape[0]))
-
-            duplicate_signals = True
-            if nb_signals_unique == nb_signals:
-                print("No duplicate signals")
-                duplicate_signals = False
-                all_signals_unique = all_signals
+            if remove_duplicates:
+                all_signals, index_signals_unique = np.unique(all_signals, axis=1, return_inverse=True)
+                nb_signals = all_signals.shape[1]
 
 
-            num_group = int(nb_signals_unique / split) + 1
+
+            print("There are {} unique signals to match along {} water and {} fat components".format(nb_signals,array_water_unique.shape[0],array_fat_unique.shape[0]))
+
+
+
+            num_group = int(nb_signals / split) + 1
 
             idx_max_all_unique = []
             alpha_optim = []
 
             for j in tqdm(range(num_group)):
                 j_signal = j * split
-                j_signal_next = np.minimum((j + 1) * split, nb_signals_unique)
+                j_signal_next = np.minimum((j + 1) * split, nb_signals)
 
                 if self.verbose:
                     print("PCA transform")
@@ -188,16 +193,16 @@ class SimpleDictSearch(Optimizer):
                 if not(useGPU_dictsearch):
 
                     if pca:
-                        transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals_unique[:, j_signal:j_signal_next])))
-                        transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals_unique[:, j_signal:j_signal_next])))
+                        transformed_all_signals_water = np.transpose(pca_water.transform(np.transpose(all_signals[:, j_signal:j_signal_next])))
+                        transformed_all_signals_fat = np.transpose(pca_fat.transform(np.transpose(all_signals[:, j_signal:j_signal_next])))
 
                         sig_ws_all_unique = np.matmul(transformed_array_water_unique,
                                                       transformed_all_signals_water.conj())
                         sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
                                                       transformed_all_signals_fat.conj())
                     else:
-                        sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, j_signal:j_signal_next].conj())
-                        sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, j_signal:j_signal_next].conj())
+                        sig_ws_all_unique = np.matmul(array_water_unique, all_signals[:, j_signal:j_signal_next].conj())
+                        sig_fs_all_unique = np.matmul(array_fat_unique, all_signals[:, j_signal:j_signal_next].conj())
 
 
                 else:
@@ -206,8 +211,8 @@ class SimpleDictSearch(Optimizer):
                     if pca:
 
                         transformed_all_signals_water = cp.transpose(
-                            pca_water.transform(cp.transpose(cp.asarray(all_signals_unique[:, j_signal:j_signal_next])))).get()
-                        transformed_all_signals_fat = cp.transpose(pca_fat.transform(cp.transpose(cp.asarray(all_signals_unique[:, j_signal:j_signal_next])))).get()
+                            pca_water.transform(cp.transpose(cp.asarray(all_signals[:, j_signal:j_signal_next])))).get()
+                        transformed_all_signals_fat = cp.transpose(pca_fat.transform(cp.transpose(cp.asarray(all_signals[:, j_signal:j_signal_next])))).get()
 
                         sig_ws_all_unique = (cp.matmul(cp.asarray(transformed_array_water_unique),
                                                       cp.asarray(transformed_all_signals_water).conj())).get()
@@ -216,9 +221,9 @@ class SimpleDictSearch(Optimizer):
                     else:
 
                         sig_ws_all_unique = (cp.matmul(cp.asarray(array_water_unique),
-                                                      cp.asarray(all_signals_unique)[:, j_signal:j_signal_next].conj())).get()
+                                                      cp.asarray(all_signals)[:, j_signal:j_signal_next].conj())).get()
                         sig_fs_all_unique = (cp.matmul(cp.asarray(array_fat_unique),
-                                                      cp.asarray(all_signals_unique)[:, j_signal:j_signal_next].conj())).get()
+                                                      cp.asarray(all_signals)[:, j_signal:j_signal_next].conj())).get()
 
 
                 if self.verbose:
@@ -674,7 +679,7 @@ class SimpleDictSearch(Optimizer):
             params_all_unique = np.array(
                 [keys[idx] + (alpha_optim[l],) for l, idx in enumerate(idx_max_all_unique)])
 
-            if duplicate_signals:
+            if remove_duplicates:
                 params_all = params_all_unique[index_signals_unique]
             else:
                 params_all = params_all_unique
