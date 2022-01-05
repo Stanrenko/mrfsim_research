@@ -245,8 +245,8 @@ class MyTestCase(unittest.TestCase):
                                                                 memmap_file=None,
                                                                 light_memory_usage=False,
                                                                 normalize_volumes=True)
-
-        self.assertTrue(np.linalg.norm(volumes_all - volumes_ref) < 0.0000001)
+        print(np.linalg.norm(volumes_all - volumes_ref))
+        self.assertTrue(np.linalg.norm(volumes_all - volumes_ref) < 0.000001)
 
         volumes_all = simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices, radial_traj,
                                                                 image_size,
@@ -256,8 +256,8 @@ class MyTestCase(unittest.TestCase):
                                                                 memmap_file=None,
                                                                 light_memory_usage=True,
                                                                 normalize_volumes=True)
-
-        self.assertTrue(np.linalg.norm(volumes_all - volumes_ref) < 0.0000001)
+        print(np.linalg.norm(volumes_all - volumes_ref))
+        self.assertTrue(np.linalg.norm(volumes_all - volumes_ref) < 0.000001)
 
         if gpu_test:
             volumes_all = simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices, radial_traj,
