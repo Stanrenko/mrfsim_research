@@ -56,11 +56,11 @@ localfile = "/20211221_EV/meas_MID00045_FID47508_raFin_3D_FULL_new_highRES_inco.
 
 localfile = "/20220106/meas_MID00021_FID48331_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile = "/20220106/meas_MID00167_FID48477_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile = "/20220106_JM/meas_MID00180_FID48490_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+
 
 
 filename = base_folder+localfile
-
-data_matlab = loadmat(filename)["rr"]
 
 #filename="./data/InVivo/3D/20211221_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
 #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
@@ -90,13 +90,19 @@ if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):
 
     twix = twixtools.read_twix(filename,optional_additional_maps=["sWipMemBlock","sKSpace"],optional_additional_arrays=["SliceThickness"])
 
+    if np.max(np.argwhere(np.array(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"])>0))>=16:
+        use_navigator_dll = True
+    else:
+        use_navigator_dll = False
+
+
 
     alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
     x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
     y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
     z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
 
-    dico_seqParams = {"alFree":alFree,"x_FOV":x_FOV,"y_FOV":y_FOV,"z_FOV":z_FOV}
+    dico_seqParams = {"alFree":alFree,"x_FOV":x_FOV,"y_FOV":y_FOV,"z_FOV":z_FOV,"use_navigator_dll":use_navigator_dll}
 
     del alFree
 
@@ -109,7 +115,31 @@ else:
     dico_seqParams = pickle.load(file)
 
 
-meas_sampling_mode=dico_seqParams["alFree"][12]
+
+try:
+    del twix
+except:
+    pass
+
+
+use_navigator_dll=dico_seqParams["use_navigator_dll"]
+
+if use_navigator_dll:
+    meas_sampling_mode=dico_seqParams["alFree"][14]
+    nb_gating_spokes = dico_seqParams["alFree"][6]
+else:
+    meas_sampling_mode = dico_seqParams["alFree"][12]
+    nb_gating_spokes = 0
+
+if nb_gating_spokes>0:
+    meas_orientation =  dico_seqParams["alFree"][11]
+    if meas_orientation==1:
+        nav_direction = "READ"
+    elif meas_orientation==2:
+        nav_direction = "PHASE"
+    elif meas_orientation==3:
+        nav_direction = "SLICE"
+
 x_FOV = dico_seqParams["x_FOV"]
 y_FOV = dico_seqParams["y_FOV"]
 z_FOV = dico_seqParams["z_FOV"]
@@ -128,23 +158,45 @@ elif meas_sampling_mode==3:
 
 
 
+
 if str.split(filename_save,"/")[-1] not in os.listdir(folder):
-    if 'twix' not in locals():
-        print("Re-loading raw data")
-        twix = twixtools.read_twix(filename)
+    # if 'twix' not in locals():
+    #     print("Re-loading raw data")
+    #     twix = twixtools.read_twix(filename)
+    #
+    # mapped = twixtools.map_twix(twix)
+    # try:
+    #     del twix
+    # except:
+    #     pass
+    # data = mapped[-1]['image']
+    # del mapped
+    # data = data[:].squeeze()
+    # data = np.moveaxis(data, 0, -2)
+    # data = np.moveaxis(data, 1, 0)
+    #
+    # np.save(filename_save,data)
 
-    mapped = twixtools.map_twix(twix)
-    try:
-        del twix
-    except:
-        pass
-    data = mapped[-1]['image']
-    del mapped
-    data = data[:].squeeze()
-    data = np.moveaxis(data, 0, -2)
-    data = np.moveaxis(data, 1, 0)
+    Parsed_File = rT.map_VBVD(filename)
+    idx_ok = rT.detect_TwixImg(Parsed_File)
+    start_time = time.time()
+    RawData = Parsed_File[str(idx_ok)]["image"].readImage()
+    elapsed_time = time.time()
+    elapsed_time = elapsed_time - start_time
 
-    np.save(filename_save,data)
+    progress_str = "Data read in %f s \n" % round(elapsed_time, 2)
+    print(progress_str)
+
+    data = np.squeeze(RawData)
+
+    if nb_gating_spokes>0:
+        data = np.moveaxis(data, 0, -1)
+        data = np.moveaxis(data, -2, 0)
+
+    else:
+        data = np.moveaxis(data, 0, -1)
+
+    np.save(filename_save, data)
 
 
 else :
@@ -180,15 +232,24 @@ try:
 except:
     pass
 
+if nb_gating_spokes>0:
+    data_for_nav = data[1]
+    data = data[0]
+
 data_shape = data.shape
 
-nb_channels = data_shape[0]
+if data.ndim==3:
+    nb_channels = 1
+else:
+    nb_channels=data.shape[0]
+
+
 
 ntimesteps = 175
 
-nb_allspokes = data_shape[1]
+nb_allspokes = data_shape[-3]
 npoint = data_shape[-1]
-nb_slices = data_shape[2]
+nb_slices = data_shape[-2]
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
 undersampling_factor=1
 
@@ -221,10 +282,6 @@ if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
 else:
     #kdata_all_channels_all_slices = open_memmap(filename_kdata)
     kdata_all_channels_all_slices = np.load(filename_kdata)
-
-
-
-
 
 # Coil sensi estimation for all slices
 print("Calculating Coil Sensitivity....")
