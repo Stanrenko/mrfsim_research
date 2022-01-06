@@ -6,6 +6,8 @@ try:
 except:
     pass
 
+
+import matplotlib.pyplot as plt
 from scipy import ndimage
 from scipy.optimize import minimize
 from scipy.ndimage import affine_transform
@@ -1242,8 +1244,9 @@ class RandomMap3D(ImageSeries3D):
         mask = np.zeros(self.image_size)
         mask[:,int(self.image_size[1] * mask_red):int(self.image_size[1] * (1 - mask_red)),
         int(self.image_size[2] * mask_red):int(self.image_size[2] * (1 - mask_red))] = 1.0
-        mask[:self.paramDict["nb_empty_slices"], :, :] = 0
-        mask[-self.paramDict["nb_empty_slices"]:, :, :] = 0
+        if not(self.paramDict["nb_empty_slices"]==0):
+            mask[:self.paramDict["nb_empty_slices"], :, :] = 0
+            mask[-self.paramDict["nb_empty_slices"]:, :, :] = 0
         self.mask = mask
 
     @wrapper_rounding
@@ -1265,7 +1268,10 @@ class RandomMap3D(ImageSeries3D):
         ff = self.dict_config["ff"]
 
         nb_slices=self.paramDict["nb_slices"]
-        mask_without_empty_slices=self.mask[self.paramDict["nb_empty_slices"]:-self.paramDict["nb_empty_slices"],:,:]
+        if not(self.paramDict["nb_empty_slices"]==0):
+            mask_without_empty_slices=self.mask[self.paramDict["nb_empty_slices"]:-self.paramDict["nb_empty_slices"],:,:]
+        else:
+            mask_without_empty_slices=self.mask
 
         sliced_image_size=(self.image_size[1],self.image_size[2])
 
