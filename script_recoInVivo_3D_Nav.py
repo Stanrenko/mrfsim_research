@@ -56,7 +56,7 @@ localfile = "/20211221_EV/meas_MID00045_FID47508_raFin_3D_FULL_new_highRES_inco.
 
 localfile = "/20220106/meas_MID00021_FID48331_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile = "/20220106/meas_MID00167_FID48477_raFin_3D_tra_1x1x5mm_FULL_new.dat"
-#localfile = "/20220106_JM/meas_MID00180_FID48490_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile = "/20220106_JM/meas_MID00180_FID48490_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 
 
 
@@ -67,6 +67,8 @@ filename = base_folder+localfile
 #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
 
 filename_save=str.split(filename,".dat") [0]+".npy"
+filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
+
 folder = "/".join(str.split(filename,"/")[:-1])
 
 
@@ -102,7 +104,9 @@ if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):
     y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
     z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
 
-    dico_seqParams = {"alFree":alFree,"x_FOV":x_FOV,"y_FOV":y_FOV,"z_FOV":z_FOV,"use_navigator_dll":use_navigator_dll}
+    nb_part = twix[-1]["hdr"]["Meas"]["Partitions"]
+
+    dico_seqParams = {"alFree":alFree,"x_FOV":x_FOV,"y_FOV":y_FOV,"z_FOV":z_FOV,"use_navigator_dll":use_navigator_dll,"nb_part":nb_part}
 
     del alFree
 
@@ -143,6 +147,7 @@ if nb_gating_spokes>0:
 x_FOV = dico_seqParams["x_FOV"]
 y_FOV = dico_seqParams["y_FOV"]
 z_FOV = dico_seqParams["z_FOV"]
+nb_part = dico_seqParams["nb_part"]
 
 del dico_seqParams
 
@@ -160,47 +165,87 @@ elif meas_sampling_mode==3:
 
 
 if str.split(filename_save,"/")[-1] not in os.listdir(folder):
-    # if 'twix' not in locals():
-    #     print("Re-loading raw data")
-    #     twix = twixtools.read_twix(filename)
+    if 'twix' not in locals():
+        print("Re-loading raw data")
+        twix = twixtools.read_twix(filename)
+
+
+
+    if nb_gating_spokes > 0:
+        Print("Reading Navigator Data....")
+        mdb_list = twix[-1]['mdb']
+        data_for_nav = []
+        k = 0
+        for i, mdb in enumerate(mdb_list):
+            if mdb.is_image_scan() and mdb.mdh[14][9]:
+                if int(k / 35) % 2 == 0:
+                    data_for_nav.append(mdb)
+
+                #print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
+                k += 1
+        data_for_nav = np.array([mdb.data for mdb in data_for_nav])
+        data_for_nav = image_mdbs_nav.reshape((int(nb_part),int(nb_gating_spokes))+data_for_nav.shape[1:])
+
+        if data_for_nav.ndim==3:
+            data_for_nav=np.expand_dims(data_for_nav,axis=-2)
+
+        data_for_nav = np.moveaxis(data_for_nav,-2,0)
+        np.save(filename_nav_save, data_for_nav)
+        del mdb_list
+
+
+    # image_mdbs = []
+    # k = 0
+    # for i, mdb in enumerate(mdb_list):
+    #     if mdb.is_image_scan() and not (mdb.mdh[14][9]):
+    #         image_mdbs.append(mdb)
+    #         #if i < 1400:
+    #         #    print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
+    #         #k += 1
+
+    ##################################################
+    mapped = twixtools.map_twix(twix)
+    try:
+        del twix
+    except:
+        pass
+    data = mapped[-1]['image']
+    del mapped
+    data = data[:].squeeze()
+    data = np.moveaxis(data, 0, -2)
+    data = np.moveaxis(data, 1, 0)
+
+    np.save(filename_save,data)
     #
-    # mapped = twixtools.map_twix(twix)
-    # try:
-    #     del twix
-    # except:
-    #     pass
-    # data = mapped[-1]['image']
-    # del mapped
-    # data = data[:].squeeze()
-    # data = np.moveaxis(data, 0, -2)
-    # data = np.moveaxis(data, 1, 0)
+    ##################################################
     #
-    # np.save(filename_save,data)
+    # Parsed_File = rT.map_VBVD(filename)
+    # idx_ok = rT.detect_TwixImg(Parsed_File)
+    # start_time = time.time()
+    # data = Parsed_File[str(idx_ok)]["image"].readImage()
+    # elapsed_time = time.time()
+    # elapsed_time = elapsed_time - start_time
+    #
+    # progress_str = "Data read in %f s \n" % round(elapsed_time, 2)
+    # print(progress_str)
+    #
+    # data = np.squeeze(data)
+    #
+    # if nb_gating_spokes>0:
+    #     data = np.moveaxis(data, 0, -1)
+    #     data = np.moveaxis(data, -2, 0)
+    #
+    # else:
+    #     data = np.moveaxis(data, 0, -1)
 
-    Parsed_File = rT.map_VBVD(filename)
-    idx_ok = rT.detect_TwixImg(Parsed_File)
-    start_time = time.time()
-    RawData = Parsed_File[str(idx_ok)]["image"].readImage()
-    elapsed_time = time.time()
-    elapsed_time = elapsed_time - start_time
-
-    progress_str = "Data read in %f s \n" % round(elapsed_time, 2)
-    print(progress_str)
-
-    data = np.squeeze(RawData)
-
-    if nb_gating_spokes>0:
-        data = np.moveaxis(data, 0, -1)
-        data = np.moveaxis(data, -2, 0)
-
-    else:
-        data = np.moveaxis(data, 0, -1)
-
-    np.save(filename_save, data)
+    #np.save(filename_save, data)
 
 
 else :
     data = np.load(filename_save)
+
+    if nb_gating_spokes>0:
+        data_for_nav=np.load(filename_nav_save)
 #
 # if str.split(filename_save,"/")[-1] not in os.listdir(folder):
 #     Parsed_File = rT.map_VBVD(filename)
@@ -232,21 +277,17 @@ try:
 except:
     pass
 
-if nb_gating_spokes>0:
-    data_for_nav = data[1]
-    data = data[0]
-
 data_shape = data.shape
 
 if data.ndim==3:
     nb_channels = 1
     data = np.expand_dims(data,axis=0)
-    data_for_nav=np.expand_dims(data_for_nav,axis=0)
+    #data_for_nav=np.expand_dims(data_for_nav,axis=0)
 else:
     nb_channels=data.shape[0]
 
-data_for_nav=data_for_nav[:,:nb_gating_spokes,:,:]
-data_for_nav = np.moveaxis(data_for_nav,-2,1)
+#data_for_nav=data_for_nav[:,:nb_gating_spokes,:,:]
+#data_for_nav = np.moveaxis(data_for_nav,-2,1)
 
 ntimesteps = 175
 
@@ -299,15 +340,15 @@ if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
 else:
     b1_all_slices=np.load(filename_b1)
 
-if nav_direction=="SLICE":
-    coil_sensitivity_nav = np.sum(b1_all_slices,axis=(-2,-1))
-elif nav_direction=="PHASE":
-    coil_sensitivity_nav = np.sum(b1_all_slices, axis=(0, -2))
-elif nav_direction == "READ":
-    coil_sensitivity_nav = np.sum(b1_all_slices, axis=(0, -1))
-
-coil_sensitivity_nav /= np.linalg.norm(coil_sensitivity_nav, axis=0)
-coil_sensitivity_nav /= np.max(np.abs(coil_sensitivity_nav.flatten()))
+# if nav_direction=="SLICE":
+#     coil_sensitivity_nav = np.sum(b1_all_slices,axis=(-2,-1))
+# elif nav_direction=="PHASE":
+#     coil_sensitivity_nav = np.sum(b1_all_slices, axis=(0, -2))
+# elif nav_direction == "READ":
+#     coil_sensitivity_nav = np.sum(b1_all_slices, axis=(0, -1))
+#
+# coil_sensitivity_nav /= np.linalg.norm(coil_sensitivity_nav, axis=0)
+# coil_sensitivity_nav /= np.max(np.abs(coil_sensitivity_nav.flatten()))
 
 sl=int(b1_all_slices.shape[1]/2)
 list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
@@ -360,43 +401,144 @@ nav_image_size = (int(npoint/2),)
 center_res = int(npoint / 2 - 1)
 kdata=data_for_nav.reshape((nb_channels,-1,npoint))
 
-coil_sensitivity=np.zeros((nb_channels,kdata.shape[1],)+nav_image_size,dtype=np.complex128)
+b1_nav=np.zeros((nb_channels,kdata.shape[1],)+nav_image_size,dtype=np.complex128)
 kdata_for_sensi = np.zeros(kdata.shape[1:], dtype=np.complex128)
-res=2
+res=16
 for i in tqdm(range(nb_channels)):
     kdata_for_sensi[:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[i,:,(center_res - int(res / 2)):(center_res + int(res / 2))]
-    coil_sensitivity[i] = finufft.nufft1d1(test_traj[0,:,2], kdata_for_sensi, nav_image_size)
+    b1_nav[i] = finufft.nufft1d1(test_traj[0,:,2], kdata_for_sensi, nav_image_size)
 
     print("Normalizing sensi")
 
     #b1 = coil_sensitivity / np.linalg.norm(coil_sensitivity, axis=0)
     #del coil_sensitivity
     #b1 = b1 / np.max(np.abs(b1.flatten()))
-coil_sensitivity /= np.linalg.norm(coil_sensitivity, axis=0)
-coil_sensitivity /= np.max(np.abs(coil_sensitivity.flatten()))
-
-
+b1_nav /= np.linalg.norm(b1_nav, axis=0)
+b1_nav /= np.max(np.abs(b1_nav.flatten()))
 
 traj=test_traj.astype(np.float32)
-b1_nav=coil_sensitivity.reshape((nb_channels,nb_slices,nb_gating_spokes,int(npoint/2)))
+b1_nav=b1_nav.reshape((nb_channels,nb_slices,nb_gating_spokes,int(npoint/2)))
 #b1_nav=None
 
 kdata=data_for_nav.reshape((nb_channels,-1,npoint))
 images_series_rebuilt_nav = np.zeros((nb_slices,nb_gating_spokes,int(npoint/2)),dtype=np.complex64)
+all_channels_images_nav = np.zeros((nb_channels,nb_slices,nb_gating_spokes,int(npoint/2)),dtype=np.complex64)
 
-fk = finufft.nufft1d1(traj[0,:,2], kdata[i, :, :], nav_image_size)
-fk = fk.reshape((nb_channels,nb_slices,nb_gating_spokes,int(npoint/2)))
+for i in tqdm(range(nb_channels)):
+    fk = finufft.nufft1d1(traj[0,:,2], kdata[i, :, :], nav_image_size)
+    fk = fk.reshape((nb_slices,nb_gating_spokes,int(npoint/2)))
+
+    all_channels_images_nav[i]=fk
+
+    if b1_nav is None:
+        images_series_rebuilt_nav += np.abs(fk) ** 2
+    else:
+        images_series_rebuilt_nav += b1_nav[i].conj() *fk
 
 if b1_nav is None:
-    images_series_rebuilt_nav = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
-else:
-    images_series_rebuilt_nav = np.sum(b1_nav.conj() * fk, axis=0)
+    images_series_rebuilt_nav = np.sqrt(images_series_rebuilt_nav)
+
 
 #plt.figure()
 #plt.imshow(np.abs(images_series_rebuilt_nav[0]).T)
 #animate_images(np.moveaxis(np.abs(images_series_rebuilt_nav),-1,-2))
 
-image_nav = np.abs(images_series_rebuilt_nav)
+metric=np.abs
+image_nav = metric(images_series_rebuilt_nav)
+
+plt.figure()
+plt.plot(np.argmax(np.diff(image_nav,axis=-1),axis=-1)[0,:])
+
+plt.figure()
+plt.plot(np.argmax(np.diff(image_nav,axis=-1),axis=-1)[1,:])
+
+plt.figure()
+plt.plot(np.argmin(image_nav,axis=-1)[0,:])
+
+plt.figure()
+plt.plot(np.argmin(image_nav,axis=-1)[:,:].T)
+
+
+plt.figure()
+plt.plot(np.argmin(image_nav,axis=-1)[1,:])
+
+
+plt.figure()
+plt.imshow(image_nav[0,:,:].T)
+
+plt.figure()
+plt.imshow(image_nav[0,:,:].T-np.mean(image_nav[0,:,:],axis=-1))
+
+plt.figure()
+plt.imshow(np.abs(all_channels_images_nav[0,0,:,:].T))
+
+plt.figure()
+nb_cycles=10
+mean = np.mean(image_nav.reshape(-1,int(npoint/2))[:nb_cycles*nb_gating_spokes,:],axis=-1)
+mean=0
+plt.imshow(image_nav.reshape(-1,int(npoint/2))[:nb_cycles*nb_gating_spokes,:].T-mean,cmap="gray")
+
+plt.figure()
+plt.plot(image_nav[0,0,:])
+
+plt.figure()
+plt.plot(image_nav[0,:,:].T)
+
+plt.figure()
+plt.plot(image_nav[1,:,:].T)
+
+
+plt.figure()
+plt.plot(np.min(image_nav.reshape(-1,int(npoint/2))[:nb_cycles*nb_gating_spokes,:],axis=-1))
+plt.plot(image_nav.reshape(-1,int(npoint/2))[:nb_cycles*nb_gating_spokes,10])
+plt.plot(np.mean(image_nav.reshape(-1,int(npoint/2))[:nb_cycles*nb_gating_spokes,:],axis=-1))
+
+
+plt.figure()
+plt.plot(image_nav.reshape(-1,int(npoint/2))[:nb_cycles*nb_gating_spokes,10])
+
+
+
+image_nav_for_PCA=images_series_rebuilt_nav.reshape(-1,int(npoint/2)).T
+pca = PCAComplex(n_components_=20)
+pca.fit(image_nav_for_PCA)
+
+nb_cycles=10
+plt.figure()
+comp=0
+plt.plot(np.abs(pca.components_[:nb_cycles*nb_gating_spokes,comp]))
+plt.title("PCA comp {} on {} cycles".format(comp,nb_cycles))
+for j in range(nb_cycles):
+    plt.axvline(x=j*nb_gating_spokes,color="r")
+
+
+plt.figure()
+comp=1
+plt.plot(np.abs(pca.components_[:nb_cycles*nb_gating_spokes,comp]))
+plt.title("PCA comp {} on {} cycles".format(comp,nb_cycles))
+for j in range(nb_cycles):
+    plt.axvline(x=j*nb_gating_spokes,color="r")
+
+plt.figure()
+comp=2
+plt.plot(np.abs(pca.components_[:nb_cycles*nb_gating_spokes,comp]))
+plt.title("PCA comp {} on {} cycles".format(comp,nb_cycles))
+for j in range(nb_cycles):
+    plt.axvline(x=j*nb_gating_spokes,color="r")
+
+
+plt.figure()
+comp=3
+plt.plot(np.abs(pca.components_[:nb_cycles*nb_gating_spokes,comp]))
+plt.title("PCA comp {} on {} cycles".format(comp,nb_cycles))
+for j in range(nb_cycles):
+    plt.axvline(x=j*nb_gating_spokes,color="r")
+
+
+
+
+plt.figure()
+plt.plot(np.abs(pca.components_[:nb_cycles*nb_gating_spokes,2]))
 
 
 # volumes_all_spokes=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1)
