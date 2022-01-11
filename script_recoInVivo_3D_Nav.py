@@ -56,7 +56,7 @@ localfile = "/20211221_EV/meas_MID00045_FID47508_raFin_3D_FULL_new_highRES_inco.
 
 localfile = "/20220106/meas_MID00021_FID48331_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile = "/20220106/meas_MID00167_FID48477_raFin_3D_tra_1x1x5mm_FULL_new.dat"
-localfile = "/20220106_JM/meas_MID00180_FID48490_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+#localfile = "/20220106_JM/meas_MID00180_FID48490_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 
 
 
@@ -240,10 +240,13 @@ data_shape = data.shape
 
 if data.ndim==3:
     nb_channels = 1
+    data = np.expand_dims(data,axis=0)
+    data_for_nav=np.expand_dims(data_for_nav,axis=0)
 else:
     nb_channels=data.shape[0]
 
-
+data_for_nav=data_for_nav[:,:nb_gating_spokes,:,:]
+data_for_nav = np.moveaxis(data_for_nav,-2,1)
 
 ntimesteps = 175
 
@@ -259,10 +262,13 @@ dy = y_FOV/(npoint/2)
 dz = z_FOV/nb_slices
 
 
+
+
 if str.split(filename_kdata,"/")[-1] in os.listdir(folder):
     del data
 
 radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+
 
 
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
@@ -293,6 +299,16 @@ if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
 else:
     b1_all_slices=np.load(filename_b1)
 
+if nav_direction=="SLICE":
+    coil_sensitivity_nav = np.sum(b1_all_slices,axis=(-2,-1))
+elif nav_direction=="PHASE":
+    coil_sensitivity_nav = np.sum(b1_all_slices, axis=(0, -2))
+elif nav_direction == "READ":
+    coil_sensitivity_nav = np.sum(b1_all_slices, axis=(0, -1))
+
+coil_sensitivity_nav /= np.linalg.norm(coil_sensitivity_nav, axis=0)
+coil_sensitivity_nav /= np.max(np.abs(coil_sensitivity_nav.flatten()))
+
 sl=int(b1_all_slices.shape[1]/2)
 list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
 plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
@@ -309,27 +325,78 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 #
 #
 #
-# #build out of phase spokes image
-# radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-# radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
-# volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
-# animate_images(volume_outofphase[0],cmap="gray")
+#build out of phase spokes image
+radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
+volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+animate_images(volume_outofphase[0],cmap="gray")
 # # list_images = list(np.abs(volume_outofphase)[0][:])
 # # plot_image_grid(list_images,(8,8),title="Anatomic Image Out Of Phase Spokes",cmap="gray")
 # #
 # #
-# # path = r"C:/Users/c.slioussarenko/PythonRepositories"
+# # path = r"/Users/constantinslioussarenko/PythonGitRepositories"
 # # sys.path.append(path+"/epgpy")
 # # sys.path.append(path+"/machines")
 # # sys.path.append(path+"/mutools")
 # # sys.path.append(path+"/dicomstack")
 # #
 #
-# from mutools import io
-# file_mha = filename.split(".dat")[0] + "_volumesoutofphase.mha"
-# io.write(file_mha,np.abs(volume_outofphase)[0],tags={"spacing":[dz,dx,dy]})
+from mutools import io
+file_mha = filename.split(".dat")[0] + "_volumesoutofphase.mha"
+io.write(file_mha,np.abs(volume_outofphase)[0],tags={"spacing":[dz,dx,dy]})
 #
 
+
+
+all_timesteps = np.arange(nb_allspokes)
+nav_timesteps=all_timesteps[::int(nb_allspokes/nb_gating_spokes)]
+
+nav_traj=Navigator3D(direction=[0,0,1],npoint=npoint,nb_slices=nb_slices,applied_timesteps=list(nav_timesteps))
+test_traj = nav_traj.get_traj()
+
+nav_image_size = (int(npoint/2),)
+
+
+center_res = int(npoint / 2 - 1)
+kdata=data_for_nav.reshape((nb_channels,-1,npoint))
+
+coil_sensitivity=np.zeros((nb_channels,kdata.shape[1],)+nav_image_size,dtype=np.complex128)
+kdata_for_sensi = np.zeros(kdata.shape[1:], dtype=np.complex128)
+res=2
+for i in tqdm(range(nb_channels)):
+    kdata_for_sensi[:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[i,:,(center_res - int(res / 2)):(center_res + int(res / 2))]
+    coil_sensitivity[i] = finufft.nufft1d1(test_traj[0,:,2], kdata_for_sensi, nav_image_size)
+
+    print("Normalizing sensi")
+
+    #b1 = coil_sensitivity / np.linalg.norm(coil_sensitivity, axis=0)
+    #del coil_sensitivity
+    #b1 = b1 / np.max(np.abs(b1.flatten()))
+coil_sensitivity /= np.linalg.norm(coil_sensitivity, axis=0)
+coil_sensitivity /= np.max(np.abs(coil_sensitivity.flatten()))
+
+
+
+traj=test_traj.astype(np.float32)
+b1_nav=coil_sensitivity.reshape((nb_channels,nb_slices,nb_gating_spokes,int(npoint/2)))
+#b1_nav=None
+
+kdata=data_for_nav.reshape((nb_channels,-1,npoint))
+images_series_rebuilt_nav = np.zeros((nb_slices,nb_gating_spokes,int(npoint/2)),dtype=np.complex64)
+
+fk = finufft.nufft1d1(traj[0,:,2], kdata[i, :, :], nav_image_size)
+fk = fk.reshape((nb_channels,nb_slices,nb_gating_spokes,int(npoint/2)))
+
+if b1_nav is None:
+    images_series_rebuilt_nav = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+else:
+    images_series_rebuilt_nav = np.sum(b1_nav.conj() * fk, axis=0)
+
+#plt.figure()
+#plt.imshow(np.abs(images_series_rebuilt_nav[0]).T)
+#animate_images(np.moveaxis(np.abs(images_series_rebuilt_nav),-1,-2))
+
+image_nav = np.abs(images_series_rebuilt_nav)
 
 
 # volumes_all_spokes=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1)
@@ -349,14 +416,28 @@ if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
     # ani = animate_images(volumes_all[:,sl,:,:])
     del volumes_all
 
-
+volumes_all=np.load(filename_volume)
 #animate_images(np.abs(volumes_all[:,int(nb_slices/2),:,:]))
+
+#Check modulation of nav signal by MRF
+plt.figure()
+rep=0
+signal_MRF = np.abs(volumes_all[:,int(nb_slices/2),int(npoint/4),int(npoint/4)])
+signal_MRF = signal_MRF/np.max(signal_MRF)
+signal_nav =image_nav[rep,:,int(npoint/4)]
+signal_nav = signal_nav/np.max(signal_nav)
+plt.plot(signal_MRF,label="MRF signal at centre pixel")
+plt.scatter(x=(nav_timesteps/8).astype(int),y=signal_nav,c="r",label="Nav image at centre pixel for rep {}".format(rep))
+rep=4
+plt.scatter(x=(nav_timesteps/8).astype(int),y=signal_nav,c="g",label="Nav image at centre pixel for rep {}".format(rep))
+plt.legend()
 
 ##MASK
 
 print("Building Mask....")
 if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
     selected_spokes = np.r_[10:400]
+    selected_spokes=None
     mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=None, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
     np.save(filename_mask,mask)
     animate_images(mask)
@@ -372,7 +453,7 @@ del b1_all_slices
 ########################## Dict mapping ########################################
 
 dictfile = "mrf175_SimReco2.dict"
-dictfile = "mrf175_Dico2_Invivo.dict"
+#dictfile = "mrf175_Dico2_Invivo.dict"
 
 volumes_all = np.load(filename_volume)
 mask = np.load(filename_mask)
@@ -396,7 +477,7 @@ save_map=True
 if not(load_map):
     niter = 0
 
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other")
     all_maps=optimizer.search_patterns(dictfile,volumes_all)
 
     if(save_map):

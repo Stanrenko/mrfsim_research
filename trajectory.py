@@ -129,7 +129,6 @@ class Navigator3D(Trajectory):
         self.paramDict["npoint"] = npoint
         self.paramDict["direction"] = direction
         self.paramDict["nb_slices"] = nb_slices
-        self.paramDict["nspoke"] = nspoke
         self.paramDict["undersampling_factor"] = undersampling_factor
         self.paramDict["nb_rep"] = int(self.paramDict["nb_slices"] / self.paramDict["undersampling_factor"])
         self.reconstruct_each_partition=True
