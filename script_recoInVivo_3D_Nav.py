@@ -198,9 +198,9 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
     data = []
     k = 0
     for i, mdb in enumerate(mdb_list):
-       if mdb.is_image_scan() and not (mdb.mdh[14][9]):
-           if int(k / 1365) % 2 == 0:
-             data.append(mdb)
+        if mdb.is_image_scan() and not (mdb.mdh[14][9]):
+            if int(k / 1365) % 2 == 0:
+                data.append(mdb)
              #if i < 1400:
              #    print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
             k += 1
