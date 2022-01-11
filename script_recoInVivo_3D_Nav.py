@@ -144,6 +144,8 @@ if nb_gating_spokes>0:
     elif meas_orientation==3:
         nav_direction = "SLICE"
 
+nb_segments = dico_seqParams["alFree"][4]
+
 x_FOV = dico_seqParams["x_FOV"]
 y_FOV = dico_seqParams["y_FOV"]
 z_FOV = dico_seqParams["z_FOV"]
@@ -169,11 +171,10 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
         print("Re-loading raw data")
         twix = twixtools.read_twix(filename)
 
-
-
+    mdb_list = twix[-1]['mdb']
     if nb_gating_spokes > 0:
         Print("Reading Navigator Data....")
-        mdb_list = twix[-1]['mdb']
+        m
         data_for_nav = []
         k = 0
         for i, mdb in enumerate(mdb_list):
@@ -191,30 +192,36 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
 
         data_for_nav = np.moveaxis(data_for_nav,-2,0)
         np.save(filename_nav_save, data_for_nav)
-        del mdb_list
 
 
-    # image_mdbs = []
-    # k = 0
-    # for i, mdb in enumerate(mdb_list):
-    #     if mdb.is_image_scan() and not (mdb.mdh[14][9]):
-    #         image_mdbs.append(mdb)
-    #         #if i < 1400:
-    #         #    print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
-    #         #k += 1
+
+    data = []
+    k = 0
+    for i, mdb in enumerate(mdb_list):
+       if mdb.is_image_scan() and not (mdb.mdh[14][9]):
+           if int(k / 1365) % 2 == 0:
+             data.append(mdb)
+             #if i < 1400:
+             #    print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
+            k += 1
+
+    data = np.array([mdb.data for mdb in data])
+    data = data.reshape((int(nb_part), int(nb_segments-nb_gating_spokes)) + data.shape[1:])
+
+    del mdb_list
 
     ##################################################
-    mapped = twixtools.map_twix(twix)
-    try:
-        del twix
-    except:
-        pass
-    data = mapped[-1]['image']
-    del mapped
-    data = data[:].squeeze()
-    data = np.moveaxis(data, 0, -2)
-    data = np.moveaxis(data, 1, 0)
-
+    # mapped = twixtools.map_twix(twix)
+    # try:
+    #     del twix
+    # except:
+    #     pass
+    # data = mapped[-1]['image']
+    # del mapped
+    # data = data[:].squeeze()
+    # data = np.moveaxis(data, 0, -2)
+    # data = np.moveaxis(data, 1, 0)
+    #
     np.save(filename_save,data)
     #
     ##################################################
