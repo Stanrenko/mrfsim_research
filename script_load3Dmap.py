@@ -25,6 +25,9 @@ filename="./data/InVivo/3D/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_t
 filename="./data/InVivo/3D/20211122_EV_MRF/meas_MID00146_FID42269_raFin_3D_tra_1x1x5mm_FULL_vitro_test.dat"
 #filename="./data/InVivo/3D/20211209_AL_Tongue/meas_MID00258_FID45162_raFin_3D_tra_1x1x5mm_FULl.dat"
 filename="./data/InVivo/3D/20211220_Phantom_MRF/meas_MID00026_FID47383_raFin_3D_tra_1x1x5mm_FULl.dat"
+filename="./data/InVivo/3D/20220106/meas_MID00167_FID48477_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+
+
 
 file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
 file = open(file_map, "rb")
@@ -61,7 +64,7 @@ from mutools import io
 for key in ["ff","wT1","df","attB1"]:
 
     file_mha = filename.split(".dat")[0] + "_MRF_map_{}.mha".format(key)
-    io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+    io.write(file_mha,map_for_sim[key],tags={"spacing":[15,4,4]})
 
 
 folder =r"\\192.168.0.1\RMN_FILES"
