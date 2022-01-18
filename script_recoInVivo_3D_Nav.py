@@ -117,6 +117,7 @@ if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):
 else:
     file = open(filename_seqParams, "rb")
     dico_seqParams = pickle.load(file)
+    file.close()
 
 
 
@@ -250,7 +251,6 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
 
 else :
     data = np.load(filename_save)
-
     if nb_gating_spokes>0:
         data_for_nav=np.load(filename_nav_save)
 #

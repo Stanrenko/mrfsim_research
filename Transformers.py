@@ -72,12 +72,14 @@ class PCAComplex(BaseEstimator,TransformerMixin):
 
         return xp.matmul(X, components.conj())
 
-    def plot_retrieved_signal(self,X,i=0):
+    def plot_retrieved_signal(self,X,i=0,len=None,figsize=(15,10)):
         X_trans = self.transform(X)
         retrieved_X = np.matmul(X_trans,np.transpose(self.components_))
-        plt.figure()
-        plt.plot(np.abs(X[i,:]),label="Original")
-        plt.plot(np.abs(retrieved_X[i, :]), label="Retrieved")
+        plt.figure(figsize=figsize)
+        if len is None:
+            len = X.shape[-1]
+        plt.plot(np.abs(X[i,:len]),label="Original")
+        plt.plot(np.abs(retrieved_X[i, :len]), label="Retrieved")
         plt.legend()
         plt.show()
 

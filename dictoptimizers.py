@@ -820,7 +820,7 @@ class SimpleDictSearch(Optimizer):
 
 class ToyNN(Optimizer):
 
-    def __init__(self,model,model_opt,input_scaler=StandardScaler(),output_scaler=MinMaxScaler(),niter=0,pca=False,threshold_pca=15,log=True,fitted=False,**kwargs):
+    def __init__(self,model,fitting_opt,model_opt={},input_scaler=StandardScaler(),output_scaler=MinMaxScaler(),niter=0,pca=False,threshold_pca=15,log=True,fitted=False,**kwargs):
         #transf is a function that takes as input timesteps arrays and outputs shifts as output
         super().__init__(**kwargs)
 
@@ -828,19 +828,21 @@ class ToyNN(Optimizer):
         self.paramDict["input_scaler"]=input_scaler
         self.paramDict["output_scaler"] = output_scaler
 
-        self.paramDict["model_opt"]=model_opt
+        self.paramDict["fitting_opt"]=fitting_opt
         self.paramDict["pca"] = pca
         self.paramDict["threshold_pca"] = threshold_pca
         self.paramDict["is_fitted"] = fitted
+        self.paramDict["model_opt"]=model_opt
+
 
 
 
     def search_patterns(self,dictfile,volumes,force_refit=False):
         model = self.paramDict["model"]
-        model_opt=self.paramDict["model_opt"]
+        fitting_opt=self.paramDict["fitting_opt"]
 
         if not(self.paramDict["is_fitted"]) or (force_refit):
-            self.fit_and_set(dictfile,model,model_opt)
+            self.fit_and_set(dictfile)
             model=self.paramDict["model"]
 
         mask=self.mask
@@ -869,8 +871,13 @@ class ToyNN(Optimizer):
 
 
 
-    def fit_and_set(self,dictfile,model,model_opt):
+    def fit_and_set(self,dictfile):
         #For keras - shape is n_observations * n_features
+
+        model = self.paramDict["model"]
+        fitting_opt = self.paramDict["fitting_opt"]
+        model_opt = self.paramDict["model_opt"]
+
         FF_list = list(np.arange(0., 1.05, 0.05))
         keys, signal = read_mrf_dict(dictfile, FF_list)
 
@@ -896,10 +903,10 @@ class ToyNN(Optimizer):
 
         print(n_outputs)
 
-        final_model = model(n_outputs)
+        final_model = model(n_outputs,**model_opt)
 
         history = final_model.fit(
-            X_TF, Y_TF, **model_opt)
+            X_TF, Y_TF, **fitting_opt)
 
         self.paramDict["model"]=final_model
         self.paramDict["is_fitted"]=True
