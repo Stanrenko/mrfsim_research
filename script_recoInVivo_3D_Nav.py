@@ -12,6 +12,7 @@ import os
 from numpy.lib.format import open_memmap
 from numpy import memmap
 import pickle
+from scipy.io import loadmat,savemat
 
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
 base_folder = "./data/InVivo/3D"
@@ -57,7 +58,9 @@ localfile = "/20211221_EV/meas_MID00045_FID47508_raFin_3D_FULL_new_highRES_inco.
 localfile = "/20220106/meas_MID00021_FID48331_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile = "/20220106/meas_MID00167_FID48477_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile = "/20220106_JM/meas_MID00180_FID48490_raFin_3D_tra_1x1x5mm_FULL_new.dat"
-
+localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read.dat"
+#localfile = "/20220113_CS/meas_MID00164_FID49559_raFin_3D_tra_1x1x5mm_FULL_50GS_slice.dat"
+#localfile = "/20220118_BM/meas_MID00151_FID49924_raFin_3D_tra_1x1x5mm_FULL_read_nav.dat"
 
 
 filename = base_folder+localfile
@@ -78,6 +81,7 @@ filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 filename_volume = str.split(filename,".dat") [0]+"_volumes.npy"
 filename_kdata = str.split(filename,".dat") [0]+"_kdata.npy"
 filename_mask= str.split(filename,".dat") [0]+"_mask.npy"
+filename_oop=str.split(filename,".dat") [0]+"_volumes_oop.npy"
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
@@ -174,19 +178,17 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
 
     mdb_list = twix[-1]['mdb']
     if nb_gating_spokes > 0:
-        Print("Reading Navigator Data....")
-        m
+        print("Reading Navigator Data....")
         data_for_nav = []
         k = 0
         for i, mdb in enumerate(mdb_list):
             if mdb.is_image_scan() and mdb.mdh[14][9]:
-                if int(k / 35) % 2 == 0:
-                    data_for_nav.append(mdb)
+                data_for_nav.append(mdb)
 
                 #print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
                 k += 1
         data_for_nav = np.array([mdb.data for mdb in data_for_nav])
-        data_for_nav = image_mdbs_nav.reshape((int(nb_part),int(nb_gating_spokes))+data_for_nav.shape[1:])
+        data_for_nav = data_for_nav.reshape((int(nb_part),int(nb_gating_spokes))+data_for_nav.shape[1:])
 
         if data_for_nav.ndim==3:
             data_for_nav=np.expand_dims(data_for_nav,axis=-2)
@@ -194,35 +196,37 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
         data_for_nav = np.moveaxis(data_for_nav,-2,0)
         np.save(filename_nav_save, data_for_nav)
 
-
-
-    data = []
-    k = 0
-    for i, mdb in enumerate(mdb_list):
-        if mdb.is_image_scan() and not (mdb.mdh[14][9]):
-            if int(k / 1365) % 2 == 0:
-                data.append(mdb)
-             #if i < 1400:
-             #    print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
-            k += 1
-
-    data = np.array([mdb.data for mdb in data])
-    data = data.reshape((int(nb_part), int(nb_segments-nb_gating_spokes)) + data.shape[1:])
+    # data = []
+    # k = 0
+    # for i, mdb in enumerate(mdb_list):
+    #     if mdb.is_image_scan() and not (mdb.mdh[14][9]):
+    #
+    #         data.append(mdb)
+    #          #if i < 1400:
+    #          #    print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
+    #         k += 1
+    #
+    # data = np.array([mdb.data for mdb in data])
+    # data = data.reshape((int(nb_part), int(nb_segments-nb_gating_spokes)) + data.shape[1:])
+    # if data.ndim==3
+    #     data=np.expand_dims(data,axis=-2)
+    # data=np.move_axis(data,-2,0)
+    # data=np.moveaxis(1,-2)
 
     del mdb_list
 
     ##################################################
-    # mapped = twixtools.map_twix(twix)
-    # try:
-    #     del twix
-    # except:
-    #     pass
-    # data = mapped[-1]['image']
-    # del mapped
-    # data = data[:].squeeze()
-    # data = np.moveaxis(data, 0, -2)
-    # data = np.moveaxis(data, 1, 0)
-    #
+    mapped = twixtools.map_twix(twix)
+    try:
+        del twix
+    except:
+        pass
+    data = mapped[-1]['image']
+    del mapped
+    data = data[:].squeeze()
+    data = np.moveaxis(data, 0, -2)
+    data = np.moveaxis(data, 1, 0)
+
     np.save(filename_save,data)
     #
     ##################################################
@@ -309,8 +313,8 @@ dx = x_FOV/(npoint/2)
 dy = y_FOV/(npoint/2)
 dz = z_FOV/nb_slices
 
-
-
+file_name_nav_mat=str.split(filename,".dat") [0]+"_nav.mat"
+savemat(file_name_nav_mat,{"Kdata":data_for_nav})
 
 if str.split(filename_kdata,"/")[-1] in os.listdir(folder):
     del data
@@ -338,6 +342,153 @@ else:
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
 # Coil sensi estimation for all slices
+
+resp_matlab_file="/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo/20220113/resp.mat"
+
+resp_matlab=loadmat(resp_matlab_file)["resp"]
+
+
+nb_cycles=10
+plt.figure()
+plt.plot(resp_matlab[:nb_cycles*nb_gating_spokes])
+for j in range(nb_cycles):
+    plt.axvline(x=j * nb_gating_spokes, color="r")
+
+plt.figure()
+plt.scatter(x=resp_matlab,y=-displacement)
+
+
+plt.figure()
+sns.heatmap(np.abs(np.corrcoef(resp_matlab.reshape(48,50))))
+
+plt.figure()
+sns.heatmap(np.abs(np.corrcoef(displacement.reshape(48,50))))
+
+np.corrcoef(np.concatenate([resp_matlab.reshape(-1,1).T,displacement.reshape(-1,1).T],axis=0))
+
+
+if nb_gating_spokes>0:
+    print("Processing Nav Data...")
+    all_timesteps = np.arange(nb_allspokes)
+    nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
+    nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=nb_slices,
+                           applied_timesteps=list(nav_timesteps))
+
+    nav_image_size = (int(npoint / 2),)
+
+    print("Calculating Sensitivity map for Navigator images...")
+    b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
+
+    ch = 6
+    plt.figure(figsize=(20, 30))
+    plt.imshow(np.abs(np.expand_dims(b1_nav[ch].reshape(-1, int(npoint / 2)).T, axis=-1)))
+
+
+    image_nav_all_channels=[]
+    for j in range(nb_channels):
+        images_series_rebuilt_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[j],axis=0), nav_traj, nav_image_size, b1=None)
+        plt.figure()
+        image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
+        plt.imshow(image_nav_ch.reshape(-1, int(npoint / 2)).T, cmap="gray")
+        plt.title("Image channel {}".format(j))
+        image_nav_all_channels.append(image_nav_ch)
+
+    #plt.close("all")
+    image_nav_all_channels=np.array(image_nav_all_channels)
+    image_nav_best_channel = image_nav_all_channels[1]
+
+    plt.figure()
+    plt.imshow(image_nav_best_channel.reshape(-1, int(npoint / 2)).T, cmap="gray")
+    plt.title("Image best channel")
+
+    image_nav_best_channel_centered = image_nav_best_channel - np.expand_dims(np.mean(image_nav_best_channel, axis=-1),axis=-1)
+
+
+    print("Building Navigator images...")
+    images_series_rebuilt_nav = simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav)
+    metric = np.abs
+    image_nav = metric(images_series_rebuilt_nav)
+
+    mean = np.mean(image_nav, axis=-1)
+    image_nav_centered = image_nav - np.expand_dims(mean, axis=-1)
+    image_nav_demod = image_nav - np.expand_dims(image_nav[0, :, :], axis=0)
+
+
+    print("Calculating Displacement from Navigator images...")
+    displacement = calculate_displacement_from_nav_images(image_nav_best_channel, bottom=50, top=150,shifts=list(range(-10,10)))
+
+    npoint_image = image_nav.shape[-1]
+    image_nav_for_correl = image_nav_best_channel.reshape(-1, npoint_image)
+
+    j=4
+    shift = displacement[j]-displacement[j+1]
+    plt.figure()
+    plt.imshow(np.concatenate([image_nav_for_correl[j,50:150].reshape(-1,1).repeat(5,axis=-1),image_nav_for_correl[j+1, (50+shift):(150+shift)].reshape(-1,1).repeat(5,axis=-1)],axis=-1))
+    plt.title("Image for j {} and shift {}".format(j,shift))
+
+    shift = 0
+    plt.figure()
+    plt.imshow(np.concatenate([image_nav_for_correl[j, 50:150].reshape(-1, 1).repeat(5, axis=-1),
+                               image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(-1, 1).repeat(5,
+                                                                                                             axis=-1)],
+                              axis=-1))
+    plt.title("Image for j {} no shift".format(j))
+
+
+    start_cycle = 0
+    end_cycle=20
+    seq_var_ind_1 = 50 / 1400 * 800
+    seq_var_ind_2 = 50 / 1400 * 1200
+
+    plt.figure(figsize=(20, 10))
+    plt.plot(displacement[(start_cycle * nb_gating_spokes):(end_cycle * nb_gating_spokes)])
+    for j in range(end_cycle-start_cycle):
+        plt.axvline(x=j * nb_gating_spokes, color="r")
+        plt.axvline(x=j * nb_gating_spokes + seq_var_ind_1, color="g", linestyle="dashed")
+        plt.axvline(x=j * nb_gating_spokes + seq_var_ind_2, color="k", linestyle="dashed")
+
+    plt.figure(figsize=(20, 30))
+    plt.imshow(image_nav_demod.reshape(-1, int(npoint / 2))[(start_cycle * nb_gating_spokes):(end_cycle * nb_gating_spokes), :].T, cmap="gray")
+    for j in range(end_cycle-start_cycle):
+        plt.axvline(x=j * nb_gating_spokes, color="r")
+
+    spoke_groups = np.argmin(np.abs(
+        np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
+                                                                          nb_segments / nb_gating_spokes).reshape(1,
+                                                                                                                  -1)),axis=-1)
+
+    #inspiration_spokes = np.argwhere(displacement > -1).flatten()
+    #excluded_spokes = [s in inspiration_spokes for s in spoke_groups]
+    #excluded_spokes = np.array(excluded_spokes).reshape(int(nb_part), nb_segments)
+    #excluded_spokes=excluded_spokes.T.flatten()
+
+
+    #retaining the bin with the most element
+    max_bin = np.max(displacement)
+    bin_width = 8
+
+    maxi = 0
+    for j in range(bin_width):
+        min_bin = np.min(displacement) + j
+        bins = np.arange(min_bin, max_bin + bin_width, bin_width)
+        print(bins)
+        categories = np.digitize(displacement, bins)
+        df_cat = pd.DataFrame(data=np.array([displacement, categories]).T, columns=["displacement", "cat"])
+        df_groups = df_cat.groupby("cat").count()
+        curr_max = df_groups.displacement.max()
+        if curr_max > maxi:
+            maxi = curr_max
+            idx_cat = df_groups.displacement.idxmax()
+            retained_nav_spokes = (categories == idx_cat)
+
+    print("Retained spokes : {}%".format(np.round(retained_nav_spokes.sum()/(nb_gating_spokes*nb_slices)*100,2)))
+
+    retained_nav_spokes_index = np.argwhere(retained_nav_spokes).flatten()
+    included_spokes = [s in retained_nav_spokes_index for s in spoke_groups]
+
+    kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,-1,npoint)
+    kdata_all_channels_all_slices=kdata_all_channels_all_slices[:,(1-excluded_spokes).astype(bool),:]
+
 print("Calculating Coil Sensitivity....")
 
 if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
@@ -360,7 +511,7 @@ else:
 sl=int(b1_all_slices.shape[1]/2)
 list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
 plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
-#
+
 #
 # volume_rebuilt = build_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,density_adj=False,eps=1e-6,b1=b1_all_slices,useGPU=True,normalize_kdata=True,light_memory_usage=True,is_theta_z_adjusted=False)
 # np.save(str.split(filename,".dat") [0]+"_volume_allspokes.npy",volume_rebuilt)
@@ -374,10 +525,34 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 #
 #
 #build out of phase spokes image
-radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
-volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):
+    radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+    radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
+    volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+    np.save(filename_oop, volume_outofphase)
+else:
+    volume_outofphase=np.load(filename_oop)
+
 animate_images(volume_outofphase[0],cmap="gray")
+
+# volume_oop_2=np.load("./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes_oop.npy")
+# animate_multiple_images(volume_outofphase[0],volume_oop_2[0],cmap="gray")
+
+from PIL import Image
+gif=[]
+volume_for_gif = np.abs(volume_outofphase[0])
+for i in range(volume_for_gif.shape[0]):
+    img = Image.fromarray(np.uint8(volume_for_gif[i]/np.max(volume_for_gif[i])*255), 'L')
+    img=img.convert("P")
+    gif.append(img)
+
+img.show()
+
+filename_gif = str.split(filename,".dat") [0]+"_volumes_oop.gif"
+gif[0].save(filename_gif,
+               save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
+
+
 # # list_images = list(np.abs(volume_outofphase)[0][:])
 # # plot_image_grid(list_images,(8,8),title="Anatomic Image Out Of Phase Spokes",cmap="gray")
 # #
@@ -389,163 +564,12 @@ animate_images(volume_outofphase[0],cmap="gray")
 # # sys.path.append(path+"/dicomstack")
 # #
 #
-from mutools import io
-file_mha = filename.split(".dat")[0] + "_volumesoutofphase.mha"
-io.write(file_mha,np.abs(volume_outofphase)[0],tags={"spacing":[dz,dx,dy]})
+#from mutools import io
+#file_mha = filename.split(".dat")[0] + "_volumesoutofphase.mha"
+#io.write(file_mha,np.abs(volume_outofphase)[0],tags={"spacing":[dz,dx,dy]})
 #
 
 
-
-all_timesteps = np.arange(nb_allspokes)
-nav_timesteps=all_timesteps[::int(nb_allspokes/nb_gating_spokes)]
-
-nav_traj=Navigator3D(direction=[0,0,1],npoint=npoint,nb_slices=nb_slices,applied_timesteps=list(nav_timesteps))
-test_traj = nav_traj.get_traj()
-
-nav_image_size = (int(npoint/2),)
-
-
-center_res = int(npoint / 2 - 1)
-kdata=data_for_nav.reshape((nb_channels,-1,npoint))
-
-b1_nav=np.zeros((nb_channels,kdata.shape[1],)+nav_image_size,dtype=np.complex128)
-kdata_for_sensi = np.zeros(kdata.shape[1:], dtype=np.complex128)
-res=16
-for i in tqdm(range(nb_channels)):
-    kdata_for_sensi[:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[i,:,(center_res - int(res / 2)):(center_res + int(res / 2))]
-    b1_nav[i] = finufft.nufft1d1(test_traj[0,:,2], kdata_for_sensi, nav_image_size)
-
-    print("Normalizing sensi")
-
-    #b1 = coil_sensitivity / np.linalg.norm(coil_sensitivity, axis=0)
-    #del coil_sensitivity
-    #b1 = b1 / np.max(np.abs(b1.flatten()))
-b1_nav /= np.linalg.norm(b1_nav, axis=0)
-b1_nav /= np.max(np.abs(b1_nav.flatten()))
-
-traj=test_traj.astype(np.float32)
-b1_nav=b1_nav.reshape((nb_channels,nb_slices,nb_gating_spokes,int(npoint/2)))
-#b1_nav=None
-
-kdata=data_for_nav.reshape((nb_channels,-1,npoint))
-images_series_rebuilt_nav = np.zeros((nb_slices,nb_gating_spokes,int(npoint/2)),dtype=np.complex64)
-all_channels_images_nav = np.zeros((nb_channels,nb_slices,nb_gating_spokes,int(npoint/2)),dtype=np.complex64)
-
-for i in tqdm(range(nb_channels)):
-    fk = finufft.nufft1d1(traj[0,:,2], kdata[i, :, :], nav_image_size)
-    fk = fk.reshape((nb_slices,nb_gating_spokes,int(npoint/2)))
-
-    all_channels_images_nav[i]=fk
-
-    if b1_nav is None:
-        images_series_rebuilt_nav += np.abs(fk) ** 2
-    else:
-        images_series_rebuilt_nav += b1_nav[i].conj() *fk
-
-if b1_nav is None:
-    images_series_rebuilt_nav = np.sqrt(images_series_rebuilt_nav)
-
-
-#plt.figure()
-#plt.imshow(np.abs(images_series_rebuilt_nav[0]).T)
-#animate_images(np.moveaxis(np.abs(images_series_rebuilt_nav),-1,-2))
-
-metric=np.abs
-image_nav = metric(images_series_rebuilt_nav)
-
-plt.figure()
-plt.plot(np.argmax(np.diff(image_nav,axis=-1),axis=-1)[0,:])
-
-plt.figure()
-plt.plot(np.argmax(np.diff(image_nav,axis=-1),axis=-1)[1,:])
-
-plt.figure()
-plt.plot(np.argmin(image_nav,axis=-1)[0,:])
-
-plt.figure()
-plt.plot(np.argmin(image_nav,axis=-1)[:,:].T)
-
-
-plt.figure()
-plt.plot(np.argmin(image_nav,axis=-1)[1,:])
-
-
-plt.figure()
-plt.imshow(image_nav[0,:,:].T)
-
-plt.figure()
-plt.imshow(image_nav[0,:,:].T-np.mean(image_nav[0,:,:],axis=-1))
-
-plt.figure()
-plt.imshow(np.abs(all_channels_images_nav[0,0,:,:].T))
-
-plt.figure()
-nb_cycles=10
-mean = np.mean(image_nav.reshape(-1,int(npoint/2))[:nb_cycles*nb_gating_spokes,:],axis=-1)
-mean=0
-plt.imshow(image_nav.reshape(-1,int(npoint/2))[:nb_cycles*nb_gating_spokes,:].T-mean,cmap="gray")
-
-plt.figure()
-plt.plot(image_nav[0,0,:])
-
-plt.figure()
-plt.plot(image_nav[0,:,:].T)
-
-plt.figure()
-plt.plot(image_nav[1,:,:].T)
-
-
-plt.figure()
-plt.plot(np.min(image_nav.reshape(-1,int(npoint/2))[:nb_cycles*nb_gating_spokes,:],axis=-1))
-plt.plot(image_nav.reshape(-1,int(npoint/2))[:nb_cycles*nb_gating_spokes,10])
-plt.plot(np.mean(image_nav.reshape(-1,int(npoint/2))[:nb_cycles*nb_gating_spokes,:],axis=-1))
-
-
-plt.figure()
-plt.plot(image_nav.reshape(-1,int(npoint/2))[:nb_cycles*nb_gating_spokes,10])
-
-
-
-image_nav_for_PCA=images_series_rebuilt_nav.reshape(-1,int(npoint/2)).T
-pca = PCAComplex(n_components_=20)
-pca.fit(image_nav_for_PCA)
-
-nb_cycles=10
-plt.figure()
-comp=0
-plt.plot(np.abs(pca.components_[:nb_cycles*nb_gating_spokes,comp]))
-plt.title("PCA comp {} on {} cycles".format(comp,nb_cycles))
-for j in range(nb_cycles):
-    plt.axvline(x=j*nb_gating_spokes,color="r")
-
-
-plt.figure()
-comp=1
-plt.plot(np.abs(pca.components_[:nb_cycles*nb_gating_spokes,comp]))
-plt.title("PCA comp {} on {} cycles".format(comp,nb_cycles))
-for j in range(nb_cycles):
-    plt.axvline(x=j*nb_gating_spokes,color="r")
-
-plt.figure()
-comp=2
-plt.plot(np.abs(pca.components_[:nb_cycles*nb_gating_spokes,comp]))
-plt.title("PCA comp {} on {} cycles".format(comp,nb_cycles))
-for j in range(nb_cycles):
-    plt.axvline(x=j*nb_gating_spokes,color="r")
-
-
-plt.figure()
-comp=3
-plt.plot(np.abs(pca.components_[:nb_cycles*nb_gating_spokes,comp]))
-plt.title("PCA comp {} on {} cycles".format(comp,nb_cycles))
-for j in range(nb_cycles):
-    plt.axvline(x=j*nb_gating_spokes,color="r")
-
-
-
-
-plt.figure()
-plt.plot(np.abs(pca.components_[:nb_cycles*nb_gating_spokes,2]))
 
 
 # volumes_all_spokes=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1)
@@ -744,6 +768,7 @@ import json
 import readTwix as rT
 import time
 import pickle
+
 
 image_size=(256,256)
 

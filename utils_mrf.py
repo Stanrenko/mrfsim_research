@@ -2520,3 +2520,97 @@ def simulate_image_series_from_maps(map_rebuilt,mask_rebuilt,window=8):
     rebuilt_image_series= [np.mean(gp, axis=0) for gp in groupby(rebuilt_image_series, window)]
     rebuilt_image_series=np.array(rebuilt_image_series)
     return rebuilt_image_series,map_for_sim
+
+
+def calculate_sensitivity_map_3D_for_nav(kdata, trajectory, res=16, image_size=(400,)):
+    traj = trajectory.get_traj()
+    nb_channels = kdata.shape[0]
+    npoint = kdata.shape[-1]
+    nb_slices = kdata.shape[1]
+    nb_gating_spokes = kdata.shape[2]
+    center_res = int(npoint / 2 - 1)
+    kdata = kdata.reshape((nb_channels, -1, npoint))
+    b1_nav = np.zeros((nb_channels, kdata.shape[1],) + image_size, dtype=np.complex128)
+    kdata_for_sensi = np.zeros(kdata.shape[1:], dtype=np.complex128)
+    for i in tqdm(range(nb_channels)):
+        kdata_for_sensi[:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[i, :,
+                                                                                      (center_res - int(res / 2)):(
+                                                                                                  center_res + int(
+                                                                                              res / 2))]
+        b1_nav[i] = finufft.nufft1d1(traj[0, :, 2], kdata_for_sensi, image_size)
+
+        print("Normalizing sensi")
+
+        # b1 = coil_sensitivity / np.linalg.norm(coil_sensitivity, axis=0)
+        # del coil_sensitivity
+        # b1 = b1 / np.max(np.abs(b1.flatten()))
+    b1_nav /= np.linalg.norm(b1_nav, axis=0)
+    b1_nav /= np.max(np.abs(b1_nav.flatten()))
+
+    b1_nav = b1_nav.reshape((nb_channels, nb_slices, nb_gating_spokes, int(npoint / 2)))
+    return b1_nav
+
+
+def simulate_nav_images_multi(kdata, trajectory, image_size=(400,), b1=None):
+    traj = trajectory.get_traj()
+    nb_channels = kdata.shape[0]
+    npoint = kdata.shape[-1]
+    nb_slices = kdata.shape[1]
+    nb_gating_spokes = kdata.shape[2]
+
+    traj = traj.astype(np.float32)
+
+    kdata = kdata.reshape((nb_channels, -1, npoint))
+    images_series_rebuilt_nav = np.zeros((nb_slices, nb_gating_spokes, int(npoint / 2)), dtype=np.complex64)
+    # all_channels_images_nav = np.zeros((nb_channels,nb_slices,nb_gating_spokes,int(npoint/2)),dtype=np.complex64)
+
+    for i in tqdm(range(nb_channels)):
+        fk = finufft.nufft1d1(traj[0, :, 2], kdata[i, :, :], image_size)
+        fk = fk.reshape((nb_slices, nb_gating_spokes, int(npoint / 2)))
+
+        # all_channels_images_nav[i]=fk
+
+        if b1 is None:
+            images_series_rebuilt_nav += np.abs(fk) ** 2
+        else:
+            images_series_rebuilt_nav += b1[i].conj() * fk
+
+    if b1 is None:
+        images_series_rebuilt_nav = np.sqrt(images_series_rebuilt_nav)
+
+    return images_series_rebuilt_nav
+
+
+def calculate_displacement_from_nav_images(image_nav, bottom=50, top=250, shifts=list(range(-10, 10))):
+    nb_gating_spokes = image_nav.shape[1]
+    nb_slices = image_nav.shape[0]
+
+    npoint_image = image_nav.shape[-1]
+    image_nav_for_correl = image_nav.reshape(-1, npoint_image)
+    nb_images = image_nav_for_correl.shape[0]
+    correls = []
+    for j in tqdm(range(nb_images - 1)):
+        corrs = np.zeros(len(shifts))
+        if (j + 1) % nb_gating_spokes == 0:
+            for i, shift in enumerate(shifts):
+                corr = np.corrcoef(np.concatenate([image_nav_for_correl[0, bottom:top].reshape(1, -1),
+                                                   image_nav_for_correl[j + 1, bottom + shift:top + shift].reshape(1,
+                                                                                                                   -1)],
+                                                  axis=0))[0, 1]
+                corrs[i] = corr
+        else:
+            for i, shift in enumerate(shifts):
+                corr = np.corrcoef(np.concatenate([image_nav_for_correl[j, bottom:top].reshape(1, -1),
+                                                   image_nav_for_correl[j + 1, bottom + shift:top + shift].reshape(1,
+                                                                                                                   -1)],
+                                                  axis=0))[0, 1]
+                corrs[i] = corr
+        correls.append(corrs)
+
+    correls_array = np.array(correls)
+    mvt = [shifts[i] for i in np.argmax(correls_array, axis=-1)]
+    mvt = np.array(mvt)
+    mvt = np.concatenate([[0], mvt])
+    mvt = mvt.reshape(int(nb_slices), int(nb_gating_spokes))
+    displacement = -np.cumsum(mvt, axis=-1).flatten()
+    return displacement

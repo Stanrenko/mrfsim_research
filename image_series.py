@@ -7,7 +7,7 @@ except:
     pass
 
 
-import matplotlib.pyplot as plt
+
 from scipy import ndimage
 from scipy.optimize import minimize
 from scipy.ndimage import affine_transform

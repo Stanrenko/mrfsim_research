@@ -56,11 +56,10 @@ localfile = "/20211221_EV/meas_MID00045_FID47508_raFin_3D_FULL_new_highRES_inco.
 
 localfile = "/20220106/meas_MID00021_FID48331_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile = "/20220106/meas_MID00167_FID48477_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile = "/20220113_CS/meas_MID00162_FID49557_raFin_3D_tra_1x1x5mm_FULL_noGS.dat"
 
 
 filename = base_folder+localfile
-
-data_matlab = loadmat(filename)["rr"]
 
 #filename="./data/InVivo/3D/20211221_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
 #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"

@@ -71,10 +71,10 @@ region_size=16 #size of the regions with uniform values for params in pixel numb
 size=(256,256)
 mask_reduction_factor=1/4
 
-nb_slices= 64
-nb_empty_slices=8
+nb_slices= 16
+nb_empty_slices=0
 undersampling_factor=1
-repeat_slice=8
+repeat_slice=4
 
 gen_mode ="other"
 
@@ -173,7 +173,7 @@ else:
 #volumes_noGPU = simulate_radial_undersampled_images(kdata_noGPU,radial_traj_3D,m.image_size,density_adj=True,useGPU=True)
 #ani,ani1=animate_multiple_images(volumes[:,4,:,:],volumes_noGPU[:,4,:,:])
 
-#ani=animate_images(volumes[:,6,:,:])
+ani=animate_images(volumes[:,6,:,:])
 
 mask = build_mask_single_image(kdata,radial_traj_3D,m.image_size,useGPU=useGPU_simulation)
 #plt.imshow(mask[m.paramDict["nb_empty_slices"]+int(m.paramDict["nb_slices"]/2),:,:])
@@ -237,12 +237,12 @@ sl = 1
 
 
 ##### ADDING MOVEMENT
-direction=np.array([4.0,0.0,0.0])
+direction=np.array([0.0,8.0,0.0])
 move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
 
 m.add_movements([move])
 
-load=True
+load=False
 load_maps=False
 useGPU_simulation=True
 #
@@ -276,10 +276,11 @@ else:
 
 useGPU_simulation=True
 
-timesteps = list(np.arange(1400)[::-25][::-1])
+timesteps = list(np.arange(1400)[::-40][::-1])
 
-nav_z=Navigator3D(direction=[0.0,0.0,1.0],applied_timesteps=timesteps)
+nav_z=Navigator3D(direction=[1.0,0.0,0.0],applied_timesteps=timesteps)
 kdata_nav = m.generate_kdata(nav_z,useGPU=useGPU_simulation)
+np.save(folder_3D + "kdata_mvt_nav_sl{}rp{}us{}_{}.pkl".format(nb_total_slices, repeat_slice, undersampling_factor, m.name),kdata_nav)
 
 kdata_nav = np.array(kdata_nav[0])
 plt.close("all")
