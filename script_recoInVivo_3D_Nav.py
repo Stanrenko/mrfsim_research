@@ -369,6 +369,13 @@ np.corrcoef(np.concatenate([resp_matlab.reshape(-1,1).T,displacement.reshape(-1,
 
 if nb_gating_spokes>0:
     print("Processing Nav Data...")
+    data_for_nav=np.load(filename_nav_save)
+
+    nb_allspokes=nb_segments
+    nb_slices=data_for_nav.shape[1]
+    nb_channels=data_for_nav.shape[0]
+    npoint=data_for_nav.shape[-1]
+
     all_timesteps = np.arange(nb_allspokes)
     nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
     nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=nb_slices,
@@ -376,21 +383,23 @@ if nb_gating_spokes>0:
 
     nav_image_size = (int(npoint / 2),)
 
-    print("Calculating Sensitivity map for Navigator images...")
-    b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
+    #print("Calculating Sensitivity map for Navigator images...")
+    #b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
 
-    ch = 6
-    plt.figure(figsize=(20, 30))
-    plt.imshow(np.abs(np.expand_dims(b1_nav[ch].reshape(-1, int(npoint / 2)).T, axis=-1)))
+    #ch = 6
+    #plt.figure(figsize=(20, 30))
+    #plt.imshow(np.abs(np.expand_dims(b1_nav[ch].reshape(-1, int(npoint / 2)).T, axis=-1)))
 
 
     image_nav_all_channels=[]
     for j in range(nb_channels):
         images_series_rebuilt_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[j],axis=0), nav_traj, nav_image_size, b1=None)
-        plt.figure()
+
         image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
-        plt.imshow(image_nav_ch.reshape(-1, int(npoint / 2)).T, cmap="gray")
-        plt.title("Image channel {}".format(j))
+
+        # plt.figure()
+        #plt.imshow(image_nav_ch.reshape(-1, int(npoint / 2)).T, cmap="gray")
+        #plt.title("Image channel {}".format(j))
         image_nav_all_channels.append(image_nav_ch)
 
     #plt.close("all")
@@ -402,7 +411,18 @@ if nb_gating_spokes>0:
     plt.title("Image best channel")
 
     image_nav_best_channel_centered = image_nav_best_channel - np.expand_dims(np.mean(image_nav_best_channel, axis=-1),axis=-1)
+    image_nav_best_channel_demod=image_nav_best_channel-np.expand_dims(image_nav_best_channel[0, :, :], axis=0)
+    image_nav_best_channel_demod_diff = np.diff(image_nav_best_channel_demod,axis=-1)
 
+    nb_cycles=1
+    plt.figure()
+    plt.plot(np.mean(image_nav_best_channel, axis=-1).flatten()[:nb_cycles*nb_gating_spokes])
+
+    index_max_diff=np.argsort(np.abs(np.diff(np.mean(image_nav_best_channel, axis=-1).flatten()[:nb_gating_spokes])))[::-1]
+
+    plt.figure()
+    plt.imshow(image_nav_best_channel_demod.reshape(-1, int(npoint / 2)).T, cmap="gray")
+    plt.title("Image best channel demod")
 
     print("Building Navigator images...")
     images_series_rebuilt_nav = simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav)
@@ -415,25 +435,72 @@ if nb_gating_spokes>0:
 
 
     print("Calculating Displacement from Navigator images...")
-    displacement = calculate_displacement_from_nav_images(image_nav_best_channel, bottom=50, top=150,shifts=list(range(-10,10)))
+    displacement = calculate_displacement_from_nav_images(image_nav_best_channel_demod[1:], bottom=50, top=150,shifts=list(range(-10,10)))
 
-    npoint_image = image_nav.shape[-1]
-    image_nav_for_correl = image_nav_best_channel.reshape(-1, npoint_image)
+    #npoint_image = nav_image_size[0]
+    image_nav_for_correl=image_nav_best_channel_demod[1:]
+    #image_nav_for_correl = image_nav_best_channel_demod_diff[1:]
 
-    j=4
-    shift = displacement[j]-displacement[j+1]
-    plt.figure()
-    plt.imshow(np.concatenate([image_nav_for_correl[j,50:150].reshape(-1,1).repeat(5,axis=-1),image_nav_for_correl[j+1, (50+shift):(150+shift)].reshape(-1,1).repeat(5,axis=-1)],axis=-1))
-    plt.title("Image for j {} and shift {}".format(j,shift))
+    image_nav_for_correl = image_nav_for_correl.reshape(-1, image_nav_for_correl.shape[-1])
 
-    shift = 0
-    plt.figure()
-    plt.imshow(np.concatenate([image_nav_for_correl[j, 50:150].reshape(-1, 1).repeat(5, axis=-1),
-                               image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(-1, 1).repeat(5,
-                                                                                                             axis=-1)],
-                              axis=-1))
-    plt.title("Image for j {} no shift".format(j))
 
+    cycle_number=4
+    #for j in (cycle_number+np.array(index_max_diff[-4:])):
+    for j in [cycle_number*nb_gating_spokes-1]:
+        if (j+1)%nb_gating_spokes==0:
+            shift = displacement[j]-displacement[j+1]
+            plt.figure()
+            plt.imshow(np.concatenate([image_nav_for_correl[0,50:150].reshape(-1,1).repeat(5,axis=-1)/np.std(image_nav_for_correl[0,50:150]),image_nav_for_correl[j+1, (50+shift):(150+shift)].reshape(-1,1).repeat(5,axis=-1)/np.std(image_nav_for_correl[j+1,(50+shift):(150+shift)])],axis=-1))
+            corr=np.corrcoef(np.concatenate([image_nav_for_correl[0,50:150].reshape(1, -1),
+                                       image_nav_for_correl[j+1, (50+shift):(150+shift)].reshape(1,
+                                                                                                       -1)],
+                                      axis=0))[0, 1]
+            #corr=((image_nav_for_correl[j,50:150].reshape(1,-1)/np.max(image_nav_for_correl[j,50:150]))@(image_nav_for_correl[j+1, (50+shift):(150+shift)].reshape(-1,1)/np.max(image_nav_for_correl[j+1,(50+shift):(150+shift)])))[0][0]/image_nav_for_correl[j, 50:150].shape[0]
+            plt.title("Image for j {} and shift {} correl : {}".format(j,shift,np.round(corr,3)))
+
+
+            shift = 0
+            plt.figure()
+            plt.imshow(np.concatenate([image_nav_for_correl[0,50:150].reshape(-1,1).repeat(5,axis=-1)/np.std(image_nav_for_correl[0,50:150]),image_nav_for_correl[j+1, (50+shift):(150+shift)].reshape(-1,1).repeat(5,axis=-1)/np.std(image_nav_for_correl[j+1,(50+shift):(150+shift)])],axis=-1))
+            corr = np.corrcoef(np.concatenate([image_nav_for_correl[0, 50:150].reshape(1, -1),
+                                              image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(1,
+                                                                                                             -1)],
+                                             axis=0))[0, 1]
+
+            #corr = ((image_nav_for_correl[j, 50:150].reshape(1, -1) / np.max(image_nav_for_correl[j, 50:150])) @ (image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(-1, 1) / np.max(image_nav_for_correl[j + 1, (50 + shift):(150 + shift)])))[0][0]/image_nav_for_correl[j, 50:150].shape[0]
+            plt.title("Image for j {} no shift correl : {}".format(j,np.round(corr,3)))
+
+        else:
+            shift = displacement[j] - displacement[j + 1]
+            plt.figure()
+            plt.imshow(np.concatenate([image_nav_for_correl[j, 50:150].reshape(-1, 1).repeat(5, axis=-1) / np.std(
+                image_nav_for_correl[j, 50:150]),
+                                       image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(-1, 1).repeat(5,
+                                                                                                                     axis=-1) / np.std(
+                                           image_nav_for_correl[j + 1, (50 + shift):(150 + shift)])], axis=-1))
+            corr = np.corrcoef(np.concatenate([image_nav_for_correl[j, 50:150].reshape(1, -1),
+                                               image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(1,
+                                                                                                               -1)],
+                                              axis=0))[0, 1]
+            # corr=((image_nav_for_correl[j,50:150].reshape(1,-1)/np.max(image_nav_for_correl[j,50:150]))@(image_nav_for_correl[j+1, (50+shift):(150+shift)].reshape(-1,1)/np.max(image_nav_for_correl[j+1,(50+shift):(150+shift)])))[0][0]/image_nav_for_correl[j, 50:150].shape[0]
+            plt.title("Image for j {} and shift {} correl : {}".format(j, shift, np.round(corr, 3)))
+
+            shift = 0
+            plt.figure()
+            plt.imshow(np.concatenate([image_nav_for_correl[j, 50:150].reshape(-1, 1).repeat(5, axis=-1) / np.std(
+                image_nav_for_correl[j, 50:150]),
+                                       image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(-1, 1).repeat(5,
+                                                                                                                     axis=-1) / np.std(
+                                           image_nav_for_correl[j + 1, (50 + shift):(150 + shift)])], axis=-1))
+            corr = np.corrcoef(np.concatenate([image_nav_for_correl[j, 50:150].reshape(1, -1),
+                                               image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(1,
+                                                                                                               -1)],
+                                              axis=0))[0, 1]
+
+            # corr = ((image_nav_for_correl[j, 50:150].reshape(1, -1) / np.max(image_nav_for_correl[j, 50:150])) @ (image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(-1, 1) / np.max(image_nav_for_correl[j + 1, (50 + shift):(150 + shift)])))[0][0]/image_nav_for_correl[j, 50:150].shape[0]
+            plt.title("Image for j {} no shift correl : {}".format(j, np.round(corr, 3)))
+
+    plt.close("all")
 
     start_cycle = 0
     end_cycle=20
@@ -448,7 +515,7 @@ if nb_gating_spokes>0:
         plt.axvline(x=j * nb_gating_spokes + seq_var_ind_2, color="k", linestyle="dashed")
 
     plt.figure(figsize=(20, 30))
-    plt.imshow(image_nav_demod.reshape(-1, int(npoint / 2))[(start_cycle * nb_gating_spokes):(end_cycle * nb_gating_spokes), :].T, cmap="gray")
+    plt.imshow(image_nav_for_correl[(start_cycle * nb_gating_spokes):(end_cycle * nb_gating_spokes), :].T, cmap="gray")
     for j in range(end_cycle-start_cycle):
         plt.axvline(x=j * nb_gating_spokes, color="r")
 

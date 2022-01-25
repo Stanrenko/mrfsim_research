@@ -825,6 +825,7 @@ class ToyNN(Optimizer):
         super().__init__(**kwargs)
 
         self.paramDict["model"]=model
+
         self.paramDict["input_scaler"]=input_scaler
         self.paramDict["output_scaler"] = output_scaler
 
@@ -852,6 +853,7 @@ class ToyNN(Optimizer):
 
 
         signals_for_model = np.concatenate((real_signals, imag_signals), axis=-1)
+        signals_for_model=self.paramDict["input_scaler"].transform(signals_for_model)
 
         print(signals_for_model.shape)
 

@@ -2593,22 +2593,36 @@ def calculate_displacement_from_nav_images(image_nav, bottom=50, top=250, shifts
         corrs = np.zeros(len(shifts))
         if (j + 1) % nb_gating_spokes == 0:
             for i, shift in enumerate(shifts):
-                corr = np.corrcoef(np.concatenate([image_nav_for_correl[0, bottom:top].reshape(1, -1),
-                                                   image_nav_for_correl[j + 1, bottom + shift:top + shift].reshape(1,
-                                                                                                                   -1)],
-                                                  axis=0))[0, 1]
+                # corr = ((image_nav_for_correl[0, bottom:top].reshape(1, -1) / np.max(image_nav_for_correl[0, bottom:top])) @ (
+                #             image_nav_for_correl[j + 1, (bottom + shift):(top + shift)].reshape(-1, 1) / np.max(
+                #         image_nav_for_correl[j + 1, (bottom + shift):(top + shift)])))[0][0] / \
+                #        image_nav_for_correl[j, bottom:top].shape[0]
+
+                # corr = np.corrcoef(np.concatenate([image_nav_for_correl[0, bottom:top].reshape(1, -1),
+                #                                   image_nav_for_correl[j + 1, bottom + shift:top + shift].reshape(1,
+                #                                                                                                   -1)],
+                #                                  axis=0))[0, 1]
+
+                corr = np.linalg.norm(image_nav_for_correl[0, bottom:top]-image_nav_for_correl[j + 1, (bottom + shift):(top + shift)])
                 corrs[i] = corr
         else:
             for i, shift in enumerate(shifts):
-                corr = np.corrcoef(np.concatenate([image_nav_for_correl[j, bottom:top].reshape(1, -1),
-                                                   image_nav_for_correl[j + 1, bottom + shift:top + shift].reshape(1,
-                                                                                                                   -1)],
-                                                  axis=0))[0, 1]
+                # corr = np.corrcoef(np.concatenate([image_nav_for_correl[j, bottom:top].reshape(1, -1),
+                #                                    image_nav_for_correl[j + 1, (bottom + shift):(top + shift)].reshape(1,
+                #                                                                                                    -1)],
+                #                                   axis=0))[0, 1]
+
+                # corr = ((image_nav_for_correl[j, bottom:top].reshape(1, -1) / np.max(image_nav_for_correl[j, bottom:top])) @ (
+                #         image_nav_for_correl[j + 1, (bottom + shift):(top + shift)].reshape(-1, 1) / np.max(
+                #     image_nav_for_correl[j + 1, (bottom + shift):(top + shift)])))[0][0] / image_nav_for_correl[j, bottom:top].shape[0]
+
+                corr = np.linalg.norm(
+                    image_nav_for_correl[j, bottom:top] - image_nav_for_correl[j + 1, (bottom + shift):(top + shift)])
                 corrs[i] = corr
         correls.append(corrs)
 
     correls_array = np.array(correls)
-    mvt = [shifts[i] for i in np.argmax(correls_array, axis=-1)]
+    mvt = [shifts[i] for i in np.argmin(correls_array, axis=-1)]
     mvt = np.array(mvt)
     mvt = np.concatenate([[0], mvt])
     mvt = mvt.reshape(int(nb_slices), int(nb_gating_spokes))
