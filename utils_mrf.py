@@ -1700,77 +1700,311 @@ def simulate_radial_undersampled_images_density_optim(kdata,trajectory,size,dens
 
     return np.array(images_series_rebuilt)
 
-def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=True,eps=1e-6,is_theta_z_adjusted=False,b1=None,ntimesteps=175,useGPU=False,memmap_file=None,normalize_kdata=False,light_memory_usage=False,normalize_volumes=True):
-#Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
+# def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=True,eps=1e-6,is_theta_z_adjusted=False,b1=None,ntimesteps=175,useGPU=False,memmap_file=None,normalize_kdata=False,light_memory_usage=False,normalize_volumes=True):
+# #Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
+#
+#     #if light_memory_usage and not(useGPU):
+#     #    print("Warning : light memory usage is not used without GPU")
+#
+#     traj=trajectory.get_traj_for_reconstruction(ntimesteps)
+#     npoint = trajectory.paramDict["npoint"]
+#     nb_allspokes=trajectory.paramDict["total_nspokes"]
+#     nb_channels=kdata.shape[0]
+#     nspoke=int(nb_allspokes/ntimesteps)
+#
+#
+#     if kdata.dtype=="complex64":
+#         traj=traj.astype(np.float32)
+#
+#
+#     if not(is_theta_z_adjusted):
+#         dtheta = np.pi / nspoke
+#         dz = 1/trajectory.paramDict["nb_rep"]
+#
+#     else:
+#         dtheta=np.pi
+#         dz = 1
+#
+#
+#     if not(kdata.shape[1]==len(traj)):
+#         kdata=kdata.reshape(kdata.shape[0],len(traj),-1)
+#
+#
+#
+#
+#     if density_adj:
+#         density = np.abs(np.linspace(-1, 1, npoint))
+#         kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+#
+#
+#     if normalize_kdata:
+#         print("Normalizing Kdata")
+#         if not(light_memory_usage):
+#             C = np.mean(np.linalg.norm(kdata,axis=1),axis=-1)
+#             kdata /= np.expand_dims(C,axis=(1,2))
+#         else:
+#             for i in tqdm(range(nb_channels)):
+#                 kdata[i]/=np.mean(np.linalg.norm(kdata[i],axis=0))
+#     else:
+#         kdata *= dz * dtheta / npoint
+#
+#     #kdata = (normalize_image_series(np.array(kdata)))
+#
+#
+#     output_shape = (ntimesteps,)+size
+#
+#     flushed=False
+#
+#     if memmap_file is not None :
+#         from tempfile import mkdtemp
+#         import os.path as path
+#         file_memmap=path.join(mkdtemp(),"memmap_volumes.dat")
+#         images_series_rebuilt = np.memmap(file_memmap,dtype="complex64",mode="w+",shape=output_shape)
+#
+#     else:
+#         images_series_rebuilt = np.zeros(output_shape,dtype=np.complex64)
+#
+#     print("Performing NUFFT")
+#     if traj[0].shape[-1] == 2:  # 2D
+#
+#         for i,t in tqdm(enumerate(traj)):
+#             fk = finufft.nufft2d1(t[:,0], t[:,1], kdata[:,i,:], size)
+#
+#             #images_series_rebuilt = np.moveaxis(images_series_rebuilt, 0, 1)
+#             if b1 is None:
+#                 images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+#             else:
+#                 images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
+#
+#     elif traj[0].shape[-1] == 3:  # 3D
+#         if not (useGPU):
+#             for i, t in tqdm(enumerate(traj)):
+#                 if not(light_memory_usage):
+#                     fk = finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], kdata[:, i, :], size)
+#                     if b1 is None:
+#                         images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+#                     else:
+#                         images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
+#
+#                 else:
+#                     flush_condition=(memmap_file is not None)and((psutil.virtual_memory().cached+psutil.virtual_memory().free)/1e9<2)and(not(flushed))
+#                     if flush_condition:
+#                         print("Flushed Memory")
+#                         offset=i*images_series_rebuilt.itemsize*i*np.prod(images_series_rebuilt.shape[1:])
+#                         i0 = i
+#                         new_shape=(output_shape[0]-i,)+output_shape[1:]
+#                         images_series_rebuilt.flush()
+#                         del images_series_rebuilt
+#                         flushed=True
+#                         normalize_volumes = False
+#                         images_series_rebuilt = np.memmap(memmap_file,dtype="complex64",mode="r+",shape=new_shape,offset=offset)
+#
+#                     if flushed :
+#                         for j in tqdm(range(nb_channels)):
+#                             fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j, i, :], size)
+#                             if b1 is None:
+#                                 images_series_rebuilt[i-i0] += np.abs(fk) ** 2
+#                             else:
+#                                 images_series_rebuilt[i-i0] += b1[j].conj() * fk
+#
+#                         if b1 is None:
+#                             images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
+#
+#                     else:
+#                         for j in tqdm(range(nb_channels)):
+#                             fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j, i, :], size)
+#                             if b1 is None:
+#                                 images_series_rebuilt[i] += np.abs(fk) ** 2
+#                             else:
+#                                 images_series_rebuilt[i] += b1[j].conj() * fk
+#
+#                         if b1 is None:
+#                             images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
+#         else:
+#             N1, N2, N3 = size[0], size[1], size[2]
+#             dtype = np.float32  # Datatype (real)
+#             complex_dtype = np.complex64
+#
+#             for i in tqdm(list(range(kdata.shape[1]))):
+#                 if not(light_memory_usage):
+#                     fk_gpu = GPUArray((nb_channels,N1, N2, N3), dtype=complex_dtype)
+#                     c_retrieved = kdata[:,i,:]
+#                     kx = traj[i][:, 0]
+#                     ky = traj[i][:, 1]
+#                     kz = traj[i][:, 2]
+#
+#                     # Cast to desired datatype.
+#                     kx = kx.astype(dtype)
+#                     ky = ky.astype(dtype)
+#                     kz = kz.astype(dtype)
+#                     c_retrieved = c_retrieved.astype(complex_dtype)
+#
+#                     # Allocate memory for the uniform grid on the GPU.
+#                     c_retrieved_gpu = to_gpu(c_retrieved)
+#
+#                     # Initialize the plan and set the points.
+#                     plan = cufinufft(1, (N1, N2, N3), nb_channels, eps=eps, dtype=dtype)
+#                     plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+#
+#                     # Execute the plan, reading from the strengths array c and storing the
+#                     # result in fk_gpu.
+#                     plan.execute(c_retrieved_gpu, fk_gpu)
+#
+#                     fk = np.squeeze(fk_gpu.get())
+#
+#                     fk_gpu.gpudata.free()
+#                     c_retrieved_gpu.gpudata.free()
+#
+#                     if b1 is None:
+#                         images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+#                     else:
+#                         images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
+#
+#                     plan.__del__()
+#                 else:
+#                     #fk = np.zeros(output_shape,dtype=complex_dtype)
+#                     for j in tqdm(range(nb_channels)):
+#                         fk_gpu = GPUArray((N1, N2, N3), dtype=complex_dtype)
+#                         c_retrieved = kdata[j, i, :]
+#                         kx = traj[i][:, 0]
+#                         ky = traj[i][:, 1]
+#                         kz = traj[i][:, 2]
+#
+#                         # Cast to desired datatype.
+#                         kx = kx.astype(dtype)
+#                         ky = ky.astype(dtype)
+#                         kz = kz.astype(dtype)
+#                         c_retrieved = c_retrieved.astype(complex_dtype)
+#
+#                         # Allocate memory for the uniform grid on the GPU.
+#                         c_retrieved_gpu = to_gpu(c_retrieved)
+#
+#                         # Initialize the plan and set the points.
+#                         plan = cufinufft(1, (N1, N2, N3), 1, eps=eps, dtype=dtype)
+#                         plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+#
+#                         # Execute the plan, reading from the strengths array c and storing the
+#                         # result in fk_gpu.
+#                         plan.execute(c_retrieved_gpu, fk_gpu)
+#
+#                         fk = np.squeeze(fk_gpu.get())
+#
+#                         fk_gpu.gpudata.free()
+#                         c_retrieved_gpu.gpudata.free()
+#
+#                         if b1 is None:
+#                             images_series_rebuilt[i] += np.abs(fk) ** 2
+#                         else:
+#                             images_series_rebuilt[i] += b1[j].conj() * fk
+#                         plan.__del__()
+#
+#                     if b1 is None:
+#                         images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
+#
+#
+#
+#
+#         del kdata
+#         gc.collect()
+#
+#         if flushed:
+#             images_series_rebuilt.flush()
+#             del images_series_rebuilt
+#             images_series_rebuilt=np.memmap(memmap_file,dtype="complex64",mode="r",shape=output_shape)
+#
+#         if (normalize_volumes)and(b1 is not None):
+#             print("Normalizing by Coil Sensi")
+#             if light_memory_usage:
+#                 b1_norm = np.sum(np.abs(b1) ** 2)
+#                 for i in tqdm(range(images_series_rebuilt.shape[0])):
+#                     images_series_rebuilt[i] = images_series_rebuilt[i] / b1_norm
+#             else:
+#                 images_series_rebuilt /= np.sum(np.abs(b1) ** 2)
+#
+#
+#
+#     #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+#
+#
+#
+#     return images_series_rebuilt
 
-    #if light_memory_usage and not(useGPU):
+def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_adj=True, eps=1e-6,
+                                              is_theta_z_adjusted=False, b1=None, ntimesteps=175, useGPU=False,
+                                              memmap_file=None, normalize_kdata=False, light_memory_usage=False,
+                                              normalize_volumes=True):
+    # Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
+
+    # if light_memory_usage and not(useGPU):
     #    print("Warning : light memory usage is not used without GPU")
 
-    traj=trajectory.get_traj_for_reconstruction(ntimesteps)
+    traj = trajectory.get_traj_for_reconstruction(ntimesteps)
+    print(traj[0].shape)
     npoint = trajectory.paramDict["npoint"]
-    nb_allspokes=trajectory.paramDict["total_nspokes"]
-    nb_channels=kdata.shape[0]
-    nspoke=int(nb_allspokes/ntimesteps)
+    nb_allspokes = trajectory.paramDict["total_nspokes"]
+    nb_channels = len(kdata)
+    nspoke = int(nb_allspokes / ntimesteps)
 
+    if kdata[0][0].dtype == "complex64":
+        try:
+            traj=traj.astype("float32")
+        except:
+            for i in range(traj.shape[0]):
+                traj[i] = traj[i].astype("float32")
+        print(traj[0].dtype)
 
-    if kdata.dtype=="complex64":
-        traj=traj.astype(np.float32)
-
-
-    if not(is_theta_z_adjusted):
+    if not (is_theta_z_adjusted):
         dtheta = np.pi / nspoke
-        dz = 1/trajectory.paramDict["nb_rep"]
+        dz = 1 / trajectory.paramDict["nb_rep"]
 
     else:
-        dtheta=np.pi
+        dtheta = np.pi
         dz = 1
 
-
-    if not(kdata.shape[1]==len(traj)):
-        kdata=kdata.reshape(kdata.shape[0],len(traj),-1)
-
-
-
+    if not (kdata[0].shape[0] == len(traj)):
+        kdata = kdata.reshape(nb_channels, len(traj), -1)
 
     if density_adj:
         density = np.abs(np.linspace(-1, 1, npoint))
         kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
 
-
     if normalize_kdata:
         print("Normalizing Kdata")
-        if not(light_memory_usage):
-            C = np.mean(np.linalg.norm(kdata,axis=1),axis=-1)
-            kdata /= np.expand_dims(C,axis=(1,2))
+        if not (light_memory_usage):
+            C = np.mean(np.linalg.norm(kdata, axis=1), axis=-1)
+            kdata /= np.expand_dims(C, axis=(1, 2))
         else:
             for i in tqdm(range(nb_channels)):
-                kdata[i]/=np.mean(np.linalg.norm(kdata[i],axis=0))
+                try:
+                    kdata[i]/=np.mean(np.linalg.norm(kdata[i],axis=0))
+                except:
+                    kdata[i] /= np.sum(np.abs(np.array(list((itertools.chain(*kdata[i]))))))
     else:
-        kdata *= dz * dtheta / npoint
+        for i in tqdm(range(nb_channels)):
+            kdata[i] *= dz * dtheta / npoint
 
-    #kdata = (normalize_image_series(np.array(kdata)))
+    # kdata = (normalize_image_series(np.array(kdata)))
 
+    output_shape = (ntimesteps,) + size
 
-    output_shape = (ntimesteps,)+size
+    flushed = False
 
-    flushed=False
-
-    if memmap_file is not None :
+    if memmap_file is not None:
         from tempfile import mkdtemp
         import os.path as path
-        file_memmap=path.join(mkdtemp(),"memmap_volumes.dat")
-        images_series_rebuilt = np.memmap(file_memmap,dtype="complex64",mode="w+",shape=output_shape)
+        file_memmap = path.join(mkdtemp(), "memmap_volumes.dat")
+        images_series_rebuilt = np.memmap(file_memmap, dtype="complex64", mode="w+", shape=output_shape)
 
     else:
-        images_series_rebuilt = np.zeros(output_shape,dtype=np.complex64)
+        images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
 
     print("Performing NUFFT")
     if traj[0].shape[-1] == 2:  # 2D
 
-        for i,t in tqdm(enumerate(traj)):
-            fk = finufft.nufft2d1(t[:,0], t[:,1], kdata[:,i,:], size)
+        for i, t in tqdm(enumerate(traj)):
+            fk = finufft.nufft2d1(t[:, 0], t[:, 1], kdata[:, i, :], size)
 
-            #images_series_rebuilt = np.moveaxis(images_series_rebuilt, 0, 1)
+            # images_series_rebuilt = np.moveaxis(images_series_rebuilt, 0, 1)
             if b1 is None:
                 images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
             else:
@@ -1779,40 +2013,47 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
     elif traj[0].shape[-1] == 3:  # 3D
         if not (useGPU):
             for i, t in tqdm(enumerate(traj)):
-                if not(light_memory_usage):
-                    fk = finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], kdata[:, i, :], size)
+                if not (light_memory_usage):
+                    fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[:, i, :], size)
                     if b1 is None:
                         images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
                     else:
                         images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
 
                 else:
-                    flush_condition=(memmap_file is not None)and((psutil.virtual_memory().cached+psutil.virtual_memory().free)/1e9<2)and(not(flushed))
+                    flush_condition = (memmap_file is not None) and (
+                                (psutil.virtual_memory().cached + psutil.virtual_memory().free) / 1e9 < 2) and (
+                                          not (flushed))
                     if flush_condition:
                         print("Flushed Memory")
-                        offset=i*images_series_rebuilt.itemsize*i*np.prod(images_series_rebuilt.shape[1:])
+                        offset = i * images_series_rebuilt.itemsize * i * np.prod(images_series_rebuilt.shape[1:])
                         i0 = i
-                        new_shape=(output_shape[0]-i,)+output_shape[1:]
+                        new_shape = (output_shape[0] - i,) + output_shape[1:]
                         images_series_rebuilt.flush()
                         del images_series_rebuilt
-                        flushed=True
+                        flushed = True
                         normalize_volumes = False
-                        images_series_rebuilt = np.memmap(memmap_file,dtype="complex64",mode="r+",shape=new_shape,offset=offset)
+                        images_series_rebuilt = np.memmap(memmap_file, dtype="complex64", mode="r+", shape=new_shape,
+                                                          offset=offset)
 
-                    if flushed :
+                    if flushed:
                         for j in tqdm(range(nb_channels)):
-                            fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j, i, :], size)
+                            print(t.shape)
+                            print(kdata[j][i].shape)
+                            fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j][i], size)
                             if b1 is None:
-                                images_series_rebuilt[i-i0] += np.abs(fk) ** 2
+                                images_series_rebuilt[i - i0] += np.abs(fk) ** 2
                             else:
-                                images_series_rebuilt[i-i0] += b1[j].conj() * fk
+                                images_series_rebuilt[i - i0] += b1[j].conj() * fk
 
                         if b1 is None:
                             images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
 
                     else:
                         for j in tqdm(range(nb_channels)):
-                            fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j, i, :], size)
+                            print(t.shape)
+                            print(kdata[j][i].shape)
+                            fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j][i], size)
                             if b1 is None:
                                 images_series_rebuilt[i] += np.abs(fk) ** 2
                             else:
@@ -1825,10 +2066,10 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
             dtype = np.float32  # Datatype (real)
             complex_dtype = np.complex64
 
-            for i in tqdm(list(range(kdata.shape[1]))):
-                if not(light_memory_usage):
-                    fk_gpu = GPUArray((nb_channels,N1, N2, N3), dtype=complex_dtype)
-                    c_retrieved = kdata[:,i,:]
+            for i in tqdm(list(range(kdata[0].shape[0]))):
+                if not (light_memory_usage):
+                    fk_gpu = GPUArray((nb_channels, N1, N2, N3), dtype=complex_dtype)
+                    c_retrieved = kdata[:, i, :]
                     kx = traj[i][:, 0]
                     ky = traj[i][:, 1]
                     kz = traj[i][:, 2]
@@ -1862,10 +2103,10 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
 
                     plan.__del__()
                 else:
-                    #fk = np.zeros(output_shape,dtype=complex_dtype)
+                    # fk = np.zeros(output_shape,dtype=complex_dtype)
                     for j in tqdm(range(nb_channels)):
                         fk_gpu = GPUArray((N1, N2, N3), dtype=complex_dtype)
-                        c_retrieved = kdata[j, i, :]
+                        c_retrieved = kdata[j][i]
                         kx = traj[i][:, 0]
                         ky = traj[i][:, 1]
                         kz = traj[i][:, 2]
@@ -1901,18 +2142,15 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
                     if b1 is None:
                         images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
 
-
-
-
         del kdata
         gc.collect()
 
         if flushed:
             images_series_rebuilt.flush()
             del images_series_rebuilt
-            images_series_rebuilt=np.memmap(memmap_file,dtype="complex64",mode="r",shape=output_shape)
+            images_series_rebuilt = np.memmap(memmap_file, dtype="complex64", mode="r", shape=output_shape)
 
-        if (normalize_volumes)and(b1 is not None):
+        if (normalize_volumes) and (b1 is not None):
             print("Normalizing by Coil Sensi")
             if light_memory_usage:
                 b1_norm = np.sum(np.abs(b1) ** 2)
@@ -1921,11 +2159,7 @@ def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=
             else:
                 images_series_rebuilt /= np.sum(np.abs(b1) ** 2)
 
-
-
-    #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
-
-
+    # images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
 
     return images_series_rebuilt
 
@@ -2558,6 +2792,12 @@ def simulate_nav_images_multi(kdata, trajectory, image_size=(400,), b1=None):
     nb_slices = kdata.shape[1]
     nb_gating_spokes = kdata.shape[2]
 
+    if b1 is not None:
+        if b1.ndim == 2:
+            b1 = np.expand_dims(b1, axis=(1, 2))
+        elif b1.ndim == 3:
+            b1 = np.expand_dims(b1, axis == (1))
+
     traj = traj.astype(np.float32)
 
     kdata = kdata.reshape((nb_channels, -1, npoint))
@@ -2581,50 +2821,37 @@ def simulate_nav_images_multi(kdata, trajectory, image_size=(400,), b1=None):
     return images_series_rebuilt_nav
 
 
-def calculate_displacement_from_nav_images(image_nav, bottom=50, top=250, shifts=list(range(-10, 10))):
-    nb_gating_spokes = image_nav.shape[1]
-    nb_slices = image_nav.shape[0]
+def calculate_displacement(image, bottom, top, shifts):
+    nb_gating_spokes = image.shape[1]
+    nb_slices = image.shape[0]
 
-    npoint_image = image_nav.shape[-1]
-    image_nav_for_correl = image_nav.reshape(-1, npoint_image)
+    npoint_image = image.shape[-1]
+    ft = np.mean(image, axis=0)
+    # ft=np.mean(image_nav_best_channel,axis=0)
+    # ft=image[0]
+    image_nav_for_correl = image.reshape(-1, npoint_image)
     nb_images = image_nav_for_correl.shape[0]
     correls = []
-    for j in tqdm(range(nb_images - 1)):
+    # adj=[]
+    for j in tqdm(range(nb_images)):
         corrs = np.zeros(len(shifts))
-        if (j + 1) % nb_gating_spokes == 0:
-            for i, shift in enumerate(shifts):
-                # corr = ((image_nav_for_correl[0, bottom:top].reshape(1, -1) / np.max(image_nav_for_correl[0, bottom:top])) @ (
-                #             image_nav_for_correl[j + 1, (bottom + shift):(top + shift)].reshape(-1, 1) / np.max(
-                #         image_nav_for_correl[j + 1, (bottom + shift):(top + shift)])))[0][0] / \
-                #        image_nav_for_correl[j, bottom:top].shape[0]
 
-                # corr = np.corrcoef(np.concatenate([image_nav_for_correl[0, bottom:top].reshape(1, -1),
-                #                                   image_nav_for_correl[j + 1, bottom + shift:top + shift].reshape(1,
-                #                                                                                                   -1)],
-                #                                  axis=0))[0, 1]
+        for i, shift in enumerate(shifts):
+            corr = np.corrcoef(np.concatenate([ft[j % nb_gating_spokes, bottom:top].reshape(1, -1),
+                                               image_nav_for_correl[j, bottom + shift:top + shift].reshape(1, -1)],
+                                              axis=0))[0, 1]
+            # corr = np.linalg.norm(image_nav_for_correl[0, bottom:top]-image_nav_for_correl[j + 1, (bottom + shift):(top + shift)])
+            corrs[i] = corr
 
-                corr = np.linalg.norm(image_nav_for_correl[0, bottom:top]-image_nav_for_correl[j + 1, (bottom + shift):(top + shift)])
-                corrs[i] = corr
-        else:
-            for i, shift in enumerate(shifts):
-                # corr = np.corrcoef(np.concatenate([image_nav_for_correl[j, bottom:top].reshape(1, -1),
-                #                                    image_nav_for_correl[j + 1, (bottom + shift):(top + shift)].reshape(1,
-                #                                                                                                    -1)],
-                #                                   axis=0))[0, 1]
-
-                # corr = ((image_nav_for_correl[j, bottom:top].reshape(1, -1) / np.max(image_nav_for_correl[j, bottom:top])) @ (
-                #         image_nav_for_correl[j + 1, (bottom + shift):(top + shift)].reshape(-1, 1) / np.max(
-                #     image_nav_for_correl[j + 1, (bottom + shift):(top + shift)])))[0][0] / image_nav_for_correl[j, bottom:top].shape[0]
-
-                corr = np.linalg.norm(
-                    image_nav_for_correl[j, bottom:top] - image_nav_for_correl[j + 1, (bottom + shift):(top + shift)])
-                corrs[i] = corr
+        # adjustment=np.sum(dft_x[j+1]*dft_t[j])/np.sum(dft_x[j+1]**2)
+        # adj.append(adjustment)
         correls.append(corrs)
-
     correls_array = np.array(correls)
-    mvt = [shifts[i] for i in np.argmin(correls_array, axis=-1)]
-    mvt = np.array(mvt)
-    mvt = np.concatenate([[0], mvt])
-    mvt = mvt.reshape(int(nb_slices), int(nb_gating_spokes))
-    displacement = -np.cumsum(mvt, axis=-1).flatten()
-    return displacement
+    mvt = [shifts[i] for i in np.argmax(correls_array, axis=-1)]
+    # mvt=[shifts[i] for i in np.argmin(correls_array,axis=-1)]
+    # mvt=np.array(mvt)+np.array(adj)
+    # mvt=np.concatenate([[0],mvt]).astype(int)
+    # mvt=np.array(mvt).reshape(int(nb_slices),int(nb_gating_spokes))
+    # displacement=-np.cumsum(mvt,axis=-1).flatten()
+    displacement = np.array(mvt)
+    return displacement, correls_array

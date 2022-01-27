@@ -298,11 +298,13 @@ if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
 
 print("Building Mask....")
 if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
-    selected_spokes = np.r_[10:400]
+    #selected_spokes = np.r_[10:400]
+    #selected_spokes = np.r_[10:400, 1200:1400]
+    selected_spokes=None
     mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=None, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
     np.save(filename_mask,mask)
     animate_images(mask)
-    del mask
+    #del mask
 
 
 

@@ -18,8 +18,13 @@ class Trajectory(object):
         raise ValueError("get_traj should be implemented in child")
 
     def get_traj_for_reconstruction(self,timesteps=175):
-        traj = self.get_traj()
-        return traj.reshape(timesteps,-1,traj.shape[-1])
+        if self.traj_for_reconstruction is not None:
+            print("Warning : Outputting the stored reconstruction traj - timesteps input has no impact - please reset with self.traj_for_reconstruction=None")
+            return self.traj_for_reconstruction
+
+        else:
+            traj = self.get_traj()
+            return traj.reshape(timesteps,-1,traj.shape[-1])
 
 class Radial(Trajectory):
 

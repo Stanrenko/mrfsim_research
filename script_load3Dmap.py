@@ -26,8 +26,11 @@ filename="./data/InVivo/3D/20211122_EV_MRF/meas_MID00146_FID42269_raFin_3D_tra_1
 #filename="./data/InVivo/3D/20211209_AL_Tongue/meas_MID00258_FID45162_raFin_3D_tra_1x1x5mm_FULl.dat"
 filename="./data/InVivo/3D/20211220_Phantom_MRF/meas_MID00026_FID47383_raFin_3D_tra_1x1x5mm_FULl.dat"
 filename="./data/InVivo/3D/20220106/meas_MID00167_FID48477_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+filename="./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes_corrected.dat"
+filename="./data/InVivo/3D/20220113_CS/meas_MID00162_FID49557_raFin_3D_tra_1x1x5mm_FULL_noGS_volumes.dat"
 
-
+filename="./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes.dat"
+filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected.dat"
 
 file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
 file = open(file_map, "rb")
@@ -61,10 +64,12 @@ map_Python.animParamMap("df")
 
 from mutools import io
 
+
+
 for key in ["ff","wT1","df","attB1"]:
 
-    file_mha = filename.split(".dat")[0] + "_MRF_map_{}.mha".format(key)
-    io.write(file_mha,map_for_sim[key],tags={"spacing":[15,4,4]})
+    file_mha = "/".join(["/".join(str.split(filename,"/")[:-1]),"_".join(str.split(str.split(filename,"/")[-1],".")[:-1])]) + "_MRF_map_{}.mha".format(key)
+    io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
 
 
 folder =r"\\192.168.0.1\RMN_FILES"

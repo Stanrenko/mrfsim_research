@@ -62,6 +62,9 @@ localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_
 #localfile = "/20220113_CS/meas_MID00164_FID49559_raFin_3D_tra_1x1x5mm_FULL_50GS_slice.dat"
 #localfile = "/20220118_BM/meas_MID00151_FID49924_raFin_3D_tra_1x1x5mm_FULL_read_nav.dat"
 
+localfile="/phantom.001.v1/phantom.001.v1.dat"
+localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
+
 
 filename = base_folder+localfile
 
@@ -79,14 +82,17 @@ filename_b1 = str.split(filename,".dat") [0]+"_b1.npy"
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 
 filename_volume = str.split(filename,".dat") [0]+"_volumes.npy"
+filename_volume_corrected = str.split(filename,".dat") [0]+"_volumes_corrected.npy"
 filename_kdata = str.split(filename,".dat") [0]+"_kdata.npy"
 filename_mask= str.split(filename,".dat") [0]+"_mask.npy"
 filename_oop=str.split(filename,".dat") [0]+"_volumes_oop.npy"
+filename_oop_corrected=str.split(filename,".dat") [0]+"_volumes_oop_corrected.npy"
+
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 
-use_GPU = False
+use_GPU = True
 light_memory_usage=True
 #Parsed_File = rT.map_VBVD(filename)
 #idx_ok = rT.detect_TwixImg(Parsed_File)
@@ -224,8 +230,12 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
     data = mapped[-1]['image']
     del mapped
     data = data[:].squeeze()
-    data = np.moveaxis(data, 0, -2)
-    data = np.moveaxis(data, 1, 0)
+    if data.ndim == 3:
+        data = np.expand_dims(data, axis=0)
+        data=np.moveaxis(data,-2,-3)
+    else:
+        data = np.moveaxis(data, 0, -2)
+        data = np.moveaxis(data, 1, 0)
 
     np.save(filename_save,data)
     #
@@ -290,12 +300,7 @@ except:
 
 data_shape = data.shape
 
-if data.ndim==3:
-    nb_channels = 1
-    data = np.expand_dims(data,axis=0)
-    #data_for_nav=np.expand_dims(data_for_nav,axis=0)
-else:
-    nb_channels=data.shape[0]
+
 
 #data_for_nav=data_for_nav[:,:nb_gating_spokes,:,:]
 #data_for_nav = np.moveaxis(data_for_nav,-2,1)
@@ -313,14 +318,13 @@ dx = x_FOV/(npoint/2)
 dy = y_FOV/(npoint/2)
 dz = z_FOV/nb_slices
 
-file_name_nav_mat=str.split(filename,".dat") [0]+"_nav.mat"
-savemat(file_name_nav_mat,{"Kdata":data_for_nav})
+#file_name_nav_mat=str.split(filename,".dat") [0]+"_nav.mat"
+#savemat(file_name_nav_mat,{"Kdata":data_for_nav})
 
 if str.split(filename_kdata,"/")[-1] in os.listdir(folder):
     del data
 
 radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-
 
 
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
@@ -343,28 +347,14 @@ else:
 
 # Coil sensi estimation for all slices
 
-resp_matlab_file="/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo/20220113/resp.mat"
+print("Calculating Coil Sensitivity....")
 
-resp_matlab=loadmat(resp_matlab_file)["resp"]
-
-
-nb_cycles=10
-plt.figure()
-plt.plot(resp_matlab[:nb_cycles*nb_gating_spokes])
-for j in range(nb_cycles):
-    plt.axvline(x=j * nb_gating_spokes, color="r")
-
-plt.figure()
-plt.scatter(x=resp_matlab,y=-displacement)
-
-
-plt.figure()
-sns.heatmap(np.abs(np.corrcoef(resp_matlab.reshape(48,50))))
-
-plt.figure()
-sns.heatmap(np.abs(np.corrcoef(displacement.reshape(48,50))))
-
-np.corrcoef(np.concatenate([resp_matlab.reshape(-1,1).T,displacement.reshape(-1,1).T],axis=0))
+if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
+    res = 16
+    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage)
+    np.save(filename_b1,b1_all_slices)
+else:
+    b1_all_slices=np.load(filename_b1)
 
 
 if nb_gating_spokes>0:
@@ -378,169 +368,39 @@ if nb_gating_spokes>0:
 
     all_timesteps = np.arange(nb_allspokes)
     nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
+
     nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=nb_slices,
                            applied_timesteps=list(nav_timesteps))
 
     nav_image_size = (int(npoint / 2),)
 
-    #print("Calculating Sensitivity map for Navigator images...")
-    #b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
-
-    #ch = 6
-    #plt.figure(figsize=(20, 30))
-    #plt.imshow(np.abs(np.expand_dims(b1_nav[ch].reshape(-1, int(npoint / 2)).T, axis=-1)))
+    print("Calculating Sensitivity Maps for Nav Images...")
+    b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
+    b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
 
 
-    image_nav_all_channels=[]
-    for j in range(nb_channels):
-        images_series_rebuilt_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[j],axis=0), nav_traj, nav_image_size, b1=None)
-
-        image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
-
-        # plt.figure()
-        #plt.imshow(image_nav_ch.reshape(-1, int(npoint / 2)).T, cmap="gray")
-        #plt.title("Image channel {}".format(j))
-        image_nav_all_channels.append(image_nav_ch)
-
-    #plt.close("all")
-    image_nav_all_channels=np.array(image_nav_all_channels)
-    image_nav_best_channel = image_nav_all_channels[1]
-
-    plt.figure()
-    plt.imshow(image_nav_best_channel.reshape(-1, int(npoint / 2)).T, cmap="gray")
-    plt.title("Image best channel")
-
-    image_nav_best_channel_centered = image_nav_best_channel - np.expand_dims(np.mean(image_nav_best_channel, axis=-1),axis=-1)
-    image_nav_best_channel_demod=image_nav_best_channel-np.expand_dims(image_nav_best_channel[0, :, :], axis=0)
-    image_nav_best_channel_demod_diff = np.diff(image_nav_best_channel_demod,axis=-1)
-
-    nb_cycles=1
-    plt.figure()
-    plt.plot(np.mean(image_nav_best_channel, axis=-1).flatten()[:nb_cycles*nb_gating_spokes])
-
-    index_max_diff=np.argsort(np.abs(np.diff(np.mean(image_nav_best_channel, axis=-1).flatten()[:nb_gating_spokes])))[::-1]
-
-    plt.figure()
-    plt.imshow(image_nav_best_channel_demod.reshape(-1, int(npoint / 2)).T, cmap="gray")
-    plt.title("Image best channel demod")
-
-    print("Building Navigator images...")
-    images_series_rebuilt_nav = simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav)
-    metric = np.abs
-    image_nav = metric(images_series_rebuilt_nav)
-
-    mean = np.mean(image_nav, axis=-1)
-    image_nav_centered = image_nav - np.expand_dims(mean, axis=-1)
-    image_nav_demod = image_nav - np.expand_dims(image_nav[0, :, :], axis=0)
+    print("Rebuilding Nav Images...")
+    images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
 
 
-    print("Calculating Displacement from Navigator images...")
-    displacement = calculate_displacement_from_nav_images(image_nav_best_channel_demod[1:], bottom=50, top=150,shifts=list(range(-10,10)))
+    print("Estimating Movement...")
+    shifts = list(range(-20, 20))
+    bottom = 50
+    top = 150
+    displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
-    #npoint_image = nav_image_size[0]
-    image_nav_for_correl=image_nav_best_channel_demod[1:]
-    #image_nav_for_correl = image_nav_best_channel_demod_diff[1:]
-
-    image_nav_for_correl = image_nav_for_correl.reshape(-1, image_nav_for_correl.shape[-1])
-
-
-    cycle_number=4
-    #for j in (cycle_number+np.array(index_max_diff[-4:])):
-    for j in [cycle_number*nb_gating_spokes-1]:
-        if (j+1)%nb_gating_spokes==0:
-            shift = displacement[j]-displacement[j+1]
-            plt.figure()
-            plt.imshow(np.concatenate([image_nav_for_correl[0,50:150].reshape(-1,1).repeat(5,axis=-1)/np.std(image_nav_for_correl[0,50:150]),image_nav_for_correl[j+1, (50+shift):(150+shift)].reshape(-1,1).repeat(5,axis=-1)/np.std(image_nav_for_correl[j+1,(50+shift):(150+shift)])],axis=-1))
-            corr=np.corrcoef(np.concatenate([image_nav_for_correl[0,50:150].reshape(1, -1),
-                                       image_nav_for_correl[j+1, (50+shift):(150+shift)].reshape(1,
-                                                                                                       -1)],
-                                      axis=0))[0, 1]
-            #corr=((image_nav_for_correl[j,50:150].reshape(1,-1)/np.max(image_nav_for_correl[j,50:150]))@(image_nav_for_correl[j+1, (50+shift):(150+shift)].reshape(-1,1)/np.max(image_nav_for_correl[j+1,(50+shift):(150+shift)])))[0][0]/image_nav_for_correl[j, 50:150].shape[0]
-            plt.title("Image for j {} and shift {} correl : {}".format(j,shift,np.round(corr,3)))
-
-
-            shift = 0
-            plt.figure()
-            plt.imshow(np.concatenate([image_nav_for_correl[0,50:150].reshape(-1,1).repeat(5,axis=-1)/np.std(image_nav_for_correl[0,50:150]),image_nav_for_correl[j+1, (50+shift):(150+shift)].reshape(-1,1).repeat(5,axis=-1)/np.std(image_nav_for_correl[j+1,(50+shift):(150+shift)])],axis=-1))
-            corr = np.corrcoef(np.concatenate([image_nav_for_correl[0, 50:150].reshape(1, -1),
-                                              image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(1,
-                                                                                                             -1)],
-                                             axis=0))[0, 1]
-
-            #corr = ((image_nav_for_correl[j, 50:150].reshape(1, -1) / np.max(image_nav_for_correl[j, 50:150])) @ (image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(-1, 1) / np.max(image_nav_for_correl[j + 1, (50 + shift):(150 + shift)])))[0][0]/image_nav_for_correl[j, 50:150].shape[0]
-            plt.title("Image for j {} no shift correl : {}".format(j,np.round(corr,3)))
-
-        else:
-            shift = displacement[j] - displacement[j + 1]
-            plt.figure()
-            plt.imshow(np.concatenate([image_nav_for_correl[j, 50:150].reshape(-1, 1).repeat(5, axis=-1) / np.std(
-                image_nav_for_correl[j, 50:150]),
-                                       image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(-1, 1).repeat(5,
-                                                                                                                     axis=-1) / np.std(
-                                           image_nav_for_correl[j + 1, (50 + shift):(150 + shift)])], axis=-1))
-            corr = np.corrcoef(np.concatenate([image_nav_for_correl[j, 50:150].reshape(1, -1),
-                                               image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(1,
-                                                                                                               -1)],
-                                              axis=0))[0, 1]
-            # corr=((image_nav_for_correl[j,50:150].reshape(1,-1)/np.max(image_nav_for_correl[j,50:150]))@(image_nav_for_correl[j+1, (50+shift):(150+shift)].reshape(-1,1)/np.max(image_nav_for_correl[j+1,(50+shift):(150+shift)])))[0][0]/image_nav_for_correl[j, 50:150].shape[0]
-            plt.title("Image for j {} and shift {} correl : {}".format(j, shift, np.round(corr, 3)))
-
-            shift = 0
-            plt.figure()
-            plt.imshow(np.concatenate([image_nav_for_correl[j, 50:150].reshape(-1, 1).repeat(5, axis=-1) / np.std(
-                image_nav_for_correl[j, 50:150]),
-                                       image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(-1, 1).repeat(5,
-                                                                                                                     axis=-1) / np.std(
-                                           image_nav_for_correl[j + 1, (50 + shift):(150 + shift)])], axis=-1))
-            corr = np.corrcoef(np.concatenate([image_nav_for_correl[j, 50:150].reshape(1, -1),
-                                               image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(1,
-                                                                                                               -1)],
-                                              axis=0))[0, 1]
-
-            # corr = ((image_nav_for_correl[j, 50:150].reshape(1, -1) / np.max(image_nav_for_correl[j, 50:150])) @ (image_nav_for_correl[j + 1, (50 + shift):(150 + shift)].reshape(-1, 1) / np.max(image_nav_for_correl[j + 1, (50 + shift):(150 + shift)])))[0][0]/image_nav_for_correl[j, 50:150].shape[0]
-            plt.title("Image for j {} no shift correl : {}".format(j, np.round(corr, 3)))
-
-    plt.close("all")
-
-    start_cycle = 0
-    end_cycle=20
-    seq_var_ind_1 = 50 / 1400 * 800
-    seq_var_ind_2 = 50 / 1400 * 1200
-
-    plt.figure(figsize=(20, 10))
-    plt.plot(displacement[(start_cycle * nb_gating_spokes):(end_cycle * nb_gating_spokes)])
-    for j in range(end_cycle-start_cycle):
-        plt.axvline(x=j * nb_gating_spokes, color="r")
-        plt.axvline(x=j * nb_gating_spokes + seq_var_ind_1, color="g", linestyle="dashed")
-        plt.axvline(x=j * nb_gating_spokes + seq_var_ind_2, color="k", linestyle="dashed")
-
-    plt.figure(figsize=(20, 30))
-    plt.imshow(image_nav_for_correl[(start_cycle * nb_gating_spokes):(end_cycle * nb_gating_spokes), :].T, cmap="gray")
-    for j in range(end_cycle-start_cycle):
-        plt.axvline(x=j * nb_gating_spokes, color="r")
-
-    spoke_groups = np.argmin(np.abs(
-        np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
-                                                                          nb_segments / nb_gating_spokes).reshape(1,
-                                                                                                                  -1)),axis=-1)
-
-    #inspiration_spokes = np.argwhere(displacement > -1).flatten()
-    #excluded_spokes = [s in inspiration_spokes for s in spoke_groups]
-    #excluded_spokes = np.array(excluded_spokes).reshape(int(nb_part), nb_segments)
-    #excluded_spokes=excluded_spokes.T.flatten()
-
-
-    #retaining the bin with the most element
-    max_bin = np.max(displacement)
+    displacement_for_binning = displacements
     bin_width = 8
+    max_bin = np.max(displacement_for_binning)
+    min_bin = np.min(displacement_for_binning)
 
     maxi = 0
     for j in range(bin_width):
-        min_bin = np.min(displacement) + j
+        min_bin = np.min(displacement_for_binning) + j
         bins = np.arange(min_bin, max_bin + bin_width, bin_width)
-        print(bins)
-        categories = np.digitize(displacement, bins)
-        df_cat = pd.DataFrame(data=np.array([displacement, categories]).T, columns=["displacement", "cat"])
+        #print(bins)
+        categories = np.digitize(displacement_for_binning, bins)
+        df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, columns=["displacement", "cat"])
         df_groups = df_cat.groupby("cat").count()
         curr_max = df_groups.displacement.max()
         if curr_max > maxi:
@@ -548,22 +408,39 @@ if nb_gating_spokes>0:
             idx_cat = df_groups.displacement.idxmax()
             retained_nav_spokes = (categories == idx_cat)
 
-    print("Retained spokes : {}%".format(np.round(retained_nav_spokes.sum()/(nb_gating_spokes*nb_slices)*100,2)))
-
     retained_nav_spokes_index = np.argwhere(retained_nav_spokes).flatten()
-    included_spokes = [s in retained_nav_spokes_index for s in spoke_groups]
+    spoke_groups = np.argmin(np.abs(np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,nb_segments / nb_gating_spokes).reshape(1,-1)),axis=-1)
+    included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
+    traj = radial_traj.get_traj()
 
-    kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,-1,npoint)
-    kdata_all_channels_all_slices=kdata_all_channels_all_slices[:,(1-excluded_spokes).astype(bool),:]
+    print("Filtering KData for movement...")
+    kdata_retained_final_list = []
+    for i in tqdm(range(nb_channels)):
+        kdata_retained_final, traj_retained_final, retained_timesteps = correct_mvt_kdata(
+            kdata_all_channels_all_slices[i].reshape(nb_segments, -1), traj, included_spokes, 175, density_adj=False)
+        kdata_retained_final_list.append(kdata_retained_final)
 
-print("Calculating Coil Sensitivity....")
 
-if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
-    res = 16
-    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage)
-    np.save(filename_b1,b1_all_slices)
+plt.plot(displacements)
+
+#del kdata_all_channels_all_slices
+ch=0
+reduction_factors=[]
+for el in kdata_retained_final_list[ch]:
+    reduction_factors.append(el.shape[0]/(nb_part*nb_segments/175*npoint))
+plt.plot(reduction_factors)
+
+print("Rebuilding Images With Corrected volumes...")
+
+radial_traj_3D_corrected=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+radial_traj_3D_corrected.traj_for_reconstruction=traj_retained_final
+
+if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
+    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list,radial_traj_3D_corrected,image_size,b1=b1_all_slices,ntimesteps=ntimesteps,density_adj=False,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+    #animate_images(volumes_corrected[:,0,:,:])
+    np.save(filename_volume_corrected,volumes_corrected)
 else:
-    b1_all_slices=np.load(filename_b1)
+    volumes_corrected=np.load(filename_volume_corrected)
 
 # if nav_direction=="SLICE":
 #     coil_sensitivity_nav = np.sum(b1_all_slices,axis=(-2,-1))
@@ -591,23 +468,48 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 #
 #
 #
-#build out of phase spokes image
-if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):
-    radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-    radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
-    volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
-    np.save(filename_oop, volume_outofphase)
-else:
-    volume_outofphase=np.load(filename_oop)
+# #build out of phase spokes image
+# if str.split(filename_oop,"/")[-1] not in os.listdir(folder):
+#     radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+#     radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
+#     volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+#     np.save(filename_oop, volume_outofphase)
+# else:
+#     volume_outofphase=np.load(filename_oop)
+#
+# animate_images(volume_outofphase[0],cmap="gray")
 
-animate_images(volume_outofphase[0],cmap="gray")
+#build out of phase spokes image
+
+volume=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+animate_images(volume[0],cmap="gray")
+
+
+
+traj_retained_final_single_volume=np.concatenate(traj_retained_final,axis=0)
+kdata_retained_final_single_volume=np.zeros((nb_channels,traj_retained_final_single_volume.shape[0]),dtype=kdata_all_channels_all_slices.dtype)
+for i in range(nb_channels):
+    kdata_retained_final_single_volume[i]=np.concatenate(kdata_retained_final_list[i])
+
+traj_retained_final_single_volume=np.expand_dims(traj_retained_final_single_volume,axis=0)
+kdata_retained_final_single_volume=np.expand_dims(kdata_retained_final_single_volume,axis=0)
+
+
+radial_traj_3D_corrected_single_volume=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+radial_traj_3D_corrected_single_volume.traj_for_reconstruction=traj_retained_final_single_volume
+
+
+volume_corrected=simulate_radial_undersampled_images_multi(kdata_retained_final_single_volume,radial_traj_3D_corrected_single_volume,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+animate_images(volume_corrected[0],cmap="gray")
+animate_multiple_images(volume[0],volume_corrected[0])
+
 
 # volume_oop_2=np.load("./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes_oop.npy")
 # animate_multiple_images(volume_outofphase[0],volume_oop_2[0],cmap="gray")
-
+#
 from PIL import Image
 gif=[]
-volume_for_gif = np.abs(volume_outofphase[0])
+volume_for_gif = np.abs(volume_corrected[0])
 for i in range(volume_for_gif.shape[0]):
     img = Image.fromarray(np.uint8(volume_for_gif[i]/np.max(volume_for_gif[i])*255), 'L')
     img=img.convert("P")
@@ -615,7 +517,7 @@ for i in range(volume_for_gif.shape[0]):
 
 img.show()
 
-filename_gif = str.split(filename,".dat") [0]+"_volumes_oop.gif"
+filename_gif = str.split(filename,".dat") [0]+"_volume_corrected.gif"
 gif[0].save(filename_gif,
                save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
 
@@ -656,32 +558,33 @@ if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
     # ani = animate_images(volumes_all[:,sl,:,:])
     del volumes_all
 
-volumes_all=np.load(filename_volume)
-#animate_images(np.abs(volumes_all[:,int(nb_slices/2),:,:]))
-
-#Check modulation of nav signal by MRF
-plt.figure()
-rep=0
-signal_MRF = np.abs(volumes_all[:,int(nb_slices/2),int(npoint/4),int(npoint/4)])
-signal_MRF = signal_MRF/np.max(signal_MRF)
-signal_nav =image_nav[rep,:,int(npoint/4)]
-signal_nav = signal_nav/np.max(signal_nav)
-plt.plot(signal_MRF,label="MRF signal at centre pixel")
-plt.scatter(x=(nav_timesteps/8).astype(int),y=signal_nav,c="r",label="Nav image at centre pixel for rep {}".format(rep))
-rep=4
-plt.scatter(x=(nav_timesteps/8).astype(int),y=signal_nav,c="g",label="Nav image at centre pixel for rep {}".format(rep))
-plt.legend()
-
-##MASK
-
 print("Building Mask....")
 if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
     selected_spokes = np.r_[10:400]
     selected_spokes=None
-    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=None, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
+    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/25, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
     np.save(filename_mask,mask)
     animate_images(mask)
     del mask
+
+#animate_images(np.abs(volumes_all[:,int(nb_slices/2),:,:]))
+
+# #Check modulation of nav signal by MRF
+# plt.figure()
+# rep=0
+# signal_MRF = np.abs(volumes_all[:,int(nb_slices/2),int(npoint/4),int(npoint/4)])
+# signal_MRF = signal_MRF/np.max(signal_MRF)
+# signal_nav =image_nav[rep,:,int(npoint/4)]
+# signal_nav = signal_nav/np.max(signal_nav)
+# plt.plot(signal_MRF,label="MRF signal at centre pixel")
+# plt.scatter(x=(nav_timesteps/8).astype(int),y=signal_nav,c="r",label="Nav image at centre pixel for rep {}".format(rep))
+# rep=4
+# plt.scatter(x=(nav_timesteps/8).astype(int),y=signal_nav,c="g",label="Nav image at centre pixel for rep {}".format(rep))
+# plt.legend()
+
+##MASK
+
+
 
 
 
@@ -692,8 +595,8 @@ del b1_all_slices
 
 ########################## Dict mapping ########################################
 
-dictfile = "mrf175_SimReco2.dict"
-#dictfile = "mrf175_Dico2_Invivo.dict"
+#dictfile = "mrf175_SimReco2.dict"
+dictfile = "mrf175_Dico2_Invivo.dict"
 
 volumes_all = np.load(filename_volume)
 mask = np.load(filename_mask)
@@ -716,8 +619,7 @@ save_map=True
 
 if not(load_map):
     niter = 0
-
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other")
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=10,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
     all_maps=optimizer.search_patterns(dictfile,volumes_all)
 
     if(save_map):
