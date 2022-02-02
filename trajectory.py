@@ -24,7 +24,19 @@ class Trajectory(object):
 
         else:
             traj = self.get_traj()
+            #try:
             return traj.reshape(timesteps,-1,traj.shape[-1])
+            #except:
+            #    window=np.ceil(self.paramDict["total_nspokes"]/timesteps)+1
+            #    traj_reco= np.array(groupby(traj,window))
+            #    return traj_reco.reshape(timesteps,-1,traj_reco.shape[-1])
+
+    def adjust_traj_for_window(self,window):
+        traj=self.get_traj()
+        traj_shape=traj.shape
+        traj=np.array(groupby(traj,window))
+        traj=traj.reshape((-1,)+traj_shape[1:])
+        self.traj=traj
 
 class Radial(Trajectory):
 
@@ -46,6 +58,10 @@ class Radial(Trajectory):
             self.traj=traj
 
         return self.traj
+
+
+
+
 
 class Radial3D(Trajectory):
 

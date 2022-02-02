@@ -30,7 +30,19 @@ filename="./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5
 filename="./data/InVivo/3D/20220113_CS/meas_MID00162_FID49557_raFin_3D_tra_1x1x5mm_FULL_noGS_volumes.dat"
 
 filename="./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes.dat"
-filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected.dat"
+filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_norm.dat"
+filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_rm_zeros_spokes.dat"
+filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected_dens_adj_rm_zeros_spokes.dat"
+filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected_dens_adj_disp4.dat"
+filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected_dens_adj_disp12.dat"
+filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj.dat"
+#filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0.dat"
+filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_random.dat"
+filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_window55.dat"
+filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_window21.dat"
+filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_voronoi.dat"
+filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_disp16.dat"
+
 
 file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
 file = open(file_map, "rb")
@@ -64,13 +76,9 @@ map_Python.animParamMap("df")
 
 from mutools import io
 
-
-
 for key in ["ff","wT1","df","attB1"]:
-
     file_mha = "/".join(["/".join(str.split(filename,"/")[:-1]),"_".join(str.split(str.split(filename,"/")[-1],".")[:-1])]) + "_MRF_map_{}.mha".format(key)
     io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
-
 
 folder =r"\\192.168.0.1\RMN_FILES"
 file ="\meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro_mask_norm_vol.npy"

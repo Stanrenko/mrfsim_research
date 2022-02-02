@@ -49,7 +49,7 @@ def build_and_compile_model(n_outputs, kernel_regularizer=None, dropout_rate=Non
     return model
 
 
-def build_and_compile_model_simple(n_outputs,lr=0.01,loss="mean_squared_error",loss_weights=None,optimizer=tf.keras.optimizers.Adam):
+def build_and_compile_model_simple(n_outputs,loss="mean_squared_error",loss_weights=None,optimizer=tf.keras.optimizers.Adam(lr=0.01)):
     model = keras.Sequential([
         layers.Dense(200, activation="relu", name="Dense_1"),
         layers.Dense(100, activation="relu", name="Dense_2"),
@@ -60,7 +60,7 @@ def build_and_compile_model_simple(n_outputs,lr=0.01,loss="mean_squared_error",l
     ])
 
     model.compile(loss=loss,
-                  optimizer=optimizer(lr),loss_weights=loss_weights)
+                  optimizer=optimizer,loss_weights=loss_weights)
     return model
 
 

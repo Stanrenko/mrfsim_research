@@ -13,3 +13,5 @@ python mrfsim.py search batch_test.yml --dictfile  mrf175.dict --method brute --
 python mrfsim.py gendict --dictfile mrf175_SimReco2_window_1.dict --dict-config mrf_dictconf_SimReco2.json
 
 python mrfsim.py gendict --dictfile mrf175_Dico2_Invivo.dict --dict-config mrf_dictconf_Dico2_Invivo.json
+
+python mrfsim.py gendict --dictfile mrf175_SimReco2_window_55.dict --dict-config mrf_dictconf_SimReco2.json

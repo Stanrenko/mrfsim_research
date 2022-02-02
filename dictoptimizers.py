@@ -753,7 +753,7 @@ class SimpleDictSearch(Optimizer):
 
             if movement_correction:
                 traj=trajectory.get_traj()
-                kdatai, traj_retained_final, _ = correct_mvt_kdata(kdatai, traj, cond,trajectory.paramDict["ntimesteps"])
+                kdatai, traj_retained_final, _ = correct_mvt_kdata(kdatai, traj, cond,trajectory.paramDict["ntimesteps"],density_adj=True)
 
             kdatai = np.array(kdatai)
             #nans = np.nonzero(np.isnan(kdatai))
@@ -848,12 +848,20 @@ class ToyNN(Optimizer):
 
         mask=self.mask
         all_signals = volumes[:, mask > 0]
+
+        all_signals=all_signals/np.expand_dims(np.linalg.norm(all_signals,axis=0),axis=0)
+
         real_signals=all_signals.real.T
         imag_signals=all_signals.imag.T
 
+        #real_signals = real_signals / np.expand_dims(np.linalg.norm(real_signals, axis=-1), axis=-1)
+        #imag_signals = imag_signals / np.expand_dims(np.linalg.norm(imag_signals, axis=-1), axis=-1)
+
 
         signals_for_model = np.concatenate((real_signals, imag_signals), axis=-1)
-        signals_for_model=self.paramDict["input_scaler"].transform(signals_for_model)
+        #signals_for_model=signals_for_model/np.expand_dims(np.linalg.norm(signals_for_model,axis=-1),axis=-1)
+        if self.paramDict["input_scaler"] is not None:
+            signals_for_model=self.paramDict["input_scaler"].transform(signals_for_model)
 
         print(signals_for_model.shape)
 
@@ -884,15 +892,23 @@ class ToyNN(Optimizer):
         keys, signal = read_mrf_dict(dictfile, FF_list)
 
         Y_TF = np.array(keys)
+
+        signal=signal/np.expand_dims(np.linalg.norm(signal,axis=-1),axis=-1)
+
         real_signal = signal.real
         imag_signal = signal.imag
 
+        #real_signal=real_signal/np.expand_dims(np.linalg.norm(real_signal,axis=-1),axis=-1)
+        #imag_signal=imag_signal/np.expand_dims(np.linalg.norm(imag_signal,axis=-1),axis=-1)
+
         X_TF = np.concatenate((real_signal, imag_signal), axis=1)
+        #X_TF = X_TF/np.expand_dims(np.linalg.norm(X_TF,axis=-1),axis=-1)
 
-        input_scaler = StandardScaler()
-        output_scaler = MinMaxScaler()
+        input_scaler = self.paramDict["input_scaler"]
+        output_scaler = self.paramDict["output_scaler"]
 
-        X_TF = input_scaler.fit_transform(X_TF)
+        if input_scaler is not None:
+            X_TF = input_scaler.fit_transform(X_TF)
         Y_TF = output_scaler.fit_transform(Y_TF)
 
         self.paramDict["input_scaler"]=input_scaler

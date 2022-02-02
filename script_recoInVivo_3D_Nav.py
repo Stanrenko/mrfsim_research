@@ -73,25 +73,28 @@ filename = base_folder+localfile
 #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
 
 filename_save=str.split(filename,".dat") [0]+".npy"
-filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
+filename_nav_save=str.split(base_folder+"/phantom.001.v1/phantom.001.v1.dat",".dat") [0]+"_nav.npy"
+
+#filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
 
 folder = "/".join(str.split(filename,"/")[:-1])
 
+suffix="_disp16"
 
-filename_b1 = str.split(filename,".dat") [0]+"_b1.npy"
+filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 
-filename_volume = str.split(filename,".dat") [0]+"_volumes.npy"
-filename_volume_corrected = str.split(filename,".dat") [0]+"_volumes_corrected.npy"
-filename_kdata = str.split(filename,".dat") [0]+"_kdata.npy"
-filename_mask= str.split(filename,".dat") [0]+"_mask.npy"
-filename_oop=str.split(filename,".dat") [0]+"_volumes_oop.npy"
-filename_oop_corrected=str.split(filename,".dat") [0]+"_volumes_oop_corrected.npy"
+filename_volume = str.split(filename,".dat") [0]+"_volumes{}.npy".format(suffix)
+filename_volume_corrected = str.split(filename,".dat") [0]+"_volumes_corrected{}.npy".format(suffix)
+filename_kdata = str.split(filename,".dat") [0]+"_kdata{}.npy".format("")
+filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
+filename_oop=str.split(filename,".dat") [0]+"_volumes_oop{}.npy".format(suffix)
+filename_oop_corrected=str.split(filename,".dat") [0]+"_volumes_oop_corrected{}.npy".format(suffix)
 
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
-
+density_adj_radial=True
 use_GPU = True
 light_memory_usage=True
 #Parsed_File = rT.map_VBVD(filename)
@@ -305,8 +308,11 @@ data_shape = data.shape
 #data_for_nav=data_for_nav[:,:nb_gating_spokes,:,:]
 #data_for_nav = np.moveaxis(data_for_nav,-2,1)
 
-ntimesteps = 175
+#ntimesteps = 1400
+window=8
 
+
+nb_channels=data_shape[0]
 nb_allspokes = data_shape[-3]
 npoint = data_shape[-1]
 nb_slices = data_shape[-2]
@@ -324,14 +330,16 @@ dz = z_FOV/nb_slices
 if str.split(filename_kdata,"/")[-1] in os.listdir(folder):
     del data
 
-radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 
 
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
     # Density adjustment all slices
 
-    density = np.abs(np.linspace(-1, 1, npoint))
-    density = np.expand_dims(density,tuple(range(data.ndim-1)))
+    if density_adj_radial:
+        density = np.abs(np.linspace(-1, 1, npoint))
+        density = np.expand_dims(density,tuple(range(data.ndim-1)))
+    else:
+        density=1
     #kdata_all_channels_all_slices = data.reshape(-1, npoint)
     #del data
     print("Performing Density Adjustment....")
@@ -345,9 +353,28 @@ else:
     #kdata_all_channels_all_slices = open_memmap(filename_kdata)
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
+kdata_shape=kdata_all_channels_all_slices.shape
+kdata_all_channels_all_slices=np.array(groupby(kdata_all_channels_all_slices,window,axis=1))
+ntimesteps=kdata_all_channels_all_slices.shape[0]
+kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,-1,nb_slices,npoint)
+
+#
+# cond_gating_spokes=np.ones(nb_segments).astype(bool)
+# cond_gating_spokes[::int(nb_segments/nb_gating_spokes)]=False
+# kdata_retained_no_gating_spokes_list=[]
+# for i in tqdm(range(nb_channels)):
+#     kdata_retained_no_gating_spokes,traj_retained_no_gating_spokes,retained_timesteps=correct_mvt_kdata(kdata_all_channels_all_slices[i].reshape(nb_segments,-1),radial_traj.get_traj(),cond_gating_spokes,175,density_adj=False)
+#     kdata_retained_no_gating_spokes_list.append(kdata_retained_no_gating_spokes)
+#
+# radial_traj.traj_for_reconstruction=traj_retained_no_gating_spokes
 # Coil sensi estimation for all slices
 
 print("Calculating Coil Sensitivity....")
+
+radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+radial_traj.adjust_traj_for_window(window)
+
+nb_segments=radial_traj.get_traj().shape[0]
 
 if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     res = 16
@@ -355,6 +382,14 @@ if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     np.save(filename_b1,b1_all_slices)
 else:
     b1_all_slices=np.load(filename_b1)
+
+# print("Building Volumes....")
+# if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
+#     volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+#     np.save(filename_volume,volumes_all)
+#     # sl=20
+#     # ani = animate_images(volumes_all[:,sl,:,:])
+#     del volumes_all
 
 
 if nb_gating_spokes>0:
@@ -390,7 +425,7 @@ if nb_gating_spokes>0:
     displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
     displacement_for_binning = displacements
-    bin_width = 8
+    bin_width = 20
     max_bin = np.max(displacement_for_binning)
     min_bin = np.min(displacement_for_binning)
 
@@ -411,23 +446,33 @@ if nb_gating_spokes>0:
     retained_nav_spokes_index = np.argwhere(retained_nav_spokes).flatten()
     spoke_groups = np.argmin(np.abs(np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,nb_segments / nb_gating_spokes).reshape(1,-1)),axis=-1)
     included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
-    traj = radial_traj.get_traj()
+    included_spokes[::int(nb_segments/nb_gating_spokes)]=False
+    # perc_retained=0.4
+    # import random
+    # indices_included_random=random.sample(range(spoke_groups.shape[0]),int(perc_retained*spoke_groups.shape[0]))
+    # included_spokes=np.zeros(spoke_groups.shape[0])
+    # included_spokes[indices_included_random]=1.0
+    # included_spokes=included_spokes.astype(bool)
+
+    #traj = radial_traj.get_traj()
 
     print("Filtering KData for movement...")
     kdata_retained_final_list = []
     for i in tqdm(range(nb_channels)):
         kdata_retained_final, traj_retained_final, retained_timesteps = correct_mvt_kdata(
-            kdata_all_channels_all_slices[i].reshape(nb_segments, -1), traj, included_spokes, 175, density_adj=False)
+            kdata_all_channels_all_slices[i].reshape(nb_segments, -1), radial_traj, included_spokes, ntimesteps, density_adj=True,log=True)
         kdata_retained_final_list.append(kdata_retained_final)
 
 
 plt.plot(displacements)
 
 #del kdata_all_channels_all_slices
+
 ch=0
+plt.figure()
 reduction_factors=[]
 for el in kdata_retained_final_list[ch]:
-    reduction_factors.append(el.shape[0]/(nb_part*nb_segments/175*npoint))
+   reduction_factors.append(el.shape[0]/(nb_part*nb_segments/ntimesteps*npoint))
 plt.plot(reduction_factors)
 
 print("Rebuilding Images With Corrected volumes...")
@@ -435,8 +480,8 @@ print("Rebuilding Images With Corrected volumes...")
 radial_traj_3D_corrected=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 radial_traj_3D_corrected.traj_for_reconstruction=traj_retained_final
 
-if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list,radial_traj_3D_corrected,image_size,b1=b1_all_slices,ntimesteps=ntimesteps,density_adj=False,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+if str.split(filename_volume_corrected,"/")[-1] not in os.listdir(folder):
+    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list,radial_traj_3D_corrected,image_size,b1=b1_all_slices,ntimesteps=len(retained_timesteps),density_adj=False,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
     #animate_images(volumes_corrected[:,0,:,:])
     np.save(filename_volume_corrected,volumes_corrected)
 else:
@@ -451,7 +496,7 @@ else:
 #
 # coil_sensitivity_nav /= np.linalg.norm(coil_sensitivity_nav, axis=0)
 # coil_sensitivity_nav /= np.max(np.abs(coil_sensitivity_nav.flatten()))
-
+#
 sl=int(b1_all_slices.shape[1]/2)
 list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
 plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
@@ -480,46 +525,46 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 # animate_images(volume_outofphase[0],cmap="gray")
 
 #build out of phase spokes image
-
-volume=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
-animate_images(volume[0],cmap="gray")
-
-
-
-traj_retained_final_single_volume=np.concatenate(traj_retained_final,axis=0)
-kdata_retained_final_single_volume=np.zeros((nb_channels,traj_retained_final_single_volume.shape[0]),dtype=kdata_all_channels_all_slices.dtype)
-for i in range(nb_channels):
-    kdata_retained_final_single_volume[i]=np.concatenate(kdata_retained_final_list[i])
-
-traj_retained_final_single_volume=np.expand_dims(traj_retained_final_single_volume,axis=0)
-kdata_retained_final_single_volume=np.expand_dims(kdata_retained_final_single_volume,axis=0)
-
-
-radial_traj_3D_corrected_single_volume=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-radial_traj_3D_corrected_single_volume.traj_for_reconstruction=traj_retained_final_single_volume
-
-
-volume_corrected=simulate_radial_undersampled_images_multi(kdata_retained_final_single_volume,radial_traj_3D_corrected_single_volume,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
-animate_images(volume_corrected[0],cmap="gray")
-animate_multiple_images(volume[0],volume_corrected[0])
+#
+# volume=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+# animate_images(volume[0],cmap="gray")
+#
+#
+#
+# traj_retained_final_single_volume=np.concatenate(traj_retained_final,axis=0)
+# kdata_retained_final_single_volume=np.zeros((nb_channels,traj_retained_final_single_volume.shape[0]),dtype=kdata_all_channels_all_slices.dtype)
+# for i in range(nb_channels):
+#     kdata_retained_final_single_volume[i]=np.concatenate(kdata_retained_final_list[i])
+#
+# traj_retained_final_single_volume=np.expand_dims(traj_retained_final_single_volume,axis=0)
+# kdata_retained_final_single_volume=np.expand_dims(kdata_retained_final_single_volume,axis=0)
+#
+#
+# radial_traj_3D_corrected_single_volume=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+# radial_traj_3D_corrected_single_volume.traj_for_reconstruction=traj_retained_final_single_volume
+#
+#
+# volume_corrected=simulate_radial_undersampled_images_multi(kdata_retained_final_single_volume,radial_traj_3D_corrected_single_volume,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+# animate_images(volume_corrected[0],cmap="gray")
+# animate_multiple_images(volume[0],volume_corrected[0])
 
 
 # volume_oop_2=np.load("./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes_oop.npy")
 # animate_multiple_images(volume_outofphase[0],volume_oop_2[0],cmap="gray")
 #
-from PIL import Image
-gif=[]
-volume_for_gif = np.abs(volume_corrected[0])
-for i in range(volume_for_gif.shape[0]):
-    img = Image.fromarray(np.uint8(volume_for_gif[i]/np.max(volume_for_gif[i])*255), 'L')
-    img=img.convert("P")
-    gif.append(img)
-
-img.show()
-
-filename_gif = str.split(filename,".dat") [0]+"_volume_corrected.gif"
-gif[0].save(filename_gif,
-               save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
+# from PIL import Image
+# gif=[]
+# volume_for_gif = np.abs(volume_corrected[0])
+# for i in range(volume_for_gif.shape[0]):
+#     img = Image.fromarray(np.uint8(volume_for_gif[i]/np.max(volume_for_gif[i])*255), 'L')
+#     img=img.convert("P")
+#     gif.append(img)
+#
+# img.show()
+#
+# filename_gif = str.split(filename,".dat") [0]+"_volume_corrected.gif"
+# gif[0].save(filename_gif,
+#                save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
 
 
 # # list_images = list(np.abs(volume_outofphase)[0][:])
@@ -552,7 +597,7 @@ gif[0].save(filename_gif,
 ##volumes for slice taking into account coil sensi
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=use_GPU,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
     np.save(filename_volume,volumes_all)
     # sl=20
     # ani = animate_images(volumes_all[:,sl,:,:])
@@ -595,8 +640,12 @@ del b1_all_slices
 
 ########################## Dict mapping ########################################
 
-#dictfile = "mrf175_SimReco2.dict"
-dictfile = "mrf175_Dico2_Invivo.dict"
+dictfile = "mrf175_SimReco2.dict"
+#dictfile = "mrf175_SimReco2_window_1.dict"
+#dictfile = "mrf175_SimReco2_window_21.dict"
+#dictfile = "mrf175_SimReco2_window_55.dict"
+#dictfile = "mrf175_Dico2_Invivo.dict"
+
 
 volumes_all = np.load(filename_volume)
 mask = np.load(filename_mask)
@@ -618,14 +667,15 @@ load_map=False
 save_map=True
 
 if not(load_map):
-    niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=10,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
-    all_maps=optimizer.search_patterns(dictfile,volumes_all)
+    niter = 2
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes)
+    all_maps=optimizer.search_patterns(dictfile,volumes_corrected,retained_timesteps=retained_timesteps)
 
     if(save_map):
         import pickle
 
-        file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
+        #file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format(suffix)
+        file_map = filename.split(".dat")[0] + "_corrected_dens_adj{}_MRF_map.pkl".format(suffix)
         file = open(file_map, "wb")
         # dump information to that file
         pickle.dump(all_maps, file)
@@ -637,6 +687,84 @@ else:
     file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
     file = open(file_map, "rb")
     all_maps = pickle.load(file)
+
+
+map_rebuilt=all_maps[0][0]
+keys_simu = list(map_rebuilt.keys())
+values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+map_for_sim = dict(zip(keys_simu, values_simu))
+
+images_pred = MapFromDict3D("RebuiltMapFromParams", paramMap=map_for_sim, rounding=True,gen_mode="other")
+images_pred.buildParamMap()
+
+images_pred.build_ref_images(seq)
+
+kdatai = images_pred.generate_kdata(radial_traj,useGPU=False)
+
+kdatai_retained, traji_retained, retained_timesteps = correct_mvt_kdata(
+            kdatai, radial_traj, included_spokes, ntimesteps, density_adj=True)
+
+
+def compare_signals(dictfile,volumes,maps,mask,volumes_1,maps_1,mask_1=None,pixel=None,pixel_1=None,figsize=(10,15)):
+    if pixel is None:
+        raise ValueError("pixel should be a tuple")
+    if pixel_1 is None:
+        pixel_1=pixel
+    if mask_1 is None:
+        mask_1=mask
+
+    signal=volumes[:,pixel[0],pixel[1],pixel[2]]
+    signal_1=volumes_1[:,pixel_1[0],pixel_1[1],pixel_1[2]]
+
+    signal=signal/np.linalg.norm(signal)
+    signal_1=signal_1/np.linalg.norm(signal_1)
+
+    for k in maps.keys():
+        maps_retrieved_volume[k] = makevol(maps[k], mask > 0)[pixel[0],pixel[1],pixel[2]]
+
+    for k in maps.keys():
+        maps_retrieved_volume_1[k] = makevol(maps_1[k], mask_1 > 0)[pixel_1[0], pixel_1[1], pixel_1[2]]
+
+    params = list(maps_retrieved_volume.values())[:-1]
+    ff = maps_retrieved_volume["ff"]
+
+    params_1 = list(maps_retrieved_volume_1.values())[:-1]
+    ff_1 = maps_retrieved_volume_1["ff"]
+
+    mrfdict = dictsearch.Dictionary()
+    mrfdict.load(dictfile, force=True)
+
+    mapped_signal = mrfdict[tuple(params)][:, 0] * (1 - ff) + mrfdict[tuple(
+        params)][:, 1] * (ff)
+    mapped_signal_1 = mrfdict[tuple(params_1)][:, 0] * (1 - ff_1) + mrfdict[tuple(
+        params_1)][:, 1] * (ff_1)
+
+    mapped_signal=mapped_signal/np.linalg.norm(mapped_signal)
+    mapped_signal_1 = mapped_signal_1 / np.linalg.norm(mapped_signal_1)
+
+    plt.figure(figsize=figsize)
+    metric=np.real
+    plt.title("Real Part {}".format(pixel))
+    plt.plot(metric(signal),label="Original Signal")
+    plt.plot(metric(signal_1), label="Original Signal 1")
+    plt.plot(metric(mapped_signal), label="Mapped Signal {}".format(maps_retrieved_volume))
+    plt.plot(metric(mapped_signal_1), label="Mapped Signal 1 {}".format(maps_retrieved_volume_1))
+
+    plt.figure(figsize=figsize)
+    metric = np.imag
+    plt.title("Imaginary Part")
+    plt.plot(metric(signal), label="Original Signal")
+    plt.plot(metric(signal_1), label="Original Signal 1")
+    plt.plot(metric(mapped_signal), label="Mapped Signal {}".format(maps_retrieved_volume))
+    plt.plot(metric(mapped_signal_1), label="Mapped Signal 1 {}".format(maps_retrieved_volume_1))
+
+    plt.figure(figsize=figsize)
+    metric = np.abs
+    plt.title("Module")
+    plt.plot(metric(signal), label="Original Signal")
+    plt.plot(metric(signal_1), label="Original Signal 1")
+    plt.plot(metric(mapped_signal), label="Mapped Signal {}".format(maps_retrieved_volume))
+    plt.plot(metric(mapped_signal_1), label="Mapped Signal 1 {}".format(maps_retrieved_volume_1))
 
 iter=0
 map_rebuilt=all_maps[iter][0]

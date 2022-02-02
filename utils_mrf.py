@@ -14,6 +14,7 @@ from sklearn.decomposition import PCA
 from tqdm import tqdm
 from scipy.spatial import Voronoi,ConvexHull
 from Transformers import PCAComplex
+import freud
 try:
 
     import seaborn as sns
@@ -41,6 +42,7 @@ except:
 
 from copy import copy
 import psutil
+from datetime import datetime
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
@@ -1088,6 +1090,18 @@ def voronoi_finite_polygons_2d(vor, radius=None):
     return new_regions, np.asarray(new_vertices)
 
 
+def voronoi_volumes_freud(points,box_size=2*np.pi):
+
+    box = freud.box.Box.cube(box_size + 0.00001)
+
+    voro = freud.locality.Voronoi()
+    voro.compute(system=(box, points))
+
+    volumes = np.array(voro.volumes)
+    #volumes /= volumes.sum()
+
+    return volumes
+
 def voronoi_volumes(points,min_x=None,min_y=None,max_x=None,max_y=None,min_z=None,max_z=None,eps=0.1):
     dim =points.shape[1]
 
@@ -1945,13 +1959,7 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
     nb_channels = len(kdata)
     nspoke = int(nb_allspokes / ntimesteps)
 
-    if kdata[0][0].dtype == "complex64":
-        try:
-            traj=traj.astype("float32")
-        except:
-            for i in range(traj.shape[0]):
-                traj[i] = traj[i].astype("float32")
-        print(traj[0].dtype)
+
 
     if not (is_theta_z_adjusted):
         dtheta = np.pi / nspoke
@@ -1964,9 +1972,39 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
     if not (kdata[0].shape[0] == len(traj)):
         kdata = kdata.reshape(nb_channels, len(traj), -1)
 
-    if density_adj:
+    if type(density_adj) is bool:
+        if density_adj:
+            density_adj="Radial"
+
+    if density_adj=="Radial":
         density = np.abs(np.linspace(-1, 1, npoint))
         kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+    elif density_adj=="Voronoi":
+        print("Calculating Voronoi Density Adj")
+        density=[]
+        for i in tqdm(range(len(traj))):
+            curr_dens=voronoi_volumes_freud(traj[i])
+            curr_dens_shape=curr_dens.shape
+            curr_dens=curr_dens.reshape(-1,npoint)
+            curr_dens[:,0]=curr_dens[:,1]
+            curr_dens[:, npoint-1] = curr_dens[:, npoint-2]
+            curr_dens=curr_dens.reshape(curr_dens_shape)
+            curr_dens /= curr_dens.sum()
+            density.append(curr_dens)
+
+        # density = [
+        #     voronoi_volumes_freud(traj[i]) for i in
+        #     tqdm(range(len(traj)))]
+        for j in tqdm(range(nb_channels)):
+            kdata[j] = [k * density[i] for i, k in enumerate(kdata[j])]
+
+    if kdata[0][0].dtype == "complex64":
+        try:
+            traj=traj.astype("float32")
+        except:
+            for i in range(traj.shape[0]):
+                traj[i] = traj[i].astype("float32")
+        print(traj[0].dtype)
 
     if normalize_kdata:
         print("Normalizing Kdata")
@@ -1975,10 +2013,10 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
             kdata /= np.expand_dims(C, axis=(1, 2))
         else:
             for i in tqdm(range(nb_channels)):
-                try:
-                    kdata[i]/=np.mean(np.linalg.norm(kdata[i],axis=0))
-                except:
-                    kdata[i] /= np.sum(np.abs(np.array(list((itertools.chain(*kdata[i]))))))
+                #try:
+                #    kdata[i]/=np.mean(np.linalg.norm(kdata[i],axis=0))
+                #except:
+                kdata[i] /= np.sum(np.abs(np.array(list((itertools.chain(*kdata[i]))))))
     else:
         for i in tqdm(range(nb_channels)):
             kdata[i] *= dz * dtheta / npoint
@@ -2012,8 +2050,10 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
 
     elif traj[0].shape[-1] == 3:  # 3D
         if not (useGPU):
+
             for i, t in tqdm(enumerate(traj)):
                 if not (light_memory_usage):
+
                     fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[:, i, :], size)
                     if b1 is None:
                         images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
@@ -2051,9 +2091,13 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
 
                     else:
                         for j in tqdm(range(nb_channels)):
-                            print(t.shape)
-                            print(kdata[j][i].shape)
-                            fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j][i], size)
+
+                            index_non_zero_kdata=np.nonzero(kdata[j][i])
+                            kdata_current=kdata[j][i][index_non_zero_kdata]
+                            t_current=t[index_non_zero_kdata]
+                            print(t_current.shape)
+                            print(kdata_current.shape)
+                            fk = finufft.nufft3d1(t_current[:, 2], t_current[:, 0], t_current[:, 1], kdata_current, size)
                             if b1 is None:
                                 images_series_rebuilt[i] += np.abs(fk) ** 2
                             else:
@@ -2106,10 +2150,11 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
                     # fk = np.zeros(output_shape,dtype=complex_dtype)
                     for j in tqdm(range(nb_channels)):
                         fk_gpu = GPUArray((N1, N2, N3), dtype=complex_dtype)
-                        c_retrieved = kdata[j][i]
-                        kx = traj[i][:, 0]
-                        ky = traj[i][:, 1]
-                        kz = traj[i][:, 2]
+                        index_non_zero_kdata=np.nonzero(kdata[j][i])
+                        c_retrieved = kdata[j][i][index_non_zero_kdata]
+                        kx = traj[i][index_non_zero_kdata][:, 0]
+                        ky = traj[i][index_non_zero_kdata][:, 1]
+                        kz = traj[i][index_non_zero_kdata][:, 2]
 
                         # Cast to desired datatype.
                         kx = kx.astype(dtype)
@@ -2426,10 +2471,14 @@ def calculate_condition_mvt_correction(t,transf,perc):
     return cond
 
 
-def correct_mvt_kdata(kdata,traj,cond,ntimesteps,density_adj=True):
+def correct_mvt_kdata(kdata,trajectory,cond,ntimesteps,density_adj=True,log=False):
 
     kdata=np.array(kdata)
-    traj=np.array(traj)
+    traj=trajectory.get_traj()
+
+    mode=trajectory.paramDict["mode"]
+    incoherent=trajectory.paramDict["incoherent"]
+
 
     nb_rep = int(cond.shape[0]/traj.shape[0])
     npoint = int(traj.shape[1] / nb_rep)
@@ -2456,7 +2505,15 @@ def correct_mvt_kdata(kdata,traj,cond,ntimesteps,density_adj=True):
 
         df["kz"] = traj_for_selection[:, :, 2][:, 0]
         golden_angle = 111.246 * np.pi / 180
-        df["theta"] = np.array(list(np.mod(np.arange(0, int(df.shape[0] / nb_rep)) * golden_angle, np.pi)) * nb_rep)
+
+        if not(incoherent):
+            df["theta"] = np.array(list(np.mod(np.arange(0, int(df.shape[0] / nb_rep)) * golden_angle, np.pi)) * nb_rep)
+        elif incoherent:
+            if mode=="old":
+                df["theta"] = np.array(list(np.mod(np.arange(0, int(df.shape[0])) * golden_angle, np.pi)))
+            elif mode=="new":
+                df["theta"] = np.mod((np.array(list(np.arange(0, nb_rep) * golden_angle)).reshape(-1,1)+np.array(list(np.arange(0, int(df.shape[0] / nb_rep)) * golden_angle)).reshape(1,-1)).flatten(),np.pi)
+
 
         df_retained = df.iloc[np.nonzero(cond)]
         kz_by_timestep = df_retained.groupby("ts")["kz"].unique()
@@ -2467,22 +2524,32 @@ def correct_mvt_kdata(kdata,traj,cond,ntimesteps,density_adj=True):
 
         # Theta weighting
         df_retained["theta_s"] = df_retained["theta_s"].apply(lambda x: np.sort(x))
+        #df_retained["theta_s"] = df_retained["theta_s"].apply(
+        #    lambda x: np.concatenate([[x[-1] - np.pi], x, [x[0] + np.pi]]))
         df_retained["theta_s"] = df_retained["theta_s"].apply(
-            lambda x: np.concatenate([[x[-1] - np.pi], x, [x[0] + np.pi]]))
-        df_retained["theta_weight"] = (df_retained.theta - df_retained["theta_s"]).abs().apply(
-            lambda x: np.sort(x)[1:3].mean())
+                lambda x: np.unique(np.concatenate([[0], x, [np.pi]])))
+        diff_theta=(df_retained.theta - df_retained["theta_s"]).abs()
+        theta_inside_boundary=(df_retained["theta"]!=0)*(df_retained["theta"]!=np.pi)
+        df_retained["theta_weight"] = diff_theta.apply(lambda x: np.sort(x)[1:3].mean())*theta_inside_boundary+\
+                                      diff_theta.apply(lambda x: np.sort(x)[1])*(1-theta_inside_boundary)
         df_retained.loc[df_retained["theta_weight"].isna(), "theta_weight"] = 1.0
         sum_weights = df_retained.groupby(["ts", "rep"])["theta_weight"].sum()
         df_retained = df_retained.join(sum_weights, on=["ts", "rep"], rsuffix="_sum")
         df_retained["theta_weight"] = df_retained["theta_weight"] / df_retained["theta_weight_sum"]
 
         # KZ weighting
-        df_retained["kz_s"] = df_retained["kz_s"].apply(lambda x: np.concatenate([[-np.pi], x, [np.pi]]))
-        df_retained["kz_weight"] = (df_retained.kz - df_retained["kz_s"]).abs().apply(lambda x: np.sort(x)[1:3].mean())
+        #df_retained.loc[df_retained.ts == 138].to_clipboard()
+        df_retained["kz_s"] = df_retained["kz_s"].apply(lambda x: np.unique(np.concatenate([[-np.pi], x, [np.pi]])))
+        diff_kz=(df_retained.kz - df_retained["kz_s"]).abs()
+        df_retained["kz_weight"] = diff_kz.apply(lambda x: np.sort(x)[1:3].mean())*(df_retained["kz"].abs()!=np.pi)+diff_kz.apply(lambda x: np.sort(x)[1])*(df_retained["kz"].abs()==np.pi)
         df_retained.loc[df_retained["kz_weight"].isna(), "kz_weight"] = 1.0
         sum_weights = df_retained.groupby(["ts"])["kz_weight"].unique().apply(lambda x: x.sum())
         df_retained = df_retained.join(sum_weights, on=["ts"], rsuffix="_sum")
         df_retained["kz_weight"] = df_retained["kz_weight"] / df_retained["kz_weight_sum"]
+
+        if log:
+            now = datetime.now()
+            df_retained.to_csv("./log/df_density_correction_{}.csv".format(now))
 
     dico_traj = {}
     dico_kdata = {}
@@ -2598,6 +2665,9 @@ def calculate_sensitivity_map_3D(kdata,trajectory,res=16,image_size=(1,256,256),
     print("Performing NUFFT on filtered data for sensitivity calculation")
     if not(useGPU):
         if not(light_memory_usage):
+            index_non_zero_kdata=np.nonzero(kdata_for_sensi[0])
+            kdata_for_sensi=kdata_for_sensi[index_non_zero_kdata]
+            traj_all=traj_all[index_non_zero_kdata]
             coil_sensitivity = finufft.nufft3d1(traj_all[:, 2], traj_all[:, 0], traj_all[:, 1], kdata_for_sensi, image_size)
         else:
             coil_sensitivity=np.zeros((nb_channels,)+image_size,dtype=np.complex128)
@@ -2609,8 +2679,11 @@ def calculate_sensitivity_map_3D(kdata,trajectory,res=16,image_size=(1,256,256),
                                                                                                         res / 2)):(
                                                                                                             center_res + int(
                                                                                                         res / 2))]
-
-                coil_sensitivity[i] = finufft.nufft3d1(traj_all[:, 2], traj_all[:, 0], traj_all[:, 1], kdata_for_sensi.flatten(), image_size)
+                flattened_kdata_for_sensi=kdata_for_sensi.flatten()
+                index_non_zero_kdata = np.nonzero(flattened_kdata_for_sensi)
+                flattened_kdata_for_sensi=flattened_kdata_for_sensi[index_non_zero_kdata]
+                traj_current = traj_all[index_non_zero_kdata]
+                coil_sensitivity[i] = finufft.nufft3d1(traj_current[:, 2], traj_current[:, 0], traj_current[:, 1], flattened_kdata_for_sensi, image_size)
 
 
     else:
