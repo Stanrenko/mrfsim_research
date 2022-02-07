@@ -42,9 +42,16 @@ filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phanto
 filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_window21.dat"
 filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_voronoi.dat"
 filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_disp16.dat"
+filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected_dens_adj_disp8.dat"
+filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected_dens_adj_disp16.dat"
+filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_disp8.dat"
+
 
 
 file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
+
+#file_map="./log/maps_it_0_20220204_165051.pkl"
+
 file = open(file_map, "rb")
 all_maps = pickle.load(file)
 
@@ -77,7 +84,7 @@ map_Python.animParamMap("df")
 from mutools import io
 
 for key in ["ff","wT1","df","attB1"]:
-    file_mha = "/".join(["/".join(str.split(filename,"/")[:-1]),"_".join(str.split(str.split(filename,"/")[-1],".")[:-1])]) + "_MRF_map_{}.mha".format(key)
+    file_mha = "/".join(["/".join(str.split(file_map,"/")[:-1]),"_".join(str.split(str.split(file_map,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
     io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
 
 folder =r"\\192.168.0.1\RMN_FILES"

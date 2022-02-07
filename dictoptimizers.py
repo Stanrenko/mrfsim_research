@@ -18,6 +18,7 @@ except:
 from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from numba import cuda
 import gc
+import pickle
 
 class Optimizer(object):
 
@@ -84,22 +85,25 @@ class SimpleDictSearch(Optimizer):
         useGPU_simulation = self.paramDict["useGPU_simulation"]
 
         movement_correction=self.paramDict["movement_correction"]
-        cond=self.paramDict["cond"]
+        cond_mvt=self.paramDict["cond"]
         remove_duplicates = self.paramDict["remove_duplicate_signals"]
         #adj_phase=self.paramDict["adj_phase"]
 
         if movement_correction:
-            if cond is None:
+            if cond_mvt is None:
                 raise ValueError("indices of retained kdata should be given in cond for movement correction")
 
-
-        volumes /= np.linalg.norm(volumes, 2, axis=0)
-        all_signals = volumes[:, mask > 0]
-        
-        if niter >0:
+        if niter > 0:
             volumes0 = volumes
-        else:
-	        del volumes
+
+        norm_volumes = np.linalg.norm(volumes, 2, axis=0)
+        all_signals=volumes[:, mask > 0]
+        norm_volumes=np.linalg.norm(all_signals, 2, axis=0)
+        all_signals = all_signals/norm_volumes
+
+        if niter==0:
+            del volumes
+
 	
         if log:
             now = datetime.now()
@@ -697,6 +701,10 @@ class SimpleDictSearch(Optimizer):
 
             values_results.append((map_rebuilt, mask))
 
+            if log:
+                with open('./log/maps_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+                    pickle.dump({int(i):(map_rebuilt, mask)}, f)
+
             if useGPU_dictsearch:#Forcing to free the memory
                 mempool = cp.get_default_memory_pool()
                 print("Cupy memory usage {}:".format(mempool.used_bytes()))
@@ -706,6 +714,8 @@ class SimpleDictSearch(Optimizer):
                 # Disable memory pool for pinned memory (CPU).
                 cp.cuda.set_pinned_memory_allocator(None)
                 gc.collect()
+
+
 
 
             if i == niter:
@@ -726,6 +736,24 @@ class SimpleDictSearch(Optimizer):
             del values_simu
 
             images_pred.build_ref_images(seq)
+
+            print("Normalizing image series")
+            #norm_images=np.zeros(images_pred.images_series.shape[1:])
+            pred_signals=images_pred.images_series[:,mask>0]
+            norm_images=np.linalg.norm(pred_signals,axis=0)
+            pred_signals*=norm_volumes/norm_images
+            
+
+
+            #for i in tqdm(range(images_pred.images_series.shape[0])):
+            #    norm_images=norm_images+np.abs(images_pred.images_series[i])**2
+            #norm_images=np.sqrt(norm_images)
+
+            #norm_images=np.linalg.norm(images_pred.images_series,axis=0)
+            #for i in tqdm(range(images_pred.images_series.shape[0])):
+            #    images_pred.images_series[i] /= norm_images
+            #    images_pred.images_series[i] *= norm_volumes
+
             #images_pred.build_timeline(seq)
             #pred_volumesi = images_pred.images_series
 
@@ -753,7 +781,7 @@ class SimpleDictSearch(Optimizer):
 
             if movement_correction:
                 traj=trajectory.get_traj()
-                kdatai, traj_retained_final, _ = correct_mvt_kdata(kdatai, traj, cond,trajectory.paramDict["ntimesteps"],density_adj=True)
+                kdatai, traj_retained_final, _ = correct_mvt_kdata(kdatai, trajectory, cond_mvt,self.paramDict["ntimesteps"],density_adj=True)
 
             kdatai = np.array(kdatai)
             #nans = np.nonzero(np.isnan(kdatai))
@@ -779,7 +807,7 @@ class SimpleDictSearch(Optimizer):
                 np.save('./log/volumesi.npy',volumesi)
                 raise ValueError("Error : Nan Values in volumes")
 
-            volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
+            #volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
 
 
             if log:
@@ -805,11 +833,13 @@ class SimpleDictSearch(Optimizer):
             #     volumes = [vol + (vol0 - voli) for vol, vol0, voli in zip(volumes, volumes0, volumesi)]
 
             volumes = [vol + (vol0 - voli) for vol, vol0, voli in zip(volumes, volumes0, volumesi)]
+            norm_volumes = np.linalg.norm(volumes,axis=0)
 
             del volumesi
             del kdatai
 
-            all_signals = np.array(volumes)[:, mask > 0]
+            all_signals = np.array(volumes)[:, mask > 0]/norm_volumes[mask>0]
+
 
 
         if log:

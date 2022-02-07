@@ -1468,8 +1468,8 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
         dz = 1/trajectory.paramDict["nb_rep"]
 
     else:
-        dtheta=np.pi
-        dz = 1
+        dtheta=1
+        dz = 1/(2*np.pi)
 
 
     if not(len(kdata)==len(traj)):
@@ -1966,8 +1966,8 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
         dz = 1 / trajectory.paramDict["nb_rep"]
 
     else:
-        dtheta = np.pi
-        dz = 1
+        dtheta = 1
+        dz = 1/(2*np.pi)
 
     if not (kdata[0].shape[0] == len(traj)):
         kdata = kdata.reshape(nb_channels, len(traj), -1)
@@ -2530,22 +2530,26 @@ def correct_mvt_kdata(kdata,trajectory,cond,ntimesteps,density_adj=True,log=Fals
                 lambda x: np.unique(np.concatenate([[0], x, [np.pi]])))
         diff_theta=(df_retained.theta - df_retained["theta_s"]).abs()
         theta_inside_boundary=(df_retained["theta"]!=0)*(df_retained["theta"]!=np.pi)
+        df_retained["theta_inside_boundary"] = theta_inside_boundary
         df_retained["theta_weight"] = diff_theta.apply(lambda x: np.sort(x)[1:3].mean())*theta_inside_boundary+\
-                                      diff_theta.apply(lambda x: np.sort(x)[1])*(1-theta_inside_boundary)
+                                      diff_theta.apply(lambda x: np.sort(x)[1]/2)*(1-theta_inside_boundary)
         df_retained.loc[df_retained["theta_weight"].isna(), "theta_weight"] = 1.0
         sum_weights = df_retained.groupby(["ts", "rep"])["theta_weight"].sum()
         df_retained = df_retained.join(sum_weights, on=["ts", "rep"], rsuffix="_sum")
-        df_retained["theta_weight"] = df_retained["theta_weight"] / df_retained["theta_weight_sum"]
+        #df_retained["theta_weight"] = df_retained["theta_weight"] / df_retained["theta_weight_sum"]
 
         # KZ weighting
         #df_retained.loc[df_retained.ts == 138].to_clipboard()
         df_retained["kz_s"] = df_retained["kz_s"].apply(lambda x: np.unique(np.concatenate([[-np.pi], x, [np.pi]])))
         diff_kz=(df_retained.kz - df_retained["kz_s"]).abs()
-        df_retained["kz_weight"] = diff_kz.apply(lambda x: np.sort(x)[1:3].mean())*(df_retained["kz"].abs()!=np.pi)+diff_kz.apply(lambda x: np.sort(x)[1])*(df_retained["kz"].abs()==np.pi)
+        kz_inside_boundary=(df_retained["kz"].abs()!=np.pi)
+        df_retained["kz_inside_boundary"]=kz_inside_boundary
+        df_retained["kz_weight"] = diff_kz.apply(lambda x: np.sort(x)[1:3].mean())*(kz_inside_boundary)+diff_kz.apply(lambda x: np.sort(x)[1]/2)*(1-kz_inside_boundary)
         df_retained.loc[df_retained["kz_weight"].isna(), "kz_weight"] = 1.0
-        sum_weights = df_retained.groupby(["ts"])["kz_weight"].unique().apply(lambda x: x.sum())
+        sum_weights = df_retained.drop_duplicates(subset=["kz","ts"])
+        sum_weights = sum_weights.groupby(["ts"])["kz_weight"].apply(lambda x: x.sum())
         df_retained = df_retained.join(sum_weights, on=["ts"], rsuffix="_sum")
-        df_retained["kz_weight"] = df_retained["kz_weight"] / df_retained["kz_weight_sum"]
+        #df_retained["kz_weight"] = df_retained["kz_weight"] / df_retained["kz_weight_sum"]
 
         if log:
             now = datetime.now()

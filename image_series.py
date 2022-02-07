@@ -249,6 +249,7 @@ class ImageSeries(object):
             pixel_params)][:, 1] * (map_ff_on_mask[i]) for (i, pixel_params) in enumerate(map_all_on_mask)])
         #water_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0]  for (i, pixel_params) in enumerate(map_all_on_mask)])
         #fat_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 1]  for (i, pixel_params) in enumerate(map_all_on_mask)])
+        print("Image series built")
 
         images_series[self.mask > 0, :] = images_in_mask
         #water_series[self.mask > 0, :] = water_in_mask

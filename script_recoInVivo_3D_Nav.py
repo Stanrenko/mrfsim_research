@@ -74,12 +74,11 @@ filename = base_folder+localfile
 
 filename_save=str.split(filename,".dat") [0]+".npy"
 filename_nav_save=str.split(base_folder+"/phantom.001.v1/phantom.001.v1.dat",".dat") [0]+"_nav.npy"
-
 #filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
 
 folder = "/".join(str.split(filename,"/")[:-1])
 
-suffix="_disp16"
+suffix="_disp8"
 
 filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
@@ -425,7 +424,7 @@ if nb_gating_spokes>0:
     displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
     displacement_for_binning = displacements
-    bin_width = 20
+    bin_width = 8
     max_bin = np.max(displacement_for_binning)
     min_bin = np.min(displacement_for_binning)
 
@@ -481,7 +480,7 @@ radial_traj_3D_corrected=Radial3D(total_nspokes=nb_allspokes,undersampling_facto
 radial_traj_3D_corrected.traj_for_reconstruction=traj_retained_final
 
 if str.split(filename_volume_corrected,"/")[-1] not in os.listdir(folder):
-    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list,radial_traj_3D_corrected,image_size,b1=b1_all_slices,ntimesteps=len(retained_timesteps),density_adj=False,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list,radial_traj_3D_corrected,image_size,b1=b1_all_slices,ntimesteps=len(retained_timesteps),density_adj=False,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,is_theta_z_adjusted=True)
     #animate_images(volumes_corrected[:,0,:,:])
     np.save(filename_volume_corrected,volumes_corrected)
 else:
@@ -640,22 +639,6 @@ del b1_all_slices
 
 ########################## Dict mapping ########################################
 
-dictfile = "mrf175_SimReco2.dict"
-#dictfile = "mrf175_SimReco2_window_1.dict"
-#dictfile = "mrf175_SimReco2_window_21.dict"
-#dictfile = "mrf175_SimReco2_window_55.dict"
-#dictfile = "mrf175_Dico2_Invivo.dict"
-
-
-volumes_all = np.load(filename_volume)
-mask = np.load(filename_mask)
-
-ani = animate_images(volumes_all[:,4,:,:])
-#
-# plt.figure()
-# plt.plot(volumes_all[:,sl,200,200])
-
-
 with open("mrf_sequence.json") as f:
     sequence_config = json.load(f)
 
@@ -666,9 +649,28 @@ seq = T1MRF(**sequence_config)
 load_map=False
 save_map=True
 
+
+dictfile = "mrf175_SimReco2.dict"
+#dictfile = "mrf175_SimReco2_window_1.dict"
+#dictfile = "mrf175_SimReco2_window_21.dict"
+#dictfile = "mrf175_SimReco2_window_55.dict"
+#dictfile = "mrf175_Dico2_Invivo.dict"
+
+mask = np.load(filename_mask)
+volumes_all = np.load(filename_volume)
+
+
+ani = animate_images(volumes_all[:,4,:,:])
+ani = animate_images(volumes_corrected[:,4,:,:])
+#
+# plt.figure()
+# plt.plot(volumes_all[:,sl,200,200])
+
+
+
 if not(load_map):
     niter = 2
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=True,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes,ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns(dictfile,volumes_corrected,retained_timesteps=retained_timesteps)
 
     if(save_map):
