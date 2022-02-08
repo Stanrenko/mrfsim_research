@@ -14,7 +14,10 @@ from sklearn.decomposition import PCA
 from tqdm import tqdm
 from scipy.spatial import Voronoi,ConvexHull
 from Transformers import PCAComplex
-import freud
+try:
+    import freud
+except:
+    pass
 try:
 
     import seaborn as sns
@@ -1969,7 +1972,7 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
         dtheta = 1
         dz = 1/(2*np.pi)
 
-    if not (kdata[0].shape[0] == len(traj)):
+    if not (len(kdata[0]) == len(traj)):
         kdata = kdata.reshape(nb_channels, len(traj), -1)
 
     if type(density_adj) is bool:
@@ -1978,7 +1981,10 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
 
     if density_adj=="Radial":
         density = np.abs(np.linspace(-1, 1, npoint))
-        kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+        #density=np.expand_dims(axis=0)
+        for j in tqdm(range(nb_channels)):
+            kdata[j] =[(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata[j]]
+
     elif density_adj=="Voronoi":
         print("Calculating Voronoi Density Adj")
         density=[]

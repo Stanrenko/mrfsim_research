@@ -30,32 +30,17 @@ filename="./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5
 filename="./data/InVivo/3D/20220113_CS/meas_MID00162_FID49557_raFin_3D_tra_1x1x5mm_FULL_noGS_volumes.dat"
 
 filename="./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes.dat"
-filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_norm.dat"
-filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_rm_zeros_spokes.dat"
-filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected_dens_adj_rm_zeros_spokes.dat"
-filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected_dens_adj_disp4.dat"
-filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected_dens_adj_disp12.dat"
-filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj.dat"
-#filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0.dat"
-filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_random.dat"
-filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_window55.dat"
-filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_window21.dat"
-filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_voronoi.dat"
-filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_disp16.dat"
-filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected_dens_adj_disp8.dat"
-filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected_dens_adj_disp16.dat"
-filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_disp8.dat"
-
-
+filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected.dat"
 
 file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
 
-#file_map="./log/maps_it_0_20220204_165051.pkl"
+file_map="./log/maps_it_1_20220208_131307.pkl"
+file_map="./log/maps_it_2_20220208_132700.pkl"
 
 file = open(file_map, "rb")
 all_maps = pickle.load(file)
 
-iter=0
+iter=2
 map_rebuilt=all_maps[iter][0]
 mask=all_maps[iter][1]
 
@@ -83,9 +68,12 @@ map_Python.animParamMap("df")
 
 from mutools import io
 
+
+
 for key in ["ff","wT1","df","attB1"]:
     file_mha = "/".join(["/".join(str.split(file_map,"/")[:-1]),"_".join(str.split(str.split(file_map,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
     io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+
 
 folder =r"\\192.168.0.1\RMN_FILES"
 file ="\meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro_mask_norm_vol.npy"

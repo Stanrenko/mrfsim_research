@@ -1,6 +1,6 @@
 
 #import matplotlib
-#matplotlib.use("TkAgg")
+#matplotlib.u<se("TkAgg")
 from mrfsim import T1MRF
 from image_series import *
 from dictoptimizers import SimpleDictSearch
@@ -78,7 +78,7 @@ filename_nav_save=str.split(base_folder+"/phantom.001.v1/phantom.001.v1.dat",".d
 
 folder = "/".join(str.split(filename,"/")[:-1])
 
-suffix="_disp8"
+suffix="_disp16"
 
 filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
@@ -391,6 +391,38 @@ else:
 #     del volumes_all
 
 
+
+
+with open("mrf_sequence.json") as f:
+    sequence_config = json.load(f)
+
+
+seq = T1MRF(**sequence_config)
+
+m = RandomMap3D("TestRandom3DMovement","",nb_slices=nb_slices,nb_empty_slices=0,undersampling_factor=1,repeat_slice=0,resting_time=4000,image_size=(int(npoint/2),int(npoint/2)),region_size=0,mask_reduction_factor=0,gen_mode="other")
+
+m.build_timeline(seq)
+base_images=np.zeros(image_size)
+center_slice=int(nb_slices/2)
+center_point=int(npoint/4)
+dslice=4
+dpoint=10
+base_images[center_slice-dslice:center_slice+dslice,center_point-dpoint:center_point+dpoint,center_point-dpoint:center_point+dpoint]=1.0
+base_images=np.expand_dims(base_images,axis=0)
+m.images_series=np.vstack([base_images]*nb_segments)
+
+animate_images(m.images_series[:,8,:,:])
+
+kdata_all_channels_all_slices=m.generate_kdata(radial_traj)
+kdata_all_channels_all_slices=np.expand_dims(kdata_all_channels_all_slices,axis=0)
+
+density = np.abs(np.linspace(-1, 1, npoint))
+density = np.expand_dims(density,tuple(range(kdata_all_channels_all_slices.ndim-1)))
+kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(1,nb_segments,-1,npoint)
+kdata_all_channels_all_slices *= density
+
+np.save("test_constant_square_kdata.npy",kdata_all_channels_all_slices)
+
 if nb_gating_spokes>0:
     print("Processing Nav Data...")
     data_for_nav=np.load(filename_nav_save)
@@ -486,6 +518,14 @@ if str.split(filename_volume_corrected,"/")[-1] not in os.listdir(folder):
 else:
     volumes_corrected=np.load(filename_volume_corrected)
 
+sl=8
+ts = np.random.choice(volumes_corrected.shape[0])
+plt.figure()
+plt.imshow(np.abs(volumes_corrected[ts,sl,:,:]))
+plt.colorbar()
+
+animate_images(volumes_corrected[:,sl,:,:])
+
 # if nav_direction=="SLICE":
 #     coil_sensitivity_nav = np.sum(b1_all_slices,axis=(-2,-1))
 # elif nav_direction=="PHASE":
@@ -496,9 +536,9 @@ else:
 # coil_sensitivity_nav /= np.linalg.norm(coil_sensitivity_nav, axis=0)
 # coil_sensitivity_nav /= np.max(np.abs(coil_sensitivity_nav.flatten()))
 #
-sl=int(b1_all_slices.shape[1]/2)
-list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
-plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
+# sl=int(b1_all_slices.shape[1]/2)
+# list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
+# plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
 
 #
 # volume_rebuilt = build_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,density_adj=False,eps=1e-6,b1=b1_all_slices,useGPU=True,normalize_kdata=True,light_memory_usage=True,is_theta_z_adjusted=False)
@@ -525,27 +565,34 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 
 #build out of phase spokes image
 #
-# volume=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+volume=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
 # animate_images(volume[0],cmap="gray")
 #
 #
 #
-# traj_retained_final_single_volume=np.concatenate(traj_retained_final,axis=0)
-# kdata_retained_final_single_volume=np.zeros((nb_channels,traj_retained_final_single_volume.shape[0]),dtype=kdata_all_channels_all_slices.dtype)
-# for i in range(nb_channels):
-#     kdata_retained_final_single_volume[i]=np.concatenate(kdata_retained_final_list[i])
-#
-# traj_retained_final_single_volume=np.expand_dims(traj_retained_final_single_volume,axis=0)
-# kdata_retained_final_single_volume=np.expand_dims(kdata_retained_final_single_volume,axis=0)
-#
-#
-# radial_traj_3D_corrected_single_volume=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-# radial_traj_3D_corrected_single_volume.traj_for_reconstruction=traj_retained_final_single_volume
-#
-#
-# volume_corrected=simulate_radial_undersampled_images_multi(kdata_retained_final_single_volume,radial_traj_3D_corrected_single_volume,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
-# animate_images(volume_corrected[0],cmap="gray")
-# animate_multiple_images(volume[0],volume_corrected[0])
+traj_retained_final_single_volume=np.concatenate(traj_retained_final,axis=0)
+kdata_retained_final_single_volume=np.zeros((nb_channels,traj_retained_final_single_volume.shape[0]),dtype=kdata_all_channels_all_slices.dtype)
+for i in range(nb_channels):
+    kdata_retained_final_single_volume[i]=np.concatenate(kdata_retained_final_list[i])
+
+traj_retained_final_single_volume=np.expand_dims(traj_retained_final_single_volume,axis=0)
+kdata_retained_final_single_volume=np.expand_dims(kdata_retained_final_single_volume,axis=0)
+
+
+radial_traj_3D_corrected_single_volume=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+radial_traj_3D_corrected_single_volume.traj_for_reconstruction=traj_retained_final_single_volume
+
+
+volume_corrected=simulate_radial_undersampled_images_multi(kdata_retained_final_single_volume,radial_traj_3D_corrected_single_volume,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
+animate_images(volume_corrected[0],cmap="gray")
+plt.figure()
+plt.imshow(np.abs(volume_corrected[0])[0,:,:])
+plt.colorbar()
+
+np.linalg.norm(volume_corrected[0])
+np.linalg.norm(base_images)
+
+animate_multiple_images(volume[0],volume_corrected[0])
 
 
 # volume_oop_2=np.load("./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes_oop.npy")
@@ -594,22 +641,22 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 # animate_images((np.squeeze(volumes_all_spokes)),interval=1000)
 
 ##volumes for slice taking into account coil sensi
-print("Building Volumes....")
-if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
-    np.save(filename_volume,volumes_all)
-    # sl=20
-    # ani = animate_images(volumes_all[:,sl,:,:])
-    del volumes_all
-
-print("Building Mask....")
-if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
-    selected_spokes = np.r_[10:400]
-    selected_spokes=None
-    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/25, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
-    np.save(filename_mask,mask)
-    animate_images(mask)
-    del mask
+# print("Building Volumes....")
+# if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
+#     volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+#     np.save(filename_volume,volumes_all)
+#     # sl=20
+#     # ani = animate_images(volumes_all[:,sl,:,:])
+#     del volumes_all
+#
+# print("Building Mask....")
+# if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
+#     selected_spokes = np.r_[10:400]
+#     selected_spokes=None
+#     mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/25, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
+#     np.save(filename_mask,mask)
+#     animate_images(mask)
+#     del mask
 
 #animate_images(np.abs(volumes_all[:,int(nb_slices/2),:,:]))
 
@@ -650,18 +697,18 @@ load_map=False
 save_map=True
 
 
-dictfile = "mrf175_SimReco2.dict"
+dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
 #dictfile = "mrf175_Dico2_Invivo.dict"
 
 mask = np.load(filename_mask)
-volumes_all = np.load(filename_volume)
+#volumes_all = np.load(filename_volume)
 
 
-ani = animate_images(volumes_all[:,4,:,:])
-ani = animate_images(volumes_corrected[:,4,:,:])
+#ani = animate_images(volumes_all[:,4,:,:])
+#ani = animate_images(volumes_corrected[:,4,:,:])
 #
 # plt.figure()
 # plt.plot(volumes_all[:,sl,200,200])

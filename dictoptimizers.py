@@ -93,21 +93,29 @@ class SimpleDictSearch(Optimizer):
             if cond_mvt is None:
                 raise ValueError("indices of retained kdata should be given in cond for movement correction")
 
-        if niter > 0:
-            volumes0 = volumes
+        signals = volumes[:, mask > 0]
 
-        norm_volumes = np.linalg.norm(volumes, 2, axis=0)
-        all_signals=volumes[:, mask > 0]
-        norm_volumes=np.linalg.norm(all_signals, 2, axis=0)
-        all_signals = all_signals/norm_volumes
-
-        if niter==0:
-            del volumes
-
-	
         if log:
             now = datetime.now()
             date_time = now.strftime("%Y%m%d_%H%M%S")
+            with open('./log/volumes0_{}.npy'.format(date_time), 'wb') as f:
+                np.save(f, volumes)
+
+
+        del volumes
+
+        if niter > 0:
+            signals0 = signals
+
+        #norm_volumes = np.linalg.norm(volumes, 2, axis=0)
+
+        norm_signals=np.linalg.norm(signals, 2, axis=0)
+        all_signals = signals/norm_signals
+
+
+
+	
+
 
         mrfdict = dictsearch.Dictionary()
         mrfdict.load(dictfile, force=True)
@@ -186,6 +194,9 @@ class SimpleDictSearch(Optimizer):
             idx_max_all_unique = []
             alpha_optim = []
 
+            if niter>0:
+                phase_optim=[]
+
             for j in tqdm(range(num_group)):
                 j_signal = j * split
                 j_signal_next = np.minimum((j + 1) * split, nb_signals)
@@ -252,8 +263,9 @@ class SimpleDictSearch(Optimizer):
 
                 if not(useGPU_dictsearch):
                     #if adj_phase:
-                    print("Adjusting Phase")
-                    print("Calculating alpha optim and flooring")
+                    if self.verbose:
+                        print("Adjusting Phase")
+                        print("Calculating alpha optim and flooring")
                         # start = datetime.now()
                         # current_alpha_all_unique = (sig_wf * current_sig_ws - var_w * current_sig_fs) / (
                         #         (current_sig_ws + current_sig_fs) * sig_wf - var_w * current_sig_fs - var_f * current_sig_ws)
@@ -401,7 +413,9 @@ class SimpleDictSearch(Optimizer):
                     del alpha1
                     del alpha2
 
-                    start = datetime.now()
+                    if self.verbose:
+                        start = datetime.now()
+
                     current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
 
                         #phase_adj=np.angle((1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase)
@@ -418,17 +432,19 @@ class SimpleDictSearch(Optimizer):
 
                     del cond
 
-                    end=datetime.now()
-                    print(end-start)
+                    if self.verbose:
+                        end=datetime.now()
+                        print(end-start)
 
                     # alpha_all_unique[:, j_signal:j_signal_next] = current_alpha_all_unique
-                    print("Calculating cost for all signals")
+                    if self.verbose:
+                        print("Calculating cost for all signals")
                     start = datetime.now()
 
                     current_sig_ws = (current_sig_ws_for_phase*np.exp(1j*phase_adj)).real
                     current_sig_fs = (current_sig_fs_for_phase * np.exp(1j * phase_adj)).real
 
-                    del phase_adj
+                    #del phase_adj
 
 
                     # else:
@@ -627,7 +643,7 @@ class SimpleDictSearch(Optimizer):
 
 
 
-                    del phase_adj
+                    #del phase_adj
                     del current_sig_ws_for_phase
                     del current_sig_fs_for_phase
 
@@ -667,6 +683,11 @@ class SimpleDictSearch(Optimizer):
                 idx_max_all_unique.extend(idx_max_all_current)
                 alpha_optim.extend(current_alpha_all_unique[idx_max_all_current, np.arange(J_all.shape[1])])
 
+                if niter>0:
+                    phase_optim.extend(phase_adj[idx_max_all_current, np.arange(J_all.shape[1])])
+
+                del phase_adj
+
                 if verbose:
                     end = datetime.now()
                     print(end - start)
@@ -674,6 +695,9 @@ class SimpleDictSearch(Optimizer):
             # idx_max_all_unique = np.argmax(J_all, axis=0)
             del J_all
             del current_alpha_all_unique
+
+            if niter>0:
+                phase_optim=np.array(phase_optim)
 
             print("Building the maps for iteration {}".format(i))
 
@@ -739,10 +763,17 @@ class SimpleDictSearch(Optimizer):
 
             print("Normalizing image series")
             #norm_images=np.zeros(images_pred.images_series.shape[1:])
-            pred_signals=images_pred.images_series[:,mask>0]
-            norm_images=np.linalg.norm(pred_signals,axis=0)
-            pred_signals*=norm_volumes/norm_images
-            
+            pred_signals=images_pred.images_series[:,mask>0]*np.exp(1j*np.array(phase_optim))
+            del phase_optim
+            nspoke=int(pred_signals.shape[0]/self.paramDict["ntimesteps"])
+            norm_pred=np.linalg.norm(pred_signals[::nspoke,:],axis=0)
+            pred_signals*=norm_signals/norm_pred
+
+            print("Filling images series with renormalized signals")
+            for j in tqdm(range(pred_signals.shape[0])):
+                images_pred.images_series[j]=makevol(pred_signals[j],mask>0)
+
+            del pred_signals
 
 
             #for i in tqdm(range(images_pred.images_series.shape[0])):
@@ -801,28 +832,39 @@ class SimpleDictSearch(Optimizer):
                 volumesi = simulate_radial_undersampled_images(kdatai, trajectory, images_pred.image_size,
                                                                useGPU=useGPU_simulation, density_adj=True,is_theta_z_adjusted=True)
 
+            #volumesi/=(2*np.pi)
+
             nans_volumes = np.argwhere(np.isnan(volumesi))
             if len(nans_volumes) > 0:
                 np.save('./log/kdatai.npy', kdatai)
                 np.save('./log/volumesi.npy',volumesi)
                 raise ValueError("Error : Nan Values in volumes")
 
+            del kdatai
+
             #volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
 
 
             if log:
                 print("Saving correction volumes for iteration {}".format(i))
-                with open('./log/volumes0_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                    np.save(f, np.array(volumes0))
+
+
                 with open('./log/volumes1_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
                     np.save(f, np.array(volumesi))
                 with open('./log/predvolumes_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                    np.save(f, np.array(images_pred.images_series))
+                    np.save(f, images_pred.images_series[::nspoke].astype(np.complex64))
 
 
             del images_pred
             # correct volumes
             print("Correcting volumes for iteration {}".format(i))
+
+            signalsi = volumesi[:,mask>0]
+            normi= np.linalg.norm(signalsi, axis=0)
+            signalsi *= norm_signals/normi
+
+            del volumesi
+
 
             # if useAdjPred:
             #     a = np.sum((volumesi * pred_volumesi.conj()).real) / np.sum(volumesi * volumesi.conj())
@@ -832,13 +874,13 @@ class SimpleDictSearch(Optimizer):
             # else:
             #     volumes = [vol + (vol0 - voli) for vol, vol0, voli in zip(volumes, volumes0, volumesi)]
 
-            volumes = [vol + (vol0 - voli) for vol, vol0, voli in zip(volumes, volumes0, volumesi)]
-            norm_volumes = np.linalg.norm(volumes,axis=0)
+            #signals = [s + (s0 - si) for s, s0, si in zip(signals, signals0, signalsi)]
+            signals += signals0 - signalsi
 
-            del volumesi
-            del kdatai
+            norm_signals = np.linalg.norm(signals,axis=0)
 
-            all_signals = np.array(volumes)[:, mask > 0]/norm_volumes[mask>0]
+
+            all_signals =signals/norm_signals
 
 
 
