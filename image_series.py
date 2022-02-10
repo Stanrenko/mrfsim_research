@@ -141,7 +141,7 @@ class ImageSeries(object):
         self.fat_cs = [- value / 1000 for value in fat_cs]  # temp
 
 
-    def build_ref_images(self,seq):
+    def build_ref_images(self,seq,norm=None,phase=None):
         print("Building Ref Images")
         if self.paramMap is None:
             return ValueError("buildparamMap should be called prior to image simulation")
@@ -247,6 +247,13 @@ class ImageSeries(object):
         print("Building image series")
         images_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0] * (1 - map_ff_on_mask[i]) + mrfdict[tuple(
             pixel_params)][:, 1] * (map_ff_on_mask[i]) for (i, pixel_params) in enumerate(map_all_on_mask)])
+
+        if norm is not None :
+            images_in_mask *= np.expand_dims(norm/np.linalg.norm(images_in_mask,axis=1),axis=1)
+
+        if phase is not None:
+            images_in_mask *= np.expand_dims(np.exp(1j*phase),axis=1)
+
         #water_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0]  for (i, pixel_params) in enumerate(map_all_on_mask)])
         #fat_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 1]  for (i, pixel_params) in enumerate(map_all_on_mask)])
         print("Image series built")

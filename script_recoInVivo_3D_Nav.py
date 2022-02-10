@@ -78,7 +78,7 @@ filename_nav_save=str.split(base_folder+"/phantom.001.v1/phantom.001.v1.dat",".d
 
 folder = "/".join(str.split(filename,"/")[:-1])
 
-suffix="_disp16"
+suffix="_disp8nob1"
 
 filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
@@ -393,35 +393,47 @@ else:
 
 
 
-with open("mrf_sequence.json") as f:
-    sequence_config = json.load(f)
+
+filename_kdata="test_constant_fullsquare_kdata.npy"
 
 
-seq = T1MRF(**sequence_config)
+if str.split(filename_kdata,"/")[-1] not in os.listdir(os.curdir):
 
-m = RandomMap3D("TestRandom3DMovement","",nb_slices=nb_slices,nb_empty_slices=0,undersampling_factor=1,repeat_slice=0,resting_time=4000,image_size=(int(npoint/2),int(npoint/2)),region_size=0,mask_reduction_factor=0,gen_mode="other")
+    with open("mrf_sequence.json") as f:
+        sequence_config = json.load(f)
 
-m.build_timeline(seq)
-base_images=np.zeros(image_size)
-center_slice=int(nb_slices/2)
-center_point=int(npoint/4)
-dslice=4
-dpoint=10
-base_images[center_slice-dslice:center_slice+dslice,center_point-dpoint:center_point+dpoint,center_point-dpoint:center_point+dpoint]=1.0
-base_images=np.expand_dims(base_images,axis=0)
-m.images_series=np.vstack([base_images]*nb_segments)
 
-animate_images(m.images_series[:,8,:,:])
+    seq = T1MRF(**sequence_config)
 
-kdata_all_channels_all_slices=m.generate_kdata(radial_traj)
-kdata_all_channels_all_slices=np.expand_dims(kdata_all_channels_all_slices,axis=0)
+    m = RandomMap3D("TestRandom3DMovement","",nb_slices=nb_slices,nb_empty_slices=0,undersampling_factor=1,repeat_slice=0,resting_time=4000,image_size=(int(npoint/2),int(npoint/2)),region_size=0,mask_reduction_factor=0,gen_mode="other")
 
-density = np.abs(np.linspace(-1, 1, npoint))
-density = np.expand_dims(density,tuple(range(kdata_all_channels_all_slices.ndim-1)))
-kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(1,nb_segments,-1,npoint)
-kdata_all_channels_all_slices *= density
+    m.build_timeline(seq)
+    base_images=np.zeros(image_size)
+    center_slice=int(nb_slices/2)
+    center_point=int(npoint/4)
+    dslice=4
+    dpoint=10
+    base_images[center_slice-dslice:center_slice+dslice,center_point-dpoint:center_point+dpoint,center_point-dpoint:center_point+dpoint]=1.0
+    base_images=np.ones(image_size)
 
-np.save("test_constant_square_kdata.npy",kdata_all_channels_all_slices)
+    base_images=np.expand_dims(base_images,axis=0)
+    m.images_series=np.vstack([base_images]*nb_segments)
+
+    #animate_images(m.images_series[:,8,:,:])
+
+    kdata_all_channels_all_slices=m.generate_kdata(radial_traj)
+    kdata_all_channels_all_slices=np.expand_dims(kdata_all_channels_all_slices,axis=0)
+
+    density = np.abs(np.linspace(-1, 1, npoint))
+    density = np.expand_dims(density,tuple(range(kdata_all_channels_all_slices.ndim-1)))
+    kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(1,nb_segments,-1,npoint)
+    kdata_all_channels_all_slices *= density
+
+
+
+    np.save(filename_kdata,kdata_all_channels_all_slices)
+else:
+    kdata_all_channels_all_slices=np.load(filename_kdata)
 
 if nb_gating_spokes>0:
     print("Processing Nav Data...")
@@ -478,6 +490,8 @@ if nb_gating_spokes>0:
     spoke_groups = np.argmin(np.abs(np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,nb_segments / nb_gating_spokes).reshape(1,-1)),axis=-1)
     included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
     included_spokes[::int(nb_segments/nb_gating_spokes)]=False
+    #included_spokes[:]=True
+
     # perc_retained=0.4
     # import random
     # indices_included_random=random.sample(range(spoke_groups.shape[0]),int(perc_retained*spoke_groups.shape[0]))
@@ -491,7 +505,7 @@ if nb_gating_spokes>0:
     kdata_retained_final_list = []
     for i in tqdm(range(nb_channels)):
         kdata_retained_final, traj_retained_final, retained_timesteps = correct_mvt_kdata(
-            kdata_all_channels_all_slices[i].reshape(nb_segments, -1), radial_traj, included_spokes, ntimesteps, density_adj=True,log=True)
+            kdata_all_channels_all_slices[i].reshape(nb_segments, -1), radial_traj, included_spokes, 175, density_adj=True,log=False)
         kdata_retained_final_list.append(kdata_retained_final)
 
 
@@ -511,20 +525,23 @@ print("Rebuilding Images With Corrected volumes...")
 radial_traj_3D_corrected=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 radial_traj_3D_corrected.traj_for_reconstruction=traj_retained_final
 
+b1_full = np.ones(image_size)
+b1_full=np.expand_dims(b1_full,axis=0)
+
 if str.split(filename_volume_corrected,"/")[-1] not in os.listdir(folder):
-    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list,radial_traj_3D_corrected,image_size,b1=b1_all_slices,ntimesteps=len(retained_timesteps),density_adj=False,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,is_theta_z_adjusted=True)
+    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list,radial_traj_3D_corrected,image_size,b1=b1_full,ntimesteps=len(retained_timesteps),density_adj=False,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,is_theta_z_adjusted=True,normalize_volumes=False)
     #animate_images(volumes_corrected[:,0,:,:])
     np.save(filename_volume_corrected,volumes_corrected)
 else:
     volumes_corrected=np.load(filename_volume_corrected)
-
-sl=8
-ts = np.random.choice(volumes_corrected.shape[0])
-plt.figure()
-plt.imshow(np.abs(volumes_corrected[ts,sl,:,:]))
-plt.colorbar()
-
-animate_images(volumes_corrected[:,sl,:,:])
+#
+# sl=8
+# ts = np.random.choice(volumes_corrected.shape[0])
+# plt.figure()
+# plt.imshow(np.abs(volumes_corrected[ts,sl,:,:]))
+# plt.colorbar()
+#
+# animate_images(volumes_corrected[:,sl,:,:])
 
 # if nav_direction=="SLICE":
 #     coil_sensitivity_nav = np.sum(b1_all_slices,axis=(-2,-1))
@@ -565,34 +582,39 @@ animate_images(volumes_corrected[:,sl,:,:])
 
 #build out of phase spokes image
 #
-volume=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
-# animate_images(volume[0],cmap="gray")
+# volume=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_full,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=False)
+# # animate_images(volume[0],cmap="gray")
+# #
+# #
+# #
 #
 #
+# kdata_retained_final_list_volume = []
+# for i in tqdm(range(nb_channels)):
+#     kdata_retained_final, traj_retained_final_volume, retained_timesteps = correct_mvt_kdata(
+#             kdata_all_channels_all_slices[i].reshape(nb_segments, -1), radial_traj, included_spokes, 1, density_adj=True,log=False)
+#     kdata_retained_final_list_volume.append(kdata_retained_final)
 #
-traj_retained_final_single_volume=np.concatenate(traj_retained_final,axis=0)
-kdata_retained_final_single_volume=np.zeros((nb_channels,traj_retained_final_single_volume.shape[0]),dtype=kdata_all_channels_all_slices.dtype)
-for i in range(nb_channels):
-    kdata_retained_final_single_volume[i]=np.concatenate(kdata_retained_final_list[i])
-
-traj_retained_final_single_volume=np.expand_dims(traj_retained_final_single_volume,axis=0)
-kdata_retained_final_single_volume=np.expand_dims(kdata_retained_final_single_volume,axis=0)
-
-
-radial_traj_3D_corrected_single_volume=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-radial_traj_3D_corrected_single_volume.traj_for_reconstruction=traj_retained_final_single_volume
-
-
-volume_corrected=simulate_radial_undersampled_images_multi(kdata_retained_final_single_volume,radial_traj_3D_corrected_single_volume,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
-animate_images(volume_corrected[0],cmap="gray")
-plt.figure()
-plt.imshow(np.abs(volume_corrected[0])[0,:,:])
-plt.colorbar()
-
-np.linalg.norm(volume_corrected[0])
-np.linalg.norm(base_images)
-
-animate_multiple_images(volume[0],volume_corrected[0])
+# radial_traj_3D_corrected_single_volume=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+# radial_traj_3D_corrected_single_volume.traj_for_reconstruction=traj_retained_final_volume
+#
+#
+# volume_corrected=simulate_radial_undersampled_images_multi(kdata_retained_final_list_volume,radial_traj_3D_corrected_single_volume,image_size,b1=b1_full,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=False,is_theta_z_adjusted=True)
+# animate_images(volume_corrected[0],cmap="gray")
+# plt.figure()
+# plt.imshow(np.abs(volume_corrected[0])[15,:,:])
+# plt.colorbar()
+#
+# plt.figure()
+# plt.imshow(np.abs(volume[0])[8,:,:])
+# plt.colorbar()
+#
+#
+# np.linalg.norm(volume_corrected[0])
+# np.linalg.norm(base_images)
+# np.linalg.norm(volume[0])
+#
+# animate_multiple_images(volume[0],volume_corrected[0])
 
 
 # volume_oop_2=np.load("./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes_oop.npy")

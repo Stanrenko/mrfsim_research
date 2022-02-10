@@ -1481,7 +1481,7 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
     if not(kdata[0].shape[0]==traj[0].shape[0]):
         raise ValueError("Incompatible Kdata and Trajectory shapes")
 
-    kdata = [k / (npoint)*dz * dtheta for k in kdata]
+    kdata = [k / (2*npoint)*dz * dtheta for k in kdata]
 
 
 
@@ -2025,7 +2025,7 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
                 kdata[i] /= np.sum(np.abs(np.array(list((itertools.chain(*kdata[i]))))))
     else:
         for i in tqdm(range(nb_channels)):
-            kdata[i] *= dz * dtheta / npoint
+            kdata[i] *= dz * dtheta / (2*npoint)
 
     # kdata = (normalize_image_series(np.array(kdata)))
 
@@ -2534,11 +2534,26 @@ def correct_mvt_kdata(kdata,trajectory,cond,ntimesteps,density_adj=True,log=Fals
         #    lambda x: np.concatenate([[x[-1] - np.pi], x, [x[0] + np.pi]]))
         df_retained["theta_s"] = df_retained["theta_s"].apply(
                 lambda x: np.unique(np.concatenate([[0], x, [np.pi]])))
-        diff_theta=(df_retained.theta - df_retained["theta_s"]).abs()
+        diff_theta=(df_retained.theta - df_retained["theta_s"])
         theta_inside_boundary=(df_retained["theta"]!=0)*(df_retained["theta"]!=np.pi)
         df_retained["theta_inside_boundary"] = theta_inside_boundary
-        df_retained["theta_weight"] = diff_theta.apply(lambda x: np.sort(x)[1:3].mean())*theta_inside_boundary+\
-                                      diff_theta.apply(lambda x: np.sort(x)[1]/2)*(1-theta_inside_boundary)
+
+        min_theta = df_retained.groupby(["ts", "rep"])["theta"].min()
+        max_theta = df_retained.groupby(["ts", "rep"])["theta"].max()
+        df_retained = df_retained.join(min_theta, on=["ts", "rep"], rsuffix="_min")
+        df_retained = df_retained.join(max_theta, on=["ts", "rep"], rsuffix="_max")
+        is_min_theta = (df_retained["theta"]==df_retained["theta_min"])
+        is_max_theta = (df_retained["theta"] == df_retained["theta_max"])
+        df_retained["is_min_theta"] = is_min_theta
+        df_retained["is_max_theta"] = is_max_theta
+
+        df_retained["theta_weight"] = theta_inside_boundary*diff_theta.apply(lambda x: (np.sort(x[x>=0])[1]+np.sort(-x[x<=0])[1])/2 if ((x>=0).sum()>1) and ((x<=0).sum()>1) else 0)+\
+                                      (1-theta_inside_boundary)*diff_theta.apply(lambda x: np.sort(np.abs(x))[1]/2)
+
+        df_retained["theta_weight_before_correction"] = df_retained["theta_weight"]
+
+        df_retained["theta_weight"] = df_retained["theta_weight"]+ (theta_inside_boundary)* ((is_min_theta)*df_retained["theta"]+(is_max_theta)*(np.pi-df_retained["theta"]))/2
+
         df_retained.loc[df_retained["theta_weight"].isna(), "theta_weight"] = 1.0
         sum_weights = df_retained.groupby(["ts", "rep"])["theta_weight"].sum()
         df_retained = df_retained.join(sum_weights, on=["ts", "rep"], rsuffix="_sum")
@@ -2547,10 +2562,29 @@ def correct_mvt_kdata(kdata,trajectory,cond,ntimesteps,density_adj=True,log=Fals
         # KZ weighting
         #df_retained.loc[df_retained.ts == 138].to_clipboard()
         df_retained["kz_s"] = df_retained["kz_s"].apply(lambda x: np.unique(np.concatenate([[-np.pi], x, [np.pi]])))
-        diff_kz=(df_retained.kz - df_retained["kz_s"]).abs()
+        diff_kz=(df_retained.kz - df_retained["kz_s"])
         kz_inside_boundary=(df_retained["kz"].abs()!=np.pi)
         df_retained["kz_inside_boundary"]=kz_inside_boundary
-        df_retained["kz_weight"] = diff_kz.apply(lambda x: np.sort(x)[1:3].mean())*(kz_inside_boundary)+diff_kz.apply(lambda x: np.sort(x)[1]/2)*(1-kz_inside_boundary)
+
+        min_kz = df_retained.groupby(["ts"])["kz"].min()
+        max_kz = df_retained.groupby(["ts"])["kz"].max()
+        df_retained = df_retained.join(min_kz, on=["ts"], rsuffix="_min")
+        df_retained = df_retained.join(max_kz, on=["ts"], rsuffix="_max")
+
+        is_min_kz = (df_retained["kz"] == df_retained["kz_min"])
+        is_max_kz = (df_retained["kz"] == df_retained["kz_max"])
+
+        df_retained["is_min_kz"] = is_min_kz
+        df_retained["is_max_kz"] = is_max_kz
+
+        df_retained["kz_weight"] = kz_inside_boundary*diff_kz.apply(lambda x: (np.sort(x[x >= 0])[1] + np.sort(-x[x <= 0])[1]) / 2 if ((x >= 0).sum() > 1) and (
+            ((x <= 0).sum() > 1)) else 0)+(1-kz_inside_boundary)*diff_kz.apply(lambda x: np.sort(np.abs(x))[1]/2)
+
+
+
+        df_retained["kz_weight"] = df_retained["kz_weight"] + (kz_inside_boundary) * (
+                    (is_min_kz) * (df_retained["kz"]+np.pi) + (is_max_kz) * (np.pi - df_retained["kz"])) / 2
+
         df_retained.loc[df_retained["kz_weight"].isna(), "kz_weight"] = 1.0
         sum_weights = df_retained.drop_duplicates(subset=["kz","ts"])
         sum_weights = sum_weights.groupby(["ts"])["kz_weight"].apply(lambda x: x.sum())

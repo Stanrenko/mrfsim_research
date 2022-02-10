@@ -32,10 +32,12 @@ filename="./data/InVivo/3D/20220113_CS/meas_MID00162_FID49557_raFin_3D_tra_1x1x5
 filename="./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes.dat"
 filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected.dat"
 
-file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
+filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_disp8nob1.dat"
 
-file_map="./log/maps_it_1_20220208_131307.pkl"
-file_map="./log/maps_it_2_20220208_132700.pkl"
+file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
+#
+# file_map="./log/maps_it_1_20220208_131307.pkl"
+# file_map="./log/maps_it_2_20220208_132700.pkl"
 
 file = open(file_map, "rb")
 all_maps = pickle.load(file)

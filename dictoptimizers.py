@@ -756,24 +756,35 @@ class SimpleDictSearch(Optimizer):
             images_pred.buildParamMap()
 
             del map_for_sim
+
             del keys_simu
             del values_simu
 
-            images_pred.build_ref_images(seq)
+            images_pred.build_ref_images(seq,norm=norm_signals,phase=np.array(phase_optim))
+
+            nspoke = int(images_pred.images_series.shape[0] / self.paramDict["ntimesteps"])
 
             print("Normalizing image series")
-            #norm_images=np.zeros(images_pred.images_series.shape[1:])
-            pred_signals=images_pred.images_series[:,mask>0]*np.exp(1j*np.array(phase_optim))
-            del phase_optim
-            nspoke=int(pred_signals.shape[0]/self.paramDict["ntimesteps"])
-            norm_pred=np.linalg.norm(pred_signals[::nspoke,:],axis=0)
-            pred_signals*=norm_signals/norm_pred
+            # #norm_images=np.zeros(images_pred.images_series.shape[1:])
+            # pred_signals=images_pred.images_series[:,mask>0]*np.exp(1j*np.array(phase_optim))
+            # pred_signals=pred_signals.astype("complex64")
+            # del phase_optim
+            # nspoke=int(pred_signals.shape[0]/self.paramDict["ntimesteps"])
+            # norm_pred=np.linalg.norm(pred_signals[::nspoke,:],axis=0)
+            # del pred_signals
+            #
+            # norm_pred=makevol(norm_pred,mask>0)
+            # norm_pred[norm_pred==0]=1
+            #
+            # images_pred.images_series *= makevol(norm_signals,mask>0)/norm_pred
+            # #pred_signals=list(pred_signals)
+            #
+            # del norm_pred
 
             print("Filling images series with renormalized signals")
-            for j in tqdm(range(pred_signals.shape[0])):
-                images_pred.images_series[j]=makevol(pred_signals[j],mask>0)
+            #for j in tqdm(range(len(pred_signals))):
+            #    pred_signals[j]=makevol(pred_signals[j],mask>0)
 
-            del pred_signals
 
 
             #for i in tqdm(range(images_pred.images_series.shape[0])):
@@ -810,6 +821,13 @@ class SimpleDictSearch(Optimizer):
             #volumesi = images_pred.simulate_radial_undersampled_images(trajectory, density_adj=True)
             kdatai = images_pred.generate_kdata(trajectory,useGPU=useGPU_simulation)
 
+            if log:
+                print("Saving Ideal Volumes for iteration {}".format(i))
+                with open('./log/predvolumes_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+                    np.save(f, images_pred.images_series[::nspoke].astype(np.complex64))
+
+            del images_pred
+
             if movement_correction:
                 traj=trajectory.get_traj()
                 kdatai, traj_retained_final, _ = correct_mvt_kdata(kdatai, trajectory, cond_mvt,self.paramDict["ntimesteps"],density_adj=True)
@@ -825,11 +843,11 @@ class SimpleDictSearch(Optimizer):
                     kdatai[i][nans[i]]=0.0
 
             if not(movement_correction):
-                volumesi = simulate_radial_undersampled_images(kdatai,trajectory,images_pred.image_size,useGPU=useGPU_simulation,density_adj=True)
+                volumesi = simulate_radial_undersampled_images(kdatai,trajectory,mask.shape,useGPU=useGPU_simulation,density_adj=True)
 
             else:
                 trajectory.traj_for_reconstruction=traj_retained_final
-                volumesi = simulate_radial_undersampled_images(kdatai, trajectory, images_pred.image_size,
+                volumesi = simulate_radial_undersampled_images(kdatai, trajectory, mask.shape,
                                                                useGPU=useGPU_simulation, density_adj=True,is_theta_z_adjusted=True)
 
             #volumesi/=(2*np.pi)
@@ -847,21 +865,15 @@ class SimpleDictSearch(Optimizer):
 
             if log:
                 print("Saving correction volumes for iteration {}".format(i))
-
-
                 with open('./log/volumes1_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
                     np.save(f, np.array(volumesi))
-                with open('./log/predvolumes_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                    np.save(f, images_pred.images_series[::nspoke].astype(np.complex64))
 
-
-            del images_pred
             # correct volumes
             print("Correcting volumes for iteration {}".format(i))
 
             signalsi = volumesi[:,mask>0]
-            normi= np.linalg.norm(signalsi, axis=0)
-            signalsi *= norm_signals/normi
+            #normi= np.linalg.norm(signalsi, axis=0)
+            #signalsi *= norm_signals/normi
 
             del volumesi
 
