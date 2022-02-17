@@ -63,7 +63,7 @@ localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_
 #localfile = "/20220118_BM/meas_MID00151_FID49924_raFin_3D_tra_1x1x5mm_FULL_read_nav.dat"
 
 localfile="/phantom.001.v1/phantom.001.v1.dat"
-localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
+#localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
 
 
 filename = base_folder+localfile
@@ -78,7 +78,7 @@ filename_nav_save=str.split(base_folder+"/phantom.001.v1/phantom.001.v1.dat",".d
 
 folder = "/".join(str.split(filename,"/")[:-1])
 
-suffix="_disp8nob1"
+suffix="_disp4nob1"
 
 filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
@@ -435,6 +435,12 @@ if str.split(filename_kdata,"/")[-1] not in os.listdir(os.curdir):
 else:
     kdata_all_channels_all_slices=np.load(filename_kdata)
 
+# density = np.abs(np.linspace(-1, 1, npoint))
+# density = np.expand_dims(density,tuple(range(kdata_all_channels_all_slices.ndim-1)))
+# kdata_all_channels_all_slices=np.ones((nb_channels,nb_segments,nb_slices,npoint),dtype="complex64")
+# kdata_all_channels_all_slices *= density
+
+
 if nb_gating_spokes>0:
     print("Processing Nav Data...")
     data_for_nav=np.load(filename_nav_save)
@@ -468,7 +474,7 @@ if nb_gating_spokes>0:
     displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
     displacement_for_binning = displacements
-    bin_width = 8
+    bin_width = 4
     max_bin = np.max(displacement_for_binning)
     min_bin = np.min(displacement_for_binning)
 
@@ -505,20 +511,62 @@ if nb_gating_spokes>0:
     kdata_retained_final_list = []
     for i in tqdm(range(nb_channels)):
         kdata_retained_final, traj_retained_final, retained_timesteps = correct_mvt_kdata(
-            kdata_all_channels_all_slices[i].reshape(nb_segments, -1), radial_traj, included_spokes, 175, density_adj=True,log=False)
+            kdata_all_channels_all_slices[i].reshape(nb_segments, -1), radial_traj, included_spokes, ntimesteps, density_adj=True,log=False)
         kdata_retained_final_list.append(kdata_retained_final)
 
+#
+# i=np.random.choice(ntimesteps)
+# #i=6 #argmax
+# #i=38 #argmin
+# curr_traj=traj_retained_final[i]
+# dk = kdata_retained_final_list[0][i]
+#
+# print(dk.shape[0]/(nb_part*nb_segments/ntimesteps*npoint))
+#
+# Pt=convolution_kernel_radial_single_channel(curr_traj,dk,npoint,image_size)
+#
+# #animate_images(Pt)
+#
+# kx=-np.pi+np.arange(npoint)*2*np.pi/(npoint-1)
+# ky=-np.pi+np.arange(npoint)*2*np.pi/(npoint-1)
+# kz=-np.pi+np.arange(nb_slices)*2*np.pi/(nb_slices-1)
+#
+# KX,KY,KZ=np.meshgrid(kx,ky,kz)
+#
+# traj_full=np.stack((KX,KY,KZ),axis=-1)
+# traj_full=traj_full.reshape(-1,3)
+# traj_full=traj_full.astype("float32")
+#
+# F_Pt=finufft.nufft3d2(traj_full[:, 2],traj_full[:, 0], traj_full[:, 1], Pt)
+#
+# F_Pt=F_Pt.reshape((nb_slices,npoint,npoint))
+# #
+# sl=int(nb_slices/2)
+# pow=3
+#
+# plt.figure()
+# plt.imshow(np.abs(1-F_Pt[sl]**pow))
+# plt.colorbar()
+#
+# plt.figure()
+# plt.plot(np.abs(1-F_Pt[sl,int(npoint/2),:]**pow))
+#
+# print(np.linalg.norm(1-F_Pt**pow))
+#
+# animate_images(1-F_Pt**pow)
 
-plt.plot(displacements)
 
-#del kdata_all_channels_all_slices
-
+# plt.plot(displacements)
+#
+# #del kdata_all_channels_all_slices
+#
 ch=0
 plt.figure()
 reduction_factors=[]
 for el in kdata_retained_final_list[ch]:
    reduction_factors.append(el.shape[0]/(nb_part*nb_segments/ntimesteps*npoint))
 plt.plot(reduction_factors)
+np.argmax(np.array(reduction_factors))
 
 print("Rebuilding Images With Corrected volumes...")
 
@@ -530,17 +578,32 @@ b1_full=np.expand_dims(b1_full,axis=0)
 
 if str.split(filename_volume_corrected,"/")[-1] not in os.listdir(folder):
     volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list,radial_traj_3D_corrected,image_size,b1=b1_full,ntimesteps=len(retained_timesteps),density_adj=False,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,is_theta_z_adjusted=True,normalize_volumes=False)
-    #animate_images(volumes_corrected[:,0,:,:])
+    animate_images(volumes_corrected[:,0,:,:])
     np.save(filename_volume_corrected,volumes_corrected)
 else:
     volumes_corrected=np.load(filename_volume_corrected)
+# #
+# norm_base=np.linalg.norm(base_images)
 #
-# sl=8
+# sl=int(nb_slices/2)
 # ts = np.random.choice(volumes_corrected.shape[0])
+# norm_ts = np.linalg.norm(volumes_corrected[ts,:,:,:])
 # plt.figure()
 # plt.imshow(np.abs(volumes_corrected[ts,sl,:,:]))
+# plt.title("timestep {} norm {} base_norm {} ".format(ts,np.round(norm_ts,1),np.round(norm_base,1)))
 # plt.colorbar()
 #
+# all_pixels_norm=np.linalg.norm(volumes_corrected,axis=0)
+# max_ts_pixel=np.argmax(np.abs(volumes_corrected),axis=0)
+# max_pixel=np.argmax(np.abs(volumes_corrected))
+# max_pixel_unrav=np.unravel_index(max_pixel,volumes_corrected.shape)
+#
+# plt.plot(np.abs(volumes_corrected[:,max_pixel_unrav[1],max_pixel_unrav[2],max_pixel_unrav[3]]))
+#
+# norm_ratio=all_pixels_norm/norm_base
+#
+# np.linalg.norm(volumes_corrected[ts,:,:,:])
+
 # animate_images(volumes_corrected[:,sl,:,:])
 
 # if nav_direction=="SLICE":
@@ -591,7 +654,7 @@ else:
 #
 # kdata_retained_final_list_volume = []
 # for i in tqdm(range(nb_channels)):
-#     kdata_retained_final, traj_retained_final_volume, retained_timesteps = correct_mvt_kdata(
+#     kdata_retained_final, traj_retained_final_volume, _ = correct_mvt_kdata(
 #             kdata_all_channels_all_slices[i].reshape(nb_segments, -1), radial_traj, included_spokes, 1, density_adj=True,log=False)
 #     kdata_retained_final_list_volume.append(kdata_retained_final)
 #
@@ -739,14 +802,15 @@ mask = np.load(filename_mask)
 
 if not(load_map):
     niter = 2
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=True,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes,ntimesteps=ntimesteps)
-    all_maps=optimizer.search_patterns(dictfile,volumes_corrected,retained_timesteps=retained_timesteps)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes,ntimesteps=ntimesteps)
+    all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected,retained_timesteps=retained_timesteps)
 
     if(save_map):
         import pickle
 
         #file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format(suffix)
-        file_map = filename.split(".dat")[0] + "_corrected_dens_adj{}_MRF_map.pkl".format(suffix)
+        #file_map = filename.split(".dat")[0] + "_corrected_dens_adj{}_MRF_map.pkl".format(suffix)
+        file_map = filename.split(".dat")[0] + "_5iter_MRF_map.pkl".format("")
         file = open(file_map, "wb")
         # dump information to that file
         pickle.dump(all_maps, file)

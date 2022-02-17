@@ -249,7 +249,7 @@ class ImageSeries(object):
             pixel_params)][:, 1] * (map_ff_on_mask[i]) for (i, pixel_params) in enumerate(map_all_on_mask)])
 
         if norm is not None :
-            images_in_mask *= np.expand_dims(norm/np.linalg.norm(images_in_mask,axis=1),axis=1)
+            images_in_mask *= np.expand_dims(norm,axis=1)
 
         if phase is not None:
             images_in_mask *= np.expand_dims(np.exp(1j*phase),axis=1)

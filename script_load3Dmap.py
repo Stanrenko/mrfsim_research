@@ -12,6 +12,10 @@ import time
 
 import pickle
 
+from mutools import io
+
+
+
 filename="./data/InVivo/3D/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
 filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
 filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00044_FID42066_raFin_3D_tra_1x1x5mm_us4_vivo.dat"
@@ -34,47 +38,45 @@ filename="./data/InVivo/3D/phantom.001.v1/phantom.001.v1_corrected.dat"
 
 filename="./data/InVivo/3D/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0_corrected_dens_adj_disp8nob1.dat"
 
+#filename="./3D/SquareSimu3D_sl8_rp2.dat"
+#filename="./3D/SquareSimu3D_sl8_rp2_th1.dat"
+#filename="./3D/SquareSimu3D_sl8_rp2_GW2.dat"
+
+filename="./3D/SquareSimu3D_sl8_rp8.dat"
+filename='./3D/SquareSimu3D_sl8_rp8_tv1.dat'
+
+#filename="./3D/SquareSimu3D_sl8_rp2fullysampled.dat"
+#filename="./3D/SquareSimu3D_sl8_rp2_fullysampled.dat"
+
+#filename='./3D/SquareSimu3D_sl8_rp2_nophaseadj.dat'
+
+
+
 file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
 #
-# file_map="./log/maps_it_1_20220208_131307.pkl"
+#file_map="./log/maps_it_0_20220211_101810.pkl"
+
 # file_map="./log/maps_it_2_20220208_132700.pkl"
 
 file = open(file_map, "rb")
 all_maps = pickle.load(file)
 
-iter=2
-map_rebuilt=all_maps[iter][0]
-mask=all_maps[iter][1]
+for iter in list(all_maps.keys()):
 
-keys_simu = list(map_rebuilt.keys())
-values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
-map_for_sim = dict(zip(keys_simu, values_simu))
+    map_rebuilt=all_maps[iter][0]
+    mask=all_maps[iter][1]
 
-map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
-map_Python.buildParamMap()
+    keys_simu = list(map_rebuilt.keys())
+    values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+    map_for_sim = dict(zip(keys_simu, values_simu))
 
-plot_image_grid(list(map_for_sim["ff"][:]),nb_row_col=(8,6),cbar_mode="single",title="Fat fraction upper body")
-
-plot_image_grid(list(map_for_sim["ff"][6:-6]),nb_row_col=(6,6),cbar_mode="single",title="Fat fraction upper body")
+    #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+    #map_Python.buildParamMap()
 
 
-map_Python.plotParamMap("ff",sl=24)
-
-map_Python.animParamMap("ff")
-map_Python.animParamMap("wT1")
-map_Python.animParamMap("attB1")
-map_Python.animParamMap("df")
-
-
-
-
-from mutools import io
-
-
-
-for key in ["ff","wT1","df","attB1"]:
-    file_mha = "/".join(["/".join(str.split(file_map,"/")[:-1]),"_".join(str.split(str.split(file_map,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
-    io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+    for key in ["ff","wT1","df","attB1"]:
+        file_mha = "/".join(["/".join(str.split(file_map,"/")[:-1]),"_".join(str.split(str.split(file_map,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
+        io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
 
 
 folder =r"\\192.168.0.1\RMN_FILES"

@@ -1946,6 +1946,32 @@ def simulate_radial_undersampled_images_density_optim(kdata,trajectory,size,dens
 #
 #     return images_series_rebuilt
 
+
+def convolution_kernel_radial_single_channel(traj,dk,npoint,size,density_adj=False):
+    dtheta = 1
+    dz = 1 / (2 * np.pi)
+
+
+    if density_adj:
+        density = np.abs(np.linspace(-1, 1, npoint))
+        #density=np.expand_dims(axis=0)
+
+        dk =(np.reshape(dk, (-1, npoint)) * density).flatten()
+
+
+    dk *= dz * dtheta / (2*npoint)
+
+    if dk.dtype == "complex64":
+        traj=traj.astype("float32")
+        print(traj.dtype)
+
+    fk = finufft.nufft3d1(traj[:, 2], traj[:, 0], traj[:, 1], dk, size)
+    return fk
+
+
+
+
+
 def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_adj=True, eps=1e-6,
                                               is_theta_z_adjusted=False, b1=None, ntimesteps=175, useGPU=False,
                                               memmap_file=None, normalize_kdata=False, light_memory_usage=False,

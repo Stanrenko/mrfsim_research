@@ -312,7 +312,6 @@ plt.plot(-np.angle(kdata_nav[:,0]).T/np.pi)
 plt.figure()
 plt.plot()
 
-dz =
 
 # volumes_mvt_nav_x = simulate_radial_undersampled_images(kdata_nav_x_mvt,nav_x,m.image_size,density_adj=False,useGPU=useGPU_simulation,is_theta_z_adjusted=True)
 # volumes_mvt_nav_y = simulate_radial_undersampled_images(kdata_nav_y_mvt,nav_y,m.image_size,density_adj=False,useGPU=useGPU_simulation)
