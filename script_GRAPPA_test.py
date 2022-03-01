@@ -1,6 +1,7 @@
 
 #import matplotlib
 #matplotlib.u<se("TkAgg")
+import numpy as np
 from mrfsim import T1MRF
 from image_series import *
 from dictoptimizers import SimpleDictSearch,GaussianWeighting
@@ -186,3 +187,23 @@ for ch in range(nb_channels):
     plt.imshow(np.abs(image_rebuilt_all_channels[ch]))
 
 
+kx = -0.01231997
+ky= 0
+
+kernel_x=[-1,0,1]
+kernel_y=[0,1]
+
+curr_traj_for_grappa=curr_traj.reshape(npoint_y,npoint_x,2)
+kdata_all_channels_for_grappa=np.array(kdata_all_channels).reshape(nb_channels,npoint_y,npoint_x)
+
+
+j0,i0=np.unravel_index(np.argmin(np.linalg.norm(curr_traj_for_grappa-np.expand_dims(np.array([kx,ky]),axis=(0,1)),axis=-1)),(npoint_y,npoint_x))
+
+curr_traj_for_grappa[j0,i0]
+
+
+local_indices = np.stack(np.meshgrid(j0+np.array(kernel_y),i0+np.array(kernel_x)),axis=0).T.reshape(-1,2)
+
+local_kdata_for_grappa=kdata_all_channels_for_grappa[:,local_indices[:,0],local_indices[:,1]]
+
+local_kdata_for_grappa=np.array(local_kdata_for_grappa)

@@ -9,7 +9,7 @@ from mrfsim import makevol
 from image_series import MapFromDict
 from datetime import datetime
 from skimage.restoration import denoise_tv_chambolle
-
+#import cupy as cp
 try:
     #from pycuda.autoinit import _finish_up
     import cupy as cp

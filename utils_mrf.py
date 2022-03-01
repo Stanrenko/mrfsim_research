@@ -2249,11 +2249,12 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
         if (normalize_volumes) and (b1 is not None):
             print("Normalizing by Coil Sensi")
             if light_memory_usage:
-                b1_norm = np.sum(np.abs(b1) ** 2)
+                b1_norm = np.sum(np.abs(b1) ** 2,axis=0)
                 for i in tqdm(range(images_series_rebuilt.shape[0])):
-                    images_series_rebuilt[i] = images_series_rebuilt[i] / b1_norm
+                    images_series_rebuilt[i] /= b1_norm
             else:
-                images_series_rebuilt /= np.sum(np.abs(b1) ** 2)
+                images_series_rebuilt /= np.expand_dims(np.sum(np.abs(b1) ** 2,axis=0),axis=0)
+
 
     # images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
 

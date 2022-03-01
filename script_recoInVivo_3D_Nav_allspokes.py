@@ -66,7 +66,7 @@ localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_
 #localfile = "/20220113_CS/meas_MID00164_FID49559_raFin_3D_tra_1x1x5mm_FULL_50GS_slice.dat"
 #localfile = "/20220118_BM/meas_MID00151_FID49924_raFin_3D_tra_1x1x5mm_FULL_read_nav.dat"
 
-localfile="/phantom.001.v1/phantom.001.v1.dat"
+#localfile="/phantom.001.v1/phantom.001.v1.dat"
 #localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
 
 
@@ -82,7 +82,7 @@ filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
 
 folder = "/".join(str.split(filename,"/")[:-1])
 
-suffix="_allspokes4"
+suffix="_allspokes8"
 
 filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
@@ -296,10 +296,11 @@ else:
     #kdata_all_channels_all_slices = open_memmap(filename_kdata)
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
-kdata_shape=kdata_all_channels_all_slices.shape
-kdata_all_channels_all_slices=np.array(groupby(kdata_all_channels_all_slices,window,axis=1))
-ntimesteps=kdata_all_channels_all_slices.shape[0]
-kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,-1,nb_slices,npoint)
+#kdata_all_channels_all_slices=np.array(groupby(kdata_all_channels_all_slices,window,axis=1))
+#ntimesteps=kdata_all_channels_all_slices.shape[0]
+#kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,-1,nb_slices,npoint)
+ntimesteps=175
+
 
 #
 # cond_gating_spokes=np.ones(nb_segments).astype(bool)
@@ -315,7 +316,7 @@ kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,
 print("Calculating Coil Sensitivity....")
 
 radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-radial_traj.adjust_traj_for_window(window)
+#radial_traj.adjust_traj_for_window(window)
 
 nb_segments=radial_traj.get_traj().shape[0]
 
@@ -323,12 +324,24 @@ if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     res = 16
     b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage)
     np.save(filename_b1,b1_all_slices)
+    del kdata_all_channels_all_slices
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+
 else:
     b1_all_slices=np.load(filename_b1)
+
+
+sl=int(b1_all_slices.shape[1]/2)
+list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
+plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
+
 
 b1_full = np.ones(image_size)
 b1_full=np.expand_dims(b1_full,axis=0)
 
+
+
+#b1_all_slices=b1_full
 
 print("Processing Nav Data...")
 data_for_nav=np.load(filename_nav_save)
@@ -362,7 +375,7 @@ top = 150
 displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
 displacement_for_binning = displacements
-bin_width = 4
+bin_width = 5
 max_bin = np.max(displacement_for_binning)
 min_bin = np.min(displacement_for_binning)
 
@@ -372,6 +385,12 @@ categories = np.digitize(displacement_for_binning, bins)
 df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, columns=["displacement", "cat"])
 df_groups = df_cat.groupby("cat").count()
 
+group_1 = (categories == 1) | (categories == 2)| (categories == 3)
+group_2 = (categories == 4)
+group_3 = (categories == 5)
+group_4 = (categories == 6) | (categories == 7)
+groups = [group_1, group_2, group_3,group_4]
+
 # group_1 = (categories == 1) | (categories == 2)
 # group_2 = (categories == 3)
 # group_3 = (categories == 4) | (categories == 5)
@@ -379,19 +398,24 @@ df_groups = df_cat.groupby("cat").count()
 # groups = [group_1, group_2, group_3]
 
 
-group_1=(categories==1)|(categories==2)|(categories==3)
-group_2=(categories==4)
-group_3=(categories==5)
-group_4=(categories==6)
-group_5=(categories==7)|(categories==8)|(categories==9)
-
-groups=[group_1,group_2,group_3,group_4,group_5]
+# group_1=(categories==1)|(categories==2)|(categories==3)
+# group_2=(categories==4)
+# group_3=(categories==5)
+# group_4=(categories==6)
+# group_5=(categories==7)|(categories==8)|(categories==9)
+#
+# groups=[group_1,group_2,group_3,group_4,group_5]
 
 # dico_kdata_retained_registration={}
 
 dico_volume = {}
 dico_mask = {}
+
+#j=2
+#g=groups[j]
+
 for j, g in tqdm(enumerate(groups)):
+    print("######################  BUILDING FULL VOLUME AND MASK FOR GROUP {} ##########################".format(j))
     retained_nav_spokes_index = np.argwhere(g).flatten()
     spoke_groups = np.argmin(np.abs(
         np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
@@ -415,17 +439,20 @@ for j, g in tqdm(enumerate(groups)):
 
     volume_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list_volume,
                                                                  radial_traj_3D_corrected_single_volume, image_size,
-                                                                 b1=b1_full, density_adj=False, ntimesteps=1,
+                                                                 b1=b1_all_slices, density_adj=False, ntimesteps=1,
                                                                  useGPU=False, normalize_kdata=False, memmap_file=None,
-                                                                 light_memory_usage=True, normalize_volumes=False,
+                                                                 light_memory_usage=True, normalize_volumes=True,
                                                                  is_theta_z_adjusted=True)
     dico_volume[j] = copy(volume_corrected[0])
     mask = build_mask_single_image_multichannel(kdata_retained_final_list_volume,
-                                                radial_traj_3D_corrected_single_volume, image_size, b1=b1_full,
+                                                radial_traj_3D_corrected_single_volume, image_size, b1=b1_all_slices,
                                                 density_adj=False, threshold_factor=1 / 10, normalize_kdata=False,
                                                 light_memory_usage=True, selected_spokes=None, is_theta_z_adjusted=True,
-                                                normalize_volumes=False)
+                                                normalize_volumes=True)
     dico_mask[j] = copy(mask)
+
+
+#animate_images(mask)
 
 del volume_corrected
 del kdata_retained_final_list_volume
@@ -435,7 +462,16 @@ del mask
 import cv2
 import numpy as np
 
-index_ref = 0
+
+
+
+for j in dico_volume.keys():
+    plt.figure(figsize=(10,10))
+    #plt.imshow(denoise_tv_chambolle(np.abs((dico_mask[j]*dico_volume[j])[int(nb_slices/2),:,:]),weight=0.00001))
+    plt.imshow(np.abs((dico_mask[j][int(nb_slices/2),:,:]*dico_volume[j][int(nb_slices/2),:,:])))
+    #plt.imshow(np.abs((dico_mask[j][int(nb_slices / 2), :, :])))
+
+index_ref = 2
 
 dico_homographies = {}
 
@@ -497,18 +533,24 @@ for index_to_align in dico_volume.keys():
 
         dico_homographies[index_to_align][sl] = warp_matrix
 
+sl = int(nb_slices / 2)
 
-volumes_corrected_final=np.zeros((ntimesteps,nb_slices,int(npoint/2),int(npoint/2)),dtype=dico_volume[0].dtype)
-ts_indices=np.zeros(len(dico_volume.keys())).astype(int)
+animate_images([scipy.ndimage.affine_transform(np.abs(dico_volume[0][sl].T), dico_homographies[0][sl]).T,
+                np.abs(dico_volume[index_ref][sl])])
+
+volumes_corrected_final=np.zeros((ntimesteps,nb_slices,int(npoint/2),int(npoint/2)),dtype="complex64")
+ts_indices=np.zeros(len(groups)).astype(int)
 count=np.zeros(ntimesteps).astype(int)
+#total_weight=np.zeros(ntimesteps).astype(int)
 
 del dico_mask
 del dico_volume
 #
 # dico_kdata_retained_registration = {}
 # dico_volumes_corrected = {}
-
-
+#
+# J=0
+# g=groups[0]
 for j, g in tqdm(enumerate(groups)):
     retained_nav_spokes_index = np.argwhere(g).flatten()
     spoke_groups = np.argmin(np.abs(
@@ -528,16 +570,18 @@ for j, g in tqdm(enumerate(groups)):
 
     #dico_kdata_retained_registration[j] = retained_timesteps
 
+
+
     radial_traj_3D_corrected = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=undersampling_factor,
                                         npoint=npoint, nb_slices=nb_slices, incoherent=incoherent, mode=mode)
     radial_traj_3D_corrected.traj_for_reconstruction = traj_retained_final
 
     volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list, radial_traj_3D_corrected,
-                                                                  image_size, b1=b1_full,
+                                                                  image_size, b1=b1_all_slices,
                                                                   ntimesteps=len(retained_timesteps), density_adj=False,
                                                                   useGPU=False, normalize_kdata=False, memmap_file=None,
                                                                   light_memory_usage=True, is_theta_z_adjusted=True,
-                                                                  normalize_volumes=False)
+                                                                  normalize_volumes=True)
 
     print("Re-registering corrected volumes")
     for ts in tqdm(range(volumes_corrected.shape[0])):
@@ -548,9 +592,11 @@ for j, g in tqdm(enumerate(groups)):
     print("Forming final volumes with contribution from group {}".format(j))
     for ts in tqdm(range(ntimesteps)):
         if ts in retained_timesteps:
-            volumes_corrected_final[ts]+=volumes_corrected[ts_indices[j]]
-            ts_indices[j]+=1
-            count[ts]+=1
+            volumes_corrected_final[ts]+=volumes_corrected[ts_indices[j]]*traj_retained_final[ts_indices[j]].shape[0]
+            #count[ts]+=1
+            count[ts] += traj_retained_final[ts_indices[j]].shape[0]
+            ts_indices[j] += 1
+            #total_weight[ts]+=traj_retained_final[ts_indices[j]].shape[0]
 
 
 del volumes_corrected
@@ -572,19 +618,21 @@ del kdata_retained_final_list
 #             count+=1
 #     volumes_corrected_final[ts]/=count
 
-for j in tqdm(dico_kdata_retained_registration.keys()):
-    for ts in tqdm(range(ntimesteps)):
-        if ts in dico_kdata_retained_registration[j]:
-            volumes_corrected_final[ts]+=dico_volumes_corrected[j][ts_indices[j]]
-            ts_indices[j]+=1
-            count[ts]+=1
-    del dico_kdata_retained_registration[j]
-    del dico_volumes_corrected[j]
+# for j in tqdm(dico_kdata_retained_registration.keys()):
+#     for ts in tqdm(range(ntimesteps)):
+#         if ts in dico_kdata_retained_registration[j]:
+#             volumes_corrected_final[ts]+=dico_volumes_corrected[j][ts_indices[j]]
+#             ts_indices[j]+=1
+#             count[ts]+=1
+#     del dico_kdata_retained_registration[j]
+#     del dico_volumes_corrected[j]
 
 count=np.expand_dims(count,axis=tuple(range(1,volumes_corrected_final.ndim)))
 volumes_corrected_final/=count
 
 np.save(filename_volume_corrected_final,volumes_corrected_final)
+
+animate_images(volumes_corrected_final[:,8,:,:])
 
 ##volumes for slice taking into account coil sensi
 # print("Building Volumes....")
@@ -643,14 +691,15 @@ load_map=False
 save_map=True
 
 
-dictfile = "mrf175_SimReco2_light.dict"
+#dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
-#dictfile = "mrf175_Dico2_Invivo.dict"
+dictfile = "mrf175_Dico2_Invivo.dict"
 
 mask = np.load(filename_mask)
 #volumes_all = np.load(filename_volume)
+volumes_corrected_final=np.load(filename_volume_corrected_final)
 
 
 #ani = animate_images(volumes_all[:,4,:,:])
@@ -663,7 +712,7 @@ mask = np.load(filename_mask)
 
 if not(load_map):
     niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes,ntimesteps=ntimesteps)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes,ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_final,retained_timesteps=None)
 
     if(save_map):

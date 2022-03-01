@@ -46,7 +46,7 @@ filename="./3D/SquareSimu3D_sl8_rp8.dat"
 filename='./3D/SquareSimu3D_sl8_rp8_tv1.dat'
 filename='./data/InVivo/3D/phantom.001.v1/phantom.001.v1_5iter.dat'
 filename='./data/InVivo/3D/phantom.001.v1/phantom.001.v1_allspokes8.dat'
-filename='./data/InVivo/3D/phantom.001.v1/phantom.001.v1_allspokes4.dat'
+#filename='./data/InVivo/3D/phantom.001.v1/phantom.001.v1_allspokes4.dat'
 
 #filename="./3D/SquareSimu3D_sl8_rp2fullysampled.dat"
 #filename="./3D/SquareSimu3D_sl8_rp2_fullysampled.dat"
