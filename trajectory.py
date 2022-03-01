@@ -60,6 +60,32 @@ class Radial(Trajectory):
         return self.traj
 
 
+class Cartesian(Trajectory):
+
+    def __init__(self,total_nspokes=1400,npoint_x=256,npoint_y=1,**kwargs):
+        super().__init__(**kwargs)
+
+        self.paramDict["total_nspokes"]=total_nspokes #total nspokes per rep
+        self.paramDict["npoint_x"] = npoint_x
+        self.paramDict["npoint_y"] = npoint_y
+
+        self.paramDict["nb_rep"]=1
+
+    def get_traj(self):
+        if self.traj is None:
+            npoint_x = self.paramDict["npoint_x"]
+            npoint_y = self.paramDict["npoint_y"]
+            total_nspokes = self.paramDict["total_nspokes"]
+
+            base_traj=cartesian_traj_2D(npoint_x,npoint_y)
+
+            #traj = np.reshape(groupby(all_spokes, nspoke), (-1, npoint * nspoke))
+            traj = np.tile(base_traj,(total_nspokes,1,1))
+            self.traj=traj
+
+        return self.traj
+
+
 
 
 
@@ -100,6 +126,40 @@ class Radial3D(Trajectory):
 
 
         return self.traj
+
+
+class Cartesian3D(Trajectory):
+
+    def __init__(self,total_nspokes=1400,npoint_x=256,npoint_y=256,**kwargs):
+        super().__init__(**kwargs)
+
+        self.paramDict["total_nspokes"]=total_nspokes #total nspokes per rep
+        self.paramDict["npoint_x"] = npoint_x
+        self.paramDict["npoint_y"] = npoint_y
+        self.paramDict["npoint_z"] = npoint_z
+
+        self.paramDict["nb_rep"]=1
+
+    def get_traj(self):
+        if self.traj is None:
+            npoint_x = self.paramDict["npoint_x"]
+            npoint_y = self.paramDict["npoint_y"]
+            total_nspokes = self.paramDict["total_nspokes"]
+
+            base_traj=cartesian_traj_2D(npoint_x,npoint_y)
+            k_max=np.pi
+            kx = -k_max + np.arange(npoint_x) * 2 * k_max / (npoint_x - 1)
+            ky = -k_max + np.arange(npoint_y) * 2 * k_max / (npoint_y - 1)
+
+            KX, KY = np.meshgrid(kx, ky)
+            base_traj=np.stack([KX.flatten(), KY.flatten()], axis=-1)
+
+            #traj = np.reshape(groupby(all_spokes, nspoke), (-1, npoint * nspoke))
+            traj = np.tile(base_traj,(total_nspokes,1,1))
+            self.traj=traj
+
+        return self.traj
+
 
 
 

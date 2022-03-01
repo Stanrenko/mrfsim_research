@@ -116,6 +116,28 @@ def animate_multiple_images(images_series,images_series_rebuilt,interval=200,cma
                                     repeat_delay=10 * interval),animation.ArtistAnimation(fig_rebuilt, ims_rebuilt, interval=interval, blit=True,
                                     repeat_delay=10 * interval),
 
+def cartesian_traj_2D(npoint_x,npoint_y,k_max=np.pi):
+    kx = -k_max + np.arange(npoint_x) * 2 * k_max / (npoint_x - 1)
+    ky = -k_max + np.arange(npoint_y) * 2 * k_max / (npoint_y - 1)
+
+    KX, KY = np.meshgrid(kx, ky)
+    return np.stack([KX.flatten(), KY.flatten()], axis=-1)
+
+def cartesian_traj_3D(total_nspoke, npoint_x, npoint_y, nb_slices, undersampling_factor=4):
+    timesteps = int(total_nspoke / nspoke)
+    nb_rep = int(nb_slices / undersampling_factor)
+    base_traj=cartesian_traj_2D(npoint_x,npoint_y)
+    traj = np.tile(base_traj, (total_nspoke, 1, 1))
+
+    k_z = np.zeros((timesteps, nb_rep))
+    all_slices = np.linspace(-np.pi, np.pi, nb_slices)
+    k_z[0, :] = all_slices[::undersampling_factor]
+    for j in range(1, k_z.shape[0]):
+        k_z[j, :] = np.sort(np.roll(all_slices, -j)[::undersampling_factor])
+
+
+
+
 def radial_golden_angle_traj(total_nspoke,npoint,k_max=np.pi):
     golden_angle=111.246*np.pi/180
     #base_spoke = np.arange(-k_max, k_max, 2 * k_max / npoint, dtype=np.complex_)
@@ -1294,7 +1316,7 @@ def build_mask_single_image(kdata,trajectory,size,useGPU=False,eps=1e-6,threshol
 
     return mask
 
-def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=None,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False,selected_spokes=None):
+def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,threshold_factor=None,useGPU=False,normalize_kdata=True,light_memory_usage=False,is_theta_z_adjusted=False,selected_spokes=None,normalize_volumes=True):
     '''
 
     :param kdata: shape nchannels*ntimesteps*point_per_timestep
@@ -1315,13 +1337,13 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
         trajectory_for_mask = trajectory
 
     if (selected_spokes is not None):
-        volume_rebuilt = build_single_image_multichannel(kdata[:,selected_spokes,:,:],trajectory_for_mask,size,density_adj,eps,b1,useGPU=useGPU,normalize_kdata=normalize_kdata,light_memory_usage=light_memory_usage,is_theta_z_adjusted=is_theta_z_adjusted)
+        volume_rebuilt = build_single_image_multichannel(kdata[:,selected_spokes,:,:],trajectory_for_mask,size,density_adj,eps,b1,useGPU=useGPU,normalize_kdata=normalize_kdata,light_memory_usage=light_memory_usage,is_theta_z_adjusted=is_theta_z_adjusted,normalize_volumes=normalize_volumes)
     else:
         volume_rebuilt = build_single_image_multichannel(kdata, trajectory_for_mask, size,
                                                          density_adj, eps, b1, useGPU=useGPU,
                                                          normalize_kdata=normalize_kdata,
                                                          light_memory_usage=light_memory_usage,
-                                                         is_theta_z_adjusted=is_theta_z_adjusted)
+                                                         is_theta_z_adjusted=is_theta_z_adjusted,normalize_volumes=normalize_volumes)
 
     traj = trajectory.get_traj_for_reconstruction()
 
@@ -1348,7 +1370,7 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
     return mask
 
 
-def build_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False):
+def build_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1e-6,b1=None,useGPU=False,normalize_kdata=False,light_memory_usage=False,is_theta_z_adjusted=False,normalize_volumes=False):
     '''
 
     :param kdata: shape nchannels*ntimesteps*point_per_timestep
@@ -1359,10 +1381,7 @@ def build_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1
     :param b1: coil sensitivity map
     :return: mask of size size
     '''
-
-
     volume_rebuilt=simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj,eps,is_theta_z_adjusted,b1,1,useGPU,None,normalize_kdata,light_memory_usage,True)[0]
-
     return volume_rebuilt
 
 def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):

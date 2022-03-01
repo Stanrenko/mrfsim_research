@@ -78,7 +78,7 @@ filename_nav_save=str.split(base_folder+"/phantom.001.v1/phantom.001.v1.dat",".d
 
 folder = "/".join(str.split(filename,"/")[:-1])
 
-suffix="_disp4nob1"
+suffix="_disp8nob1"
 
 filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
@@ -393,47 +393,47 @@ else:
 
 
 
-
-filename_kdata="test_constant_fullsquare_kdata.npy"
-
-
-if str.split(filename_kdata,"/")[-1] not in os.listdir(os.curdir):
-
-    with open("mrf_sequence.json") as f:
-        sequence_config = json.load(f)
-
-
-    seq = T1MRF(**sequence_config)
-
-    m = RandomMap3D("TestRandom3DMovement","",nb_slices=nb_slices,nb_empty_slices=0,undersampling_factor=1,repeat_slice=0,resting_time=4000,image_size=(int(npoint/2),int(npoint/2)),region_size=0,mask_reduction_factor=0,gen_mode="other")
-
-    m.build_timeline(seq)
-    base_images=np.zeros(image_size)
-    center_slice=int(nb_slices/2)
-    center_point=int(npoint/4)
-    dslice=4
-    dpoint=10
-    base_images[center_slice-dslice:center_slice+dslice,center_point-dpoint:center_point+dpoint,center_point-dpoint:center_point+dpoint]=1.0
-    base_images=np.ones(image_size)
-
-    base_images=np.expand_dims(base_images,axis=0)
-    m.images_series=np.vstack([base_images]*nb_segments)
-
-    #animate_images(m.images_series[:,8,:,:])
-
-    kdata_all_channels_all_slices=m.generate_kdata(radial_traj)
-    kdata_all_channels_all_slices=np.expand_dims(kdata_all_channels_all_slices,axis=0)
-
-    density = np.abs(np.linspace(-1, 1, npoint))
-    density = np.expand_dims(density,tuple(range(kdata_all_channels_all_slices.ndim-1)))
-    kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(1,nb_segments,-1,npoint)
-    kdata_all_channels_all_slices *= density
-
-
-
-    np.save(filename_kdata,kdata_all_channels_all_slices)
-else:
-    kdata_all_channels_all_slices=np.load(filename_kdata)
+#
+# filename_kdata="test_constant_fullsquare_kdata.npy"
+#
+#
+# if str.split(filename_kdata,"/")[-1] not in os.listdir(os.curdir):
+#
+#     with open("mrf_sequence.json") as f:
+#         sequence_config = json.load(f)
+#
+#
+#     seq = T1MRF(**sequence_config)
+#
+#     m = RandomMap3D("TestRandom3DMovement","",nb_slices=nb_slices,nb_empty_slices=0,undersampling_factor=1,repeat_slice=0,resting_time=4000,image_size=(int(npoint/2),int(npoint/2)),region_size=0,mask_reduction_factor=0,gen_mode="other")
+#
+#     m.build_timeline(seq)
+#     base_images=np.zeros(image_size)
+#     center_slice=int(nb_slices/2)
+#     center_point=int(npoint/4)
+#     dslice=4
+#     dpoint=10
+#     base_images[center_slice-dslice:center_slice+dslice,center_point-dpoint:center_point+dpoint,center_point-dpoint:center_point+dpoint]=1.0
+#     base_images=np.ones(image_size)
+#
+#     base_images=np.expand_dims(base_images,axis=0)
+#     m.images_series=np.vstack([base_images]*nb_segments)
+#
+#     #animate_images(m.images_series[:,8,:,:])
+#
+#     kdata_all_channels_all_slices=m.generate_kdata(radial_traj)
+#     kdata_all_channels_all_slices=np.expand_dims(kdata_all_channels_all_slices,axis=0)
+#
+#     density = np.abs(np.linspace(-1, 1, npoint))
+#     density = np.expand_dims(density,tuple(range(kdata_all_channels_all_slices.ndim-1)))
+#     kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(1,nb_segments,-1,npoint)
+#     kdata_all_channels_all_slices *= density
+#
+#
+#
+#     np.save(filename_kdata,kdata_all_channels_all_slices)
+# else:
+#     kdata_all_channels_all_slices=np.load(filename_kdata)
 
 # density = np.abs(np.linspace(-1, 1, npoint))
 # density = np.expand_dims(density,tuple(range(kdata_all_channels_all_slices.ndim-1)))
@@ -474,7 +474,7 @@ if nb_gating_spokes>0:
     displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
     displacement_for_binning = displacements
-    bin_width = 4
+    bin_width = 8
     max_bin = np.max(displacement_for_binning)
     min_bin = np.min(displacement_for_binning)
 
@@ -577,8 +577,8 @@ b1_full = np.ones(image_size)
 b1_full=np.expand_dims(b1_full,axis=0)
 
 if str.split(filename_volume_corrected,"/")[-1] not in os.listdir(folder):
-    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list,radial_traj_3D_corrected,image_size,b1=b1_full,ntimesteps=len(retained_timesteps),density_adj=False,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,is_theta_z_adjusted=True,normalize_volumes=False)
-    animate_images(volumes_corrected[:,0,:,:])
+    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list,radial_traj_3D_corrected,image_size,b1=b1_full,ntimesteps=len(retained_timesteps),density_adj=True,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,is_theta_z_adjusted=True,normalize_volumes=False)
+    animate_images(volumes_corrected[:,8,:,:])
     np.save(filename_volume_corrected,volumes_corrected)
 else:
     volumes_corrected=np.load(filename_volume_corrected)
