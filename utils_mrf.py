@@ -117,8 +117,10 @@ def animate_multiple_images(images_series,images_series_rebuilt,interval=200,cma
                                     repeat_delay=10 * interval),
 
 def cartesian_traj_2D(npoint_x,npoint_y,k_max=np.pi):
-    kx = -k_max + np.arange(npoint_x) * 2 * k_max / (npoint_x - 1)
-    ky = -k_max + np.arange(npoint_y) * 2 * k_max / (npoint_y - 1)
+    #kx = -k_max + np.arange(npoint_x) * 2 * k_max / (npoint_x - 1)
+    #ky = -k_max + np.arange(npoint_y) * 2 * k_max / (npoint_y - 1)
+    kx = np.arange(-k_max, k_max, 2 * k_max / npoint_x) + k_max / npoint_x
+    ky = np.arange(-k_max, k_max, 2 * k_max / npoint_y) + k_max / npoint_y
 
     KX, KY = np.meshgrid(kx, ky)
     return np.stack([KX.flatten(), KY.flatten()], axis=-1)
