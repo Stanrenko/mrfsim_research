@@ -439,20 +439,20 @@ for j, g in tqdm(enumerate(groups)):
 
     volume_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list_volume,
                                                                  radial_traj_3D_corrected_single_volume, image_size,
-                                                                 b1=b1_all_slices, density_adj=False, ntimesteps=1,
+                                                                 b1=None, density_adj=False, ntimesteps=1,
                                                                  useGPU=False, normalize_kdata=False, memmap_file=None,
                                                                  light_memory_usage=True, normalize_volumes=True,
                                                                  is_theta_z_adjusted=True)
     dico_volume[j] = copy(volume_corrected[0])
     mask = build_mask_single_image_multichannel(kdata_retained_final_list_volume,
-                                                radial_traj_3D_corrected_single_volume, image_size, b1=b1_all_slices,
+                                                radial_traj_3D_corrected_single_volume, image_size, b1=None,
                                                 density_adj=False, threshold_factor=1 / 10, normalize_kdata=False,
                                                 light_memory_usage=True, selected_spokes=None, is_theta_z_adjusted=True,
                                                 normalize_volumes=True)
     dico_mask[j] = copy(mask)
 
 
-#animate_images(mask)
+animate_images(mask)
 
 del volume_corrected
 del kdata_retained_final_list_volume
@@ -534,8 +534,9 @@ for index_to_align in dico_volume.keys():
         dico_homographies[index_to_align][sl] = warp_matrix
 
 sl = int(nb_slices / 2)
+test_index=1
 
-animate_images([scipy.ndimage.affine_transform(np.abs(dico_volume[0][sl].T), dico_homographies[0][sl]).T,
+animate_images([scipy.ndimage.affine_transform(np.abs(dico_volume[test_index][sl].T), dico_homographies[test_index][sl]).T,
                 np.abs(dico_volume[index_ref][sl])])
 
 volumes_corrected_final=np.zeros((ntimesteps,nb_slices,int(npoint/2),int(npoint/2)),dtype="complex64")
@@ -632,7 +633,7 @@ volumes_corrected_final/=count
 
 np.save(filename_volume_corrected_final,volumes_corrected_final)
 
-animate_images(volumes_corrected_final[:,8,:,:])
+animate_images(volumes_corrected_final[:,int(nb_slices/2),:,:])
 
 ##volumes for slice taking into account coil sensi
 # print("Building Volumes....")
@@ -712,7 +713,7 @@ volumes_corrected_final=np.load(filename_volume_corrected_final)
 
 if not(load_map):
     niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes,ntimesteps=ntimesteps)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_final,retained_timesteps=None)
 
     if(save_map):

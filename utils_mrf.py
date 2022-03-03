@@ -2704,6 +2704,8 @@ def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256)):
     traj_all=traj_all.reshape(-1,traj_all.shape[-1])
     npoint = kdata.shape[-1]
     center_res = int(npoint / 2 - 1)
+
+
     kdata_for_sensi = np.zeros(kdata.shape, dtype=np.complex128)
 
     if kdata.ndim==3:#Tried :: syntax but somehow it introduces errors in the allocation
@@ -2736,12 +2738,18 @@ def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256)):
             b1[i]=b1[i] / np.max(np.abs(b1[i].flatten()))
     return b1
 
-def calculate_sensitivity_map_3D(kdata,trajectory,res=16,image_size=(1,256,256),useGPU=False,eps=1e-6,light_memory_usage=False):
+def calculate_sensitivity_map_3D(kdata,trajectory,res=16,image_size=(1,256,256),useGPU=False,eps=1e-6,light_memory_usage=False,density_adj=False):
     traj_all = trajectory.get_traj()
     traj_all = traj_all.reshape(-1, traj_all.shape[-1])
     npoint = kdata.shape[-1]
     nb_channels = kdata.shape[0]
     center_res = int(npoint / 2 - 1)
+
+    if density_adj:
+        density = np.abs(np.linspace(-1, 1, npoint))
+        # density=np.expand_dims(axis=0)
+        for j in tqdm(range(nb_channels)):
+            kdata[j] = np.array([(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata[j]]).reshape(kdata.shape[1:])
 
     if not(light_memory_usage):
         kdata_for_sensi = np.zeros(kdata.shape, dtype=np.complex128)
