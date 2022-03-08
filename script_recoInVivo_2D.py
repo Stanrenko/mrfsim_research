@@ -21,12 +21,8 @@ save_maps = True
 use_GPU = True
 light_memory_usage=False
 
-
-
-
-
-base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
-base_folder = "./data/InVivo/3D"
+base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/2_Data Raw/zz_Data_old/3_Comp_Matlab/InVivo"
+#base_folder = "./data/InVivo/3D"
 
 
 localfile ="/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
@@ -46,7 +42,7 @@ localfile ="/20211209_AL_Tongue/meas_MID00260_FID45164_JAMBES_raFin_CLI.dat"
 # localfile = "/20211129_BM/meas_MID00085_FID43316_raFin_3D_FULL_highRES_incoh.dat"
 # localfile = "/20211129_BM/meas_MID00086_FID43317_raFin_3D_FULL_new_highRES_inco.dat"
 # localfile = "/20211129_BM/meas_MID00087_FID43318_raFin_3D_FULL_new_highRES_stack.dat"
-
+localfile = "/20210924_Exam/meas_MID00132_FID34531_CUISSES_raFin_CLI.dat"
 
 filename = base_folder+localfile
 
@@ -64,9 +60,6 @@ filename_kdata = str.split(filename,".dat") [0]+"_kdata.npy"
 
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
-
-
-
 
 if str.split(filename_save,"/")[-1] not in os.listdir(folder):
     Parsed_File = rT.map_VBVD(filename)

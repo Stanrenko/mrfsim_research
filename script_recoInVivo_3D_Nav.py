@@ -62,7 +62,7 @@ localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_
 #localfile = "/20220113_CS/meas_MID00164_FID49559_raFin_3D_tra_1x1x5mm_FULL_50GS_slice.dat"
 #localfile = "/20220118_BM/meas_MID00151_FID49924_raFin_3D_tra_1x1x5mm_FULL_read_nav.dat"
 
-localfile="/phantom.001.v1/phantom.001.v1.dat"
+#localfile="/phantom.001.v1/phantom.001.v1.dat"
 #localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
 
 
@@ -73,12 +73,12 @@ filename = base_folder+localfile
 #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
 
 filename_save=str.split(filename,".dat") [0]+".npy"
-filename_nav_save=str.split(base_folder+"/phantom.001.v1/phantom.001.v1.dat",".dat") [0]+"_nav.npy"
-#filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
+#filename_nav_save=str.split(base_folder+"/phantom.001.v1/phantom.001.v1.dat",".dat") [0]+"_nav.npy"
+filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
 
 folder = "/".join(str.split(filename,"/")[:-1])
 
-suffix="_disp8nob1"
+suffix="_disp5"
 
 filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
@@ -353,9 +353,10 @@ else:
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
 kdata_shape=kdata_all_channels_all_slices.shape
-kdata_all_channels_all_slices=np.array(groupby(kdata_all_channels_all_slices,window,axis=1))
-ntimesteps=kdata_all_channels_all_slices.shape[0]
-kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,-1,nb_slices,npoint)
+#kdata_all_channels_all_slices=np.array(groupby(kdata_all_channels_all_slices,window,axis=1))
+#ntimesteps=kdata_all_channels_all_slices.shape[0]
+ntimesteps=175
+#kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,-1,nb_slices,npoint)
 
 #
 # cond_gating_spokes=np.ones(nb_segments).astype(bool)
@@ -371,7 +372,7 @@ kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,
 print("Calculating Coil Sensitivity....")
 
 radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-radial_traj.adjust_traj_for_window(window)
+#radial_traj.adjust_traj_for_window(window)
 
 nb_segments=radial_traj.get_traj().shape[0]
 
@@ -474,7 +475,7 @@ if nb_gating_spokes>0:
     displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
     displacement_for_binning = displacements
-    bin_width = 8
+    bin_width = 5
     max_bin = np.max(displacement_for_binning)
     min_bin = np.min(displacement_for_binning)
 
@@ -577,8 +578,8 @@ b1_full = np.ones(image_size)
 b1_full=np.expand_dims(b1_full,axis=0)
 
 if str.split(filename_volume_corrected,"/")[-1] not in os.listdir(folder):
-    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list,radial_traj_3D_corrected,image_size,b1=b1_full,ntimesteps=len(retained_timesteps),density_adj=True,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,is_theta_z_adjusted=True,normalize_volumes=False)
-    animate_images(volumes_corrected[:,8,:,:])
+    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list,radial_traj_3D_corrected,image_size,b1=b1_all_slices,ntimesteps=len(retained_timesteps),density_adj=False,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,is_theta_z_adjusted=True,normalize_volumes=True)
+    animate_images(volumes_corrected[:,int(nb_slices/2),:,:])
     np.save(filename_volume_corrected,volumes_corrected)
 else:
     volumes_corrected=np.load(filename_volume_corrected)
@@ -782,14 +783,15 @@ load_map=False
 save_map=True
 
 
-dictfile = "mrf175_SimReco2_light.dict"
+#dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
-#dictfile = "mrf175_Dico2_Invivo.dict"
+dictfile = "mrf175_Dico2_Invivo.dict"
 
 mask = np.load(filename_mask)
 #volumes_all = np.load(filename_volume)
+volumes_corrected=np.load(filename_volume_corrected)
 
 
 #ani = animate_images(volumes_all[:,4,:,:])
@@ -802,7 +804,7 @@ mask = np.load(filename_mask)
 
 if not(load_map):
     niter = 2
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes,ntimesteps=ntimesteps)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes,ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected,retained_timesteps=retained_timesteps)
 
     if(save_map):

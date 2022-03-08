@@ -47,6 +47,7 @@ filename='./3D/SquareSimu3D_sl8_rp8_tv1.dat'
 filename='./data/InVivo/3D/phantom.001.v1/phantom.001.v1_5iter.dat'
 filename='./data/InVivo/3D/phantom.001.v1/phantom.001.v1_allspokes8.dat'
 #filename='./data/InVivo/3D/phantom.001.v1/phantom.001.v1_allspokes4.dat'
+filename='./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_allspokes8.dat'
 
 #filename="./3D/SquareSimu3D_sl8_rp2fullysampled.dat"
 #filename="./3D/SquareSimu3D_sl8_rp2_fullysampled.dat"

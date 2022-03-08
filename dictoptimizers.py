@@ -321,6 +321,9 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
             J_all = J_all.get()
             current_alpha_all_unique = current_alpha_all_unique.get()
 
+            if niter > 0:
+                phase_adj=phase_adj.get()
+
             del current_sig_fs
             del current_sig_ws
 
