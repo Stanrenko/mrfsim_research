@@ -34,9 +34,9 @@ with open("mrf_sequence.json") as f:
 
 seq = T1MRF(**sequence_config)
 
-nb_filled_slices = 12
-nb_empty_slices=2
-repeat_slice=1
+nb_filled_slices = 4
+nb_empty_slices=1
+repeat_slice=2
 nb_slices = nb_filled_slices+2*nb_empty_slices
 name = "SquareSimu3DGrappa"
 
@@ -312,7 +312,7 @@ if str.split(filename_volume_all_spokes,"/")[-1] not in os.listdir(folder):
     del kdata_all_channels_all_slices_all_spokes
     kdata_all_channels_all_slices_all_spokes = np.load(filename_kdata_all_spokes)
 
-    volumes_all=simulate_radial_undersampled_images_multi(filename_kdata_all_spokes,radial_traj_all,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices_all_spokes,radial_traj_all,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
     np.save(filename_volume_all_spokes,volumes_all)
     # sl=20
     # ani = animate_images(volumes_all[:,sl,:,:])
@@ -370,13 +370,16 @@ curr_traj_completed_all_ts =[]
 
 calibration_mode="Standard"
 lambd = 0.
-over_calibrate=1
+over_calibrate=2
 
 kernel_x = [-1, 0, 1]
 kernel_y = [0, 1]
 
 #ts=8
 ts=0
+
+plot_fit=False
+
 for ts in tqdm(range(nb_allspokes)):
     center_line = int(nb_slices / 2) - 1
     image=m.images_series[ts]
@@ -396,19 +399,16 @@ for ts in tqdm(range(nb_allspokes)):
         center_lines.append(current_center_line)
         current_center_line += undersampling_factor
 
-
-    calib_lines=[]
+    calib_lines=np.zeros((undersampling_factor-1,over_calibrate)).astype(int)
     calib_line=center_line
-    calib_lines = []
     for j in range(len(center_lines)):
         calib_line = center_lines[j]
         for i in range(undersampling_factor-1):
-            calib_lines.append(calib_line)
+            calib_lines[i,j]=calib_line
             calib_line=calib_line+1
 
-
-
     traj_calib_for_grappa=traj_all[ts,calib_lines,:,:]
+    traj_calib_for_grappa=traj_calib_for_grappa.reshape(traj_calib_for_grappa.shape[0],-1,3)
 
     traj_calib=traj_calib_for_grappa.reshape(-1,3)
 
@@ -443,7 +443,7 @@ for ts in tqdm(range(nb_allspokes)):
 
     # CALIBRATION
 
-    F_source_calib=np.zeros((nb_channels*len(kernel_x)*len(kernel_y),npoint),dtype=kdata_calib.dtype)
+    F_source_calib=np.zeros((nb_channels*len(kernel_x)*len(kernel_y),traj_calib_for_grappa.shape[1]),dtype=kdata_calib.dtype)
 
     pad_y=((np.array(kernel_y)<0).sum(),(np.array(kernel_y)>0).sum())
     pad_x=((np.array(kernel_x)<0).sum(),(np.array(kernel_x)>0).sum())
@@ -519,54 +519,54 @@ for ts in tqdm(range(nb_allspokes)):
         else :
             weights[index_ky_target]=F_target_calib@np.linalg.pinv(F_source_calib)
 
+        if plot_fit:
+            F_estimate =weights[index_ky_target]@F_source_calib
 
-        F_estimate =weights[index_ky_target]@F_source_calib
+            plt.figure()
+            plt.plot(np.linalg.norm(F_target_calib-F_estimate,axis=0)/np.sqrt(nb_channels))
+            plt.title("Calibration Error for line {} aggregated accross channels".format(index_ky_target))
 
-        # plt.figure()
-        # plt.plot(np.linalg.norm(F_target_calib-F_estimate,axis=0)/np.sqrt(nb_channels))
-        # plt.title("Calibration Error for line {} aggregated accross channels".format(index_ky_target))
-        #
-        # nplot_x = int(np.sqrt(nb_channels))
-        # nplot_y = int(nb_channels/nplot_x)+1
-        #
-        # # metric=np.real
-        # # fig, axs = plt.subplots(nplot_x, nplot_y)
-        # # fig.suptitle("Calibration Performance for line {} : Real Part".format(index_ky_target))
-        # # for i in range(nplot_x):
-        # #     for j in range(nplot_y):
-        # #         ch=i*nplot_y+j
-        # #         if ch >= nb_channels:
-        # #             break
-        # #         axs[i, j].plot(metric(F_target_calib[ch,:]),label="Target")
-        # #         axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
-        # #         axs[i,j].set_title('Channel {}'.format(ch))
-        # #         axs[i,j].legend(loc="upper right")
-        # #
-        # # metric = np.imag
-        # # fig, axs = plt.subplots(nplot_x, nplot_y)
-        # # fig.suptitle("Calibration Performance for line {} : Imaginary Part".format(index_ky_target))
-        # # for i in range(nplot_x):
-        # #     for j in range(nplot_y):
-        # #         ch = i * nplot_y + j
-        # #         if ch >= nb_channels:
-        # #             break
-        # #         axs[i, j].plot(metric(F_target_calib[ch, :]), label="Target")
-        # #         axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
-        # #         axs[i, j].set_title('Channel {}'.format(ch))
-        # #         axs[i, j].legend(loc="upper right")
-        #
-        # metric = np.abs
-        # fig, axs = plt.subplots(nplot_x, nplot_y)
-        # fig.suptitle("Calibration Performance for line {} : Amplitude".format(index_ky_target))
-        # for i in range(nplot_x):
-        #     for j in range(nplot_y):
-        #         ch = i * nplot_y + j
-        #         if ch >= nb_channels:
-        #             break
-        #         axs[i, j].plot(metric(F_target_calib[ch, :]), label="Target")
-        #         axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
-        #         axs[i, j].set_title('Channel {}'.format(ch))
-        #         axs[i, j].legend(loc="upper right")
+            nplot_x = int(np.sqrt(nb_channels))
+            nplot_y = int(nb_channels/nplot_x)+1
+            #
+            # # metric=np.real
+            # # fig, axs = plt.subplots(nplot_x, nplot_y)
+            # # fig.suptitle("Calibration Performance for line {} : Real Part".format(index_ky_target))
+            # # for i in range(nplot_x):
+            # #     for j in range(nplot_y):
+            # #         ch=i*nplot_y+j
+            # #         if ch >= nb_channels:
+            # #             break
+            # #         axs[i, j].plot(metric(F_target_calib[ch,:]),label="Target")
+            # #         axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
+            # #         axs[i,j].set_title('Channel {}'.format(ch))
+            # #         axs[i,j].legend(loc="upper right")
+            # #
+            # # metric = np.imag
+            # # fig, axs = plt.subplots(nplot_x, nplot_y)
+            # # fig.suptitle("Calibration Performance for line {} : Imaginary Part".format(index_ky_target))
+            # # for i in range(nplot_x):
+            # #     for j in range(nplot_y):
+            # #         ch = i * nplot_y + j
+            # #         if ch >= nb_channels:
+            # #             break
+            # #         axs[i, j].plot(metric(F_target_calib[ch, :]), label="Target")
+            # #         axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
+            # #         axs[i, j].set_title('Channel {}'.format(ch))
+            # #         axs[i, j].legend(loc="upper right")
+            #
+            metric = np.abs
+            fig, axs = plt.subplots(nplot_x, nplot_y)
+            fig.suptitle("Calibration Performance for line {} : Amplitude".format(index_ky_target))
+            for i in range(nplot_x):
+                for j in range(nplot_y):
+                    ch = i * nplot_y + j
+                    if ch >= nb_channels:
+                        break
+                    axs[i, j].plot(metric(F_target_calib[ch, :]), label="Target")
+                    axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
+                    axs[i, j].set_title('Channel {}'.format(ch))
+                    axs[i, j].legend(loc="upper right")
 
 
 
@@ -639,7 +639,7 @@ kdata_all_channels_completed_all_ts=np.array(kdata_all_channels_completed_all_ts
 kdata_all_channels_completed_all_ts=np.moveaxis(kdata_all_channels_completed_all_ts,0,1)
 curr_traj_completed_all_ts=np.array(curr_traj_completed_all_ts)
 
-for ts in tqdm(range(nb_segments)):
+for ts in tqdm(range(curr_traj_completed_all_ts.shape[0])):
     ind=np.lexsort((curr_traj_completed_all_ts[ts][:, 0], curr_traj_completed_all_ts[ts][:, 2]))
     curr_traj_completed_all_ts[ts] = curr_traj_completed_all_ts[ts,ind,:]
     kdata_all_channels_completed_all_ts[:,ts]=kdata_all_channels_completed_all_ts[:,ts,ind]
@@ -650,8 +650,8 @@ np.save(filename_currtraj_grappa,curr_traj_completed_all_ts)
 kdata_all_channels_completed_all_ts=np.load(filename_kdata_grappa)
 curr_traj_completed_all_ts=np.load(filename_currtraj_grappa)
 
-sl=np.random.choice(nb_slices)
-ts=np.random.choice(nb_segments)
+
+
 ch=0
 metric=np.abs
 plt.figure()
@@ -661,10 +661,62 @@ plt.plot(metric(kdata_all_channels_completed_all_ts[ch].reshape(nb_segments,nb_s
 plt.legend()
 
 
+
 ts=0
-sl=0
-ch=0
+#sl=np.random.choice(nb_slices)
+#ts=np.random.choice(nb_segments)
+ch=3
 metric=np.abs
+
+plt.figure()
+plt.title("Fully sampled Ch {} Ts {}".format(ch,ts,sl))
+curr_traj = radial_traj_all.get_traj()[ts]
+ind = np.lexsort((curr_traj[:,0], curr_traj[:,2]))
+curr_kdata = kdata_all_channels_all_slices_all_spokes[ch,ts].flatten()
+curr_kdata=curr_kdata[ind]
+for sl in range(nb_slices):
+    plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2], npoint)[sl]),
+             label='Kdata fully sampled sl {}'.format(sl))
+
+plt.legend()
+
+
+plot_next_slice=False
+ts = 0
+ch=3
+sl = 1
+metric=np.abs
+plt.figure()
+plt.title("Ch {} Ts {} Sl {}".format(ch,ts,sl))
+curr_traj = radial_traj_all.get_traj()[ts]
+ind = np.lexsort((curr_traj[:,0], curr_traj[:,2]))
+curr_kdata = kdata_all_channels_all_slices_all_spokes[ch,ts].flatten()
+curr_kdata=curr_kdata[ind]
+plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2],npoint)[sl]),label='Kdata fully sampled')
+plt.plot(metric(kdata_all_channels_completed_all_ts[ch,ts].reshape(nb_slices,npoint)[sl]),label='Kdata grappa estimate')
+
+if plot_next_slice:
+    if sl>0:
+        plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2],npoint)[sl-1]),label='Kdata fully sampled previous slice',linestyle='dashed')
+    else:
+        plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2], npoint)[0]),
+                 label='Kdata fully sampled previous slice',linestyle='dashed')
+    if sl<(nb_slices-2):
+        plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2],npoint)[sl+1]),label='Kdata fully sampled next slice',linestyle='dashed')
+    else:
+        plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2], npoint)[nb_slices-1]),
+                 label='Kdata fully sampled next slice',linestyle='dashed')
+plt.legend()
+
+
+plt.figure()
+plt.title("Error Ch {} Ts {} Sl {}".format(ch,ts,sl))
+plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2],npoint)[sl]-kdata_all_channels_completed_all_ts[ch,ts].reshape(nb_slices,npoint)[sl]))
+
+ts=0
+sl=3
+ch=0
+metric=np.real
 plt.figure()
 plt.title("Ts {} Sl {}".format(ts,sl))
 curr_traj = radial_traj.get_traj()[ts]
@@ -672,7 +724,8 @@ ind = np.lexsort((curr_traj[:,0], curr_traj[:,2]))
 curr_kdata = kdata_all_channels_all_slices[ch,ts].flatten()
 curr_kdata=curr_kdata[ind]
 plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices.shape[2],npoint)[sl]),label='Kdata fully sampled')
-plt.plot(metric(kdata_all_channels_completed_all_ts[ch].reshape(nb_segments,nb_slices,npoint)[ts,sl]),label='Kdata grappa estimate')
+plt.plot(metric(kdata_all_channels_completed_all_ts[ch,ts].reshape(nb_slices,npoint)[sl]),label='Kdata grappa estimate')
+
 plt.legend()
 
 
@@ -787,11 +840,11 @@ io.write(file_mha,np.abs(volumes_all_spokes[ts]),tags={"spacing":[5,1,1]})
 if not(load_map):
     niter = 0
     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,threshold=None)
-    all_maps=optimizer.search_patterns(dictfile,volumes_all,retained_timesteps=None)
+    all_maps=optimizer.search_patterns(dictfile,volumes_all_grappa,retained_timesteps=None)
 
     if(save_map):
         import pickle
-        file = open(file_map, "wb")
+        file = open(file_map_grappa, "wb")
         # dump information to that file
         pickle.dump(all_maps, file)
         # close the file
@@ -819,7 +872,7 @@ iter=0
 regression_paramMaps_ROI(m.paramMap,all_maps[iter][0],m.mask>0,all_maps[iter][1]>0,buildROImask_unique(m.paramMap))
 
 
-curr_file=file_map
+curr_file=file_map_grappa
 
 for iter in list(all_maps.keys()):
 

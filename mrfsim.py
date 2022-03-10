@@ -17,7 +17,7 @@ sys.path.append(path+"/dicomstack")
 
 try:
     import matplotlib
-    matplotlib.use("TkAgg")
+    matplotlib.use("Qt5Agg")
     from matplotlib import pyplot as plt
 except:
     pass

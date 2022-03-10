@@ -159,7 +159,6 @@ curr_traj=curr_traj.reshape(-1,2)
 
 kdata = finufft.nufft2d2(curr_traj[:,0], curr_traj[:,1], image)
 
-
 rebuilt_image=finufft.nufft2d1(curr_traj[:,0], curr_traj[:,1], kdata, image_size)
 
 # plt.imshow(np.abs(rebuilt_image))
@@ -197,7 +196,11 @@ b1_maps=b1_maps.reshape((nb_channels,)+image_size)
 
 image_all_channels=np.array([image*b1 for b1 in b1_maps])
 
+traj_all_spokes = traj_all.reshape(-1,2)
+
 kdata_all_channels=[finufft.nufft2d2(curr_traj[:,0], curr_traj[:,1], p) for p in image_all_channels]
+kdata_all_channels_all_spokes=[finufft.nufft2d2(traj_all_spokes[:,0], traj_all_spokes[:,1], p) for p in image_all_channels]
+
 
 image_rebuilt_all_channels=[finufft.nufft2d1(curr_traj[:,0], curr_traj[:,1], k, image_size) for k in kdata_all_channels]
 
@@ -267,7 +270,7 @@ kernel_y=[-1,0,1]
 kernel_x=[-1,0,1]
 kernel_y=[0,1]
 
-lambd = 0.1
+lambd = 0.
 
 list_kernels=[([-1,0,1],[0,1]),(np.arange(-2,3).astype(int),[0,1])]
 list_kernels=[([-1,0,1],[0,1])]
@@ -278,7 +281,7 @@ kdata_all_channels_for_grappa=np.array(kdata_all_channels).reshape(nb_channels,n
 
 kdata_calib_all_channels=np.array(kdata_calib_all_channels).reshape((nb_channels,)+traj_calib_for_grappa.shape[:-1])
 
-calibration_mode="Tikhonov"
+calibration_mode="Standard"
 
 for (kernel_x,kernel_y) in list_kernels:
     # CALIBRATION
@@ -493,11 +496,45 @@ for (kernel_x,kernel_y) in list_kernels:
     plt.title("With GRAPPA replace calib kernel_x {} kernel_y {}".format(kernel_x,kernel_y))
 
 
+curr_traj_completed_replace_calib
+kdata_all_channels_completed_replace_calib
+
+ind=np.lexsort((curr_traj_completed_replace_calib[:, 0], curr_traj_completed_replace_calib[:, 1]))
+curr_traj_completed_replace_calib= curr_traj_completed_replace_calib[ind,:]
+kdata_all_channels_completed_replace_calib[:]=kdata_all_channels_completed_replace_calib[:,ind]
 
 
+plot_next_slice=False
+ch=3
+sl = 129
+metric=np.abs
+plt.figure()
+plt.title("Ch {} Sl {}".format(ch,sl))
+curr_traj = traj_all_spokes
+ind = np.lexsort((curr_traj[:,0], curr_traj[:,1]))
+curr_kdata = kdata_all_channels_all_spokes[ch].flatten()
+curr_kdata=curr_kdata[ind]
+plt.plot(metric(curr_kdata.reshape(npoint_x,npoint_x)[sl]),label='Kdata fully sampled')
+if sl in calib_lines:
+    label="Calibration line"
+elif sl%undersampling==0:
+    label="Measured line"
+else:
+    label="Estimated line"
+plt.plot(metric(kdata_all_channels_completed_replace_calib[ch].reshape(npoint_x,npoint_x)[sl]),label=label)
 
-
-
+if plot_next_slice:
+    if sl>0:
+        plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2],npoint)[sl-1]),label='Kdata fully sampled previous slice',linestyle='dashed')
+    else:
+        plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2], npoint)[0]),
+                 label='Kdata fully sampled previous slice',linestyle='dashed')
+    if sl<(nb_slices-2):
+        plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2],npoint)[sl+1]),label='Kdata fully sampled next slice',linestyle='dashed')
+    else:
+        plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2], npoint)[nb_slices-1]),
+                 label='Kdata fully sampled next slice',linestyle='dashed')
+plt.legend()
 
 
 
