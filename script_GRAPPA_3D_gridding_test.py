@@ -235,9 +235,9 @@ if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
 else:
     b1_all_slices=np.load(filename_b1)
 
-sl=int(b1_all_slices.shape[1]/2)
-list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
-plot_image_grid(list_images,(2,2),title="Sensitivity map for slice {}".format(sl))
+# sl=int(b1_all_slices.shape[1]/2)
+# list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
+# plot_image_grid(list_images,(2,2),title="Sensitivity map for slice {}".format(sl))
 
 radial_traj_all=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 
@@ -287,12 +287,12 @@ else:
     b1_all_slices_all_spokes = np.load(filename_b1_all_spokes)
 
 
-ch=0
-file_mha = "/".join(["/".join(str.split(filename_b1,"/")[:-1]),"_".join(str.split(str.split(filename_b1,"/")[-1],".")[:-1])]) + "_ch{}.mha".format(ch)
-io.write(file_mha,np.abs(b1_all_slices[ch]),tags={"spacing":[5,1,1]})
-
-file_mha = "/".join(["/".join(str.split(filename_b1_all_spokes,"/")[:-1]),"_".join(str.split(str.split(filename_b1_all_spokes,"/")[-1],".")[:-1])]) + "_ch{}.mha".format(ch)
-io.write(file_mha,np.abs(b1_all_slices_all_spokes[ch]),tags={"spacing":[5,1,1]})
+# ch=0
+# file_mha = "/".join(["/".join(str.split(filename_b1,"/")[:-1]),"_".join(str.split(str.split(filename_b1,"/")[-1],".")[:-1])]) + "_ch{}.mha".format(ch)
+# io.write(file_mha,np.abs(b1_all_slices[ch]),tags={"spacing":[5,1,1]})
+#
+# file_mha = "/".join(["/".join(str.split(filename_b1_all_spokes,"/")[:-1]),"_".join(str.split(str.split(filename_b1_all_spokes,"/")[-1],".")[:-1])]) + "_ch{}.mha".format(ch)
+# io.write(file_mha,np.abs(b1_all_slices_all_spokes[ch]),tags={"spacing":[5,1,1]})
 
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
@@ -336,11 +336,30 @@ if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
 del kdata_all_channels_all_slices
 kdata_all_channels_all_slices = np.load(filename_kdata)
 
-volume=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
-animate_images(volume[0],interval=1000)
 
-del kdata_all_channels_all_slices
-kdata_all_channels_all_slices = np.load(filename_kdata)
+window=8
+kdata_all_channels_all_slices=np.array(groupby(kdata_all_channels_all_slices,window,axis=1))
+traj=radial_traj.get_traj()
+traj=np.array(groupby(traj,window,axis=0))
+
+ts=0
+curr_kdata = kdata_all_channels_all_slices[ts,:,:,:,:]
+curr_traj=traj[ts,:,:,:]
+
+curr_kdata = curr_kdata.reshape(nb_channels,-1)
+curr_traj = curr_traj.reshape(-1,3)
+
+#kx = -k_max + np.arange(npoint_x) * 2 * k_max / (npoint_x - 1)
+#ky = -k_max + np.arange(npoint_y) * 2 * k_max / (npoint_y - 1)
+
+
+
+
+#volume=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
+#animate_images(volume[0],interval=1000)
+
+#del kdata_all_channels_all_slices
+#kdata_all_channels_all_slices = np.load(filename_kdata)
 
 #
 #
@@ -356,7 +375,79 @@ kdata_all_channels_all_slices = np.load(filename_kdata)
 
 
 traj_all=radial_traj_all.get_traj()
-traj_all=traj_all.reshape(nb_allspokes,-1,npoint,3)
+traj_all=np.array(groupby(traj_all,window,axis=0))
+curr_traj_all=traj_all[ts,:,:,:]
+curr_traj_all=curr_traj_all.reshape(window,-1,npoint,3)
+curr_traj_all=np.moveaxis(curr_traj_all,0,1)
+curr_traj_all=curr_traj_all.reshape(nb_slices,-1,3)
+
+
+center_line = int(nb_slices / 2) - 1
+image=m.images_series[ts*8]
+kz_all = np.unique(traj_all[ts, :, :, 2])
+kz_curr = np.unique(radial_traj.get_traj()[ts, :, 2])
+
+
+
+over_calibrate=1
+
+if kz_all[center_line] in kz_curr:
+    center_line=center_line+1
+
+center_lines=[]
+current_center_line=center_line
+for i in range(over_calibrate):
+    center_lines.append(current_center_line)
+    current_center_line += undersampling_factor
+
+calib_lines=np.zeros((undersampling_factor-1,over_calibrate)).astype(int)
+calib_line=center_line
+for j in range(len(center_lines)):
+    calib_line = center_lines[j]
+    for i in range(undersampling_factor-1):
+        calib_lines[i,j]=calib_line
+        calib_line=calib_line+1
+
+traj_calib_for_grappa=curr_traj_all[calib_lines,:,:]
+traj_calib_for_grappa=traj_calib_for_grappa.reshape(traj_calib_for_grappa.shape[0],-1,3)
+
+traj_calib=traj_calib_for_grappa.reshape(-1,3)
+
+kdata_calib =finufft.nufft3d2(traj_calib[:,2],traj_calib[:,0], traj_calib[:,1], m.images_series[0])
+kdata_calib_all_channels=[finufft.nufft3d2(traj_calib[:,2],traj_calib[:,0], traj_calib[:,1], np.expand_dims(b1,axis=0)*image) for b1 in b1_maps]
+
+traj_concat = np.concatenate([traj_calib,curr_traj],axis=0)
+kdata_concat_all_channels=np.concatenate([kdata_calib_all_channels,curr_kdata],axis=1)
+
+image_rebuilt_all_channels=[finufft.nufft3d1(traj_concat[:,2],traj_concat[:,0], traj_concat[:,1], k, image_size) for k in kdata_concat_all_channels]
+
+npoint_cart = image_size[1]
+k_max=np.pi
+kx = np.arange(-k_max, k_max, 2 * k_max / npoint_cart) + k_max / npoint_cart
+ky = np.arange(-k_max, k_max, 2 * k_max / npoint_cart) + k_max / npoint_cart
+kz = np.unique(traj_concat[:,2])
+kz_grappa = np.unique(curr_traj[:,2])
+
+KX, KY, KZ = np.meshgrid(kx, ky,kz)
+cartesian_traj = np.stack([KX.flatten(), KY.flatten(),KZ.flatten()], axis=-1)
+
+
+curr_kdata_regridded = [finufft.nufft3d2(cartesian_traj[:,2],cartesian_traj[:,0], cartesian_traj[:,1], p) for p in image_rebuilt_all_channels]
+curr_kdata_regridded = np.array(curr_kdata_regridded)
+
+ind=np.zeros(cartesian_traj.shape[0])
+for calib_line in calib_lines.flatten():
+    kz_cal = kz_all[calib_line]
+    ind=1*(cartesian_traj[:,2]==kz_cal)+(ind)
+ind=ind>0
+
+curr_kdata_regridded_calib=curr_kdata_regridded[:,ind]
+curr_traj_regridded_calib=cartesian_traj[ind]
+
+curr_kdata_regridded_measured=curr_kdata_regridded[:,~ind]
+curr_traj_regridded_measured=cartesian_traj[~ind]
+
+
 
 # plt.imshow(np.abs(rebuilt_image))
 
@@ -370,270 +461,239 @@ curr_traj_completed_all_ts =[]
 
 calibration_mode="Standard"
 lambd = 0.
-over_calibrate=2
+
 
 kernel_x = [-1, 0, 1]
 kernel_y = [0, 1]
+kernel_z=[0,1]
 
 #ts=8
 ts=0
 
 plot_fit=False
 
-for ts in tqdm(range(nb_allspokes)):
-    center_line = int(nb_slices / 2) - 1
-    image=m.images_series[ts]
-    kz_all = np.unique(traj_all[ts, :, :, 2])
-    kz_curr = np.unique(radial_traj.get_traj()[ts, :, 2])
+
+
+#
+# for ch in range(nb_channels):
+#     plt.figure()
+#     plt.imshow(np.abs(image_rebuilt_all_channels[ch]))
+
+
+
+
+###GRAPPA RECONSTRUCTION#####
 
 
 
 
 
-    if kz_all[center_line] in kz_curr:
-        center_line=center_line+1
-
-    center_lines=[]
-    current_center_line=center_line
-    for i in range(over_calibrate):
-        center_lines.append(current_center_line)
-        current_center_line += undersampling_factor
-
-    calib_lines=np.zeros((undersampling_factor-1,over_calibrate)).astype(int)
-    calib_line=center_line
-    for j in range(len(center_lines)):
-        calib_line = center_lines[j]
-        for i in range(undersampling_factor-1):
-            calib_lines[i,j]=calib_line
-            calib_line=calib_line+1
-
-    traj_calib_for_grappa=traj_all[ts,calib_lines,:,:]
-    traj_calib_for_grappa=traj_calib_for_grappa.reshape(traj_calib_for_grappa.shape[0],-1,3)
-
-    traj_calib=traj_calib_for_grappa.reshape(-1,3)
-
-    kdata_calib =finufft.nufft3d2(traj_calib[:,2],traj_calib[:,0], traj_calib[:,1], m.images_series[0])
-    kdata_calib_all_channels=[finufft.nufft3d2(traj_calib[:,2],traj_calib[:,0], traj_calib[:,1], np.expand_dims(b1,axis=0)*image) for b1 in b1_maps]
-
-
-    #
-    # for ch in range(nb_channels):
-    #     plt.figure()
-    #     plt.imshow(np.abs(image_rebuilt_all_channels[ch]))
 
 
 
-
-    ###GRAPPA RECONSTRUCTION#####
-
+# CALIBRATION
 
 
+kdata_all_channels_for_grappa=curr_kdata_regridded_measured.reshape(nb_channels,len(kx),len(ky),len(kz)-len(calib_lines.flatten()))
+kdata_calib_all_channels=curr_kdata_regridded_calib.reshape(nb_channels,len(kx),len(ky),len(calib_lines.flatten()))
+
+traj_calib_for_grappa=curr_traj_regridded_calib.reshape(len(kx),len(ky),len(calib_lines.flatten()),3)
+curr_traj_for_grappa=curr_traj_regridded_measured.reshape(len(kx),len(ky),len(kz)-len(calib_lines.flatten()),3)
 
 
-    kdata_all_channels=kdata_all_channels_all_slices[:,ts,:,:]
+F_source_calib=np.zeros((nb_channels*len(kernel_x)*len(kernel_y)*len(kernel_z),len(kx),len(ky)),dtype=curr_kdata_regridded_measured.dtype)
 
-    curr_traj_for_grappa=radial_traj.get_traj()[ts].reshape(-1,npoint,3)
+pad_z=((np.array(kernel_z)<0).sum(),(np.array(kernel_z)>0).sum())
+pad_y=((np.array(kernel_y)<0).sum(),(np.array(kernel_y)>0).sum())
+pad_x=((np.array(kernel_x)<0).sum(),(np.array(kernel_x)>0).sum())
 
-    kdata_calib_all_channels=np.array(kdata_calib_all_channels).reshape((nb_channels,)+traj_calib_for_grappa.shape[:-1])
+kdata_all_channels_for_grappa_padded=np.pad(kdata_all_channels_for_grappa,((0,0),pad_x,pad_y,pad_z),mode="edge")
+weights=np.zeros((len(calib_lines),nb_channels,nb_channels*len(kernel_x)*len(kernel_y)*len(kernel_z)),dtype=curr_kdata_regridded_measured.dtype)
 
-    kdata_all_channels_for_grappa=kdata_all_channels_all_slices[:,ts,:,:]
+for index_kz_target in range(len(calib_lines)):
+    print("Calibration for line {}".format(index_kz_target))
+    F_target_calib = kdata_calib_all_channels[:, :, :,index_kz_target]
+    for j in tqdm(range(traj_calib_for_grappa.shape[0])):
+        for k in range(traj_calib_for_grappa.shape[1]):
+            kx_=traj_calib_for_grappa[j,k,index_kz_target,0]
+            ky_ = traj_calib_for_grappa[j,k,index_kz_target,1]
+            kz_ = traj_calib_for_grappa[j,k,index_kz_target, 2]
 
-
-
-
-    # CALIBRATION
-
-    F_source_calib=np.zeros((nb_channels*len(kernel_x)*len(kernel_y),traj_calib_for_grappa.shape[1]),dtype=kdata_calib.dtype)
-
-    pad_y=((np.array(kernel_y)<0).sum(),(np.array(kernel_y)>0).sum())
-    pad_x=((np.array(kernel_x)<0).sum(),(np.array(kernel_x)>0).sum())
-
-    kdata_all_channels_for_grappa_padded=np.pad(kdata_all_channels_for_grappa,((0,0),pad_y,pad_x),mode="edge")
-    weights=np.zeros((len(calib_lines),nb_channels,nb_channels*len(kernel_x)*len(kernel_y)),dtype=kdata_calib.dtype)
-
-    for index_ky_target in range(len(calib_lines)):
-        print("Calibration for line {}".format(index_ky_target))
-        F_target_calib = kdata_calib_all_channels[:, index_ky_target, :]
-        for j in tqdm(range(traj_calib_for_grappa.shape[1])):
-            kx=traj_calib_for_grappa[index_ky_target,j,0]
-            ky = traj_calib_for_grappa[index_ky_target,j,1]
-            kz = traj_calib_for_grappa[index_ky_target, j, 2]
-
-            kx_comp = (kx-curr_traj_for_grappa[0,:,0])
+            kx_comp = (kx_-kx)
             kx_comp[kx_comp < 0] = np.inf
 
-            kx_ref=curr_traj_for_grappa[0,np.argmin(kx_comp),0]
+            kx_ref=kx[np.argmin(kx_comp)]
 
-            ky_comp = (ky - curr_traj_for_grappa[:, 0, 1])
+            ky_comp = (ky_ - ky)
             ky_comp[ky_comp < 0] = np.inf
 
-            ky_ref = curr_traj_for_grappa[np.argmin(ky_comp), 0,1]
+            ky_ref = ky[np.argmin(ky_comp)]
 
-            kz_comp = (kz - curr_traj_for_grappa[:, 0, 2])
+            kz_comp = (kz_ - kz_grappa)
             kz_comp[kz_comp < 0] = np.inf
 
-            kz_ref = curr_traj_for_grappa[np.argmin(kz_comp), 0, 2]
+            kz_ref = kz_grappa[np.argmin(kz_comp)]
 
-            j0, i0 = np.unravel_index(
+            j0,k0,l0 = np.unravel_index(
                 np.argmin(np.linalg.norm(curr_traj_for_grappa - np.expand_dims(np.array([kx_ref, ky_ref,kz_ref]), axis=(0, 1)), axis=-1)),
                 curr_traj_for_grappa.shape[:-1])
-            local_indices = np.stack(np.meshgrid(pad_y[0]+j0 + np.array(kernel_y), pad_x[0]+i0 + np.array(kernel_x)), axis=0).T.reshape(-1, 2)
+            local_indices = np.stack(np.meshgrid(pad_x[0]+j0 + np.array(kernel_x),pad_y[0]+k0 + np.array(kernel_y), pad_z[0]+l0 + np.array(kernel_z)), axis=0).T.reshape(-1, 3)
 
-            local_kdata_for_grappa = kdata_all_channels_for_grappa_padded[:, local_indices[:, 0], local_indices[:, 1]]
+            local_kdata_for_grappa = kdata_all_channels_for_grappa_padded[:, local_indices[:, 0], local_indices[:, 1],local_indices[:, 2]]
             local_kdata_for_grappa = np.array(local_kdata_for_grappa)
             local_kdata_for_grappa = local_kdata_for_grappa.flatten()
-            F_source_calib[:,j]=local_kdata_for_grappa
+            F_source_calib[:,j,k]=local_kdata_for_grappa
 
 
-        if calibration_mode=="Tikhonov":
-            weights[index_ky_target]=F_target_calib@F_source_calib.conj().T@np.linalg.inv(F_source_calib@F_source_calib.conj().T+lambd*np.eye(F_source_calib.shape[0]))
+    if calibration_mode=="Tikhonov":
+        weights[index_ky_target]=F_target_calib@F_source_calib.conj().T@np.linalg.inv(F_source_calib@F_source_calib.conj().T+lambd*np.eye(F_source_calib.shape[0]))
 
-        elif calibration_mode=="Lasso":
-            def function_to_optimize(w):
-                global lambd
-                Y=F_target_calib
-                X=F_source_calib
+    elif calibration_mode=="Lasso":
+        def function_to_optimize(w):
+            global lambd
+            Y=F_target_calib
+            X=F_source_calib
 
-                w = w.reshape((2,nb_channels,nb_channels*len(kernel_x)*len(kernel_y)))
+            w = w.reshape((2,nb_channels,nb_channels*len(kernel_x)*len(kernel_y)))
 
-                wR = w[0]
-                wI = w[1]
+            wR = w[0]
+            wI = w[1]
 
-                #print(wR.shape)
+            #print(wR.shape)
 
-                wRX=wR @ X
-                wIX = wI @ X
-
-
-                return np.trace((wRX.conj().T)@wRX) + np.trace((wIX.conj().T)@wIX) - 2*np.trace(np.real(Y.conj().T @ wR @ X)) + 2*np.trace(np.imag(Y.conj().T @ wI @ X)) + lambd*(np.linalg.norm(wR.flatten(),ord=1)+np.linalg.norm(wI.flatten(),ord=1))
-
-            w0=np.zeros((2,nb_channels,nb_channels*len(kernel_x)*len(kernel_y)),dtype=kdata_calib.dtype).flatten()
-
-            res=minimize(function_to_optimize,w0)
-
-            w_sol = res.x.reshape((2,nb_channels,nb_channels*len(kernel_x)*len(kernel_y)))
-
-            weights[index_ky_target]=np.apply_along_axis(lambda args: [complex(*args)], 0, w_sol)
+            wRX=wR @ X
+            wIX = wI @ X
 
 
-        else :
-            weights[index_ky_target]=F_target_calib@np.linalg.pinv(F_source_calib)
+            return np.trace((wRX.conj().T)@wRX) + np.trace((wIX.conj().T)@wIX) - 2*np.trace(np.real(Y.conj().T @ wR @ X)) + 2*np.trace(np.imag(Y.conj().T @ wI @ X)) + lambd*(np.linalg.norm(wR.flatten(),ord=1)+np.linalg.norm(wI.flatten(),ord=1))
 
-        if plot_fit:
-            F_estimate =weights[index_ky_target]@F_source_calib
+        w0=np.zeros((2,nb_channels,nb_channels*len(kernel_x)*len(kernel_y)),dtype=kdata_calib.dtype).flatten()
 
-            plt.figure()
-            plt.plot(np.linalg.norm(F_target_calib-F_estimate,axis=0)/np.sqrt(nb_channels))
-            plt.title("Calibration Error for line {} aggregated accross channels".format(index_ky_target))
+        res=minimize(function_to_optimize,w0)
 
-            nplot_x = int(np.sqrt(nb_channels))
-            nplot_y = int(nb_channels/nplot_x)+1
-            #
-            # # metric=np.real
-            # # fig, axs = plt.subplots(nplot_x, nplot_y)
-            # # fig.suptitle("Calibration Performance for line {} : Real Part".format(index_ky_target))
-            # # for i in range(nplot_x):
-            # #     for j in range(nplot_y):
-            # #         ch=i*nplot_y+j
-            # #         if ch >= nb_channels:
-            # #             break
-            # #         axs[i, j].plot(metric(F_target_calib[ch,:]),label="Target")
-            # #         axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
-            # #         axs[i,j].set_title('Channel {}'.format(ch))
-            # #         axs[i,j].legend(loc="upper right")
-            # #
-            # # metric = np.imag
-            # # fig, axs = plt.subplots(nplot_x, nplot_y)
-            # # fig.suptitle("Calibration Performance for line {} : Imaginary Part".format(index_ky_target))
-            # # for i in range(nplot_x):
-            # #     for j in range(nplot_y):
-            # #         ch = i * nplot_y + j
-            # #         if ch >= nb_channels:
-            # #             break
-            # #         axs[i, j].plot(metric(F_target_calib[ch, :]), label="Target")
-            # #         axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
-            # #         axs[i, j].set_title('Channel {}'.format(ch))
-            # #         axs[i, j].legend(loc="upper right")
-            #
-            metric = np.abs
-            fig, axs = plt.subplots(nplot_x, nplot_y)
-            fig.suptitle("Calibration Performance for line {} : Amplitude".format(index_ky_target))
-            for i in range(nplot_x):
-                for j in range(nplot_y):
-                    ch = i * nplot_y + j
-                    if ch >= nb_channels:
-                        break
-                    axs[i, j].plot(metric(F_target_calib[ch, :]), label="Target")
-                    axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
-                    axs[i, j].set_title('Channel {}'.format(ch))
-                    axs[i, j].legend(loc="upper right")
+        w_sol = res.x.reshape((2,nb_channels,nb_channels*len(kernel_x)*len(kernel_y)))
+
+        weights[index_ky_target]=np.apply_along_axis(lambda args: [complex(*args)], 0, w_sol)
 
 
+    else :
+        weights[index_kz_target]=(F_target_calib.reshape(nb_channels,-1)@np.linalg.pinv(F_source_calib.reshape(F_source_calib.shape[0],-1))).reshape(weights.shape[1:])
 
+    if plot_fit:
+        F_estimate =weights[index_ky_target]@F_source_calib
 
+        plt.figure()
+        plt.plot(np.linalg.norm(F_target_calib-F_estimate,axis=0)/np.sqrt(nb_channels))
+        plt.title("Calibration Error for line {} aggregated accross channels".format(index_ky_target))
 
-    #ESTIMATION
+        nplot_x = int(np.sqrt(nb_channels))
+        nplot_y = int(nb_channels/nplot_x)+1
+        #
+        # # metric=np.real
+        # # fig, axs = plt.subplots(nplot_x, nplot_y)
+        # # fig.suptitle("Calibration Performance for line {} : Real Part".format(index_ky_target))
+        # # for i in range(nplot_x):
+        # #     for j in range(nplot_y):
+        # #         ch=i*nplot_y+j
+        # #         if ch >= nb_channels:
+        # #             break
+        # #         axs[i, j].plot(metric(F_target_calib[ch,:]),label="Target")
+        # #         axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
+        # #         axs[i,j].set_title('Channel {}'.format(ch))
+        # #         axs[i,j].legend(loc="upper right")
+        # #
+        # # metric = np.imag
+        # # fig, axs = plt.subplots(nplot_x, nplot_y)
+        # # fig.suptitle("Calibration Performance for line {} : Imaginary Part".format(index_ky_target))
+        # # for i in range(nplot_x):
+        # #     for j in range(nplot_y):
+        # #         ch = i * nplot_y + j
+        # #         if ch >= nb_channels:
+        # #             break
+        # #         axs[i, j].plot(metric(F_target_calib[ch, :]), label="Target")
+        # #         axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
+        # #         axs[i, j].set_title('Channel {}'.format(ch))
+        # #         axs[i, j].legend(loc="upper right")
+        #
+        metric = np.abs
+        fig, axs = plt.subplots(nplot_x, nplot_y)
+        fig.suptitle("Calibration Performance for line {} : Amplitude".format(index_ky_target))
+        for i in range(nplot_x):
+            for j in range(nplot_y):
+                ch = i * nplot_y + j
+                if ch >= nb_channels:
+                    break
+                axs[i, j].plot(metric(F_target_calib[ch, :]), label="Target")
+                axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
+                axs[i, j].set_title('Channel {}'.format(ch))
+                axs[i, j].legend(loc="upper right")
 
 
 
 
 
-    print("Estimating missing kz lines for timestep {}".format(ts))
-
-    curr_traj_for_grappa_ts = radial_traj.get_traj()[ts].reshape(-1, npoint, 3)
-    kz_to_estimate = np.array(sorted(list(set(kz_all) - set(kz_curr))))
-    kz_lines_to_estimate = np.where(np.isin(kz_all, kz_to_estimate))[0]
-    F_target_estimate = np.zeros((nb_channels,len(kz_lines_to_estimate),npoint),dtype=kdata_calib.dtype)
-
-    for i,l in (enumerate(kz_lines_to_estimate)):
-        for j in range(npoint):
-
-            kx=traj_all[ts,l,j,0]
-            ky = traj_all[ts, l, j,1]
-            kz = traj_all[ts, l, j,2 ]
+#ESTIMATION
 
 
-            points = np.unique(curr_traj_for_grappa_ts[:, :, 2].flatten())
-            kz_comp = (kz - points)
-            kz_comp[kz_comp < 0] = np.inf
-            slice_ref = np.argmin(kz_comp)
-            kz_ref = points[slice_ref]
-
-            traj_slice = curr_traj_for_grappa_ts[slice_ref,:,:]
-
-            points = traj_slice[:, 0].flatten()
-            kx_comp = (kx - points)
-            kx_comp[kx_comp < 0] = np.inf
-            kx_ref = points[np.argmin(kx_comp)]
-
-            points = traj_slice[:, 1].flatten()
-            ky_comp = (ky - points)
-            ky_comp[ky_comp < 0] = np.inf
-            ky_ref = points[np.argmin(ky_comp)]
 
 
-            j0, i0 = np.unravel_index(
-                    np.argmin(np.linalg.norm(curr_traj_for_grappa_ts - np.expand_dims(np.array([kx_ref, ky_ref,kz_ref]), axis=(0, 1)), axis=-1)),
-                    curr_traj_for_grappa_ts.shape[:-1])
-            local_indices = np.stack(np.meshgrid(pad_y[0]+j0 + np.array(kernel_y), pad_x[0]+i0 + np.array(kernel_x)), axis=0).T.reshape(-1, 2)
 
-            local_kdata_for_grappa = kdata_all_channels_for_grappa_padded[:, local_indices[:, 0], local_indices[:, 1]]
-            local_kdata_for_grappa = np.array(local_kdata_for_grappa)
-            local_kdata_for_grappa = local_kdata_for_grappa.flatten()
-            F_target_estimate[:,i,j]=weights[(l-1)%(undersampling_factor-1)]@local_kdata_for_grappa
+print("Estimating missing kz lines for timestep {}".format(ts))
+
+curr_traj_for_grappa_ts = radial_traj.get_traj()[ts].reshape(-1, npoint, 3)
+kz_to_estimate = np.array(sorted(list(set(kz_all) - set(kz_curr))))
+kz_lines_to_estimate = np.where(np.isin(kz_all, kz_to_estimate))[0]
+F_target_estimate = np.zeros((nb_channels,len(kz_lines_to_estimate),npoint),dtype=kdata_calib.dtype)
+
+for i,l in (enumerate(kz_lines_to_estimate)):
+    for j in range(npoint):
+
+        kx=traj_all[ts,l,j,0]
+        ky = traj_all[ts, l, j,1]
+        kz = traj_all[ts, l, j,2 ]
 
 
-    kdata_all_channels_completed=np.concatenate([kdata_all_channels_for_grappa,F_target_estimate],axis=1)
+        points = np.unique(curr_traj_for_grappa_ts[:, :, 2].flatten())
+        kz_comp = (kz - points)
+        kz_comp[kz_comp < 0] = np.inf
+        slice_ref = np.argmin(kz_comp)
+        kz_ref = points[slice_ref]
 
-    curr_traj_estimate=traj_all[ts,kz_lines_to_estimate,:,:]
+        traj_slice = curr_traj_for_grappa_ts[slice_ref,:,:]
 
-    curr_traj_completed=np.concatenate([curr_traj_for_grappa,curr_traj_estimate],axis=0)
+        points = traj_slice[:, 0].flatten()
+        kx_comp = (kx - points)
+        kx_comp[kx_comp < 0] = np.inf
+        kx_ref = points[np.argmin(kx_comp)]
 
-    kdata_all_channels_completed=kdata_all_channels_completed.reshape((nb_channels,-1))
-    curr_traj_completed=curr_traj_completed.reshape((-1,3))
+        points = traj_slice[:, 1].flatten()
+        ky_comp = (ky - points)
+        ky_comp[ky_comp < 0] = np.inf
+        ky_ref = points[np.argmin(ky_comp)]
 
-    kdata_all_channels_completed_all_ts.append(kdata_all_channels_completed)
-    curr_traj_completed_all_ts.append(curr_traj_completed)
+
+        j0, i0 = np.unravel_index(
+            np.argmin(np.linalg.norm(curr_traj_for_grappa_ts - np.expand_dims(np.array([kx_ref, ky_ref,kz_ref]), axis=(0, 1)), axis=-1)),
+            curr_traj_for_grappa_ts.shape[:-1])
+        local_indices = np.stack(np.meshgrid(pad_y[0]+j0 + np.array(kernel_y), pad_x[0]+i0 + np.array(kernel_x)), axis=0).T.reshape(-1, 2)
+
+        local_kdata_for_grappa = kdata_all_channels_for_grappa_padded[:, local_indices[:, 0], local_indices[:, 1]]
+        local_kdata_for_grappa = np.array(local_kdata_for_grappa)
+        local_kdata_for_grappa = local_kdata_for_grappa.flatten()
+        F_target_estimate[:,i,j]=weights[(l-1)%(undersampling_factor-1)]@local_kdata_for_grappa
+
+
+kdata_all_channels_completed=np.concatenate([kdata_all_channels_for_grappa,F_target_estimate],axis=1)
+
+curr_traj_estimate=traj_all[ts,kz_lines_to_estimate,:,:]
+
+curr_traj_completed=np.concatenate([curr_traj_for_grappa,curr_traj_estimate],axis=0)
+
+kdata_all_channels_completed=kdata_all_channels_completed.reshape((nb_channels,-1))
+curr_traj_completed=curr_traj_completed.reshape((-1,3))
+
+kdata_all_channels_completed_all_ts.append(kdata_all_channels_completed)
+curr_traj_completed_all_ts.append(curr_traj_completed)
 
 kdata_all_channels_completed_all_ts=np.array(kdata_all_channels_completed_all_ts)
 kdata_all_channels_completed_all_ts=np.moveaxis(kdata_all_channels_completed_all_ts,0,1)

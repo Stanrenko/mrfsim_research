@@ -23,10 +23,12 @@ light_memory_usage=False
 
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/2_Data Raw/zz_Data_old/3_Comp_Matlab/InVivo"
 #base_folder = "./data/InVivo/3D"
+base_folder = "./data/InVivo"
 
 
 localfile ="/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
 localfile ="/20211209_AL_Tongue/meas_MID00260_FID45164_JAMBES_raFin_CLI.dat"
+
 
 #localfile = "/20211122_EV_MRF/meas_MID00146_FID42269_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
 #localfile = "/20211122_EV_MRF/meas_MID00147_FID42270_raFin_3D_tra_1x1x5mm_FULL_incoherent.dat"
@@ -43,6 +45,10 @@ localfile ="/20211209_AL_Tongue/meas_MID00260_FID45164_JAMBES_raFin_CLI.dat"
 # localfile = "/20211129_BM/meas_MID00086_FID43317_raFin_3D_FULL_new_highRES_inco.dat"
 # localfile = "/20211129_BM/meas_MID00087_FID43318_raFin_3D_FULL_new_highRES_stack.dat"
 localfile = "/20210924_Exam/meas_MID00132_FID34531_CUISSES_raFin_CLI.dat"
+localfile ="/Phantom20220310/meas_MID00198_FID57299_JAMBES_raFin_CLI.dat"
+localfile ="/Phantom20220310/meas_MID00203_FID57304_JAMBES_raFin_CLI.dat"
+localfile ="/Phantom20220310/meas_MID00241_FID57342_JAMBES_raFin_CLI.dat"
+localfile ="/Phantom20220310/meas_MID00254_FID57355_JAMBES_raFin_CLI.dat"
 
 filename = base_folder+localfile
 
@@ -175,8 +181,8 @@ for sl in tqdm(range(nb_slices)):
 
     ## Dict mapping
 
-    # dictfile = "mrf175_SimReco2.dict"
-    dictfile = "mrf175_Dico2_Invivo.dict"
+    dictfile = "mrf175_SimReco2.dict"
+    #dictfile = "mrf175_Dico2_Invivo.dict"
 
     with open("mrf_sequence.json") as f:
         sequence_config = json.load(f)
@@ -224,7 +230,7 @@ keys = ["ff","wT1","attB1","df"]
 
 dx = 1
 dy = 1
-dz = 19
+dz = 8
 
 for k in tqdm(keys) :
     map_all_slices = np.zeros((nb_slices,)+image_size)
@@ -233,6 +239,7 @@ for k in tqdm(keys) :
         file_map = filename.split(".dat")[0] + "_MRF_map_sl_{}.pkl".format(sl)
         file = open(file_map, "rb")
         all_maps = pickle.load(file)
+        file.close()
 
         iter = 0
         map_rebuilt = all_maps[iter][0]

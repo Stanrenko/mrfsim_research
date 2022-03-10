@@ -15,7 +15,7 @@ import pickle
 
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
 base_folder = "./data/InVivo/3D"
-
+base_folder = "./data/InVivo"
 
 import twixtools
 
@@ -57,6 +57,7 @@ localfile = "/20211221_EV/meas_MID00045_FID47508_raFin_3D_FULL_new_highRES_inco.
 localfile = "/20220106/meas_MID00021_FID48331_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile = "/20220106/meas_MID00167_FID48477_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile = "/20220113_CS/meas_MID00162_FID49557_raFin_3D_tra_1x1x5mm_FULL_noGS.dat"
+localfile ="/Phantom20220310/meas_MID00255_FID57356_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 
 
 filename = base_folder+localfile
@@ -285,7 +286,7 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 ##volumes for slice taking into account coil sensi
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=use_GPU,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=use_GPU,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
     np.save(filename_volume,volumes_all)
     # sl=20
     # ani = animate_images(volumes_all[:,sl,:,:])
@@ -301,7 +302,7 @@ if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
     #selected_spokes = np.r_[10:400]
     #selected_spokes = np.r_[10:400, 1200:1400]
     selected_spokes=None
-    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=None, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
+    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=None, normalize_kdata=False,light_memory_usage=True,selected_spokes=selected_spokes,normalize_volumes=True)
     np.save(filename_mask,mask)
     animate_images(mask)
     #del mask
@@ -316,7 +317,7 @@ del b1_all_slices
 ########################## Dict mapping ########################################
 
 dictfile = "mrf175_SimReco2.dict"
-dictfile = "mrf175_Dico2_Invivo.dict"
+#dictfile = "mrf175_Dico2_Invivo.dict"
 
 volumes_all = np.load(filename_volume)
 mask = np.load(filename_mask)
@@ -358,6 +359,30 @@ else:
     file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
     file = open(file_map, "rb")
     all_maps = pickle.load(file)
+
+
+
+file = open(file_map, "rb")
+all_maps = pickle.load(file)
+
+for iter in list(all_maps.keys()):
+
+    map_rebuilt=all_maps[iter][0]
+    mask=all_maps[iter][1]
+
+    keys_simu = list(map_rebuilt.keys())
+    values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+    map_for_sim = dict(zip(keys_simu, values_simu))
+
+    #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+    #map_Python.buildParamMap()
+
+
+    for key in ["ff","wT1","df","attB1"]:
+        file_mha = "/".join(["/".join(str.split(file_map,"/")[:-1]),"_".join(str.split(str.split(file_map,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
+        io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+
+
 
 iter=0
 map_rebuilt=all_maps[iter][0]
