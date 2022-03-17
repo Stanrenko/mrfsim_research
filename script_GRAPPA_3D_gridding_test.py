@@ -580,10 +580,12 @@ for index_kz_target in range(len(calib_lines)):
         weights[index_kz_target]=(F_target_calib.reshape(nb_channels,-1)@np.linalg.pinv(F_source_calib.reshape(F_source_calib.shape[0],-1))).reshape(weights.shape[1:])
 
     if plot_fit:
-        F_estimate =weights[index_ky_target]@F_source_calib
+        F_estimate =(weights[index_kz_target]@(F_source_calib.reshape(F_source_calib.shape[0],-1))).reshape(F_target_calib.shape)
+
+        line=np.random.choice(F_estimate.shape[1])
 
         plt.figure()
-        plt.plot(np.linalg.norm(F_target_calib-F_estimate,axis=0)/np.sqrt(nb_channels))
+        plt.plot(np.linalg.norm(F_target_calib[:,:,line]-F_estimate[:,:,line],axis=0)/np.sqrt(nb_channels))
         plt.title("Calibration Error for line {} aggregated accross channels".format(index_ky_target))
 
         nplot_x = int(np.sqrt(nb_channels))
@@ -623,8 +625,8 @@ for index_kz_target in range(len(calib_lines)):
                 ch = i * nplot_y + j
                 if ch >= nb_channels:
                     break
-                axs[i, j].plot(metric(F_target_calib[ch, :]), label="Target")
-                axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
+                axs[i, j].plot(metric(F_target_calib[ch, :,line]), label="Target")
+                axs[i, j].plot(metric(F_estimate[ch, :,line]), label="Estimate")
                 axs[i, j].set_title('Channel {}'.format(ch))
                 axs[i, j].legend(loc="upper right")
 

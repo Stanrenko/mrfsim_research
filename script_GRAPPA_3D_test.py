@@ -34,9 +34,9 @@ with open("mrf_sequence.json") as f:
 
 seq = T1MRF(**sequence_config)
 
-nb_filled_slices = 4
-nb_empty_slices=1
-repeat_slice=2
+nb_filled_slices = 20
+nb_empty_slices=4
+repeat_slice=4
 nb_slices = nb_filled_slices+2*nb_empty_slices
 name = "SquareSimu3DGrappa"
 
@@ -166,43 +166,56 @@ if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
 
 radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 
-nb_channels=4
+nb_channels=8
 
-sig=50**2
 
-nb_means=int(np.sqrt(nb_channels))
 
+nb_means=int(nb_channels**(1/3))
+
+
+means_z=np.arange(1,nb_means+1)*(1/(nb_means+1))*image_size[0]
 means_x=np.arange(1,nb_means+1)*(1/(nb_means+1))*image_size[1]
 means_y=np.arange(1,nb_means+1)*(1/(nb_means+1))*image_size[2]
 
-x = np.arange(size[0])
-y = np.arange(size[1])
 
-X,Y = np.meshgrid(x,y)
-pixels=np.stack([X.flatten(), Y.flatten()], axis=-1)
+sig_z=image_size[0]/(2*(nb_means+1))
+sig_x=image_size[1]/(2*(nb_means+1))
+sig_y=image_size[2]/(2*(nb_means+1))
+
+z = np.arange(image_size[0])
+x = np.arange(image_size[1])
+y = np.arange(image_size[2])
+
+
+Z,X,Y = np.meshgrid(z,x,y)
+pixels=np.stack([Z.flatten(),X.flatten(), Y.flatten()], axis=-1)
 
 from scipy.stats import multivariate_normal
 b1_maps=[]
-for mu_x in means_x:
-    for mu_y in means_y:
-        b1_maps.append(multivariate_normal.pdf(pixels, mean=[mu_x,mu_y], cov=sig*np.eye(2)))
+
+for mu_z in means_z:
+    for mu_x in means_x:
+        for mu_y in means_y:
+            b1_maps.append(multivariate_normal.pdf(pixels, mean=[mu_z,mu_x,mu_y], cov=np.diag([sig_z,sig_x,sig_y])))
 
 b1_maps = np.array(b1_maps)
 b1_maps=b1_maps/np.expand_dims(np.max(b1_maps,axis=-1),axis=-1)
-b1_maps=b1_maps.reshape((nb_channels,)+size)
+b1_maps=b1_maps.reshape((nb_channels,)+image_size)
+b1_prev = np.ones(b1_maps[0].shape,dtype=b1_maps[0].dtype)
+b1_all = np.concatenate([np.expand_dims(b1_prev, axis=0), b1_maps], axis=0)
 
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
 
     data=[]
 
-    images = copy(m.images_series)
+    #images = copy(m.images_series)
 
-    for b1 in b1_maps:
-        m.images_series=np.expand_dims(b1,axis=(0,1))*images
+    for i in tqdm(range(1,b1_all.shape[0])):
+        m.images_series*=np.expand_dims(b1_all[i]/b1_all[i-1],axis=0)
         data.append(np.array(m.generate_kdata(radial_traj,useGPU=False)))
 
-    m.images_series=images
-    del images
+    m.images_series/=np.expand_dims(b1_all[-1],axis=0)
+    #del images
 
     data=np.array(data)
 
@@ -234,9 +247,9 @@ if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
 else:
     b1_all_slices=np.load(filename_b1)
 
-sl=int(b1_all_slices.shape[1]/2)
-list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
-plot_image_grid(list_images,(2,2),title="Sensitivity map for slice {}".format(sl))
+#sl=int(b1_all_slices.shape[1]/2)
+#list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
+#plot_image_grid(list_images,(3,3),title="Sensitivity map for slice {}".format(sl))
 
 radial_traj_all=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 
@@ -246,14 +259,12 @@ if str.split(filename_kdata_all_spokes,"/")[-1] not in os.listdir(folder):
 
     data=[]
 
-    images = copy(m.images_series)
-
-    for b1 in b1_maps:
-        m.images_series=np.expand_dims(b1,axis=(0,1))*images
+    for i in range(1,b1_all.shape[0]):
+        m.images_series*=np.expand_dims(b1_all[i]/b1_all[i-1],axis=0)
         data.append(np.array(m.generate_kdata(radial_traj_all,useGPU=False)))
 
-    m.images_series=images
-    del images
+
+    #del images
 
     data=np.array(data)
 
@@ -272,6 +283,8 @@ if str.split(filename_kdata_all_spokes,"/")[-1] not in os.listdir(folder):
     del data
     kdata_all_channels_all_slices_all_spokes = np.load(filename_kdata_all_spokes)
 
+    m.build_ref_images(seq)
+
 else:
     #kdata_all_channels_all_slices = open_memmap(filename_kdata)
     kdata_all_channels_all_slices_all_spokes = np.load(filename_kdata_all_spokes)
@@ -286,19 +299,19 @@ else:
     b1_all_slices_all_spokes = np.load(filename_b1_all_spokes)
 
 
-ch=0
-file_mha = "/".join(["/".join(str.split(filename_b1,"/")[:-1]),"_".join(str.split(str.split(filename_b1,"/")[-1],".")[:-1])]) + "_ch{}.mha".format(ch)
-io.write(file_mha,np.abs(b1_all_slices[ch]),tags={"spacing":[5,1,1]})
+#ch=0
+#file_mha = "/".join(["/".join(str.split(filename_b1,"/")[:-1]),"_".join(str.split(str.split(filename_b1,"/")[-1],".")[:-1])]) + "_ch{}.mha".format(ch)
+#io.write(file_mha,np.abs(b1_all_slices[ch]),tags={"spacing":[5,1,1]})
 
-file_mha = "/".join(["/".join(str.split(filename_b1_all_spokes,"/")[:-1]),"_".join(str.split(str.split(filename_b1_all_spokes,"/")[-1],".")[:-1])]) + "_ch{}.mha".format(ch)
-io.write(file_mha,np.abs(b1_all_slices_all_spokes[ch]),tags={"spacing":[5,1,1]})
+#file_mha = "/".join(["/".join(str.split(filename_b1_all_spokes,"/")[:-1]),"_".join(str.split(str.split(filename_b1_all_spokes,"/")[-1],".")[:-1])]) + "_ch{}.mha".format(ch)
+#io.write(file_mha,np.abs(b1_all_slices_all_spokes[ch]),tags={"spacing":[5,1,1]})
 
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
     del kdata_all_channels_all_slices
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
     np.save(filename_volume,volumes_all)
     # sl=20
     # ani = animate_images(volumes_all[:,sl,:,:])
@@ -311,7 +324,7 @@ if str.split(filename_volume_all_spokes,"/")[-1] not in os.listdir(folder):
     del kdata_all_channels_all_slices_all_spokes
     kdata_all_channels_all_slices_all_spokes = np.load(filename_kdata_all_spokes)
 
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices_all_spokes,radial_traj_all,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices_all_spokes,radial_traj_all,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
     np.save(filename_volume_all_spokes,volumes_all)
     # sl=20
     # ani = animate_images(volumes_all[:,sl,:,:])
@@ -326,17 +339,17 @@ if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
     selected_spokes=None
-    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,threshold_factor=1/25, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
+    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,threshold_factor=1/25, normalize_kdata=False,light_memory_usage=True,selected_spokes=selected_spokes)
     np.save(filename_mask,mask)
     animate_images(mask)
     del mask
 
 
-del kdata_all_channels_all_slices
-kdata_all_channels_all_slices = np.load(filename_kdata)
+#del kdata_all_channels_all_slices
+#kdata_all_channels_all_slices = np.load(filename_kdata)
 
-volume=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
-animate_images(volume[0],interval=1000)
+#volume=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
+#animate_images(volume[0],interval=1000)
 
 del kdata_all_channels_all_slices
 kdata_all_channels_all_slices = np.load(filename_kdata)
@@ -369,10 +382,15 @@ curr_traj_completed_all_ts =[]
 
 calibration_mode="Standard"
 lambd = 0.
-over_calibrate=1
+over_calibrate=2
 
-kernel_x = list(range(-31,32))
-kernel_y = [0, 1]
+#kernel_x = list(range(-31,32))
+kernel_y = [0 ,1]
+
+Neq = int(undersampling_factor*np.maximum(over_calibrate-len(kernel_y)+1,0)+1)
+
+len_kerx = int(npoint*Neq/(nb_channels*len(kernel_y)))
+kernel_x=np.arange(-(int(len_kerx/2)-1),int(len_kerx/2))
 
 #ts=8
 ts=1
@@ -384,27 +402,22 @@ for ts in tqdm(range(nb_allspokes)):
     image=m.images_series[ts]
     kz_all = np.unique(traj_all[ts, :, :, 2])
     kz_curr = np.unique(radial_traj.get_traj()[ts, :, 2])
-
-
-
-
+    kz_to_estimate = np.array(sorted(list(set(kz_all) - set(kz_curr))))
+    kz_lines_to_estimate = np.where(np.isin(kz_all, kz_to_estimate))[0]
+    kz_lines_measured = np.where(1-np.isin(kz_all, kz_to_estimate))[0]
 
     if kz_all[center_line] in kz_curr:
         center_line=center_line+1
 
-    center_lines=[]
-    current_center_line=center_line
-    for i in range(over_calibrate):
-        center_lines.append(current_center_line)
-        current_center_line += undersampling_factor
+    calib_lines=np.zeros((undersampling_factor-1,Neq)).astype(int)
 
-    calib_lines=np.zeros((undersampling_factor-1,over_calibrate)).astype(int)
-    calib_line=center_line
-    for j in range(len(center_lines)):
-        calib_line = center_lines[j]
-        for i in range(undersampling_factor-1):
-            calib_lines[i,j]=calib_line
-            calib_line=calib_line+1
+    for i in range(undersampling_factor-1):
+        calib_line = center_line
+        for j in range(Neq):
+            calib_lines[i, j]=calib_line
+            calib_line+=1
+
+        center_line+=1
 
     traj_calib_for_grappa=traj_all[ts,calib_lines,:,:]
     traj_calib_for_grappa=traj_calib_for_grappa.reshape(traj_calib_for_grappa.shape[0],-1,3)
@@ -412,7 +425,7 @@ for ts in tqdm(range(nb_allspokes)):
     traj_calib=traj_calib_for_grappa.reshape(-1,3)
 
     kdata_calib =finufft.nufft3d2(traj_calib[:,2],traj_calib[:,0], traj_calib[:,1], m.images_series[0])
-    kdata_calib_all_channels=[finufft.nufft3d2(traj_calib[:,2],traj_calib[:,0], traj_calib[:,1], np.expand_dims(b1,axis=0)*image) for b1 in b1_maps]
+    kdata_calib_all_channels=[finufft.nufft3d2(traj_calib[:,2],traj_calib[:,0], traj_calib[:,1], b1*image) for b1 in b1_maps]
 
 
     #
@@ -437,7 +450,12 @@ for ts in tqdm(range(nb_allspokes)):
 
     kdata_all_channels_for_grappa=kdata_all_channels_all_slices[:,ts,:,:]
 
+    curr_traj_for_grappa_calib=traj_all[ts,np.unique(np.concatenate([calib_lines.flatten(),kz_lines_measured])),:,:].reshape(-1,3)
+    #kdata_for_grappa_calib = finufft.nufft3d2(traj_calib[:, 2], traj_calib[:, 0], traj_calib[:, 1], m.images_series[0])
+    kdata_all_channels_for_grappa_calib = np.array([finufft.nufft3d2(curr_traj_for_grappa_calib[:, 2], curr_traj_for_grappa_calib[:, 0], curr_traj_for_grappa_calib[:, 1], b1 * image) for b1 in b1_maps])
 
+    curr_traj_for_grappa_calib = curr_traj_for_grappa_calib.reshape(-1,npoint,3)
+    kdata_all_channels_for_grappa_calib = kdata_all_channels_for_grappa_calib.reshape(nb_channels,-1,npoint)
 
 
     # CALIBRATION
@@ -450,7 +468,13 @@ for ts in tqdm(range(nb_allspokes)):
     kdata_all_channels_for_grappa_padded=np.pad(kdata_all_channels_for_grappa,((0,0),pad_y,pad_x),mode="edge")
     curr_traj_for_grappa_padded = np.pad(curr_traj_for_grappa, (pad_y, pad_x,(0,0)), mode="edge")
 
+    kdata_all_channels_for_grappa_calib_padded = np.pad(kdata_all_channels_for_grappa_calib, ((0, 0), pad_y, pad_x), mode="edge")
+    curr_traj_for_grappa_calib_padded = np.pad(curr_traj_for_grappa_calib, (pad_y, pad_x, (0, 0)), mode="edge")
+
     weights=np.zeros((len(calib_lines),nb_channels,nb_channels*len(kernel_x)*len(kernel_y)),dtype=kdata_calib.dtype)
+
+    index_ky_target=0
+    j=750
 
     for index_ky_target in range(len(calib_lines)):
         print("Calibration for line {}".format(index_ky_target))
@@ -460,32 +484,35 @@ for ts in tqdm(range(nb_allspokes)):
             ky = traj_calib_for_grappa[index_ky_target,j,1]
             kz = traj_calib_for_grappa[index_ky_target, j, 2]
 
-            kx_comp = (kx-curr_traj_for_grappa[0,:,0])
+            curr_traj_for_grappa_calib_no_kz=copy(curr_traj_for_grappa_calib)
+            curr_traj_for_grappa_calib_no_kz[curr_traj_for_grappa_calib_no_kz[:, :, 2] == kz] = np.inf
+
+            kx_comp = (kx-curr_traj_for_grappa_calib_no_kz[0,:,0])
             kx_comp[kx_comp < 0] = np.inf
 
-            kx_ref=curr_traj_for_grappa[0,np.argmin(kx_comp),0]
+            kx_ref=curr_traj_for_grappa_calib_no_kz[0,np.argmin(kx_comp),0]
 
-            ky_comp = (ky - curr_traj_for_grappa[:, 0, 1])
+            ky_comp = (ky - curr_traj_for_grappa_calib_no_kz[:, 0, 1])
             ky_comp[ky_comp < 0] = np.inf
 
-            ky_ref = curr_traj_for_grappa[np.argmin(ky_comp), 0,1]
+            ky_ref = curr_traj_for_grappa_calib_no_kz[np.argmin(ky_comp), 0,1]
 
-            kz_comp = (kz - curr_traj_for_grappa[:, 0, 2])
+            kz_comp = (kz - curr_traj_for_grappa_calib_no_kz[:, 0, 2])
             kz_comp[kz_comp < 0] = np.inf
 
-            kz_ref = curr_traj_for_grappa[np.argmin(kz_comp), 0, 2]
+            kz_ref = curr_traj_for_grappa_calib_no_kz[np.argmin(kz_comp), 0, 2]
 
             j0, i0 = np.unravel_index(
-                np.argmin(np.linalg.norm(curr_traj_for_grappa - np.expand_dims(np.array([kx_ref, ky_ref,kz_ref]), axis=(0, 1)), axis=-1)),
-                curr_traj_for_grappa.shape[:-1])
-            local_indices = np.stack(np.meshgrid(pad_y[0]+j0 + np.array(kernel_y), pad_x[0]+i0 + np.array(kernel_x)), axis=0).T.reshape(-1, 2)
+                np.argmin(np.linalg.norm(curr_traj_for_grappa_calib - np.expand_dims(np.array([kx_ref, ky_ref,kz_ref]), axis=(0, 1)), axis=-1)),
+                curr_traj_for_grappa_calib.shape[:-1])
+            local_indices = np.stack(np.meshgrid(pad_y[0]+j0 + undersampling_factor*np.array(kernel_y), pad_x[0]+i0 + np.array(kernel_x)), axis=0).T.reshape(-1, 2)
 
             local_kdata_for_grappa = kdata_all_channels_for_grappa_padded[:, local_indices[:, 0], local_indices[:, 1]]
             local_kdata_for_grappa = np.array(local_kdata_for_grappa)
             local_kdata_for_grappa = local_kdata_for_grappa.flatten()
             F_source_calib[:,j]=local_kdata_for_grappa
 
-            local_traj_for_grappa = curr_traj_for_grappa_padded[local_indices[:, 0], local_indices[:, 1], :]
+            local_traj_for_grappa = curr_traj_for_grappa_calib_padded[local_indices[:, 0], local_indices[:, 1], :]
 
             local_traj_for_grappa = np.tile(local_traj_for_grappa,
                                             (nb_channels,) + tuple(
@@ -725,8 +752,7 @@ for ts in tqdm(range(nb_allspokes)):
     print("Estimating missing kz lines for timestep {}".format(ts))
 
     curr_traj_for_grappa_ts = radial_traj.get_traj()[ts].reshape(-1, npoint, 3)
-    kz_to_estimate = np.array(sorted(list(set(kz_all) - set(kz_curr))))
-    kz_lines_to_estimate = np.where(np.isin(kz_all, kz_to_estimate))[0]
+
     F_target_estimate = np.zeros((nb_channels,len(kz_lines_to_estimate),npoint),dtype=kdata_calib.dtype)
 
     for i,l in (enumerate(kz_lines_to_estimate)):

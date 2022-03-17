@@ -64,8 +64,6 @@ filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}{}.npy".format(nb
 
 filename_volume_corrected = filename+"_volumes_corrected_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
 filename_kdata = filename+"_kdata_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
-
-
 filename_mask= filename+"_mask_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
 file_map = filename + "_sl{}_rp{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,suffix)
 
