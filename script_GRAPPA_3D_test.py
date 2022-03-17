@@ -34,9 +34,9 @@ with open("mrf_sequence.json") as f:
 
 seq = T1MRF(**sequence_config)
 
-nb_filled_slices = 12
-nb_empty_slices=2
-repeat_slice=1
+nb_filled_slices = 4
+nb_empty_slices=1
+repeat_slice=2
 nb_slices = nb_filled_slices+2*nb_empty_slices
 name = "SquareSimu3DGrappa"
 
@@ -192,7 +192,6 @@ b1_maps=b1_maps/np.expand_dims(np.max(b1_maps,axis=-1),axis=-1)
 b1_maps=b1_maps.reshape((nb_channels,)+size)
 
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
-
 
     data=[]
 
@@ -370,13 +369,13 @@ curr_traj_completed_all_ts =[]
 
 calibration_mode="Standard"
 lambd = 0.
-over_calibrate=2
+over_calibrate=1
 
-kernel_x = [-1, 0, 1]
+kernel_x = list(range(-31,32))
 kernel_y = [0, 1]
 
 #ts=8
-ts=0
+ts=1
 
 plot_fit=False
 
@@ -449,6 +448,8 @@ for ts in tqdm(range(nb_allspokes)):
     pad_x=((np.array(kernel_x)<0).sum(),(np.array(kernel_x)>0).sum())
 
     kdata_all_channels_for_grappa_padded=np.pad(kdata_all_channels_for_grappa,((0,0),pad_y,pad_x),mode="edge")
+    curr_traj_for_grappa_padded = np.pad(curr_traj_for_grappa, (pad_y, pad_x,(0,0)), mode="edge")
+
     weights=np.zeros((len(calib_lines),nb_channels,nb_channels*len(kernel_x)*len(kernel_y)),dtype=kdata_calib.dtype)
 
     for index_ky_target in range(len(calib_lines)):
@@ -484,9 +485,14 @@ for ts in tqdm(range(nb_allspokes)):
             local_kdata_for_grappa = local_kdata_for_grappa.flatten()
             F_source_calib[:,j]=local_kdata_for_grappa
 
+            local_traj_for_grappa = curr_traj_for_grappa_padded[local_indices[:, 0], local_indices[:, 1], :]
+
+            local_traj_for_grappa = np.tile(local_traj_for_grappa,
+                                            (nb_channels,) + tuple(
+                                                np.ones(local_traj_for_grappa.ndim).astype(int))).reshape(-1, 3)
 
         if calibration_mode=="Tikhonov":
-            weights[index_ky_target]=F_target_calib@F_source_calib.conj().T@np.linalg.inv(F_source_calib@F_source_calib.conj().T+lambd*np.eye(F_source_calib.shape[0]))
+                weights[index_ky_target]=F_target_calib@F_source_calib.conj().T@np.linalg.inv(F_source_calib@F_source_calib.conj().T+lambd*np.eye(F_source_calib.shape[0]))
 
         elif calibration_mode=="Lasso":
             def function_to_optimize(w):
@@ -504,6 +510,14 @@ for ts in tqdm(range(nb_allspokes)):
                 wRX=wR @ X
                 wIX = wI @ X
 
+                # print(X.shape)
+                # print(Y.shape)
+                # print(wR.shape)
+                # print(wI.shape)
+                # print(wRX.shape)
+                # print(wIX.shape)
+                #
+                # print(((wRX.conj().T)@wRX).shape)
 
                 return np.trace((wRX.conj().T)@wRX) + np.trace((wIX.conj().T)@wIX) - 2*np.trace(np.real(Y.conj().T @ wR @ X)) + 2*np.trace(np.imag(Y.conj().T @ wI @ X)) + lambd*(np.linalg.norm(wR.flatten(),ord=1)+np.linalg.norm(wI.flatten(),ord=1))
 
@@ -568,11 +582,141 @@ for ts in tqdm(range(nb_allspokes)):
                     axs[i, j].set_title('Channel {}'.format(ch))
                     axs[i, j].legend(loc="upper right")
 
+            metric=np.abs
+            fig, axs = plt.subplots(nplot_x, nplot_y)
+            kdata_source_lines = kdata_all_channels_for_grappa[:, pad_y[0] + j0 + np.array(kernel_y), :]
+            fig.suptitle("Calibration Lines used for {} : Amplitude".format(index_ky_target))
+            for i in range(nplot_x):
+                for j in range(nplot_y):
+                    ch = i * nplot_y + j
+                    if ch >= nb_channels:
+                        break
+                    axs[i, j].plot(metric(F_target_calib[ch, :]), label="Target")
+                    axs[i, j].plot(metric(F_estimate[ch, :]), label="Estimate")
+                    axs[i, j].plot(metric(kdata_source_lines[ch, :,:]).T,linestyle='dashed',alpha=0.5)
+                    axs[i, j].set_title('Channel {}'.format(ch))
+                    axs[i, j].legend(loc="upper right")
+
+            plt.figure()
+            kdata_for_correl=np.moveaxis(kdata_source_lines,0,1).reshape(-1,kdata_source_lines.shape[-1])
+            sns.heatmap(np.real(np.corrcoef(kdata_for_correl)))
+
+            plt.figure()
+            sns.distplot(np.real(np.corrcoef(kdata_for_correl)),bins=10)
+
+            print(np.linalg.cond(F_source_calib))
+
+            def J(w):
+                global F_source_calib
+                global F_target
+                F_estimate = w @ F_source_calib
+                return np.linalg.norm(F_target_calib-F_estimate)
+
+            N=10
+            w = weights[index_ky_target].flatten()
+            num=np.random.choice(len(w))
+            w0_real = np.real(w[num])
+            w0_imag = np.imag(w[num])
+            #w_real_range = np.arange(w0_real/2,2*w0_real,(2*w0_real-w0_real/2)/N)
+            #w_imag_range = np.arange(w0_imag / 2, 2 * w0_imag, (2 * w0_imag - w0_imag / 2) / N)
+            w_real_max = np.maximum(1, 2 * np.abs(w0_real))
+            w_imag_max = np.maximum(1, 2 * np.abs(w0_imag))
+
+            w_real_range = np.arange(-w_real_max, w_real_max, (2 * w_real_max) / N)
+            w_imag_range = np.arange(-w_imag_max, w_imag_max, (2 * w_imag_max) / N)
+
+            W_R,W_I=np.meshgrid(w_real_range,w_imag_range)
+
+            Z=np.zeros((N,N))
+            for iR in tqdm(range(N)):
+                for iI in range(N):
+                    curr_w = w
+                    curr_w[num] = w_real_range[iR]+1j* w_imag_range[iI]
+                    Z[iR,iI]=J(curr_w.reshape(weights[index_ky_target].shape))
+
+            from mpl_toolkits.mplot3d import Axes3D
+
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            ax.plot_surface(W_R, W_I, Z.T,alpha=0.5)
+
+            ax.scatter(w0_real, w0_imag, J(weights[index_ky_target]),marker="x", c="red")
+
+            ax.set_xlabel('W_R')
+            ax.set_ylabel('W_I')
+            ax.set_zlabel('J')
+            ax.set_title("Index {}".format(num))
+            plt.show()
+
+
+            #Plot result on sensi
+
+            b1_maps_start = int(mask_reduction_factor*b1_maps.shape[1])
+            b1_maps_end=int(b1_maps.shape[1]-mask_reduction_factor*b1_maps.shape[1])
+            x = np.random.choice(range(b1_maps_start,b1_maps_end))
+            y = np.random.choice(range(b1_maps_start,b1_maps_end))
+            z = np.random.choice(range(nb_empty_slices,nb_slices-nb_empty_slices))
+
+            s_target = b1_maps[:,x,y] * np.exp(-1j*(kx_ref*x+ky_ref*y+kz_ref*z))*m.mask[z,x,y]
+            s_source = np.tile(b1_maps[:,x,y],(len(kernel_x)*len(kernel_y)))*np.exp(-1j*(local_traj_for_grappa[:,0]*x+local_traj_for_grappa[:,1]*y+local_traj_for_grappa[:,2]*z))*m.mask[z,x,y]
+
+            def J_sensi(w_):
+                global x
+                global y
+                global z
+
+                global s_source
+                global s_target
+                s_estimate = w_ @ s_source
+                return np.linalg.norm(s_target-s_estimate)
 
 
 
+            #w = weights[index_ky_target].flatten()
+            #num = np.random.choice(len(w))
+            #w0_real = np.real(w[num])
+            #w0_imag = np.imag(w[num])
 
-    #ESTIMATION
+            #N = 100
+            #w_real_range = np.arange(w0_real / 2, 2 * w0_real, (2 * w0_real - w0_real / 2) / N)
+            #w_imag_range = np.arange(w0_imag / 2, 2 * w0_imag, (2 * w0_imag - w0_imag / 2) / N)
+
+
+
+            #W_R, W_I = np.meshgrid(w_real_range, w_imag_range)
+
+            Z = np.zeros((N, N))
+            for iR in tqdm(range(N)):
+                for iI in range(N):
+                    curr_w = copy(w)
+                    curr_w[num] = w_real_range[iR] + 1j * w_imag_range[iI]
+                    Z[iR, iI] = J_sensi(curr_w.reshape(weights[index_ky_target].shape))
+
+            from mpl_toolkits.mplot3d import Axes3D
+
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            ax.plot_surface(W_R, W_I, Z.T,alpha=0.5)
+
+            ax.scatter(w0_real, w0_imag, J_sensi(weights[index_ky_target]), marker="x", c="red")
+
+            # iR=np.argmin(np.abs(w0_real-w_real_range))
+            # iI=np.argmin(np.abs(w0_imag - w_imag_range))
+            #
+            # ax.scatter(w_real_range[iR], w_imag_range[iI], Z[iR, iI], marker="x", c="green")
+            #
+            # curr_w = copy(w)
+            # curr_w[num] = w_real_range[iR] + 1j * w_imag_range[iI]
+            # J_sensi(curr_w.reshape(weights[index_ky_target].shape))
+
+            ax.set_xlabel('W_R')
+            ax.set_ylabel('W_I')
+            ax.set_zlabel('J_sensi')
+            ax.set_title("Index {} Position {}".format(num,(x,y,z)))
+            plt.show()
+
+
+            #ESTIMATION
 
 
 
@@ -620,7 +764,10 @@ for ts in tqdm(range(nb_allspokes)):
             local_kdata_for_grappa = kdata_all_channels_for_grappa_padded[:, local_indices[:, 0], local_indices[:, 1]]
             local_kdata_for_grappa = np.array(local_kdata_for_grappa)
             local_kdata_for_grappa = local_kdata_for_grappa.flatten()
+
             F_target_estimate[:,i,j]=weights[(l-1)%(undersampling_factor-1)]@local_kdata_for_grappa
+
+
 
 
     kdata_all_channels_completed=np.concatenate([kdata_all_channels_for_grappa,F_target_estimate],axis=1)
@@ -682,9 +829,9 @@ plt.legend()
 
 
 plot_next_slice=False
-ts = 0
+ts = 1
 ch=3
-sl = 1
+sl =5
 metric=np.abs
 plt.figure()
 plt.title("Ch {} Ts {} Sl {}".format(ch,ts,sl))
@@ -713,7 +860,7 @@ plt.figure()
 plt.title("Error Ch {} Ts {} Sl {}".format(ch,ts,sl))
 plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2],npoint)[sl]-kdata_all_channels_completed_all_ts[ch,ts].reshape(nb_slices,npoint)[sl]))
 
-ts=0
+ts=10
 sl=3
 ch=0
 metric=np.real
@@ -745,8 +892,8 @@ if str.split(filename_volume_grappa, "/")[-1] not in os.listdir(folder):
                                                                 light_memory_usage=light_memory_usage,
                                                                 normalize_volumes=True)
     np.save(filename_volume_grappa, volumes_all)
-        # sl=20
-        # ani = animate_images(volumes_all[:,sl,:,:])
+    sl=int(nb_slices/2)
+    ani = animate_images(volumes_all[:,sl,:,:])
     del volumes_all
 
 print("Building Mask Grappa....")
@@ -865,8 +1012,6 @@ plot_evolution_params(m.paramMap,m.mask>0,all_maps,maskROI=buildROImask_unique(m
 
 
 
-iter=0
-regression_paramMaps_ROI(m.paramMap,all_maps_grappa[iter][0],m.mask>0,all_maps_grappa[iter][1]>0,buildROImask_unique(m.paramMap))
 
 iter=0
 regression_paramMaps_ROI(m.paramMap,all_maps[iter][0],m.mask>0,all_maps[iter][1]>0,buildROImask_unique(m.paramMap))

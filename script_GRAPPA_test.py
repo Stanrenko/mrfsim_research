@@ -294,6 +294,10 @@ for (kernel_x,kernel_y) in list_kernels:
     kdata_all_channels_for_grappa_padded=np.pad(kdata_all_channels_for_grappa,((0,0),pad_y,pad_x),mode="edge")
     weights=np.zeros((len(calib_lines),nb_channels,nb_channels*len(kernel_x)*len(kernel_y)),dtype=kdata_calib.dtype)
 
+    curr_traj_for_grappa_padded = np.pad(curr_traj_for_grappa, (pad_y, pad_x, (0, 0)), mode="edge")
+
+    index_ky_target=0
+
     for index_ky_target in range(len(calib_lines)):
         print("Calibration for line {}".format(index_ky_target))
         F_target_calib = kdata_calib_all_channels[:, index_ky_target, :]
@@ -321,6 +325,11 @@ for (kernel_x,kernel_y) in list_kernels:
             local_kdata_for_grappa = local_kdata_for_grappa.flatten()
             F_source_calib[:,j]=local_kdata_for_grappa
 
+            local_traj_for_grappa = curr_traj_for_grappa_padded[local_indices[:, 0], local_indices[:, 1], :]
+
+            local_traj_for_grappa = np.tile(local_traj_for_grappa,
+                                            (nb_channels,) + tuple(
+                                                np.ones(local_traj_for_grappa.ndim).astype(int))).reshape(-1, 2)
 
         if calibration_mode=="Tikhonov":
             weights[index_ky_target]=F_target_calib@F_source_calib.conj().T@np.linalg.inv(F_source_calib@F_source_calib.conj().T+lambd*np.eye(F_source_calib.shape[0]))
@@ -356,6 +365,8 @@ for (kernel_x,kernel_y) in list_kernels:
         else :
             weights[index_ky_target]=F_target_calib@np.linalg.pinv(F_source_calib)
 
+
+        print(np.linalg.cond(F_source_calib))
 
         F_estimate =weights[index_ky_target]@F_source_calib
 
@@ -406,7 +417,91 @@ for (kernel_x,kernel_y) in list_kernels:
                 axs[i, j].legend(loc="upper right")
 
 
+        def J(w):
+            global F_source_calib
+            global F_target
+            F_estimate = w @ F_source_calib
+            return np.linalg.norm(F_target_calib - F_estimate)
 
+
+        N = 30
+        w = weights[index_ky_target].flatten()
+        num = np.random.choice(len(w))
+        w0_real = np.real(w[num])
+        w0_imag = np.imag(w[num])
+
+        w_real_range = np.arange(-1, 1, 2 / N)
+        w_imag_range = np.arange(-1, 1, 2 / N)
+
+        #w_real_range = np.arange(w0_real / 2, 2 * w0_real, (2 * w0_real - w0_real / 2) / N)
+        #w_imag_range = np.arange(w0_imag / 2, 2 * w0_imag, (2 * w0_imag - w0_imag / 2) / N)
+        W_R, W_I = np.meshgrid(w_real_range, w_imag_range)
+
+        Z = np.zeros((N, N))
+        for iR in tqdm(range(N)):
+            for iI in range(N):
+                curr_w = w
+                curr_w[num] = w_real_range[iR] + 1j * w_imag_range[iI]
+                Z[iR, iI] = J(curr_w.reshape(weights[index_ky_target].shape))
+
+        from mpl_toolkits.mplot3d import Axes3D
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.plot_surface(W_R, W_I, Z.T,alpha=0.5)
+
+        ax.scatter(w0_real, w0_imag, J(weights[index_ky_target]), marker="x", c="red")
+
+        ax.set_xlabel('W_R')
+        ax.set_ylabel('W_I')
+        ax.set_zlabel('J')
+        ax.set_title("Index {}".format(num))
+        plt.show()
+
+        # Plot result on sensi
+        b1_maps_start = int(mask_reduction_factor * b1_maps.shape[1])
+        b1_maps_end = int(b1_maps.shape[1] - mask_reduction_factor * b1_maps.shape[1])
+        x = np.random.choice(range(b1_maps_start, b1_maps_end))
+        y = np.random.choice(range(b1_maps_start, b1_maps_end))
+
+        #z = np.random.choice(nb_slices) - int(nb_slices / 2)
+
+        s_target = b1_maps[:, x, y] * np.exp(-1j * (kx_ref * x + ky_ref * y))*m.mask[x,y]
+        s_source = np.tile(b1_maps[:, x, y], (len(kernel_x) * len(kernel_y))) * np.exp(
+            -1j * (local_traj_for_grappa[:, 0] * x + local_traj_for_grappa[:, 1] * y))*m.mask[x,y]
+
+
+        def J_sensi(w):
+
+            global s_source
+            global s_target
+            s_estimate = w @ s_source
+            return np.linalg.norm(s_target - s_estimate)
+
+
+
+        #W_R, W_I = np.meshgrid(w_real_range, w_imag_range)
+
+        Z = np.zeros((N, N))
+        for iR in tqdm(range(N)):
+            for iI in range(N):
+                curr_w = w
+                curr_w[num] = w_real_range[iR] + 1j * w_imag_range[iI]
+                Z[iR, iI] = J_sensi(curr_w.reshape(weights[index_ky_target].shape))
+
+        from mpl_toolkits.mplot3d import Axes3D
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.plot_surface(W_R, W_I, Z.T,alpha=0.5)
+
+        ax.scatter(w0_real, w0_imag, J_sensi(weights[index_ky_target]), marker="x", c="red")
+
+        ax.set_xlabel('W_R')
+        ax.set_ylabel('W_I')
+        ax.set_zlabel('J_sensi')
+        ax.set_title("Index {} Position {}".format(num, (x, y)))
+        plt.show()
 
 
     #ESTIMATION
