@@ -34,9 +34,9 @@ with open("mrf_sequence.json") as f:
 
 seq = T1MRF(**sequence_config)
 
-nb_filled_slices = 20
-nb_empty_slices=4
-repeat_slice=4
+nb_filled_slices = 4
+nb_empty_slices=1
+repeat_slice=2
 nb_slices = nb_filled_slices+2*nb_empty_slices
 name = "SquareSimu3DGrappa"
 
@@ -69,6 +69,9 @@ filename_kdata_all_spokes = filename+"_kdata_all_spokes_sl{}_rp{}{}.npy".format(
 filename_mask= filename+"_mask_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
 file_map = filename + "_sl{}_rp{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,suffix)
 filename_b1 = filename+ "_b1_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
+
+filename_b1_grappa = filename+ "_b1_grappa_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
+
 
 filename_kdata_grappa = filename+"_kdata_grappa_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
 filename_currtraj_grappa = filename+"_currtraj_grappa_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
@@ -178,7 +181,7 @@ means_x=np.arange(1,nb_means+1)*(1/(nb_means+1))*image_size[1]
 means_y=np.arange(1,nb_means+1)*(1/(nb_means+1))*image_size[2]
 
 
-sig_z=image_size[0]/(2*(nb_means+1))
+sig_z=image_size[0]/(2*(nb_means))
 sig_x=image_size[1]/(2*(nb_means+1))
 sig_y=image_size[2]/(2*(nb_means+1))
 
@@ -324,11 +327,11 @@ if str.split(filename_volume_all_spokes,"/")[-1] not in os.listdir(folder):
     del kdata_all_channels_all_slices_all_spokes
     kdata_all_channels_all_slices_all_spokes = np.load(filename_kdata_all_spokes)
 
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices_all_spokes,radial_traj_all,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
-    np.save(filename_volume_all_spokes,volumes_all)
-    # sl=20
-    # ani = animate_images(volumes_all[:,sl,:,:])
-    del volumes_all
+    volumes_all_spokes=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices_all_spokes,radial_traj_all,image_size,b1=b1_maps,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+    np.save(filename_volume_all_spokes,volumes_all_spokes)
+    sl=int(nb_slices/2)
+    ani = animate_images(volumes_all_spokes[:,sl,:,:])
+    del volumes_all_spokes
 
 
 
@@ -382,7 +385,7 @@ curr_traj_completed_all_ts =[]
 
 calibration_mode="Standard"
 lambd = 0.
-over_calibrate=2
+over_calibrate=1
 
 #kernel_x = list(range(-31,32))
 kernel_y = [0 ,1]
@@ -473,8 +476,8 @@ for ts in tqdm(range(nb_allspokes)):
 
     weights=np.zeros((len(calib_lines),nb_channels,nb_channels*len(kernel_x)*len(kernel_y)),dtype=kdata_calib.dtype)
 
-    index_ky_target=0
-    j=750
+    #index_ky_target=0
+    #j=200
 
     for index_ky_target in range(len(calib_lines)):
         print("Calibration for line {}".format(index_ky_target))
@@ -492,10 +495,10 @@ for ts in tqdm(range(nb_allspokes)):
 
             kx_ref=curr_traj_for_grappa_calib_no_kz[0,np.argmin(kx_comp),0]
 
-            ky_comp = (ky - curr_traj_for_grappa_calib_no_kz[:, 0, 1])
+            ky_comp = (ky - curr_traj_for_grappa_calib_no_kz[0,:,1])
             ky_comp[ky_comp < 0] = np.inf
 
-            ky_ref = curr_traj_for_grappa_calib_no_kz[np.argmin(ky_comp), 0,1]
+            ky_ref = curr_traj_for_grappa_calib_no_kz[0,np.argmin(ky_comp),1]
 
             kz_comp = (kz - curr_traj_for_grappa_calib_no_kz[:, 0, 2])
             kz_comp[kz_comp < 0] = np.inf
@@ -507,7 +510,7 @@ for ts in tqdm(range(nb_allspokes)):
                 curr_traj_for_grappa_calib.shape[:-1])
             local_indices = np.stack(np.meshgrid(pad_y[0]+j0 + undersampling_factor*np.array(kernel_y), pad_x[0]+i0 + np.array(kernel_x)), axis=0).T.reshape(-1, 2)
 
-            local_kdata_for_grappa = kdata_all_channels_for_grappa_padded[:, local_indices[:, 0], local_indices[:, 1]]
+            local_kdata_for_grappa = kdata_all_channels_for_grappa_calib_padded[:, local_indices[:, 0], local_indices[:, 1]]
             local_kdata_for_grappa = np.array(local_kdata_for_grappa)
             local_kdata_for_grappa = local_kdata_for_grappa.flatten()
             F_source_calib[:,j]=local_kdata_for_grappa
@@ -678,14 +681,14 @@ for ts in tqdm(range(nb_allspokes)):
 
             #Plot result on sensi
 
-            b1_maps_start = int(mask_reduction_factor*b1_maps.shape[1])
-            b1_maps_end=int(b1_maps.shape[1]-mask_reduction_factor*b1_maps.shape[1])
+            b1_maps_start = int(mask_reduction_factor*b1_maps.shape[2])
+            b1_maps_end=int(b1_maps.shape[2]-mask_reduction_factor*b1_maps.shape[2])
             x = np.random.choice(range(b1_maps_start,b1_maps_end))
             y = np.random.choice(range(b1_maps_start,b1_maps_end))
             z = np.random.choice(range(nb_empty_slices,nb_slices-nb_empty_slices))
 
-            s_target = b1_maps[:,x,y] * np.exp(-1j*(kx_ref*x+ky_ref*y+kz_ref*z))*m.mask[z,x,y]
-            s_source = np.tile(b1_maps[:,x,y],(len(kernel_x)*len(kernel_y)))*np.exp(-1j*(local_traj_for_grappa[:,0]*x+local_traj_for_grappa[:,1]*y+local_traj_for_grappa[:,2]*z))*m.mask[z,x,y]
+            s_target = b1_maps[:,z,x,y] * np.exp(-1j*(kx_ref*x+ky_ref*y+kz_ref*z))*m.mask[z,x,y]
+            s_source = np.tile(b1_maps[:,z,x,y],(len(kernel_x)*len(kernel_y)))*np.exp(-1j*(local_traj_for_grappa[:,0]*x+local_traj_for_grappa[:,1]*y+local_traj_for_grappa[:,2]*z))*m.mask[z,x,y]
 
             def J_sensi(w_):
                 global x
@@ -755,7 +758,12 @@ for ts in tqdm(range(nb_allspokes)):
 
     F_target_estimate = np.zeros((nb_channels,len(kz_lines_to_estimate),npoint),dtype=kdata_calib.dtype)
 
+    #i=1
+    #l=kz_lines_to_estimate[i]
+
     for i,l in (enumerate(kz_lines_to_estimate)):
+        F_source_estimate = np.zeros((nb_channels * len(kernel_x) * len(kernel_y), npoint),
+                                  dtype=kdata_calib.dtype)
         for j in range(npoint):
 
             kx=traj_all[ts,l,j,0]
@@ -790,23 +798,33 @@ for ts in tqdm(range(nb_allspokes)):
             local_kdata_for_grappa = kdata_all_channels_for_grappa_padded[:, local_indices[:, 0], local_indices[:, 1]]
             local_kdata_for_grappa = np.array(local_kdata_for_grappa)
             local_kdata_for_grappa = local_kdata_for_grappa.flatten()
+            F_source_estimate[:,j]=local_kdata_for_grappa
 
-            F_target_estimate[:,i,j]=weights[(l-1)%(undersampling_factor-1)]@local_kdata_for_grappa
+        F_target_estimate[:,i,:]=weights[(l-1)%(undersampling_factor-1)]@F_source_estimate
 
 
 
 
     kdata_all_channels_completed=np.concatenate([kdata_all_channels_for_grappa,F_target_estimate],axis=1)
-
     curr_traj_estimate=traj_all[ts,kz_lines_to_estimate,:,:]
-
     curr_traj_completed=np.concatenate([curr_traj_for_grappa,curr_traj_estimate],axis=0)
+
+    #Replace calib lines
+    for i, l in (enumerate(kz_lines_to_estimate)):
+        if l in calib_lines.flatten():
+            ind_line= np.argwhere(calib_lines.flatten()==l).flatten()[0]
+            kdata_all_channels_completed[:,i,:]=kdata_all_channels_for_grappa_calib[:,ind_line,:]
+
 
     kdata_all_channels_completed=kdata_all_channels_completed.reshape((nb_channels,-1))
     curr_traj_completed=curr_traj_completed.reshape((-1,3))
 
     kdata_all_channels_completed_all_ts.append(kdata_all_channels_completed)
     curr_traj_completed_all_ts.append(curr_traj_completed)
+
+    #Replace calib lines
+
+
 
 kdata_all_channels_completed_all_ts=np.array(kdata_all_channels_completed_all_ts)
 kdata_all_channels_completed_all_ts=np.moveaxis(kdata_all_channels_completed_all_ts,0,1)
@@ -855,18 +873,19 @@ plt.legend()
 
 
 plot_next_slice=False
-ts = 1
+ts=0
 ch=3
-sl =5
+sl =3
 metric=np.abs
 plt.figure()
 plt.title("Ch {} Ts {} Sl {}".format(ch,ts,sl))
 curr_traj = radial_traj_all.get_traj()[ts]
 ind = np.lexsort((curr_traj[:,0], curr_traj[:,2]))
+curr_traj=curr_traj[ind]
 curr_kdata = kdata_all_channels_all_slices_all_spokes[ch,ts].flatten()
 curr_kdata=curr_kdata[ind]
 plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2],npoint)[sl]),label='Kdata fully sampled')
-plt.plot(metric(kdata_all_channels_completed_all_ts[ch,ts].reshape(nb_slices,npoint)[sl]),label='Kdata grappa estimate')
+plt.plot(metric(kdata_all_channels_completed_all_ts[ch, ts].reshape(nb_slices,npoint)[sl]),label='Kdata grappa estimate')
 
 if plot_next_slice:
     if sl>0:
@@ -907,14 +926,40 @@ radial_traj_grappa = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=1
                                   nb_slices=nb_slices, incoherent=incoherent, mode=mode)
 radial_traj_grappa.traj = curr_traj_completed_all_ts
 
-print("Building Volumes Gappa....")
+
+print("Building B1 Map Gappa....")
+if str.split(filename_b1_grappa,"/")[-1] not in os.listdir(folder):
+    res = 16
+    b1_all_slices_grappa=calculate_sensitivity_map_3D(kdata_all_channels_completed_all_ts.reshape(nb_channels,nb_segments,-1,npoint),radial_traj_grappa,res,image_size,useGPU=False,light_memory_usage=light_memory_usage,density_adj=True)
+    np.save(filename_b1_grappa,b1_all_slices_grappa)
+else:
+    b1_all_slices_grappa=np.load(filename_b1_grappa)
+
+
+sl=int(b1_all_slices_all_spokes.shape[1]/2)
+sl=2
+
+list_images = list(np.abs(b1_all_slices_grappa[:,sl,:,:]))
+plot_image_grid(list_images,(3,3),title="Grappa : Sensitivity map for slice {}".format(sl))
+
+list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
+plot_image_grid(list_images,(3,3),title="Undersampled : Sensitivity map for slice {}".format(sl))
+
+
+list_images = list(np.abs(b1_all_slices_all_spokes[:,sl,:,:]))
+plot_image_grid(list_images,(3,3),title="All Spokes : Sensitivity map for slice {}".format(sl))
+
+list_images = list(np.abs(b1_maps[:,sl,:,:]))
+plot_image_grid(list_images,(3,3),title="Ground Truth : Sensitivity map for slice {}".format(sl))
+
+print("Building Volumes Grappa....")
 if str.split(filename_volume_grappa, "/")[-1] not in os.listdir(folder):
         #kdata_all_channels_all_slices = np.load(filename_kdata)
 
     volumes_all = simulate_radial_undersampled_images_multi(kdata_all_channels_completed_all_ts, radial_traj_grappa, image_size,
-                                                                b1=b1_all_slices, density_adj=True,
+                                                                b1=b1_all_slices_grappa, density_adj=True,
                                                                 ntimesteps=ntimesteps, useGPU=False,
-                                                                normalize_kdata=True, memmap_file=None,
+                                                                normalize_kdata=False, memmap_file=None,
                                                                 light_memory_usage=light_memory_usage,
                                                                 normalize_volumes=True)
     np.save(filename_volume_grappa, volumes_all)
@@ -1043,7 +1088,7 @@ iter=0
 regression_paramMaps_ROI(m.paramMap,all_maps[iter][0],m.mask>0,all_maps[iter][1]>0,buildROImask_unique(m.paramMap))
 
 
-curr_file=file_map_grappa
+curr_file=file_map_all_spokes
 
 for iter in list(all_maps.keys()):
 
