@@ -181,17 +181,22 @@ means_x=np.arange(1,nb_means+1)*(1/(nb_means+1))*image_size[1]
 means_y=np.arange(1,nb_means+1)*(1/(nb_means+1))*image_size[2]
 
 
-sig_z=image_size[0]/(2*(nb_means))
-sig_x=image_size[1]/(2*(nb_means+1))
-sig_y=image_size[2]/(2*(nb_means+1))
+sig_z=(image_size[0]/(2*(nb_means+1)))**2
+sig_z=0.5**2
+sig_z=0.005
+sig_x=(image_size[1]/(2*(nb_means+1)))**2
+sig_y=(image_size[2]/(2*(nb_means+1)))**2
 
 z = np.arange(image_size[0])
 x = np.arange(image_size[1])
 y = np.arange(image_size[2])
 
 
-Z,X,Y = np.meshgrid(z,x,y)
-pixels=np.stack([Z.flatten(),X.flatten(), Y.flatten()], axis=-1)
+X,Y,Z = np.meshgrid(x,y,z)
+pixels=np.stack([Z,X,Y], axis=-1)
+pixels=np.moveaxis(pixels,-2,0)
+
+pixels=pixels.reshape(-1,3)
 
 from scipy.stats import multivariate_normal
 b1_maps=[]
@@ -204,6 +209,14 @@ for mu_z in means_z:
 b1_maps = np.array(b1_maps)
 b1_maps=b1_maps/np.expand_dims(np.max(b1_maps,axis=-1),axis=-1)
 b1_maps=b1_maps.reshape((nb_channels,)+image_size)
+
+sl=int(nb_slices/2)
+sl=3
+list_images = list(np.abs(b1_maps[:,sl,:,:]))
+plot_image_grid(list_images,(3,3),title="Ground Truth : Sensitivity map for slice {}".format(sl))
+
+animate_images(b1_maps[0,:,:,:])
+
 b1_prev = np.ones(b1_maps[0].shape,dtype=b1_maps[0].dtype)
 b1_all = np.concatenate([np.expand_dims(b1_prev, axis=0), b1_maps], axis=0)
 
