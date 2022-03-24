@@ -1,15 +1,22 @@
 
 #import matplotlib
 #matplotlib.u<se("TkAgg")
-import json
-import os
-import pickle
-
-from image_series import *
+import numpy as np
 from mrfsim import T1MRF
-from mutools import io
-from scipy.optimize import minimize
+from image_series import *
+from dictoptimizers import SimpleDictSearch,GaussianWeighting
 from utils_mrf import *
+import json
+import readTwix as rT
+import time
+import os
+from numpy.lib.format import open_memmap
+from numpy import memmap
+import pickle
+from scipy.io import loadmat,savemat
+from mutools import io
+from sklearn import linear_model
+from scipy.optimize import minimize
 
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
 base_folder = "./3D"
@@ -423,7 +430,7 @@ ts=1
 plot_fit=False
 
 all_ts = nb_allspokes
-#all_ts = 360
+all_ts = 360
 
 for ts in tqdm(range(all_ts)):
     center_line = int(nb_slices / 2) - 1
@@ -695,6 +702,8 @@ for ts in tqdm(range(all_ts)):
                     curr_w[num] = w_real_range[iR]+1j* w_imag_range[iI]
                     Z[iR,iI]=J(curr_w.reshape(weights[index_ky_target].shape))
 
+            from mpl_toolkits.mplot3d import Axes3D
+
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d')
             ax.plot_surface(W_R, W_I, Z.T,alpha=0.5)
@@ -750,6 +759,8 @@ for ts in tqdm(range(all_ts)):
                     curr_w = copy(w)
                     curr_w[num] = w_real_range[iR] + 1j * w_imag_range[iI]
                     Z[iR, iI] = J_sensi(curr_w.reshape(weights[index_ky_target].shape))
+
+            from mpl_toolkits.mplot3d import Axes3D
 
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d')
@@ -872,11 +883,6 @@ for ts in tqdm(range(curr_traj_completed_all_ts.shape[0])):
     curr_traj_completed_all_ts[ts] = curr_traj_completed_all_ts[ts,ind,:]
     kdata_all_channels_completed_all_ts[:,ts]=kdata_all_channels_completed_all_ts[:,ts,ind]
 
-kdata_all_channels_completed_all_ts=kdata_all_channels_completed_all_ts.reshape(nb_channels,all_ts,nb_slices,npoint)
-kdata_all_channels_completed_all_ts[:,:,:,:pad_x[0]]=0
-kdata_all_channels_completed_all_ts[:,:,:,-pad_x[1]:]=0
-kdata_all_channels_completed_all_ts=kdata_all_channels_completed_all_ts.reshape(nb_channels,all_ts,-1)
-
 #plt.figure()
 #plt.plot(np.abs(kdata_all_channels_for_grappa[0, 6, :]))
 #plt.plot(np.abs(kdata_all_channels_completed_all_ts[0,0].reshape(nb_slices, -1)[12, :]))
@@ -919,9 +925,9 @@ plt.legend()
 
 
 plot_next_slice=False
-ts=20
+ts=1
 ch=0
-sl =7
+sl =17
 metric=np.abs
 plt.figure()
 plt.title("Ch {} Ts {} Sl {}".format(ch,ts,sl))
@@ -931,7 +937,7 @@ curr_traj=curr_traj[ind]
 curr_kdata = kdata_all_channels_all_slices_all_spokes[ch,ts].flatten()
 curr_kdata=curr_kdata[ind]
 plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2],npoint)[sl]),label='Kdata fully sampled')
-plt.plot(metric(kdata_all_channels_completed_all_ts[ch, ts].reshape(nb_slices,npoint)[sl]),label='Kdata grappa estimate')
+plt.plot(metric(kdata_all_channels_completed_all_ts[ch, 0].reshape(nb_slices,npoint)[sl]),label='Kdata grappa estimate')
 
 if plot_next_slice:
     if sl>0:
@@ -945,109 +951,6 @@ if plot_next_slice:
         plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2], npoint)[nb_slices-1]),
                  label='Kdata fully sampled next slice',linestyle='dashed')
 plt.legend()
-
-plot_next_slice=False
-ts=20
-ch=0
-u =256
-metric=np.abs
-plt.figure()
-plt.title("Ch {} Ts {} u {}".format(ch,ts,u))
-curr_traj = radial_traj_all.get_traj()[ts]
-ind = np.lexsort((curr_traj[:,0], curr_traj[:,2]))
-curr_traj=curr_traj[ind]
-curr_kdata = kdata_all_channels_all_slices_all_spokes[ch,ts].flatten()
-curr_kdata=curr_kdata[ind]
-plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2],npoint)[:,u]),label='Kdata fully sampled')
-plt.plot(metric(kdata_all_channels_completed_all_ts[ch, ts].reshape(nb_slices,npoint)[:,u]),label='Kdata grappa estimate')
-
-if plot_next_slice:
-    if sl>0:
-        plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2],npoint)[sl-1]),label='Kdata fully sampled previous slice',linestyle='dashed')
-    else:
-        plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2], npoint)[0]),
-                 label='Kdata fully sampled previous slice',linestyle='dashed')
-    if sl<(nb_slices-2):
-        plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2],npoint)[sl+1]),label='Kdata fully sampled next slice',linestyle='dashed')
-    else:
-        plt.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2], npoint)[nb_slices-1]),
-                 label='Kdata fully sampled next slice',linestyle='dashed')
-plt.legend()
-
-import matplotlib.animation as animation
-
-
-
-def my_plot(ax,u,ch,metric,ts):
-    curr_traj = radial_traj_all.get_traj()[ts]
-    ind = np.lexsort((curr_traj[:, 0], curr_traj[:, 2]))
-    curr_traj = curr_traj[ind]
-    curr_kdata = kdata_all_channels_all_slices_all_spokes[ch, ts].flatten()
-    curr_kdata = curr_kdata[ind]
-    p0, = ax.plot(metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2], npoint)[:, u]),color="g",
-             label='Kdata fully sampled')
-    p1, = ax.plot(metric(kdata_all_channels_completed_all_ts[ch, ts].reshape(nb_slices, npoint)[:, u]),color="r",
-             label='Kdata grappa estimate')
-    return [p0, p1]   # return a list of the new plots
-
-ch=0
-u =10
-metric=np.abs
-
-ims = []
-fig = plt.figure()
-ax = fig.add_subplot(111)  # fig and axes created once
-for ts in range(all_ts):
-    ps = my_plot(ax,u,ch,metric,ts)
-    ims.append(ps)      # append the new list of plots
-ani = animation.ArtistAnimation(fig, ims, repeat=False)
-
-
-ch=0
-u =2
-metric=np.abs
-
-errors = []
-for ts in tqdm(range(all_ts)):
-    curr_traj = radial_traj_all.get_traj()[ts]
-    ind = np.lexsort((curr_traj[:, 0], curr_traj[:, 2]))
-    curr_traj = curr_traj[ind]
-    curr_kdata = kdata_all_channels_all_slices_all_spokes[ch, ts].flatten()
-    curr_kdata = curr_kdata[ind]
-    error=metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2], npoint)[:, u])-metric(kdata_all_channels_completed_all_ts[ch, ts].reshape(nb_slices, npoint)[:, u])
-    errors.append(error)
-
-errors = np.array(errors)
-norm_errors = np.linalg.norm(errors,axis=0)/np.sqrt(all_ts)
-
-plt.figure()
-plt.plot(norm_errors)
-
-ch=0
-metric=np.imag
-
-ims = []
-fig = plt.figure()
-ax = fig.add_subplot(111)
-
-
-for u in tqdm(range(npoint)):
-    errors = []
-    for ts in (range(all_ts)):
-        curr_traj = radial_traj_all.get_traj()[ts]
-        ind = np.lexsort((curr_traj[:, 0], curr_traj[:, 2]))
-        curr_traj = curr_traj[ind]
-        curr_kdata = kdata_all_channels_all_slices_all_spokes[ch, ts].flatten()
-        curr_kdata = curr_kdata[ind]
-        error=metric(curr_kdata.reshape(kdata_all_channels_all_slices_all_spokes.shape[2], npoint)[:, u])-metric(kdata_all_channels_completed_all_ts[ch, ts].reshape(nb_slices, npoint)[:, u])
-        errors.append(error)
-
-    errors = np.array(errors)
-    norm_errors = np.linalg.norm(errors,axis=0)/np.sqrt(all_ts)
-    p1, =ax.plot(norm_errors)
-    ims.append([p1])
-ani = animation.ArtistAnimation(fig, ims, repeat=False)
-
 
 
 plt.figure()
@@ -1176,34 +1079,19 @@ kdata_all_channels_all_slices_all_spokes=np.load(filename_kdata_all_spokes)
 radial_traj_undersampled=Radial3D(total_nspokes=int(all_ts/undersampling_factor),undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 radial_traj_undersampled.traj_for_reconstruction = radial_traj.get_traj_for_reconstruction(175)[:int(all_ts/8)][::undersampling_factor].reshape(1,-1,3)
 
-kdata_undersampled = kdata_all_channels_all_slices.reshape(nb_channels,175,-1)[:,:int(all_ts/8),:][:,::undersampling_factor,:]
+kdata_undersampled = kdata_all_channels_all_slices.reshape(nb_channels,int(all_ts/8),-1)[:,::undersampling_factor,:]
 
 radial_traj_undersampled_grappa=Radial3D(total_nspokes=int(all_ts/undersampling_factor),undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 radial_traj_undersampled_grappa.traj_for_reconstruction = radial_traj_grappa.get_traj_for_reconstruction(int(all_ts/8))[::undersampling_factor].reshape(1,-1,3)
 
-
-kdata_all_channels_completed_all_ts_for_reco = copy(kdata_all_channels_completed_all_ts)
-kdata_all_channels_completed_all_ts_for_reco=kdata_all_channels_completed_all_ts_for_reco.reshape(nb_channels,all_ts,nb_slices,npoint)
-kdata_all_channels_completed_all_ts_for_reco[:,:,:,:2]=0
-kdata_all_channels_completed_all_ts_for_reco[:,:,:,-2:]=0
-kdata_all_channels_completed_all_ts_for_reco=kdata_all_channels_completed_all_ts_for_reco.reshape(kdata_all_channels_completed_all_ts.shape)
-kdata_undersampled_grappa = kdata_all_channels_completed_all_ts_for_reco.reshape(nb_channels,int(all_ts/8),-1)[:,::undersampling_factor,:]
-
-radial_traj_volume=Radial3D(total_nspokes=int(all_ts),undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-radial_traj_volume.traj_for_reconstruction = radial_traj.get_traj_for_reconstruction(175)[:int(all_ts/8)].reshape(1,-1,3)
-kdata_volume = kdata_all_channels_all_slices.reshape(nb_channels,175,-1)[:,:int(all_ts/8),:]
-
-radial_traj_volume_all_spokes=Radial3D(total_nspokes=int(all_ts),undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-radial_traj_volume_all_spokes.traj_for_reconstruction = radial_traj_all.get_traj_for_reconstruction(175)[:int(all_ts/8)].reshape(1,-1,3)
-kdata_volume_all_spokes = kdata_all_channels_all_slices_all_spokes.reshape(nb_channels,175,-1)[:,:int(all_ts/8),:]
+kdata_undersampled_grappa = kdata_all_channels_completed_all_ts.reshape(nb_channels,int(all_ts/8),-1)[:,::undersampling_factor,:]
 
 
-volume=simulate_radial_undersampled_images_multi(kdata_volume,radial_traj_volume,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
+volume=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
 volume_grappa=simulate_radial_undersampled_images_multi(kdata_all_channels_completed_all_ts,radial_traj_grappa,image_size,b1=b1_all_slices_grappa,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
 volume_all_spokes=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices_all_spokes,radial_traj_all,image_size,b1=b1_all_slices_all_spokes,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
 volume_undersampled=simulate_radial_undersampled_images_multi(kdata_undersampled,radial_traj_undersampled,image_size,b1=None,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
 volume_undersampled_grappa=simulate_radial_undersampled_images_multi(kdata_undersampled_grappa,radial_traj_undersampled_grappa,image_size,b1=None,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
-volume_all_ts_all_spokes=simulate_radial_undersampled_images_multi(kdata_volume_all_spokes,radial_traj_volume_all_spokes,image_size,b1=None,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
 
 
 file_mha = "/".join(["/".join(str.split(filename_volume, "/")[:-1]),"_".join(str.split(str.split(filename_volume, "/")[-1], ".")[:-1])]) + "_volume.mha"
@@ -1220,10 +1108,6 @@ io.write(file_mha, np.abs(volume_undersampled[0]), tags={"spacing": [5, 1, 1]})
 
 file_mha = "/".join(["/".join(str.split(filename_volume_grappa, "/")[:-1]),"_".join(str.split(str.split(filename_volume_grappa, "/")[-1], ".")[:-1])]) + "_volume_undersampled.mha"
 io.write(file_mha, np.abs(volume_undersampled_grappa[0]), tags={"spacing": [5, 1, 1]})
-
-file_mha = "/".join(["/".join(str.split(filename_volume_all_spokes, "/")[:-1]),"_".join(str.split(str.split(filename_volume_all_spokes, "/")[-1], ".")[:-1])]) + "_volume_all_spokes.mha"
-io.write(file_mha, np.abs(volume_all_ts_all_spokes[0]), tags={"spacing": [5, 1, 1]})
-
 
 ########################## Dict mapping ########################################
 
