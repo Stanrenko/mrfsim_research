@@ -1806,7 +1806,7 @@ class SimpleDictSearch(Optimizer):
 
 class ToyNN(Optimizer):
 
-    def __init__(self,model,fitting_opt,model_opt={},input_scaler=StandardScaler(),output_scaler=MinMaxScaler(),niter=0,pca=False,threshold_pca=15,log=True,fitted=False,**kwargs):
+    def __init__(self,model,fitting_opt,model_opt={},input_scaler=StandardScaler(),output_scaler=MinMaxScaler(),niter=0,log=True,fitted=False,**kwargs):
         #transf is a function that takes as input timesteps arrays and outputs shifts as output
         super().__init__(**kwargs)
 
@@ -1816,8 +1816,6 @@ class ToyNN(Optimizer):
         self.paramDict["output_scaler"] = output_scaler
 
         self.paramDict["fitting_opt"]=fitting_opt
-        self.paramDict["pca"] = pca
-        self.paramDict["threshold_pca"] = threshold_pca
         self.paramDict["is_fitted"] = fitted
         self.paramDict["model_opt"]=model_opt
 
@@ -1835,7 +1833,7 @@ class ToyNN(Optimizer):
         mask=self.mask
         all_signals = volumes[:, mask > 0]
 
-        all_signals=all_signals/np.expand_dims(np.linalg.norm(all_signals,axis=0),axis=0)
+        #all_signals=all_signals/np.expand_dims(np.linalg.norm(all_signals,axis=0),axis=0)
 
         real_signals=all_signals.real.T
         imag_signals=all_signals.imag.T
@@ -1879,7 +1877,7 @@ class ToyNN(Optimizer):
 
         Y_TF = np.array(keys)
 
-        signal=signal/np.expand_dims(np.linalg.norm(signal,axis=-1),axis=-1)
+        #signal=signal/np.expand_dims(np.linalg.norm(signal,axis=-1),axis=-1)
 
         real_signal = signal.real
         imag_signal = signal.imag

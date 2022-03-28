@@ -58,8 +58,8 @@ def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
         ff = np.zeros(mrfdict.values.shape[:-1 ] +(len(FF_list),))
         ff_matrix =np.tile(np.array(FF_list) ,ff.shape[:-1 ] +(1,))
 
-        water_signal =np.expand_dims(mrfdict.values[: ,: ,0] ,axis=-1 ) *ff_matrix
-        fat_signal =np.expand_dims(mrfdict.values[: ,: ,1] ,axis=-1 ) *( 1 -ff_matrix)
+        water_signal =np.expand_dims(mrfdict.values[: ,: ,0] ,axis=-1 ) *(1-ff_matrix)
+        fat_signal =np.expand_dims(mrfdict.values[: ,: ,1] ,axis=-1 ) *(ff_matrix)
 
         signal =water_signal +fat_signal
 
