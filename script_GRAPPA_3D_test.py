@@ -1,15 +1,23 @@
 
+
 #import matplotlib
 #matplotlib.u<se("TkAgg")
-import json
-import os
-import pickle
-
-from image_series import *
+import numpy as np
 from mrfsim import T1MRF
-from mutools import io
-from scipy.optimize import minimize
+from image_series import *
+from dictoptimizers import SimpleDictSearch,GaussianWeighting
 from utils_mrf import *
+import json
+import readTwix as rT
+import time
+import os
+from numpy.lib.format import open_memmap
+from numpy import memmap
+import pickle
+from scipy.io import loadmat,savemat
+from mutools import io
+from sklearn import linear_model
+from scipy.optimize import minimize
 
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
 base_folder = "./3D"
@@ -27,10 +35,13 @@ with open("mrf_sequence.json") as f:
 
 seq = T1MRF(**sequence_config)
 
-nb_filled_slices = 20
-nb_empty_slices=4
-repeat_slice=4
+nb_filled_slices = 64
+nb_empty_slices=8
+repeat_slice=8
 nb_slices = nb_filled_slices+2*nb_empty_slices
+
+undersampling_factor=4
+
 name = "SquareSimu3DGrappa"
 
 
@@ -52,26 +63,26 @@ suffix=""
 
 filename_paramMap=filename+"_paramMap_sl{}_rp{}.pkl".format(nb_slices,repeat_slice)
 filename_paramMask=filename+"_paramMask_sl{}_rp{}.npy".format(nb_slices,repeat_slice)
-filename_volume = filename+"_volumes_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
+filename_volume = filename+"_volumes_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 filename_volume_all_spokes = filename+"_volumes_all_spokes_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
 filename_b1_all_spokes = filename+"_b1_all_spokes_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
 filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
 
-filename_kdata = filename+"_kdata_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
+filename_kdata = filename+"_kdata_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 filename_kdata_all_spokes = filename+"_kdata_all_spokes_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
-filename_mask= filename+"_mask_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
-file_map = filename + "_sl{}_rp{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,suffix)
-filename_b1 = filename+ "_b1_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
+filename_mask= filename+"_mask_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+file_map = filename + "_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,suffix)
+filename_b1 = filename+ "_b1_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 
-filename_b1_grappa = filename+ "_b1_grappa_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
+filename_b1_grappa = filename+ "_b1_grappa_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 
 
-filename_kdata_grappa = filename+"_kdata_grappa_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
-filename_currtraj_grappa = filename+"_currtraj_grappa_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
-filename_mask_grappa= filename+"_mask_grappa_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
-filename_volume_grappa = filename+"_volumes_grappa_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
+filename_kdata_grappa = filename+"_kdata_grappa_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_currtraj_grappa = filename+"_currtraj_grappa_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_mask_grappa= filename+"_mask_grappa_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_volume_grappa = filename+"_volumes_grappa_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 
-file_map_grappa = filename + "_grappa_sl{}_rp{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,suffix)
+file_map_grappa = filename + "_grappa_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,suffix)
 file_map_all_spokes = filename + "_all_spokes_sl{}_rp{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,suffix)
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
@@ -83,7 +94,7 @@ nb_channels=1
 nb_allspokes = 1400
 npoint = 512
 
-undersampling_factor=2
+
 
 incoherent=False
 mode="old"
@@ -402,12 +413,12 @@ curr_traj_completed_all_ts =[]
 
 calibration_mode="Standard"
 lambd = 0.
-over_calibrate=3
+over_calibrate=2
 over_calibrate=1
 
 #kernel_x = list(range(-31,32))
 kernel_y = [0,1,2]
-kernel_y=[0,1]
+#kernel_y=[0,1]
 
 Neq = int(undersampling_factor*np.maximum(over_calibrate-len(kernel_y)+1,0)+1)
 
@@ -418,7 +429,7 @@ kernel_x=np.arange(-(int(len_kerx/2)-1),int(len_kerx/2))
 
 
 #ts=8
-ts=1
+ts=0
 
 plot_fit=False
 
@@ -781,7 +792,7 @@ for ts in tqdm(range(all_ts)):
 
     print("Estimating missing kz lines for timestep {}".format(ts))
 
-    curr_traj_for_grappa_ts = radial_traj.get_traj()[ts].reshape(-1, npoint, 3)
+    #curr_traj_for_grappa_ts = radial_traj.get_traj()[ts].reshape(-1, npoint, 3)
 
     F_target_estimate = np.zeros((nb_channels,len(kz_lines_to_estimate),npoint),dtype=kdata_calib.dtype)
 
@@ -800,13 +811,13 @@ for ts in tqdm(range(all_ts)):
             kz = traj_all[ts, l, j,2 ]
 
 
-            points = np.unique(curr_traj_for_grappa_ts[:, :, 2].flatten())
+            points = np.unique(curr_traj_for_grappa[:, :, 2].flatten())
             kz_comp = (kz - points)
             kz_comp[kz_comp < 0] = np.inf
             slice_ref = np.argmin(kz_comp)
             kz_ref = points[slice_ref]
 
-            traj_slice = curr_traj_for_grappa_ts[slice_ref,:,:]
+            traj_slice = curr_traj_for_grappa[slice_ref,:,:]
 
             points = traj_slice[:, 0].flatten()
             kx_comp = (kx - points)
@@ -820,8 +831,8 @@ for ts in tqdm(range(all_ts)):
 
 
             j0, i0 = np.unravel_index(
-                    np.argmin(np.linalg.norm(curr_traj_for_grappa_ts - np.expand_dims(np.array([kx_ref, ky_ref,kz_ref]), axis=(0, 1)), axis=-1)),
-                    curr_traj_for_grappa_ts.shape[:-1])
+                    np.argmin(np.linalg.norm(curr_traj_for_grappa - np.expand_dims(np.array([kx_ref, ky_ref,kz_ref]), axis=(0, 1)), axis=-1)),
+                    curr_traj_for_grappa.shape[:-1])
             local_indices = np.stack(np.meshgrid(pad_y[0]+j0 + np.array(kernel_y), pad_x[0]+i0 + np.array(kernel_x)), axis=0).T.reshape(-1, 2)
 
             local_kdata_for_grappa = kdata_all_channels_for_grappa_padded[:, local_indices[:, 0], local_indices[:, 1]]
@@ -875,6 +886,10 @@ for ts in tqdm(range(curr_traj_completed_all_ts.shape[0])):
 kdata_all_channels_completed_all_ts=kdata_all_channels_completed_all_ts.reshape(nb_channels,all_ts,nb_slices,npoint)
 kdata_all_channels_completed_all_ts[:,:,:,:pad_x[0]]=0
 kdata_all_channels_completed_all_ts[:,:,:,-pad_x[1]:]=0
+kdata_all_channels_completed_all_ts[:,:,:((undersampling_factor-1)*pad_y[0]),]=0
+kdata_all_channels_completed_all_ts[:,:,(-(undersampling_factor-1)*pad_y[1]):,]=0
+
+
 kdata_all_channels_completed_all_ts=kdata_all_channels_completed_all_ts.reshape(nb_channels,all_ts,-1)
 
 #plt.figure()
@@ -919,9 +934,9 @@ plt.legend()
 
 
 plot_next_slice=False
-ts=20
+ts=0
 ch=0
-sl =7
+sl =26
 metric=np.abs
 plt.figure()
 plt.title("Ch {} Ts {} Sl {}".format(ch,ts,sl))
@@ -1189,31 +1204,15 @@ kdata_all_channels_completed_all_ts_for_reco[:,:,:,-2:]=0
 kdata_all_channels_completed_all_ts_for_reco=kdata_all_channels_completed_all_ts_for_reco.reshape(kdata_all_channels_completed_all_ts.shape)
 kdata_undersampled_grappa = kdata_all_channels_completed_all_ts_for_reco.reshape(nb_channels,int(all_ts/8),-1)[:,::undersampling_factor,:]
 
-radial_traj_volume=Radial3D(total_nspokes=int(all_ts),undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-radial_traj_volume.traj_for_reconstruction = radial_traj.get_traj_for_reconstruction(175)[:int(all_ts/8)].reshape(1,-1,3)
-kdata_volume = kdata_all_channels_all_slices.reshape(nb_channels,175,-1)[:,:int(all_ts/8),:]
-
 radial_traj_volume_all_spokes=Radial3D(total_nspokes=int(all_ts),undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 radial_traj_volume_all_spokes.traj_for_reconstruction = radial_traj_all.get_traj_for_reconstruction(175)[:int(all_ts/8)].reshape(1,-1,3)
 kdata_volume_all_spokes = kdata_all_channels_all_slices_all_spokes.reshape(nb_channels,175,-1)[:,:int(all_ts/8),:]
 
 
-volume=simulate_radial_undersampled_images_multi(kdata_volume,radial_traj_volume,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
-volume_grappa=simulate_radial_undersampled_images_multi(kdata_all_channels_completed_all_ts,radial_traj_grappa,image_size,b1=b1_all_slices_grappa,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
-volume_all_spokes=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices_all_spokes,radial_traj_all,image_size,b1=b1_all_slices_all_spokes,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
 volume_undersampled=simulate_radial_undersampled_images_multi(kdata_undersampled,radial_traj_undersampled,image_size,b1=None,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
 volume_undersampled_grappa=simulate_radial_undersampled_images_multi(kdata_undersampled_grappa,radial_traj_undersampled_grappa,image_size,b1=None,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
 volume_all_ts_all_spokes=simulate_radial_undersampled_images_multi(kdata_volume_all_spokes,radial_traj_volume_all_spokes,image_size,b1=None,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_volumes=True)
 
-
-file_mha = "/".join(["/".join(str.split(filename_volume, "/")[:-1]),"_".join(str.split(str.split(filename_volume, "/")[-1], ".")[:-1])]) + "_volume.mha"
-io.write(file_mha, np.abs(volume[0]), tags={"spacing": [5, 1, 1]})
-
-file_mha = "/".join(["/".join(str.split(filename_volume_grappa, "/")[:-1]),"_".join(str.split(str.split(filename_volume_grappa, "/")[-1], ".")[:-1])]) + "_volume.mha"
-io.write(file_mha, np.abs(volume_grappa[0]), tags={"spacing": [5, 1, 1]})
-
-file_mha = "/".join(["/".join(str.split(filename_volume_all_spokes, "/")[:-1]),"_".join(str.split(str.split(filename_volume_all_spokes, "/")[-1], ".")[:-1])]) + "_volume.mha"
-io.write(file_mha, np.abs(volume_all_spokes[0]), tags={"spacing": [5, 1, 1]})
 
 file_mha = "/".join(["/".join(str.split(filename_volume, "/")[:-1]),"_".join(str.split(str.split(filename_volume, "/")[-1], ".")[:-1])]) + "_volume_undersampled.mha"
 io.write(file_mha, np.abs(volume_undersampled[0]), tags={"spacing": [5, 1, 1]})
@@ -1262,11 +1261,11 @@ io.write(file_mha,np.abs(volumes_all_spokes[ts]),tags={"spacing":[5,1,1]})
 if not(load_map):
     niter = 0
     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,threshold=None)
-    all_maps=optimizer.search_patterns(dictfile,volumes_all_grappa,retained_timesteps=None)
+    all_maps=optimizer.search_patterns(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
         import pickle
-        file = open(file_map_grappa, "wb")
+        file = open(file_map, "wb")
         # dump information to that file
         pickle.dump(all_maps, file)
         # close the file
@@ -1287,10 +1286,21 @@ plot_evolution_params(m.paramMap,m.mask>0,all_maps,maskROI=buildROImask_unique(m
 
 
 
+file = open(file_map, "rb")
+all_maps_US = pickle.load(file)
+file.close()
 
 iter=0
 regression_paramMaps_ROI(m.paramMap,all_maps[iter][0],m.mask>0,all_maps[iter][1]>0,buildROImask_unique(m.paramMap))
 
+iter=0
+regression_paramMaps_ROI(m.paramMap,all_maps_US[iter][0],m.mask>0,all_maps_US[iter][1]>0,buildROImask_unique(m.paramMap))
+
+
+metrics_paramMaps_ROI(m.paramMap,all_maps_US[iter][0],m.mask>0,all_maps_US[iter][1]>0,buildROImask_unique(m.paramMap))
+
+
+metrics_paramMaps_ROI(m.paramMap,all_maps[iter][0],m.mask>0,all_maps[iter][1]>0,buildROImask_unique(m.paramMap))
 
 
 
@@ -1298,8 +1308,7 @@ regression_paramMaps_ROI(m.paramMap,all_maps[iter][0],m.mask>0,all_maps[iter][1]
 
 
 
-
-curr_file=file_map
+curr_file=file_map_grappa
 file = open(curr_file, "rb")
 all_maps = pickle.load(file)
 file.close()
