@@ -85,6 +85,8 @@ filename_volume_grappa = filename+"_volumes_grappa_sl{}_rp{}_us{}{}.npy".format(
 file_map_grappa = filename + "_grappa_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,suffix)
 file_map_all_spokes = filename + "_all_spokes_sl{}_rp{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,suffix)
 
+
+
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 
