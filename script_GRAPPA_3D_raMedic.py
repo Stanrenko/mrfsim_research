@@ -259,8 +259,13 @@ all_lines=np.arange(nb_slices).astype(int)
 lines_measured=all_lines[::undersampling_factor]
 lines_to_estimate=list(set(all_lines)-set(lines_measured))
 
+nb_ref_lines=6
+
 center_line=int(nb_slices/2)
 lines_ref = all_lines[(center_line-int(nb_ref_lines/2)):(center_line+int(nb_ref_lines/2))]
+
+skipped_lines = int((data_calib.shape[-2]-nb_ref_lines)/2)
+data_calib=data_calib[:,:,skipped_lines:-skipped_lines,:]
 
 kdata_measured_and_calib=np.concatenate([data,data_calib],axis=2)
 radial_traj_measured_and_calib=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,nspoke_per_z_encoding=nb_allspokes)
@@ -327,7 +332,7 @@ kdata_all_channels_completed_all_ts=[]
 curr_traj_completed_all_ts=[]
 
 plot_fit=False
-replace_calib_lines=False
+replace_calib_lines=True
 useGPU=True
 
 for ts in tqdm(range(nb_allspokes)):
@@ -339,8 +344,8 @@ for ts in tqdm(range(nb_allspokes)):
         # l=calib_lines_ref_indices[index_ky_target][0]
         # j=0
         # i=0
-        i=8
-        l=calib_lines_ref_indices[index_ky_target][i]
+        #i=8
+        #l=calib_lines_ref_indices[index_ky_target][i]
         for i,l in enumerate(calib_lines_ref_indices[index_ky_target]):
             l0 = l - (index_ky_target + 1)
             for j in range(npoint):
@@ -411,8 +416,8 @@ for ts in tqdm(range(nb_allspokes)):
 
     F_target_estimate = np.zeros((nb_channels,len(lines_to_estimate),npoint),dtype=data.dtype)
 
-    i=10
-    l=lines_to_estimate[i]
+    #i=10
+    #l=lines_to_estimate[i]
     for i,l in (enumerate(lines_to_estimate)):
         F_source_estimate = np.zeros((nb_channels * len(kernel_x) * len(kernel_y), npoint),
                                       dtype=data_calib.dtype)
