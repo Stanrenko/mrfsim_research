@@ -59,6 +59,12 @@ localfile = "/20220106/meas_MID00021_FID48331_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile = "/20220106/meas_MID00167_FID48477_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile = "/20220106_JM/meas_MID00180_FID48490_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read.dat"
+
+localfile="/phantom.003.v1/meas_MID00420_FID60810_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/phantom.003.v2/meas_MID00036_FID61109_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/phantom.003.v2/meas_MID00037_FID61110_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/phantom.003.v2/meas_MID00038_FID61111_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+
 #localfile = "/20220113_CS/meas_MID00164_FID49559_raFin_3D_tra_1x1x5mm_FULL_50GS_slice.dat"
 #localfile = "/20220118_BM/meas_MID00151_FID49924_raFin_3D_tra_1x1x5mm_FULL_read_nav.dat"
 
@@ -383,6 +389,11 @@ if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
 else:
     b1_all_slices=np.load(filename_b1)
 
+
+sl=int(b1_all_slices.shape[1]/2)
+list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
+plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
+
 # print("Building Volumes....")
 # if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
 #     volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
@@ -464,8 +475,16 @@ if nb_gating_spokes>0:
     b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
 
 
+    ch=0
+    image_nav_ch =simulate_nav_images_multi(np.expand_dims(data_for_nav[ch],axis=0),nav_traj, nav_image_size)
+    plt.imshow(np.abs(b1_nav[ch].reshape(-1, 400)))
+
+    plt.imshow(np.abs(image_nav_ch.reshape(-1, 400)), cmap="gray")
+
     print("Rebuilding Nav Images...")
     images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
+    plt.imshow(np.abs(images_nav_mean.reshape(-1, 400)),cmap="gray")
+
 
 
     print("Estimating Movement...")

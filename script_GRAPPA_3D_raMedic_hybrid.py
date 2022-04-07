@@ -506,6 +506,10 @@ ind=np.argsort(traj_kz)
 traj_kz = traj_kz[ind]
 data_hybrid_completed_sorted = data_hybrid_completed[ind,:,:,:]
 
+data_hybrid_completed_sorted[:((undersampling_factor-1)*pad_y[0]),:,:,:]=0
+data_hybrid_completed_sorted[(-(undersampling_factor-1)*pad_y[1]):,:,:]=0
+
+
 x=np.random.choice(npoint)
 y=np.random.choice(npoint)
 ch=0
@@ -526,16 +530,27 @@ plt.plot(metric(data_allspokes_hybrid[:,ch,x,y]-data_hybrid_completed_sorted[:,c
 if data_hybrid_completed.dtype == "complex64":
     traj_kz = traj_kz.astype("float32")
 
-images_all_channels = finufft.nufft1d1(traj_kz,np.moveaxis(data_hybrid_completed.reshape(nb_slices,-1),-1,0),48)
+kdata_hybrid_for_image = np.moveaxis(data_hybrid_completed_sorted.reshape(nb_slices,-1),-1,0)
+images_all_channels = finufft.nufft1d1(traj_kz,kdata_hybrid_for_image,48)
 
 images_all_channels=np.moveaxis(images_all_channels,-1,0)
-images_all_channels=images_all_channels.reshape(nb_channels,image_size[1],image_size[2],nb_slices)
-images_all_channels=np.moveaxis(images_all_channels,-1,1)
+images_all_channels=images_all_channels.reshape(nb_slices,nb_channels,image_size[1],image_size[2])
+images_all_channels=np.moveaxis(images_all_channels,0,1)
 
 plt.figure()
 plt.imshow(np.abs(images_all_channels[5,24,:,:]))
 
+image_rebuilt=np.sqrt(np.sum(np.abs(images_all_channels),axis=0))
 
+ch=0
+file_mha = "/".join(["/".join(str.split(filename_volume, "/")[:-1]),
+                        "_".join(str.split(str.split(filename_volume_grappa, "/")[-1], ".")[:-1])]) + "_volume_hybridmethod_ch_{}.mha".format(ch)
+io.write(file_mha, np.abs(images_all_channels[ch,:,:,:]), tags={"spacing": [dz, dx, dy]})
+
+
+file_mha = "/".join(["/".join(str.split(filename_volume, "/")[:-1]),
+                        "_".join(str.split(str.split(filename_volume_grappa, "/")[-1], ".")[:-1])]) + "_volume_hybridmethod_sos.mha"
+io.write(file_mha, np.abs(image_rebuilt), tags={"spacing": [dz, dx, dy]})
 
 
 
