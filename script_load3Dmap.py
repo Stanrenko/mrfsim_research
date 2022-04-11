@@ -48,6 +48,8 @@ filename='./data/InVivo/3D/phantom.001.v1/phantom.001.v1_5iter.dat'
 filename='./data/InVivo/3D/phantom.001.v1/phantom.001.v1_allspokes8.dat'
 #filename='./data/InVivo/3D/phantom.001.v1/phantom.001.v1_allspokes4.dat'
 filename='./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_allspokes8.dat'
+filename='./data/InVivo/3D/patient.001.v1/meas_MID00215_FID60605_raFin_3D_tra_FULl.dat'
+
 
 #filename="./3D/SquareSimu3D_sl8_rp2fullysampled.dat"
 #filename="./3D/SquareSimu3D_sl8_rp2_fullysampled.dat"
@@ -80,7 +82,7 @@ for iter in list(all_maps.keys()):
 
     for key in ["ff","wT1","df","attB1"]:
         file_mha = "/".join(["/".join(str.split(file_map,"/")[:-1]),"_".join(str.split(str.split(file_map,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
-        io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+        io.write(file_mha,map_for_sim[key],tags={"spacing":[5,0.68,0.68]})
 
 
 folder =r"\\192.168.0.1\RMN_FILES"

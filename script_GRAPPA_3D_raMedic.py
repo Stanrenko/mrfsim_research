@@ -18,7 +18,10 @@ from mutools import io
 from sklearn import linear_model
 from scipy.optimize import minimize
 import twixtools
-import cupy as cp
+try:
+    import cupy as cp
+except:
+    pass
 
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
 base_folder = "./3D"
@@ -38,7 +41,7 @@ use_GPU = False
 light_memory_usage=True
 gen_mode="other"
 
-
+nb_ref_lines=""
 
 filename = base_folder+localfile
 
@@ -56,16 +59,16 @@ filename_kdata = str.split(filename,".dat") [0]+"_kdata.npy"
 filename_mask= str.split(filename,".dat") [0]+"_mask.npy"
 file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format(suffix)
 
-filename_volume_measured_and_calib = str.split(filename,".dat") [0]+"_volumes_allacqlines.npy"
+filename_volume_measured_and_calib = str.split(filename,".dat") [0]+"_volumes_allacqlines_nref{}.npy".format(nb_ref_lines)
 
-filename_b1_grappa = str.split(filename,".dat") [0]+"_b1_grappa.npy"
-filename_volume_grappa = str.split(filename,".dat") [0]+"_volumes_grappa.npy"
-filename_kdata_grappa = str.split(filename,".dat") [0]+"_kdata_grappa.npy"
-filename_kdata_grappa_no_replace = str.split(filename,".dat") [0]+"_kdata_grappa_no_replace.npy"
-filename_mask_grappa= str.split(filename,".dat") [0]+"_mask_grappa.npy"
-file_map_grappa = filename.split(".dat")[0] + "{}_MRF_map_grappa.pkl".format(suffix)
+filename_b1_grappa = str.split(filename,".dat") [0]+"_b1_grappa_nref{}.npy".format(nb_ref_lines)
+filename_volume_grappa = str.split(filename,".dat") [0]+"_volumes_grappa_nref{}.npy".format(nb_ref_lines)
+filename_kdata_grappa = str.split(filename,".dat") [0]+"_kdata_grappa_nref{}.npy".format(nb_ref_lines)
+filename_kdata_grappa_no_replace = str.split(filename,".dat") [0]+"_kdata_grappa_no_replace_nref{}.npy".format(nb_ref_lines)
+filename_mask_grappa= str.split(filename,".dat") [0]+"_mask_grappa_nref{}.npy".format(nb_ref_lines)
+file_map_grappa = filename.split(".dat")[0] + "{}_MRF_map_grappa_nref{}.pkl".format(suffix,nb_ref_lines)
 
-filename_currtraj_grappa = str.split(filename,".dat") [0]+"_currtraj_grappa.npy"
+filename_currtraj_grappa = str.split(filename,".dat") [0]+"_currtraj_grappa_nref{}.npy".format(nb_ref_lines)
 
 filename_save_allspokes = str.split(base_folder + "/phantom.002.v1/meas_MID00273_FID59700_raMedic_3Dgated.dat",".dat")[0]+".npy"
 
@@ -111,7 +114,8 @@ meas_sampling_mode=dico_seqParams["alFree"][12]
 nb_allspokes=dico_seqParams["alFree"][5]
 undersampling_factor=dico_seqParams["US"]
 nb_slices=dico_seqParams["nb_slices"]
-nb_ref_lines=dico_seqParams["nb_ref_lines"]
+if nb_ref_lines=="":
+    nb_ref_lines=dico_seqParams["nb_ref_lines"]
 x_FOV = dico_seqParams["x_FOV"]
 y_FOV = dico_seqParams["y_FOV"]
 z_FOV = dico_seqParams["z_FOV"]
@@ -259,13 +263,14 @@ all_lines=np.arange(nb_slices).astype(int)
 lines_measured=all_lines[::undersampling_factor]
 lines_to_estimate=list(set(all_lines)-set(lines_measured))
 
-nb_ref_lines=6
 
 center_line=int(nb_slices/2)
 lines_ref = all_lines[(center_line-int(nb_ref_lines/2)):(center_line+int(nb_ref_lines/2))]
 
-skipped_lines = int((data_calib.shape[-2]-nb_ref_lines)/2)
-data_calib=data_calib[:,:,skipped_lines:-skipped_lines,:]
+skipped_lines=int((data_calib.shape[2]-nb_ref_lines)/2)
+
+if not(skipped_lines ==0):
+    data_calib = data_calib[:,:,skipped_lines:-skipped_lines,:]
 
 kdata_measured_and_calib=np.concatenate([data,data_calib],axis=2)
 radial_traj_measured_and_calib=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,nspoke_per_z_encoding=nb_allspokes)
@@ -333,7 +338,7 @@ curr_traj_completed_all_ts=[]
 
 plot_fit=False
 replace_calib_lines=True
-useGPU=True
+useGPU=False
 
 for ts in tqdm(range(nb_allspokes)):
     for index_ky_target in range(len(calib_lines_ref_indices)):
