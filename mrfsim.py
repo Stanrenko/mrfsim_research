@@ -5,7 +5,7 @@ import numpy as np
 from scipy import ndimage
 import sys
 path = r"/home/cslioussarenko/PythonRepositories"
-path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
+#path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
 sys.path.append(path+"/epgpy")
 sys.path.append(path+"/machines")
 sys.path.append(path+"/mutools")
@@ -20,7 +20,12 @@ try:
     matplotlib.use('Qt5Agg')
     from matplotlib import pyplot as plt
 except:
-    pass
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        from matplotlib import pyplot as plt
+    except:
+        pass
 # misc
 import pandas as pd
 from scipy.io import loadmat,savemat

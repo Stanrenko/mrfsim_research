@@ -2686,7 +2686,7 @@ def correct_mvt_kdata(kdata,trajectory,cond,ntimesteps,density_adj=True,log=Fals
     return kdata_retained_final,traj_retained_final,retained_timesteps
 
 
-def plot_image_grid(list_images,nb_row_col,figsize=(10,10),title="",cmap=None):
+def plot_image_grid(list_images,nb_row_col,figsize=(10,10),title="",cmap=None,save_file=None):
     fig = plt.figure(figsize=figsize)
     plt.title(title)
     grid = ImageGrid(fig, 111,  # similar to subplot(111)
@@ -2698,6 +2698,8 @@ def plot_image_grid(list_images,nb_row_col,figsize=(10,10),title="",cmap=None):
         ax.imshow(im,cmap=cmap)
 
     plt.show()
+    if save_file is not None:
+        plt.savefig(save_file)
 
 def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256)):
     traj_all = trajectory.get_traj()

@@ -316,13 +316,13 @@ del b1_all_slices
 
 ########################## Dict mapping ########################################
 
-dictfile = "mrf175_SimReco2.dict"
-#dictfile = "mrf175_Dico2_Invivo.dict"
+#dictfile = "mrf175_SimReco2.dict"
+dictfile = "mrf175_Dico2_Invivo.dict"
 
 volumes_all = np.load(filename_volume)
 mask = np.load(filename_mask)
 
-ani = animate_images(volumes_all[:,4,:,:])
+#ani = animate_images(volumes_all[:,4,:,:])
 #
 # plt.figure()
 # plt.plot(volumes_all[:,sl,200,200])

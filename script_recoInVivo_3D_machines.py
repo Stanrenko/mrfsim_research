@@ -13,7 +13,12 @@ from numpy.lib.format import open_memmap
 from numpy import memmap
 import pickle
 import twixtools
+from PIL import Image
 
+try :
+    import cupy as cp
+except:
+    pass
 # machines
 path = r"/home/cslioussarenko/PythonRepositories"
 #path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
@@ -219,13 +224,16 @@ def build_data_for_grappa_simulation(filename,undersampling_factor,nspokes_per_z
 
 
 @machine
-@set_parameter("filename", str, default=None, description="Calib data .npy file")
+@set_parameter("filename_save_calib", str, default=None, description="Calib data .npy file")
 @set_parameter("nspokes_per_z_encoding", int, default=8, description="Number of spokes per z encoding")
-@set_parameter("kernel_y", list, default=[0,1], description="Kernel along partition line numbers")
+@set_parameter("len_kery", int, default=2, description="Number of lines in each kernel")
 @set_parameter("len_kerx", int, default=7, description="Number of readout points in each line of the kernel")
+@set_parameter("calibration_mode", ["Standard","Tikhonov"], default="Standard", description="Calibration methodology for Grappa")
+@set_parameter("lambd", float, default=None, description="Regularization parameter")
 @set_parameter("suffix", str, default="")
-def calib_and_estimate_kdata_grappa(filename_save_calib, nspokes_per_z_encoding,kernel_y,len_kerx, suffix):
+def calib_and_estimate_kdata_grappa(filename_save_calib, nspokes_per_z_encoding,len_kery,len_kerx,calibration_mode,lambd,suffix):
     data_calib = np.load(filename_save_calib)
+    nb_channels=data_calib.shape[0]
 
     filename_split = str.split(filename_save_calib,"_us")
     filename = filename_split[0]+".dat"
@@ -250,6 +258,7 @@ def calib_and_estimate_kdata_grappa(filename_save_calib, nspokes_per_z_encoding,
 
     indices_kz = list(range(1, (undersampling_factor)))
 
+    kernel_y = np.arange(len_kery)
     kernel_x = np.arange(-(int(len_kerx / 2) - 1), int(len_kerx / 2))
 
     pad_y = ((np.array(kernel_y) < 0).sum(), (np.array(kernel_y) > 0).sum())
@@ -287,6 +296,11 @@ def calib_and_estimate_kdata_grappa(filename_save_calib, nspokes_per_z_encoding,
     traj_all = radial_traj_all.get_traj().reshape(nb_allspokes, nb_slices, npoint, 3)
 
     all_lines = np.arange(nb_slices).astype(int)
+
+    if calibration_mode == "Tikhonov":
+        if lambd is None:
+            lambd = 0.01
+            print("Warning : lambd was not set for Tikhonov calibration. Using default value of 0.01")
 
     for ts in tqdm(range(nb_allspokes)):
 
@@ -335,18 +349,20 @@ def calib_and_estimate_kdata_grappa(filename_save_calib, nspokes_per_z_encoding,
             F_source_calib = F_source_calib.reshape(nb_channels * len(kernel_x) * len(kernel_y), -1)
             F_target_calib = F_target_calib.reshape(nb_channels, -1)
 
-            weights[index_ky_target] = (
+            if calibration_mode == "Tikhonov":
+                F_source_calib_cupy = cp.asarray(F_source_calib)
+                F_target_calib_cupy = cp.asarray(F_target_calib)
+                weights[index_ky_target] = (F_target_calib_cupy @ F_source_calib_cupy.conj().T @ cp.linalg.inv(
+                    F_source_calib_cupy @ F_source_calib_cupy.conj().T + lambd * cp.eye(
+                        F_source_calib_cupy.shape[0]))).get()
+
+            else:
+                weights[index_ky_target] = (
                             cp.asarray(F_target_calib) @ cp.linalg.pinv(cp.asarray(F_source_calib))).get()
 
 
-        # i=0
-
-        # l=lines_to_estimate[0]
-
         F_target_estimate = np.zeros((nb_channels, len(lines_to_estimate), npoint), dtype=data.dtype)
 
-        # i=10
-        # l=lines_to_estimate[i]
         for i, l in (enumerate(lines_to_estimate)):
             F_source_estimate = np.zeros((nb_channels * len(kernel_x) * len(kernel_y), npoint),
                                          dtype=data_calib.dtype)
@@ -363,9 +379,15 @@ def calib_and_estimate_kdata_grappa(filename_save_calib, nspokes_per_z_encoding,
                 F_source_estimate[:, j] = data_padded[:, ts, local_indices[:, 0], local_indices[:, 1]].flatten()
             F_target_estimate[:, i, :] = weights[index_ky_target] @ F_source_estimate
 
-        # Replace calib lines
-        # i=10
-        # l=lines_to_estimate[i]
+        F_target_estimate[:,:,:pad_x[0]]=0
+        F_target_estimate[:, :, -pad_x[1]:] = 0
+
+        max_measured_line=np.max(lines_measured)
+        min_measured_line=np.min(lines_measured)
+
+        for i, l in (enumerate(lines_to_estimate)):
+            if (l<min_measured_line)or(l>max_measured_line):
+                F_target_estimate[:, i, :]=0
 
         for i, l in (enumerate(lines_to_estimate)):
             if l in lines_ref.flatten():
@@ -374,7 +396,7 @@ def calib_and_estimate_kdata_grappa(filename_save_calib, nspokes_per_z_encoding,
 
         kdata_all_channels_completed = np.concatenate([data[:, ts], F_target_estimate], axis=1)
         curr_traj_estimate = traj_all[ts, lines_to_estimate, :, :]
-        curr_traj_completed = np.concatenate([radial_traj.get_traj()[ts].reshape(-1, npoint, 3), curr_traj_estimate],
+        curr_traj_completed = np.concatenate([traj_all[ts,lines_measured,:,:], curr_traj_estimate],
                                              axis=0)
 
         kdata_all_channels_completed = kdata_all_channels_completed.reshape((nb_channels, -1))
@@ -394,10 +416,10 @@ def calib_and_estimate_kdata_grappa(filename_save_calib, nspokes_per_z_encoding,
 
     kdata_all_channels_completed_all_ts = kdata_all_channels_completed_all_ts.reshape(nb_channels, nb_allspokes,
                                                                                       nb_slices, npoint)
-    kdata_all_channels_completed_all_ts[:, :, :, :pad_x[0]] = 0
-    kdata_all_channels_completed_all_ts[:, :, :, -pad_x[1]:] = 0
-    kdata_all_channels_completed_all_ts[:, :, :((undersampling_factor - 1) * pad_y[0]), :] = 0
-    kdata_all_channels_completed_all_ts[:, :, (-(undersampling_factor - 1) * pad_y[1]):, :] = 0
+    #kdata_all_channels_completed_all_ts[:, :, :, :pad_x[0]] = 0
+    #kdata_all_channels_completed_all_ts[:, :, :, -pad_x[1]:] = 0
+    #kdata_all_channels_completed_all_ts[:, :, :((undersampling_factor - 1) * pad_y[0]), :] = 0
+    #kdata_all_channels_completed_all_ts[:, :, (-(undersampling_factor - 1) * pad_y[1]):, :] = 0
 
     np.save(filename_kdata_grappa, kdata_all_channels_completed_all_ts)
     np.save(filename_currtraj_grappa, curr_traj_completed_all_ts)
@@ -415,7 +437,7 @@ def calib_and_estimate_kdata_grappa(filename_save_calib, nspokes_per_z_encoding,
 def build_coil_sensi(filename_kdata,filename_traj,sampling_mode,undersampling_factor,dens_adj,suffix):
 
     kdata_all_channels_all_slices = np.load(filename_kdata)
-    filename_b1 = str.split(filename_kdata, "_kdata.npy")[0] + "_b1" + suffix +".npy"
+    filename_b1 = ("_b1"+suffix).join(str.split(filename_kdata, "_kdata"))
 
     sampling_mode_list = str.split(sampling_mode,"_")
 
@@ -432,8 +454,8 @@ def build_coil_sensi(filename_kdata,filename_traj,sampling_mode,undersampling_fa
     data_shape = kdata_all_channels_all_slices.shape
     nb_allspokes = data_shape[1]
     npoint = data_shape[-1]
-    nb_slices = data_shape[2]
-    image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
+    nb_slices = data_shape[2]*undersampling_factor
+    #image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
 
     if filename_traj is None:
         radial_traj = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=undersampling_factor, npoint=npoint,
@@ -448,6 +470,14 @@ def build_coil_sensi(filename_kdata,filename_traj,sampling_mode,undersampling_fa
     image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
     b1_all_slices = calculate_sensitivity_map_3D(kdata_all_channels_all_slices, radial_traj, res, image_size,
                                                  useGPU=False, light_memory_usage=True,density_adj=dens_adj)
+
+    image_file=str.split(filename_b1, ".npy")[0] + suffix + ".jpg"
+
+    sl = int(b1_all_slices.shape[1]/2)
+
+    list_images=list(np.abs(b1_all_slices[:,sl,:,:]))
+    plot_image_grid(list_images,(6,6),title="Sensivitiy map for slice".format(sl),save_file=image_file)
+
     np.save(filename_b1, b1_all_slices)
 
     return
@@ -465,17 +495,14 @@ def build_coil_sensi(filename_kdata,filename_traj,sampling_mode,undersampling_fa
 @set_parameter("suffix",str,default="")
 def build_volumes(filename_kdata,filename_traj,sampling_mode,undersampling_factor,ntimesteps,use_GPU,light_mem,dens_adj,suffix):
 
-    print("I was here") 
     kdata_all_channels_all_slices = np.load(filename_kdata)
-    print("I was here 2") 
-    filename_b1 = str.split(filename_kdata, "_kdata.npy")[0] + "_b1.npy"
-    print(filename_b1) 
-    b1_all_slices=np.load(filename_b1)
+    filename_b1 = ("_b1" + suffix).join(str.split(filename_kdata, "_kdata"))
 
-    filename_volume = str.split(filename_kdata, "_kdata.npy")[0] + "_volumes"+suffix+".npy"
+    b1_all_slices=np.load(filename_b1)
+    filename_volume = ("_volumes"+suffix).join(str.split(filename_kdata, "_kdata"))
     print(filename_volume)
     sampling_mode_list = str.split(sampling_mode, "_")
-    print(sampling_mode_list)
+
     if sampling_mode_list[0] == "stack":
         incoherent = False
     else:
@@ -489,7 +516,7 @@ def build_volumes(filename_kdata,filename_traj,sampling_mode,undersampling_facto
     data_shape = kdata_all_channels_all_slices.shape
     nb_allspokes = data_shape[1]
     npoint = data_shape[-1]
-    nb_slices = data_shape[2]
+    nb_slices = data_shape[2]*undersampling_factor
     image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
 
     if filename_traj is None:
@@ -506,6 +533,19 @@ def build_volumes(filename_kdata,filename_traj,sampling_mode,undersampling_facto
                                                             useGPU=use_GPU, normalize_kdata=False, memmap_file=None,
                                                             light_memory_usage=light_mem,normalize_volumes=True)
     np.save(filename_volume, volumes_all)
+
+
+    gif=[]
+    sl=int(volumes_all.shape[1]/2)
+    volume_for_gif = np.abs(volumes_all[:,sl,:,:])
+    for i in range(volume_for_gif.shape[0]):
+        img = Image.fromarray(np.uint8(volume_for_gif[i]/np.max(volume_for_gif[i])*255), 'L')
+        img=img.convert("P")
+        gif.append(img)
+
+    filename_gif = str.split(filename_volume,".npy") [0]+".gif"
+    gif[0].save(filename_gif,save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
+
     return
 
 @machine
@@ -515,15 +555,15 @@ def build_volumes(filename_kdata,filename_traj,sampling_mode,undersampling_facto
 @set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
 @set_parameter("dens_adj", bool, default=False, description="Memory usage")
 @set_parameter("suffix",str,default="")
-def build_mask(filename_kdata,sampling_mode,undersampling_factor,dens_adj,suffix):
+def build_mask(filename_kdata,filename_traj,sampling_mode,undersampling_factor,dens_adj,suffix):
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
-    print(filename_kdata) 
-    filename_b1 = str.split(filename_kdata, "_kdata.npy")[0] + "_b1.npy"
-    print(filename_b1) 
+    filename_b1 = ("_b1" + suffix).join(str.split(filename_kdata, "_kdata"))
+
     b1_all_slices=np.load(filename_b1)
 
-    filename_mask = str.split(filename_kdata, "_kdata.npy")[0] + "_mask"+suffix+".npy"
+    filename_mask =("_mask"+suffix).join(str.split(filename_kdata, "_kdata"))
+    print(filename_mask)
 
     sampling_mode_list = str.split(sampling_mode, "_")
 
@@ -540,7 +580,7 @@ def build_mask(filename_kdata,sampling_mode,undersampling_factor,dens_adj,suffix
     data_shape = kdata_all_channels_all_slices.shape
     nb_allspokes = data_shape[1]
     npoint = data_shape[-1]
-    nb_slices = data_shape[2]
+    nb_slices = data_shape[2]*undersampling_factor
     image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
 
     if filename_traj is None:
@@ -557,7 +597,20 @@ def build_mask(filename_kdata,sampling_mode,undersampling_factor,dens_adj,suffix
     mask = build_mask_single_image_multichannel(kdata_all_channels_all_slices, radial_traj, image_size,
                                                 b1=b1_all_slices, density_adj=dens_adj, threshold_factor=None,
                                                 normalize_kdata=False, light_memory_usage=True,selected_spokes=selected_spokes,normalize_volumes=True)
+
+
     np.save(filename_mask, mask)
+
+    gif = []
+
+    for i in range(mask.shape[0]):
+        img = Image.fromarray(np.uint8(mask[i] / np.max(mask[i]) * 255), 'L')
+        img = img.convert("P")
+        gif.append(img)
+
+    filename_gif = str.split(filename_mask, ".npy")[0] + ".gif"
+    gif[0].save(filename_gif, save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
+
     return
 
 
@@ -566,6 +619,8 @@ toolbox.add_program("build_kdata", build_kdata)
 toolbox.add_program("build_coil_sensi", build_coil_sensi)
 toolbox.add_program("build_volumes", build_volumes)
 toolbox.add_program("build_mask", build_mask)
+toolbox.add_program("build_data_for_grappa_simulation", build_data_for_grappa_simulation)
+toolbox.add_program("calib_and_estimate_kdata_grappa", calib_and_estimate_kdata_grappa)
 
 if __name__ == "__main__":
     toolbox.cli()

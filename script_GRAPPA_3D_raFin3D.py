@@ -51,7 +51,8 @@ filename_save_calib=str.split(filename,".dat") [0]+"_us{}ref{}_calib.npy".format
 folder = "/".join(str.split(filename,"/")[:-1])
 
 
-suffix = ""
+suffix_grappa = "_Tikhonov_0_01"
+suffix=""
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 
 filename_b1 = str.split(filename,".dat") [0]+"_us{}_b1.npy".format(undersampling_factor)
@@ -62,14 +63,14 @@ file_map = filename.split(".dat")[0] + "{}_us{}_MRF_map.pkl".format(suffix,under
 
 filename_volume_measured_and_calib = str.split(filename,".dat") [0]+"_volumes_allacqlines.npy"
 
-filename_b1_grappa = str.split(filename,".dat") [0]+"_us{}ref{}_b1_grappa.npy".format(undersampling_factor,nb_ref_lines)
-filename_volume_grappa = str.split(filename,".dat") [0]+"_us{}ref{}_volumes_grappa.npy".format(undersampling_factor,nb_ref_lines)
-filename_kdata_grappa = str.split(filename,".dat") [0]+"_us{}ref{}_kdata_grappa.npy".format(undersampling_factor,nb_ref_lines)
-filename_kdata_grappa_no_replace = str.split(filename,".dat") [0]+"_us{}ref{}_kdata_grappa_no_replace.npy".format(undersampling_factor,nb_ref_lines)
-filename_mask_grappa= str.split(filename,".dat") [0]+"_us{}ref{}_mask_grappa.npy".format(undersampling_factor,nb_ref_lines)
-file_map_grappa = filename.split(".dat")[0] + "{}_us{}ref{}_MRF_map_grappa.pkl".format(undersampling_factor,nb_ref_lines,suffix)
+filename_b1_grappa = str.split(filename,".dat") [0]+"{}_us{}ref{}_b1_grappa.npy".format(suffix_grappa,undersampling_factor,nb_ref_lines)
+filename_volume_grappa = str.split(filename,".dat") [0]+"{}_us{}ref{}_volumes_grappa.npy".format(suffix_grappa,undersampling_factor,nb_ref_lines)
+filename_kdata_grappa = str.split(filename,".dat") [0]+"{}_us{}ref{}_kdata_grappa.npy".format(suffix_grappa,undersampling_factor,nb_ref_lines)
+filename_kdata_grappa_no_replace = str.split(filename,".dat") [0]+"{}_us{}ref{}_kdata_grappa_no_replace.npy".format(suffix_grappa,undersampling_factor,nb_ref_lines)
+filename_mask_grappa= str.split(filename,".dat") [0]+"{}_us{}ref{}_mask_grappa.npy".format(suffix_grappa,undersampling_factor,nb_ref_lines)
+file_map_grappa = filename.split(".dat")[0] + "{}_us{}ref{}_MRF_map_grappa.pkl".format(suffix_grappa,undersampling_factor,nb_ref_lines)
 
-filename_currtraj_grappa = str.split(filename,".dat") [0]+"_us{}ref{}_currtraj_grappa.npy".format(undersampling_factor,nb_ref_lines)
+filename_currtraj_grappa = str.split(filename,".dat") [0]+"{}_us{}ref{}_currtraj_grappa.npy".format(suffix_grappa,undersampling_factor,nb_ref_lines)
 
 
 
@@ -278,7 +279,7 @@ if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
     np.save(filename_mask,mask)
     del mask
 
-animate_images(mask)
+#animate_images(mask)
 
 del kdata_all_channels_all_slices
 del b1_all_slices
@@ -391,13 +392,16 @@ plot_fit=False
 replace_calib_lines=True
 useGPU=True
 
-shift=0
-
-ts=0
-
 radial_traj_all=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,nspoke_per_z_encoding=nspokes_per_z_encoding)
 traj_all = radial_traj_all.get_traj().reshape(nb_allspokes,nb_slices,npoint,3)
 
+shift=0
+
+lambd=0.01
+calibration_mode = "Tikhonov"
+
+ts=0
+index_ky_target=0
 
 for ts in tqdm(range(nb_allspokes)):
 
@@ -449,10 +453,22 @@ for ts in tqdm(range(nb_allspokes)):
         F_source_calib=F_source_calib.reshape(nb_channels * len(kernel_x) * len(kernel_y),-1)
         F_target_calib = F_target_calib.reshape(nb_channels,-1)
 
-        if useGPU:
-            weights[index_ky_target] = (cp.asarray(F_target_calib) @ cp.linalg.pinv(cp.asarray(F_source_calib))).get()
+        if calibration_mode == "Tikhonov":
+            if useGPU:
+                F_source_calib_cupy = cp.asarray(F_source_calib)
+                F_target_calib_cupy = cp.asarray(F_target_calib)
+                weights[index_ky_target] = (F_target_calib_cupy @ F_source_calib_cupy.conj().T @ cp.linalg.inv(
+                    F_source_calib_cupy @ F_source_calib_cupy.conj().T + lambd * cp.eye(F_source_calib_cupy.shape[0]))).get()
+
+            else:
+                weights[index_ky_target] = F_target_calib @ F_source_calib.conj().T @ np.linalg.inv(
+                    F_source_calib @ F_source_calib.conj().T + lambd * np.eye(F_source_calib.shape[0]))
         else:
-            weights[index_ky_target] = F_target_calib @ np.linalg.pinv(F_source_calib)
+            if useGPU:
+                weights[index_ky_target] = (
+                            cp.asarray(F_target_calib) @ cp.linalg.pinv(cp.asarray(F_source_calib))).get()
+            else:
+                weights[index_ky_target] = F_target_calib @ np.linalg.pinv(F_source_calib)
 
     #i=0
 
@@ -531,6 +547,15 @@ for ts in tqdm(range(nb_allspokes)):
     #Replace calib lines
     #i=10
     #l=lines_to_estimate[i]
+    F_target_estimate[:, :, :pad_x[0]] = 0
+    F_target_estimate[:, :, -pad_x[1]:] = 0
+
+    max_measured_line = np.max(lines_measured)
+    min_measured_line = np.min(lines_measured)
+
+    for i, l in (enumerate(lines_to_estimate)):
+        if (l < min_measured_line) or (l > max_measured_line):
+            F_target_estimate[:, i, :] = 0
 
     if replace_calib_lines:
         for i, l in (enumerate(lines_to_estimate)):
@@ -540,7 +565,7 @@ for ts in tqdm(range(nb_allspokes)):
 
     kdata_all_channels_completed=np.concatenate([data[:,ts],F_target_estimate],axis=1)
     curr_traj_estimate=traj_all[ts,lines_to_estimate,:,:]
-    curr_traj_completed=np.concatenate([radial_traj.get_traj()[ts].reshape(-1,npoint,3),curr_traj_estimate],axis=0)
+    curr_traj_completed=np.concatenate([traj_all[ts,lines_measured,:,:],curr_traj_estimate],axis=0)
 
     kdata_all_channels_completed=kdata_all_channels_completed.reshape((nb_channels,-1))
     curr_traj_completed=curr_traj_completed.reshape((-1,3))
@@ -560,10 +585,6 @@ for ts in tqdm(range(curr_traj_completed_all_ts.shape[0])):
     kdata_all_channels_completed_all_ts[:,ts]=kdata_all_channels_completed_all_ts[:,ts,ind]
 
 kdata_all_channels_completed_all_ts=kdata_all_channels_completed_all_ts.reshape(nb_channels,nb_allspokes,nb_slices,npoint)
-kdata_all_channels_completed_all_ts[:,:,:,:pad_x[0]]=0
-kdata_all_channels_completed_all_ts[:,:,:,-pad_x[1]:]=0
-kdata_all_channels_completed_all_ts[:,:,:((undersampling_factor-1)*pad_y[0]),:]=0
-kdata_all_channels_completed_all_ts[:,:,(-(undersampling_factor-1)*pad_y[1]):,:]=0
 
 if replace_calib_lines:
     np.save(filename_kdata_grappa,kdata_all_channels_completed_all_ts)
@@ -668,10 +689,18 @@ if str.split(filename_volume_grappa, "/")[-1] not in os.listdir(folder):
     ani = animate_images(volumes_all[:,sl,:,:])
     del volumes_all
 
-
 print("Building Mask Grappa....")
 if str.split(filename_mask_grappa, "/")[-1] not in os.listdir(folder):
-    *
+    del kdata_all_channels_completed_all_ts
+    kdata_all_channels_completed_all_ts = np.load(filename_kdata_grappa)
+    selected_spokes = np.r_[10:400]
+    selected_spokes = None
+    mask = build_mask_single_image_multichannel(kdata_all_channels_completed_all_ts, radial_traj_grappa, image_size,
+                                                b1=b1_all_slices, density_adj=False, threshold_factor=None,
+                                                normalize_kdata=False, light_memory_usage=True,
+                                                selected_spokes=selected_spokes)
+    np.save(filename_mask_grappa, mask)
+    del mask
 
 
 
