@@ -244,11 +244,30 @@ def calib_and_estimate_kdata_grappa(filename_save_calib, nspokes_per_z_encoding,
     nb_ref_lines=int(filename_split_params[1].split("_")[0])
 
     filename_save_us = str.split(filename, ".dat")[0] + "_us{}ref{}_us.npy".format(undersampling_factor, nb_ref_lines)
-    filename_kdata_grappa = str.split(filename, ".dat")[0] + "_us{}ref{}_kdata_grappa.npy".format(undersampling_factor,
+
+    if calibration_mode == "Tikhonov":
+        if lambd is None:
+            lambd = 0.01
+            print("Warning : lambd was not set for Tikhonov calibration. Using default value of 0.01")
+
+        str_lambda=str(lambd)
+        str_lambda=str.split(str_lambda,".")
+        str_lambda="_".join(str_lambda)
+        filename_kdata_grappa = str.split(filename, ".dat")[0] + "_{}_{}_us{}ref{}_kdata_grappa.npy".format(calibration_mode,str_lambda,undersampling_factor,
                                                                                                   nb_ref_lines)
 
-    filename_currtraj_grappa = str.split(filename, ".dat")[0] + "_us{}ref{}_currtraj_grappa.npy".format(
-        undersampling_factor, nb_ref_lines)
+        filename_currtraj_grappa = str.split(filename, ".dat")[0] + "_{}_{}_us{}ref{}_currtraj_grappa.npy".format(calibration_mode,str_lambda,
+            undersampling_factor, nb_ref_lines)
+
+    else:
+        filename_kdata_grappa = str.split(filename, ".dat")[0] + "_{}__us{}ref{}_kdata_grappa.npy".format(
+            undersampling_factor,
+            nb_ref_lines)
+
+        filename_currtraj_grappa = str.split(filename, ".dat")[0] + "_us{}ref{}_currtraj_grappa.npy".format(
+            undersampling_factor, nb_ref_lines)
+
+    print(filename_kdata_grappa)
 
     file = open(filename_seqParams, "rb")
     dico_seqParams = pickle.load(file)
@@ -297,10 +316,6 @@ def calib_and_estimate_kdata_grappa(filename_save_calib, nspokes_per_z_encoding,
 
     all_lines = np.arange(nb_slices).astype(int)
 
-    if calibration_mode == "Tikhonov":
-        if lambd is None:
-            lambd = 0.01
-            print("Warning : lambd was not set for Tikhonov calibration. Using default value of 0.01")
 
     for ts in tqdm(range(nb_allspokes)):
 
