@@ -66,7 +66,7 @@ localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_
 #localfile = "/20220113_CS/meas_MID00164_FID49559_raFin_3D_tra_1x1x5mm_FULL_50GS_slice.dat"
 #localfile = "/20220118_BM/meas_MID00151_FID49924_raFin_3D_tra_1x1x5mm_FULL_read_nav.dat"
 
-#localfile="/phantom.001.v1/phantom.001.v1.dat"
+localfile="/phantom.001.v1/phantom.001.v1.dat"
 #localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
 
 
@@ -100,7 +100,10 @@ filename_oop_corrected=str.split(filename,".dat") [0]+"_volumes_oop_corrected{}.
 filename_dico_volumes_corrected=str.split(filename,".dat") [0]+"_dico_volumes_corrected{}.pkl".format(suffix)
 filename_dico_kdata_retained=str.split(filename,".dat") [0]+"_dico_kdata_retained{}.pkl".format(suffix)
 
+dictfile = "./mrf175_SimReco2.dict"
+ind_dico = 7
 
+filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 density_adj_radial=True
@@ -333,10 +336,10 @@ else:
     b1_all_slices=np.load(filename_b1)
 
 
-sl=int(b1_all_slices.shape[1]/2)
-list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
-plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
-
+# sl=int(b1_all_slices.shape[1]/2)
+# list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
+# plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
+#
 
 b1_full = np.ones(image_size)
 b1_full=np.expand_dims(b1_full,axis=0)
@@ -387,11 +390,407 @@ categories = np.digitize(displacement_for_binning, bins)
 df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, columns=["displacement", "cat"])
 df_groups = df_cat.groupby("cat").count()
 
-group_1 = (categories == 1) | (categories == 2)| (categories == 3)
-group_2 = (categories == 4)
-group_3 = (categories == 5)
-group_4 = (categories == 6) | (categories == 7)
-groups = [group_1, group_2, group_3,group_4]
+group_1=(categories==1)|(categories==2)
+group_2=(categories==3)
+group_3=(categories==4)
+group_4=(categories==5)
+group_5=(categories==6)|(categories==7)|(categories==8)
+
+groups=[group_1,group_2,group_3,group_4,group_5]
+
+nav_spoke_groups=np.argmin(np.abs(np.arange(0, ntimesteps, 1).reshape(-1, 1) - np.arange(0, ntimesteps,ntimesteps / nb_gating_spokes).reshape(1,-1)),axis=-1)
+data_mt_training=copy(data_for_nav)
+data_mt_training=np.squeeze(data_mt_training)
+Sk=np.zeros((npoint,len(groups),ntimesteps),dtype=data_for_nav.dtype)
+Sk_mask=np.ones((npoint,len(groups),ntimesteps),dtype=int)
+
+for i in tqdm(range(len(groups))):
+    for ts in range(ntimesteps):
+        g=groups[i]
+        gating_spoke_of_ts=nav_spoke_groups[ts]
+        g_reshaped=copy(g).reshape(int(nb_part),int(nb_gating_spokes))
+        g_reshaped[:,list(set(range(nb_gating_spokes))-set([gating_spoke_of_ts]))]=False
+        retained_spokes = np.argwhere(g_reshaped)
+        if len(retained_spokes)==0:
+            Sk_mask[:,i,ts]=0
+        else:
+            Sk[:,i,ts]=data_mt_training[retained_spokes[:,0],retained_spokes[:,1],:].mean(axis=0)
+
+
+
+Sk_cur = copy(Sk)
+niter=100
+diffs = []
+tol_diff = 1e-2
+for i in tqdm(range(niter)):
+    Sk_1 = Sk_cur.reshape(Sk_cur.shape[0],-1)
+    u_1, s_1, vh_1 = np.linalg.svd(Sk_1, full_matrices=False)
+
+    Sk_2 = np.moveaxis(Sk_cur,1,0).reshape(Sk_cur.shape[1],-1)
+    u_2, s_2, vh_2 = np.linalg.svd(Sk_2, full_matrices=False)
+
+    Sk_3 = np.moveaxis(Sk_cur,2,0).reshape(Sk_cur.shape[2],-1)
+    u_3, s_3, vh_3 = np.linalg.svd(Sk_3, full_matrices=False)
+
+    variance_explained=0.99
+
+    cum_1=np.cumsum(s_1)/np.sum(s_1)
+    cum_2=np.cumsum(s_2)/np.sum(s_2)
+    cum_3=np.cumsum(s_3)/np.sum(s_3)
+
+    ind_1 = (cum_1<variance_explained).sum()
+    ind_2 = (cum_2<variance_explained).sum()
+    ind_3 = (cum_3<variance_explained).sum()
+
+    Sk_1 = u_1[:,:ind_1]@(np.diag(s_1[:ind_1]))@vh_1[:ind_1,:]
+    Sk_2 = u_2[:, :ind_2] @ (np.diag(s_2[:ind_2])) @ vh_2[:ind_2, :]
+    Sk_3 = u_3[:, :ind_3] @ (np.diag(s_3[:ind_3])) @ vh_3[:ind_3, :]
+
+    Sk_1 = Sk_1.reshape(Sk_cur.shape[0],Sk_cur.shape[1],Sk_cur.shape[2])
+    Sk_2 = Sk_2.reshape(Sk_cur.shape[1], Sk_cur.shape[0], Sk_cur.shape[2])
+    Sk_3 = Sk_3.reshape(Sk_cur.shape[2], Sk_cur.shape[0], Sk_cur.shape[1])
+
+    Sk_2=np.moveaxis(Sk_2,0,1)
+    Sk_3 = np.moveaxis(Sk_3, 0, 2)
+
+    Sk_cur_prev = copy(Sk_cur)
+    Sk_cur=Sk*Sk_mask + np.mean(np.stack([Sk_1,Sk_2,Sk_3],axis=-1),axis=-1)*(1-Sk_mask)
+    diff = np.linalg.norm((Sk_cur-Sk_cur_prev )/Sk_cur_prev/np.sqrt(np.sum(Sk_mask)))
+    diffs.append(diff)
+
+    if diff<tol_diff:
+        break
+
+# plt.figure()
+# plt.plot(diffs)
+
+Sk_final = copy(Sk_cur)
+del Sk_cur
+
+
+D=Sk_final.reshape(npoint,-1)
+u, s, vh = np.linalg.svd(D, full_matrices=False)
+
+# plt.figure()
+# plt.plot(vh.reshape(-1,len(groups),ntimesteps)[0,:,-1])
+# plt.figure()
+# plt.plot(vh.reshape(-1,len(groups),ntimesteps)[0,1,:])
+
+
+if str.split(filename_dico_comp,"/")[-1]  not in os.listdir():
+
+    FF_list = list(np.arange(0., 1.05, 0.05))
+    keys, signal = read_mrf_dict(dictfile, FF_list)
+
+    import dask.array as da
+
+    A_r=signal.real
+    A_i=signal.imag
+
+    X_1 = np.concatenate([A_r,-A_i],axis=-1)
+    X_2 = np.concatenate([A_i,A_r],axis=-1)
+    X=np.concatenate([X_1,X_2],axis=0)
+
+    u_dico, s_dico, vh_dico = da.linalg.svd(da.from_array(X))
+
+    vh_dico=np.array(vh_dico[::2,:])
+    s_dico=np.array(s_dico[::2])
+
+    # plt.figure()
+    # plt.plot(np.cumsum(s_dico)/np.sum(s_dico))
+
+    ind_dico = ((np.cumsum(s_dico)/np.sum(s_dico))<0.99).sum()
+    ind_dico=20
+
+    vh_dico_retained = vh_dico[:ind_dico,:]
+    phi_dico = vh_dico_retained[:,:ntimesteps] - 1j * vh_dico_retained[:,ntimesteps:]
+
+    del u_dico
+    del s_dico
+    del vh_dico
+
+    del vh_dico_retained
+    del X_1
+    del X_2
+    del X
+    del signal
+
+
+    np.save(filename_dico_comp,phi_dico)
+else:
+    filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
+    phi_dico=np.load(filename_dico_comp)
+
+
+Sk_final_3 = np.moveaxis(Sk_final,2,0).reshape(Sk_final.shape[2],-1)
+Sk_final_3_proj = phi_dico.T@phi_dico.conj()@Sk_final_3
+
+# j = np.random.choice(Sk_final_3_proj.shape[-1])
+# plt.figure()
+# plt.plot(np.abs(Sk_final_3[:,j]),label="Original fingerprint {}".format(j))
+# plt.plot(np.abs(Sk_final_3_proj[:,j]),label="Projected fingerprint")
+# plt.legend()
+
+Sk_final_proj = Sk_final_3_proj.reshape(Sk_final.shape[2], Sk_final.shape[0], Sk_final.shape[1])
+Sk_final_proj = np.moveaxis(Sk_final_proj, 0, 2)
+
+D=Sk_final_proj.reshape(npoint,-1)
+u, s, vh = np.linalg.svd(D, full_matrices=False)
+
+
+# plt.figure()
+# for g in range(len(groups)):
+#     plt.plot(vh.reshape(-1,len(groups),ntimesteps)[g,:,-1],label="Movement group {}".format(g))
+# plt.legend()
+#
+# plt.figure()
+# for g in range(len(groups)):
+#     plt.plot(vh.reshape(-1,len(groups),ntimesteps)[g,:,0],label="Movement group {}".format(g))
+# plt.legend()
+#
+# plt.figure()
+# plt.plot(vh.reshape(-1,len(groups),ntimesteps)[0,1,:])
+
+
+L0 = 8
+phi = (np.diag(s)@vh)[:L0,:]
+phi=vh[:L0,:]
+phi.shape
+
+
+data = np.load(filename_save)
+m0=np.zeros((L0,)+image_size,dtype=data.dtype)
+traj=radial_traj.get_traj_for_reconstruction()
+
+if m0.dtype == "complex64":
+    try:
+        traj = traj.astype("float32")
+    except:
+        pass
+
+traj=traj.reshape(-1,3)
+
+
+data_mask = np.zeros((nb_channels, 8, nb_slices, len(groups), ntimesteps))
+dico_data_retained = {}
+for j, g in tqdm(enumerate(groups)):
+    retained_nav_spokes_index = np.argwhere(g).flatten()
+    spoke_groups = np.argmin(np.abs(
+        np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
+                                                                          nb_segments / nb_gating_spokes).reshape(1,
+                                                                                                                  -1)),
+                             axis=-1)
+    included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
+    included_spokes[::int(nb_segments / nb_gating_spokes)] = False
+    included_spokes_for_mask = included_spokes.astype(int).reshape(nb_slices, ntimesteps, 8)
+    included_spokes_for_mask = np.moveaxis(included_spokes_for_mask, -1, 0)
+    for i in range(nb_channels):
+        data_mask[i, :, :, j, :] = included_spokes_for_mask
+
+    print("Filtering KData for movement...")
+    data_retained_final_list = []
+    for i in (range(nb_channels)):
+        data_retained_final, traj_retained_final, retained_timesteps = correct_mvt_kdata(
+            data[i].reshape(nb_segments, -1), radial_traj, included_spokes, ntimesteps, density_adj=False, log=False)
+        data_retained_final_list.append(data_retained_final)
+
+    dico_data_retained[j] = (data_retained_final_list, traj_retained_final, retained_timesteps)
+
+
+def J(m):
+    global L0
+    global phi
+    global traj
+    global ntimesteps
+    global data
+    global nb_slices
+    global nb_channels
+    print(m.dtype)
+    FU = finufft.nufft3d2(traj[:, 2],traj[:, 0], traj[:, 1], m)
+
+    FU=FU.reshape(L0,ntimesteps,-1)
+    FU=np.moveaxis(FU,0,-1)
+    phi = phi.reshape(L0,-1,ntimesteps)
+    ngroups=phi.shape[1]
+    kdata_model=[]
+    for ts in tqdm(range(ntimesteps)):
+        kdata_model.append(FU[ts]@phi[:,:,ts])
+    kdata_model=np.array(kdata_model)
+
+    kdata_model=kdata_model.reshape(ntimesteps,8,nb_slices,npoint,ngroups)
+    kdata_model=np.expand_dims(kdata_model,axis=0)
+    kdata_model_retained = np.zeros(kdata_model.shape[:-1],dtype=data.dtype)
+
+    for ts in tqdm(range(ntimesteps)):
+        for sl in range(nb_slices):
+            for sp in range(8):
+                for g in range(ngroups):
+                    if data_mask[0,sp,sl,g,ts]:
+                        kdata_model_retained[:,ts,sp,sl,:]=kdata_model[:,ts,sp,sl,:,g]
+
+    kdata_error = kdata_model_retained-data.reshape(nb_channels,ntimesteps,-1,nb_slices,npoint)
+    return np.linalg.norm(kdata_error)**2
+
+
+def grad_J(m):
+    global L0
+    global phi
+    global traj
+    global ntimesteps
+    global data
+    global nb_slices
+    global nb_channels
+    global npoint
+    global groups
+    global nb_part
+    global nb_segments
+    global nb_gating_spokes
+    global nb_allspokes
+    global undersampling_factor
+    global mode
+    global incoherent
+    global image_size
+
+
+
+    FU = finufft.nufft3d2(traj[:, 2], traj[:, 0], traj[:, 1], m)
+
+    FU = FU.reshape(L0, ntimesteps, -1)
+    FU = np.moveaxis(FU, 0, -1)
+    phi = phi.reshape(L0, -1, ntimesteps)
+    ngroups = phi.shape[1]
+    kdata_model = []
+    for ts in tqdm(range(ntimesteps)):
+        kdata_model.append(FU[ts] @ phi[:, :, ts])
+    kdata_model = np.array(kdata_model)
+
+    kdata_model = kdata_model.reshape(ntimesteps, 8, nb_slices, npoint, ngroups)
+    kdata_model = np.expand_dims(kdata_model, axis=0)
+    kdata_model_retained = np.zeros(kdata_model.shape[:-1], dtype=data.dtype)
+
+    for ts in tqdm(range(ntimesteps)):
+        for sl in range(nb_slices):
+            for sp in range(8):
+                for g in range(ngroups):
+                    if data_mask[0, sp, sl, g, ts]:
+                        kdata_model_retained[:, ts, sp, sl, :] = kdata_model[:, ts, sp, sl, :, g]
+
+    kdata_error = kdata_model_retained - data.reshape(nb_channels, ntimesteps, -1, nb_slices, npoint)
+
+
+    density = np.abs(np.linspace(-1, 1, npoint))
+    density = np.expand_dims(density,tuple(range(kdata_error.ndim-1)))
+    kdata_error *= density
+
+    #j=2
+    #g=groups[j]
+    v_error_final = np.zeros((len(groups), ntimesteps,) + image_size, dtype=m0.dtype)
+
+    for j, g in tqdm(enumerate(groups)):
+        print("######################  BUILDING FULL VOLUME AND MASK FOR GROUP {} ##########################".format(j))
+        retained_nav_spokes_index = np.argwhere(g).flatten()
+        spoke_groups = np.argmin(np.abs(
+            np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
+                                                                              nb_segments / nb_gating_spokes).reshape(1,
+                                                                                                                      -1)),
+                                 axis=-1)
+        included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
+        included_spokes[::int(nb_segments / nb_gating_spokes)] = False
+        print("Filtering KData for movement...")
+        kdata_retained_final_list_volume = []
+        for i in tqdm(range(nb_channels)):
+            kdata_retained_final, traj_retained_final_volume, retained_timesteps = correct_mvt_kdata(
+                kdata_error[i].reshape(nb_segments, -1), radial_traj, included_spokes, ntimesteps,
+                density_adj=True, log=False)
+            kdata_retained_final_list_volume.append(kdata_retained_final)
+
+        radial_traj_3D_corrected_single_volume = Radial3D(total_nspokes=nb_allspokes,
+                                                          undersampling_factor=undersampling_factor, npoint=npoint,
+                                                          nb_slices=nb_slices, incoherent=incoherent, mode=mode)
+        radial_traj_3D_corrected_single_volume.traj_for_reconstruction = traj_retained_final_volume
+        volume_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list_volume,
+                                                                     radial_traj_3D_corrected_single_volume, image_size,
+                                                                     b1=None, density_adj=False, ntimesteps=ntimesteps,
+                                                                     useGPU=False, normalize_kdata=False, memmap_file=None,
+                                                                     light_memory_usage=True, normalize_volumes=True,
+                                                                     is_theta_z_adjusted=True)
+
+        curr_i=0
+        for t in range(ntimesteps):
+            if t in retained_timesteps:
+                v_error_final[j, t] = volume_corrected[curr_i]
+                curr_i += 1
+            else:
+                v_error_final[j, t] = 0
+
+    v_error_final = v_error_final.reshape(ngroups * ntimesteps, nb_slices, -1)
+    dm = np.zeros((L0, nb_slices, v_error_final.shape[-1]), dtype=m.dtype)
+
+    for j in tqdm(range(nb_slices)):
+        dm[:, j, :] = phi.reshape(L0, -1).conj() @ v_error_final[:, j, :]
+
+    dm = dm.reshape(m.shape)
+
+    return 2*dm
+
+grad_Jm= grad_J(m0)
+J_m= J(m0)
+
+
+
+
+
+from scipy.optimize import minimize
+
+def f(x):
+    global m0
+    x=x.reshape((2,)+m0.shape)
+    return J((x[0]+1j*x[1]).astype("complex64"))
+
+
+x0=np.expand_dims(m0.flatten(),axis=0)
+x0 = np.concatenate([x0.real,x0.imag],axis=0)
+x0=x0.flatten()
+
+x_opt=minimize(f,x0,method='Newton-CG',jac="2-point")
+
+
+eps=0.001
+ind=(0,0,0,0)
+h = np.zeros(m0.shape,dtype=m0.dtype)
+h[ind[0],ind[1],ind[2],ind[3]]=eps
+
+diff_Jm = J(m0+h)-J_m
+diff_Jm_approx = grad_Jm[ind[0],ind[1],ind[2],ind[3]]*eps
+
+
+
+
+
+
+
+J_list=[]
+for t in np.arange(-10,10):
+    J_list.append(J(m+grad_J(m+t*grad_Jm)))
+
+plt.plot(J_list)
+
+
+
+
+m_opt=conjgrad(J,grad_J,m0,alpha=0.1,beta=0.3,log=True)
+
+v_error_final= grad_J(m0)
+
+
+
+sl=int(nb_slices/2)
+image_list = list(np.abs(dm[:,sl,:,:]))
+plot_image_grid(image_list,(3,3))
+
+v_error_final=np.moveaxis(v_error_final,0,1)
+
+dm = v_error_final@(phi.reshape(L0,-1).T.conj())
 
 # group_1 = (categories == 1) | (categories == 2)
 # group_2 = (categories == 3)

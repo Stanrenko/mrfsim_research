@@ -2886,7 +2886,7 @@ def array_to_coef(array):
     return c
 
 
-def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6):
+def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,log=False):
     '''
     J : function from W (domain of m) to R
     grad_J : function from W to W - gradient of J
@@ -2894,14 +2894,25 @@ def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6):
     '''
     k=0
     m=m0
+    if log:
+        now = datetime.now()
+        date_time = now.strftime("%Y%m%d_%H%M%S")
+        norm_g_list=[]
+
     g=grad_J(m)
     d_m=-g
     #store = [m]
+
     while (np.linalg.norm(g)>tolgrad)and(k<maxiter):
+        norm_g = np.linalg.norm(g)
+        if log:
+            norm_g_list.append(norm_g)
+        print("Grad norm for iter {}: {}".format(k,norm_g))
         if k%10==0:
             print(k)
         t = 1
-        while(J(m+t*d_m)>J(m)+alpha*t*np.real(np.dot(g.flatten(),d_m.flatten()))):
+        J_m = J(m)
+        while(J(m+t*d_m)>J_m+alpha*t*np.real(np.dot(g.flatten(),d_m.flatten()))):
             print(t)
             t = beta*t
 
@@ -2912,6 +2923,10 @@ def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6):
         d_m = -g + gamma*d_m
         k=k+1
         #store.append(m)
+
+    if log:
+        norm_g_list=np.array(norm_g_list)
+        np.save('./log/conjgrad_{}.npy'.format(date_time),norm_g_list)
 
     return m
 

@@ -1,6 +1,6 @@
 
 #import matplotlib
-#matplotlib.use("TkAgg")
+#matplotlib.u<se("TkAgg")
 from mrfsim import T1MRF
 from image_series import *
 from dictoptimizers import SimpleDictSearch
@@ -12,10 +12,11 @@ import os
 from numpy.lib.format import open_memmap
 from numpy import memmap
 import pickle
+from scipy.io import loadmat,savemat
 
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
 base_folder = "./data/InVivo/3D"
-base_folder = "./data/InVivo"
+
 
 import twixtools
 
@@ -56,8 +57,19 @@ localfile = "/20211221_EV/meas_MID00045_FID47508_raFin_3D_FULL_new_highRES_inco.
 
 localfile = "/20220106/meas_MID00021_FID48331_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile = "/20220106/meas_MID00167_FID48477_raFin_3D_tra_1x1x5mm_FULL_new.dat"
-localfile = "/20220113_CS/meas_MID00162_FID49557_raFin_3D_tra_1x1x5mm_FULL_noGS.dat"
-localfile ="/Phantom20220310/meas_MID00255_FID57356_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile = "/20220106_JM/meas_MID00180_FID48490_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read.dat"
+
+localfile="/phantom.003.v1/meas_MID00420_FID60810_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/phantom.003.v2/meas_MID00036_FID61109_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/phantom.003.v2/meas_MID00037_FID61110_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/phantom.003.v2/meas_MID00038_FID61111_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+
+#localfile = "/20220113_CS/meas_MID00164_FID49559_raFin_3D_tra_1x1x5mm_FULL_50GS_slice.dat"
+#localfile = "/20220118_BM/meas_MID00151_FID49924_raFin_3D_tra_1x1x5mm_FULL_read_nav.dat"
+
+#localfile="/phantom.001.v1/phantom.001.v1.dat"
+localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
 
 
 filename = base_folder+localfile
@@ -67,20 +79,28 @@ filename = base_folder+localfile
 #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
 
 filename_save=str.split(filename,".dat") [0]+".npy"
+#filename_nav_save=str.split(base_folder+"/phantom.001.v1/phantom.001.v1.dat",".dat") [0]+"_nav.npy"
+filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
+
 folder = "/".join(str.split(filename,"/")[:-1])
 
+suffix="_disp5"
 
-filename_b1 = str.split(filename,".dat") [0]+"_b1.npy"
+filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 
-filename_volume = str.split(filename,".dat") [0]+"_volumes.npy"
-filename_kdata = str.split(filename,".dat") [0]+"_kdata.npy"
-filename_mask= str.split(filename,".dat") [0]+"_mask.npy"
+filename_volume = str.split(filename,".dat") [0]+"_volumes{}.npy".format(suffix)
+filename_volume_corrected = str.split(filename,".dat") [0]+"_volumes_corrected{}.npy".format(suffix)
+filename_kdata = str.split(filename,".dat") [0]+"_kdata{}.npy".format("")
+filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
+filename_oop=str.split(filename,".dat") [0]+"_volumes_oop{}.npy".format(suffix)
+filename_oop_corrected=str.split(filename,".dat") [0]+"_volumes_oop_corrected{}.npy".format(suffix)
+
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
-
-use_GPU = False
+density_adj_radial=True
+use_GPU = True
 light_memory_usage=True
 #Parsed_File = rT.map_VBVD(filename)
 #idx_ok = rT.detect_TwixImg(Parsed_File)
@@ -90,13 +110,21 @@ if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):
 
     twix = twixtools.read_twix(filename,optional_additional_maps=["sWipMemBlock","sKSpace"],optional_additional_arrays=["SliceThickness"])
 
+    if np.max(np.argwhere(np.array(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"])>0))>=16:
+        use_navigator_dll = True
+    else:
+        use_navigator_dll = False
+
+
 
     alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
     x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
     y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
     z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
 
-    dico_seqParams = {"alFree":alFree,"x_FOV":x_FOV,"y_FOV":y_FOV,"z_FOV":z_FOV}
+    nb_part = twix[-1]["hdr"]["Meas"]["Partitions"]
+
+    dico_seqParams = {"alFree":alFree,"x_FOV":x_FOV,"y_FOV":y_FOV,"z_FOV":z_FOV,"use_navigator_dll":use_navigator_dll,"nb_part":nb_part}
 
     del alFree
 
@@ -107,12 +135,40 @@ if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):
 else:
     file = open(filename_seqParams, "rb")
     dico_seqParams = pickle.load(file)
+    file.close()
 
 
-meas_sampling_mode=dico_seqParams["alFree"][12]
+
+try:
+    del twix
+except:
+    pass
+
+
+use_navigator_dll=dico_seqParams["use_navigator_dll"]
+
+if use_navigator_dll:
+    meas_sampling_mode=dico_seqParams["alFree"][14]
+    nb_gating_spokes = dico_seqParams["alFree"][6]
+else:
+    meas_sampling_mode = dico_seqParams["alFree"][12]
+    nb_gating_spokes = 0
+
+if nb_gating_spokes>0:
+    meas_orientation =  dico_seqParams["alFree"][11]
+    if meas_orientation==1:
+        nav_direction = "READ"
+    elif meas_orientation==2:
+        nav_direction = "PHASE"
+    elif meas_orientation==3:
+        nav_direction = "SLICE"
+
+nb_segments = dico_seqParams["alFree"][4]
+
 x_FOV = dico_seqParams["x_FOV"]
 y_FOV = dico_seqParams["y_FOV"]
 z_FOV = dico_seqParams["z_FOV"]
+nb_part = dico_seqParams["nb_part"]
 
 del dico_seqParams
 
@@ -128,11 +184,52 @@ elif meas_sampling_mode==3:
 
 
 
+
 if str.split(filename_save,"/")[-1] not in os.listdir(folder):
     if 'twix' not in locals():
         print("Re-loading raw data")
         twix = twixtools.read_twix(filename)
 
+    mdb_list = twix[-1]['mdb']
+    if nb_gating_spokes > 0:
+        print("Reading Navigator Data....")
+        data_for_nav = []
+        k = 0
+        for i, mdb in enumerate(mdb_list):
+            if mdb.is_image_scan() and mdb.mdh[14][9]:
+                data_for_nav.append(mdb)
+
+                #print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
+                k += 1
+        data_for_nav = np.array([mdb.data for mdb in data_for_nav])
+        data_for_nav = data_for_nav.reshape((int(nb_part),int(nb_gating_spokes))+data_for_nav.shape[1:])
+
+        if data_for_nav.ndim==3:
+            data_for_nav=np.expand_dims(data_for_nav,axis=-2)
+
+        data_for_nav = np.moveaxis(data_for_nav,-2,0)
+        np.save(filename_nav_save, data_for_nav)
+
+    # data = []
+    # k = 0
+    # for i, mdb in enumerate(mdb_list):
+    #     if mdb.is_image_scan() and not (mdb.mdh[14][9]):
+    #
+    #         data.append(mdb)
+    #          #if i < 1400:
+    #          #    print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
+    #         k += 1
+    #
+    # data = np.array([mdb.data for mdb in data])
+    # data = data.reshape((int(nb_part), int(nb_segments-nb_gating_spokes)) + data.shape[1:])
+    # if data.ndim==3
+    #     data=np.expand_dims(data,axis=-2)
+    # data=np.move_axis(data,-2,0)
+    # data=np.moveaxis(1,-2)
+
+    del mdb_list
+
+    ##################################################
     mapped = twixtools.map_twix(twix)
     try:
         del twix
@@ -141,14 +238,43 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
     data = mapped[-1]['image']
     del mapped
     data = data[:].squeeze()
-    data = np.moveaxis(data, 0, -2)
-    data = np.moveaxis(data, 1, 0)
+    if data.ndim == 3:
+        data = np.expand_dims(data, axis=0)
+        data=np.moveaxis(data,-2,-3)
+    else:
+        data = np.moveaxis(data, 0, -2)
+        data = np.moveaxis(data, 1, 0)
 
     np.save(filename_save,data)
+    #
+    ##################################################
+    #
+    # Parsed_File = rT.map_VBVD(filename)
+    # idx_ok = rT.detect_TwixImg(Parsed_File)
+    # start_time = time.time()
+    # data = Parsed_File[str(idx_ok)]["image"].readImage()
+    # elapsed_time = time.time()
+    # elapsed_time = elapsed_time - start_time
+    #
+    # progress_str = "Data read in %f s \n" % round(elapsed_time, 2)
+    # print(progress_str)
+    #
+    # data = np.squeeze(data)
+    #
+    # if nb_gating_spokes>0:
+    #     data = np.moveaxis(data, 0, -1)
+    #     data = np.moveaxis(data, -2, 0)
+    #
+    # else:
+    #     data = np.moveaxis(data, 0, -1)
+
+    #np.save(filename_save, data)
 
 
 else :
     data = np.load(filename_save)
+    if nb_gating_spokes>0:
+        data_for_nav=np.load(filename_nav_save)
 #
 # if str.split(filename_save,"/")[-1] not in os.listdir(folder):
 #     Parsed_File = rT.map_VBVD(filename)
@@ -182,13 +308,19 @@ except:
 
 data_shape = data.shape
 
-nb_channels = data_shape[0]
 
-ntimesteps = 175
 
-nb_allspokes = data_shape[1]
+#data_for_nav=data_for_nav[:,:nb_gating_spokes,:,:]
+#data_for_nav = np.moveaxis(data_for_nav,-2,1)
+
+#ntimesteps = 1400
+window=8
+
+
+nb_channels=data_shape[0]
+nb_allspokes = data_shape[-3]
 npoint = data_shape[-1]
-nb_slices = data_shape[2]
+nb_slices = data_shape[-2]
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
 undersampling_factor=1
 
@@ -197,18 +329,22 @@ dx = x_FOV/(npoint/2)
 dy = y_FOV/(npoint/2)
 dz = z_FOV/nb_slices
 
+#file_name_nav_mat=str.split(filename,".dat") [0]+"_nav.mat"
+#savemat(file_name_nav_mat,{"Kdata":data_for_nav})
 
 if str.split(filename_kdata,"/")[-1] in os.listdir(folder):
     del data
 
-radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,)
 
 
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
     # Density adjustment all slices
 
-    density = np.abs(np.linspace(-1, 1, npoint))
-    density = np.expand_dims(density,tuple(range(data.ndim-1)))
+    if density_adj_radial:
+        density = np.abs(np.linspace(-1, 1, npoint))
+        density = np.expand_dims(density,tuple(range(data.ndim-1)))
+    else:
+        density=1
     #kdata_all_channels_all_slices = data.reshape(-1, npoint)
     #del data
     print("Performing Density Adjustment....")
@@ -222,12 +358,29 @@ else:
     #kdata_all_channels_all_slices = open_memmap(filename_kdata)
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
+kdata_shape=kdata_all_channels_all_slices.shape
+#kdata_all_channels_all_slices=np.array(groupby(kdata_all_channels_all_slices,window,axis=1))
+#ntimesteps=kdata_all_channels_all_slices.shape[0]
+ntimesteps=175
+#kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,-1,nb_slices,npoint)
 
-
-
-
+#
+# cond_gating_spokes=np.ones(nb_segments).astype(bool)
+# cond_gating_spokes[::int(nb_segments/nb_gating_spokes)]=False
+# kdata_retained_no_gating_spokes_list=[]
+# for i in tqdm(range(nb_channels)):
+#     kdata_retained_no_gating_spokes,traj_retained_no_gating_spokes,retained_timesteps=correct_mvt_kdata(kdata_all_channels_all_slices[i].reshape(nb_segments,-1),radial_traj.get_traj(),cond_gating_spokes,175,density_adj=False)
+#     kdata_retained_no_gating_spokes_list.append(kdata_retained_no_gating_spokes)
+#
+# radial_traj.traj_for_reconstruction=traj_retained_no_gating_spokes
 # Coil sensi estimation for all slices
+
 print("Calculating Coil Sensitivity....")
+
+radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+#radial_traj.adjust_traj_for_window(window)
+
+nb_segments=radial_traj.get_traj().shape[0]
 
 if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     res = 16
@@ -236,76 +389,70 @@ if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
 else:
     b1_all_slices=np.load(filename_b1)
 
+dictfile = "./mrf175_SimReco2.dict"
+nb_comp=7
+filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(nb_comp)
+phi = np.load(filename_dico_comp)
+
+kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,-1)
+
+kdata_transformed = np.einsum("jl,ilk->ijk",phi.conj(),kdata_all_channels_all_slices)
+
+
 sl=int(b1_all_slices.shape[1]/2)
 list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
 plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
-#
-#
-# volume_rebuilt = build_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,density_adj=False,eps=1e-6,b1=b1_all_slices,useGPU=True,normalize_kdata=True,light_memory_usage=True,is_theta_z_adjusted=False)
-# np.save(str.split(filename,".dat") [0]+"_volume_allspokes.npy",volume_rebuilt)
-#
-# from mutools import io
-# file_mha = filename.split(".dat")[0] + "_volume_allspokes.mha"
-# io.write(file_mha,np.abs(volume_rebuilt),tags={"spacing":[dz,dx,dy]})
-# animate_images(volume_rebuilt,cmap="gray")
-#
-#
-#
-#
-# #build out of phase spokes image
-# radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-# radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
-# volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=True)
-# animate_images(volume_outofphase[0],cmap="gray")
-# # list_images = list(np.abs(volume_outofphase)[0][:])
-# # plot_image_grid(list_images,(8,8),title="Anatomic Image Out Of Phase Spokes",cmap="gray")
-# #
-# #
-# # path = r"C:/Users/c.slioussarenko/PythonRepositories"
-# # sys.path.append(path+"/epgpy")
-# # sys.path.append(path+"/machines")
-# # sys.path.append(path+"/mutools")
-# # sys.path.append(path+"/dicomstack")
-# #
-#
-# from mutools import io
-# file_mha = filename.split(".dat")[0] + "_volumesoutofphase.mha"
-# io.write(file_mha,np.abs(volume_outofphase)[0],tags={"spacing":[dz,dx,dy]})
-#
+
+# print("Building Volumes....")
+# if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
+#     volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+#     np.save(filename_volume,volumes_all)
+#     # sl=20
+#     # ani = animate_images(volumes_all[:,sl,:,:])
+#     del volumes_all
 
 
 
-# volumes_all_spokes=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1)
-# sl=10
-# plt.figure()
-# plt.title("Approximation : rebuilt image all data")
-# plt.imshow(np.abs(np.squeeze(volumes_all_spokes)[sl,:,:]),cmap="gray")
-#
-# animate_images((np.squeeze(volumes_all_spokes)),interval=1000)
 
-##volumes for slice taking into account coil sensi
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=use_GPU,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+    del kdata_all_channels_all_slices
+    kdata_all_channels_all_slices=np.load(filename_kdata)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
     np.save(filename_volume,volumes_all)
     # sl=20
     # ani = animate_images(volumes_all[:,sl,:,:])
     del volumes_all
 
+print("Building Mask....")
+if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
+    del kdata_all_channels_all_slices
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+    selected_spokes = np.r_[10:400]
+    selected_spokes=None
+    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/25, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
+    np.save(filename_mask,mask)
+    animate_images(mask)
+    del mask
 
 #animate_images(np.abs(volumes_all[:,int(nb_slices/2),:,:]))
 
+# #Check modulation of nav signal by MRF
+# plt.figure()
+# rep=0
+# signal_MRF = np.abs(volumes_all[:,int(nb_slices/2),int(npoint/4),int(npoint/4)])
+# signal_MRF = signal_MRF/np.max(signal_MRF)
+# signal_nav =image_nav[rep,:,int(npoint/4)]
+# signal_nav = signal_nav/np.max(signal_nav)
+# plt.plot(signal_MRF,label="MRF signal at centre pixel")
+# plt.scatter(x=(nav_timesteps/8).astype(int),y=signal_nav,c="r",label="Nav image at centre pixel for rep {}".format(rep))
+# rep=4
+# plt.scatter(x=(nav_timesteps/8).astype(int),y=signal_nav,c="g",label="Nav image at centre pixel for rep {}".format(rep))
+# plt.legend()
+
 ##MASK
 
-print("Building Mask....")
-if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
-    #selected_spokes = np.r_[10:400]
-    #selected_spokes = np.r_[10:400, 1200:1400]
-    selected_spokes=None
-    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=None, normalize_kdata=False,light_memory_usage=True,selected_spokes=selected_spokes,normalize_volumes=True)
-    np.save(filename_mask,mask)
-    animate_images(mask)
-    #del mask
+
 
 
 
@@ -315,18 +462,6 @@ del b1_all_slices
 
 
 ########################## Dict mapping ########################################
-
-#dictfile = "mrf175_SimReco2.dict"
-dictfile = "mrf175_Dico2_Invivo.dict"
-
-volumes_all = np.load(filename_volume)
-mask = np.load(filename_mask)
-
-#ani = animate_images(volumes_all[:,4,:,:])
-#
-# plt.figure()
-# plt.plot(volumes_all[:,sl,200,200])
-
 
 with open("mrf_sequence.json") as f:
     sequence_config = json.load(f)
@@ -338,16 +473,37 @@ seq = T1MRF(**sequence_config)
 load_map=False
 save_map=True
 
-if not(load_map):
-    niter = 0
 
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
-    all_maps=optimizer.search_patterns(dictfile,volumes_all)
+#dictfile = "mrf175_SimReco2_light.dict"
+#dictfile = "mrf175_SimReco2_window_1.dict"
+#dictfile = "mrf175_SimReco2_window_21.dict"
+#dictfile = "mrf175_SimReco2_window_55.dict"
+dictfile = "mrf175_Dico2_Invivo.dict"
+
+mask = np.load(filename_mask)
+#volumes_all = np.load(filename_volume)
+volumes_corrected=np.load(filename_volume_corrected)
+
+
+#ani = animate_images(volumes_all[:,4,:,:])
+#ani = animate_images(volumes_corrected[:,4,:,:])
+#
+# plt.figure()
+# plt.plot(volumes_all[:,sl,200,200])
+
+
+
+if not(load_map):
+    niter = 2
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes,ntimesteps=ntimesteps)
+    all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected,retained_timesteps=retained_timesteps)
 
     if(save_map):
         import pickle
 
-        file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
+        #file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format(suffix)
+        #file_map = filename.split(".dat")[0] + "_corrected_dens_adj{}_MRF_map.pkl".format(suffix)
+        file_map = filename.split(".dat")[0] + "_5iter_MRF_map.pkl".format("")
         file = open(file_map, "wb")
         # dump information to that file
         pickle.dump(all_maps, file)
@@ -361,28 +517,82 @@ else:
     all_maps = pickle.load(file)
 
 
+map_rebuilt=all_maps[0][0]
+keys_simu = list(map_rebuilt.keys())
+values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+map_for_sim = dict(zip(keys_simu, values_simu))
 
-file = open(file_map, "rb")
-all_maps = pickle.load(file)
+images_pred = MapFromDict3D("RebuiltMapFromParams", paramMap=map_for_sim, rounding=True,gen_mode="other")
+images_pred.buildParamMap()
 
-for iter in list(all_maps.keys()):
+images_pred.build_ref_images(seq)
 
-    map_rebuilt=all_maps[iter][0]
-    mask=all_maps[iter][1]
+kdatai = images_pred.generate_kdata(radial_traj,useGPU=False)
 
-    keys_simu = list(map_rebuilt.keys())
-    values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
-    map_for_sim = dict(zip(keys_simu, values_simu))
-
-    #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
-    #map_Python.buildParamMap()
-
-
-    for key in ["ff","wT1","df","attB1"]:
-        file_mha = "/".join(["/".join(str.split(file_map,"/")[:-1]),"_".join(str.split(str.split(file_map,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
-        io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+kdatai_retained, traji_retained, retained_timesteps = correct_mvt_kdata(
+            kdatai, radial_traj, included_spokes, ntimesteps, density_adj=True)
 
 
+def compare_signals(dictfile,volumes,maps,mask,volumes_1,maps_1,mask_1=None,pixel=None,pixel_1=None,figsize=(10,15)):
+    if pixel is None:
+        raise ValueError("pixel should be a tuple")
+    if pixel_1 is None:
+        pixel_1=pixel
+    if mask_1 is None:
+        mask_1=mask
+
+    signal=volumes[:,pixel[0],pixel[1],pixel[2]]
+    signal_1=volumes_1[:,pixel_1[0],pixel_1[1],pixel_1[2]]
+
+    signal=signal/np.linalg.norm(signal)
+    signal_1=signal_1/np.linalg.norm(signal_1)
+
+    for k in maps.keys():
+        maps_retrieved_volume[k] = makevol(maps[k], mask > 0)[pixel[0],pixel[1],pixel[2]]
+
+    for k in maps.keys():
+        maps_retrieved_volume_1[k] = makevol(maps_1[k], mask_1 > 0)[pixel_1[0], pixel_1[1], pixel_1[2]]
+
+    params = list(maps_retrieved_volume.values())[:-1]
+    ff = maps_retrieved_volume["ff"]
+
+    params_1 = list(maps_retrieved_volume_1.values())[:-1]
+    ff_1 = maps_retrieved_volume_1["ff"]
+
+    mrfdict = dictsearch.Dictionary()
+    mrfdict.load(dictfile, force=True)
+
+    mapped_signal = mrfdict[tuple(params)][:, 0] * (1 - ff) + mrfdict[tuple(
+        params)][:, 1] * (ff)
+    mapped_signal_1 = mrfdict[tuple(params_1)][:, 0] * (1 - ff_1) + mrfdict[tuple(
+        params_1)][:, 1] * (ff_1)
+
+    mapped_signal=mapped_signal/np.linalg.norm(mapped_signal)
+    mapped_signal_1 = mapped_signal_1 / np.linalg.norm(mapped_signal_1)
+
+    plt.figure(figsize=figsize)
+    metric=np.real
+    plt.title("Real Part {}".format(pixel))
+    plt.plot(metric(signal),label="Original Signal")
+    plt.plot(metric(signal_1), label="Original Signal 1")
+    plt.plot(metric(mapped_signal), label="Mapped Signal {}".format(maps_retrieved_volume))
+    plt.plot(metric(mapped_signal_1), label="Mapped Signal 1 {}".format(maps_retrieved_volume_1))
+
+    plt.figure(figsize=figsize)
+    metric = np.imag
+    plt.title("Imaginary Part")
+    plt.plot(metric(signal), label="Original Signal")
+    plt.plot(metric(signal_1), label="Original Signal 1")
+    plt.plot(metric(mapped_signal), label="Mapped Signal {}".format(maps_retrieved_volume))
+    plt.plot(metric(mapped_signal_1), label="Mapped Signal 1 {}".format(maps_retrieved_volume_1))
+
+    plt.figure(figsize=figsize)
+    metric = np.abs
+    plt.title("Module")
+    plt.plot(metric(signal), label="Original Signal")
+    plt.plot(metric(signal_1), label="Original Signal 1")
+    plt.plot(metric(mapped_signal), label="Mapped Signal {}".format(maps_retrieved_volume))
+    plt.plot(metric(mapped_signal_1), label="Mapped Signal 1 {}".format(maps_retrieved_volume_1))
 
 iter=0
 map_rebuilt=all_maps[iter][0]
@@ -483,6 +693,7 @@ import json
 import readTwix as rT
 import time
 import pickle
+
 
 image_size=(256,256)
 

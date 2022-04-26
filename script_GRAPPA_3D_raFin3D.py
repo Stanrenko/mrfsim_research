@@ -18,7 +18,10 @@ from mutools import io
 from sklearn import linear_model
 from scipy.optimize import minimize
 import twixtools
-import cupy as cp
+try:
+    import cupy as cp
+except:
+    pass
 
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
 base_folder = "./3D"
