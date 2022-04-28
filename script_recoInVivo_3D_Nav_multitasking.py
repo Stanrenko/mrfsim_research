@@ -525,6 +525,17 @@ else:
 Sk_final_3 = np.moveaxis(Sk_final,2,0).reshape(Sk_final.shape[2],-1)
 Sk_final_3_proj = phi_dico.T@phi_dico.conj()@Sk_final_3
 
+
+Sk_final_3_proj_for_nav_image=Sk_final_3_proj.reshape(ntimesteps,npoint,len(groups))
+Sk_final_3_proj_for_nav_image=np.moveaxis(Sk_final_3_proj_for_nav_image,1,2).reshape(-1,npoint).astype("complex64")
+
+
+nav_traj_completed_proj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=nb_slices,
+                       applied_timesteps=list(range(Sk_final_3_proj_for_nav_image.shape[0])))
+
+images_nav_mean_completed = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_3_proj_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+
+
 # j = np.random.choice(Sk_final_3_proj.shape[-1])
 # plt.figure()
 # plt.plot(np.abs(Sk_final_3[:,j]),label="Original fingerprint {}".format(j))

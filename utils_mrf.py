@@ -2982,6 +2982,15 @@ def simulate_nav_images_multi(kdata, trajectory, image_size=(400,), b1=None):
     nb_slices = kdata.shape[1]
     nb_gating_spokes = kdata.shape[2]
 
+    print(kdata.dtype)
+    print(traj.dtype)
+
+    if kdata.dtype == "complex64":
+        traj=traj.astype("float64")
+
+    if kdata.dtype == "complex128":
+        traj=traj.astype("float128")
+
     if b1 is not None:
         if b1.ndim == 2:
             b1 = np.expand_dims(b1, axis=(1, 2))

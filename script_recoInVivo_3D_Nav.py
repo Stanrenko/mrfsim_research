@@ -70,6 +70,12 @@ localfile="/phantom.003.v2/meas_MID00038_FID61111_raFin_3D_tra_1x1x5mm_FULL_new.
 
 #localfile="/phantom.001.v1/phantom.001.v1.dat"
 #localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
+localfile="/phantom.004.v1/meas_MID00172_FID62149_raFin_3D_tra_1x1x5mm_FULL_new.dat"#Box at the bottom border of bottle
+localfile="/phantom.004.v1/meas_MID00173_FID62150_raFin_3D_tra_1x1x5mm_FULL_new.dat"#Box in the middle of bottle
+localfile="/phantom.004.v1/meas_MID00174_FID62151_raFin_3D_tra_1x1x5mm_FULL_new.dat"#Box outside of bottle on top
+localfile="/phantom.004.v1/meas_MID00177_FID62154_raFin_3D_tra_1x1x5mm_FULL_bottom.dat"#Box at the bottom border with more outside
+localfile="/phantom.004.v1/meas_MID00178_FID62155_raFin_3D_tra_1x1x5mm_FULL_top.dat"#Box at the top border with more outside
+
 
 
 filename = base_folder+localfile
@@ -320,9 +326,14 @@ window=8
 nb_channels=data_shape[0]
 nb_allspokes = data_shape[-3]
 npoint = data_shape[-1]
+
+
 nb_slices = data_shape[-2]
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
 undersampling_factor=1
+
+npoint_nav=data_for_nav.shape[-1]
+
 
 
 dx = x_FOV/(npoint/2)
@@ -477,9 +488,11 @@ if nb_gating_spokes>0:
 
     ch=0
     image_nav_ch =simulate_nav_images_multi(np.expand_dims(data_for_nav[ch],axis=0),nav_traj, nav_image_size)
-    plt.imshow(np.abs(b1_nav[ch].reshape(-1, 400)))
+    plt.imshow(np.abs(b1_nav[ch].reshape(-1, int(npoint/2))))
 
-    plt.imshow(np.abs(image_nav_ch.reshape(-1, 400)), cmap="gray")
+    plt.imshow(np.abs(image_nav_ch.reshape(-1, int(npoint/2))), cmap="gray")
+    plt.figure()
+    plt.plot(np.abs(image_nav_ch.reshape(-1, int(npoint/2)))[5])
 
     print("Rebuilding Nav Images...")
     images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
