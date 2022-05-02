@@ -101,7 +101,7 @@ filename_dico_volumes_corrected=str.split(filename,".dat") [0]+"_dico_volumes_co
 filename_dico_kdata_retained=str.split(filename,".dat") [0]+"_dico_kdata_retained{}.pkl".format(suffix)
 
 dictfile = "./mrf175_SimReco2.dict"
-ind_dico = 7
+ind_dico = 200
 
 filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
@@ -404,6 +404,8 @@ data_mt_training=np.squeeze(data_mt_training)
 Sk=np.zeros((npoint,len(groups),ntimesteps),dtype=data_for_nav.dtype)
 Sk_mask=np.ones((npoint,len(groups),ntimesteps),dtype=int)
 
+data_mt_training_on_timesteps = np.zeros((nb_slices,ntimesteps,npoint),dtype=data_for_nav.dtype)
+
 for i in tqdm(range(len(groups))):
     for ts in range(ntimesteps):
         g=groups[i]
@@ -416,66 +418,13 @@ for i in tqdm(range(len(groups))):
         else:
             Sk[:,i,ts]=data_mt_training[retained_spokes[:,0],retained_spokes[:,1],:].mean(axis=0)
 
+        data_mt_training_on_timesteps[:,ts,:]=data_mt_training[:,gating_spoke_of_ts,:]
 
 
-Sk_cur = copy(Sk)
-niter=100
-diffs = []
-tol_diff = 1e-2
-for i in tqdm(range(niter)):
-    Sk_1 = Sk_cur.reshape(Sk_cur.shape[0],-1)
-    u_1, s_1, vh_1 = np.linalg.svd(Sk_1, full_matrices=False)
+dictfile = "./mrf175_SimReco2.dict"
+ind_dico = 50
 
-    Sk_2 = np.moveaxis(Sk_cur,1,0).reshape(Sk_cur.shape[1],-1)
-    u_2, s_2, vh_2 = np.linalg.svd(Sk_2, full_matrices=False)
-
-    Sk_3 = np.moveaxis(Sk_cur,2,0).reshape(Sk_cur.shape[2],-1)
-    u_3, s_3, vh_3 = np.linalg.svd(Sk_3, full_matrices=False)
-
-    variance_explained=0.99
-
-    cum_1=np.cumsum(s_1)/np.sum(s_1)
-    cum_2=np.cumsum(s_2)/np.sum(s_2)
-    cum_3=np.cumsum(s_3)/np.sum(s_3)
-
-    ind_1 = (cum_1<variance_explained).sum()
-    ind_2 = (cum_2<variance_explained).sum()
-    ind_3 = (cum_3<variance_explained).sum()
-
-    Sk_1 = u_1[:,:ind_1]@(np.diag(s_1[:ind_1]))@vh_1[:ind_1,:]
-    Sk_2 = u_2[:, :ind_2] @ (np.diag(s_2[:ind_2])) @ vh_2[:ind_2, :]
-    Sk_3 = u_3[:, :ind_3] @ (np.diag(s_3[:ind_3])) @ vh_3[:ind_3, :]
-
-    Sk_1 = Sk_1.reshape(Sk_cur.shape[0],Sk_cur.shape[1],Sk_cur.shape[2])
-    Sk_2 = Sk_2.reshape(Sk_cur.shape[1], Sk_cur.shape[0], Sk_cur.shape[2])
-    Sk_3 = Sk_3.reshape(Sk_cur.shape[2], Sk_cur.shape[0], Sk_cur.shape[1])
-
-    Sk_2=np.moveaxis(Sk_2,0,1)
-    Sk_3 = np.moveaxis(Sk_3, 0, 2)
-
-    Sk_cur_prev = copy(Sk_cur)
-    Sk_cur=Sk*Sk_mask + np.mean(np.stack([Sk_1,Sk_2,Sk_3],axis=-1),axis=-1)*(1-Sk_mask)
-    diff = np.linalg.norm((Sk_cur-Sk_cur_prev )/Sk_cur_prev/np.sqrt(np.sum(Sk_mask)))
-    diffs.append(diff)
-
-    if diff<tol_diff:
-        break
-
-# plt.figure()
-# plt.plot(diffs)
-
-Sk_final = copy(Sk_cur)
-del Sk_cur
-
-
-D=Sk_final.reshape(npoint,-1)
-u, s, vh = np.linalg.svd(D, full_matrices=False)
-
-# plt.figure()
-# plt.plot(vh.reshape(-1,len(groups),ntimesteps)[0,:,-1])
-# plt.figure()
-# plt.plot(vh.reshape(-1,len(groups),ntimesteps)[0,1,:])
-
+filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
 
 if str.split(filename_dico_comp,"/")[-1]  not in os.listdir():
 
@@ -499,8 +448,8 @@ if str.split(filename_dico_comp,"/")[-1]  not in os.listdir():
     # plt.figure()
     # plt.plot(np.cumsum(s_dico)/np.sum(s_dico))
 
-    ind_dico = ((np.cumsum(s_dico)/np.sum(s_dico))<0.99).sum()
-    ind_dico=20
+    #ind_dico = ((np.cumsum(s_dico)/np.sum(s_dico))<0.99).sum()
+    #ind_dico=20
 
     vh_dico_retained = vh_dico[:ind_dico,:]
     phi_dico = vh_dico_retained[:,:ntimesteps] - 1j * vh_dico_retained[:,ntimesteps:]
@@ -513,7 +462,7 @@ if str.split(filename_dico_comp,"/")[-1]  not in os.listdir():
     del X_1
     del X_2
     del X
-    del signal
+    #del signal
 
 
     np.save(filename_dico_comp,phi_dico)
@@ -522,25 +471,153 @@ else:
     phi_dico=np.load(filename_dico_comp)
 
 
+Sk_cur = copy(Sk)
+niter=100
+diffs = []
+tol_diff = 1e-2
+variance_explained=0.99
+proj_on_fingerprints=False
+
+for i in tqdm(range(niter)):
+    Sk_1 = Sk_cur.reshape(Sk_cur.shape[0],-1)
+    u_1, s_1, vh_1 = np.linalg.svd(Sk_1, full_matrices=False)
+
+    Sk_2 = np.moveaxis(Sk_cur,1,0).reshape(Sk_cur.shape[1],-1)
+    u_2, s_2, vh_2 = np.linalg.svd(Sk_2, full_matrices=False)
+
+    Sk_3 = np.moveaxis(Sk_cur, 2, 0).reshape(Sk_cur.shape[2], -1)
+    if proj_on_fingerprints:
+        Sk_3 = phi_dico.T @ phi_dico.conj() @ Sk_final_3
+    else:
+        u_3, s_3, vh_3 = np.linalg.svd(Sk_3, full_matrices=False)
+        cum_3 = np.cumsum(s_3) / np.sum(s_3)
+        ind_3 = (cum_3 < variance_explained).sum()
+        Sk_3 = u_3[:, :ind_3] @ (np.diag(s_3[:ind_3])) @ vh_3[:ind_3, :]
+
+
+    cum_1=np.cumsum(s_1)/np.sum(s_1)
+    cum_2=np.cumsum(s_2)/np.sum(s_2)
+
+
+    ind_1 = (cum_1<variance_explained).sum()
+    ind_2 = (cum_2<variance_explained).sum()
+
+    Sk_1 = u_1[:,:ind_1]@(np.diag(s_1[:ind_1]))@vh_1[:ind_1,:]
+    Sk_2 = u_2[:, :ind_2] @ (np.diag(s_2[:ind_2])) @ vh_2[:ind_2, :]
+
+
+    Sk_1 = Sk_1.reshape(Sk_cur.shape[0],Sk_cur.shape[1],Sk_cur.shape[2])
+    Sk_2 = Sk_2.reshape(Sk_cur.shape[1], Sk_cur.shape[0], Sk_cur.shape[2])
+    Sk_3 = Sk_3.reshape(Sk_cur.shape[2], Sk_cur.shape[0], Sk_cur.shape[1])
+
+    Sk_2=np.moveaxis(Sk_2,0,1)
+    Sk_3 = np.moveaxis(Sk_3, 0, 2)
+
+    Sk_cur_prev = copy(Sk_cur)
+    Sk_cur=Sk*Sk_mask + np.mean(np.stack([Sk_1,Sk_2,Sk_3],axis=-1),axis=-1)*(1-Sk_mask)
+    diff = np.linalg.norm((Sk_cur-Sk_cur_prev )/Sk_cur_prev/np.sqrt(np.sum(Sk_mask)))
+    diffs.append(diff)
+
+    if diff<tol_diff:
+        break
+
+# plt.figure()
+# plt.plot(diffs)
+
+Sk_final = copy(Sk_cur)
+del Sk_cur
+
+plt.figure()
+plt.plot(np.abs(Sk_final[-1,-1,:]))
+plt.plot(np.abs(Sk_final[-1,-1,:])*Sk_mask[-1,-1,:],linestyle="dotted")
+
+# D=Sk_final.reshape(npoint,-1)
+# u, s, vh = np.linalg.svd(D, full_matrices=False)
+
+
+
+# plt.figure()
+# plt.plot(vh.reshape(-1,len(groups),ntimesteps)[0,:,-1])
+# plt.figure()
+# plt.plot(vh.reshape(-1,len(groups),ntimesteps)[0,1,:])
+
+
+
+i_sig=np.random.choice(signal.shape[0])
+proj_sig_i = phi_dico.T@phi_dico.conj()@signal[i_sig]
+
+plt.figure()
+plt.plot(np.abs(proj_sig_i),label="Projected signal")
+plt.plot(np.abs(signal[i_sig]),label="Original signal {}".format(i_sig),linestyle="dotted")
+plt.legend()
+
+
 Sk_final_3 = np.moveaxis(Sk_final,2,0).reshape(Sk_final.shape[2],-1)
 Sk_final_3_proj = phi_dico.T@phi_dico.conj()@Sk_final_3
+Sk_mask_reshaped = np.moveaxis(Sk_mask,2,0).reshape(Sk_mask.shape[2],-1)
 
+
+kdata=data_for_nav
+nb_channels = kdata.shape[0]
+npoint = kdata.shape[-1]
+nb_slices = kdata.shape[1]
+nb_gating_spokes = kdata.shape[2]
+
+j = np.random.choice(Sk_final_3_proj.shape[-1])
+j=1917
+plt.figure()
+plt.plot(np.abs(Sk_final_3[:,j]*Sk_mask_reshaped[:,j]),label="Original fingerprint {}".format(""),linestyle="dotted")
+plt.plot(np.abs(Sk_final_3[:,j]),label="Completed fingerprint {}".format(""))
+plt.plot(np.abs(Sk_final_3_proj[:,j]),label="Projected fingerprint")
+plt.legend()
 
 Sk_final_3_proj_for_nav_image=Sk_final_3_proj.reshape(ntimesteps,npoint,len(groups))
-Sk_final_3_proj_for_nav_image=np.moveaxis(Sk_final_3_proj_for_nav_image,1,2).reshape(-1,npoint).astype("complex64")
+Sk_final_3_proj_for_nav_image=np.moveaxis(Sk_final_3_proj_for_nav_image,2,0).astype("complex64")
+
+Sk_final_3_for_nav_image=Sk_final_3.reshape(ntimesteps,npoint,len(groups))
+Sk_final_3_for_nav_image=np.moveaxis(Sk_final_3_for_nav_image,2,0).astype("complex64")
+
+Sk_for_nav_image = np.moveaxis(Sk,1,0)
+Sk_for_nav_image = np.moveaxis(Sk_for_nav_image,2,1)
 
 
-nav_traj_completed_proj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=nb_slices,
+
+
+nav_traj_completed_proj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=len(groups),
                        applied_timesteps=list(range(Sk_final_3_proj_for_nav_image.shape[0])))
 
-images_nav_mean_completed = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_3_proj_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+images_nav_mean_original = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+
+gr=2
+plt.figure()
+plt.imshow(np.abs(images_nav_mean_original[gr,:,:]),cmap="gray")
+plt.title("Original 0-filled Image Respiratory Bin {}".format(gr))
+
+images_nav_mean_completed = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_3_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+
+plt.figure()
+plt.imshow(np.abs(images_nav_mean_completed[0,:,:]),cmap="gray")
+plt.title("Completed Image Respiratory Bin {}".format(gr))
+
+images_nav_mean_proj = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_3_proj_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+plt.figure()
+plt.imshow(np.abs(images_nav_mean_proj[1,:,:]),cmap="gray")
+plt.title("Projected Image Respiratory Bin {}".format(gr))
+
+nav_traj_timesteps = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=nb_slices,
+                       applied_timesteps=list(range(ntimesteps)))
+
+images_nav_mean_timesteps = np.abs(simulate_nav_images_multi(np.expand_dims(data_mt_training_on_timesteps,axis=0), nav_traj_timesteps, nav_image_size, b1_nav_mean))
+sl=0
+plt.figure()
+plt.imshow(np.abs(images_nav_mean_timesteps[sl,:,:]),cmap="gray")
+plt.title("Original Nav Image Slice {}".format(sl))
 
 
-# j = np.random.choice(Sk_final_3_proj.shape[-1])
-# plt.figure()
-# plt.plot(np.abs(Sk_final_3[:,j]),label="Original fingerprint {}".format(j))
-# plt.plot(np.abs(Sk_final_3_proj[:,j]),label="Projected fingerprint")
-# plt.legend()
+
+
+
+
 
 Sk_final_proj = Sk_final_3_proj.reshape(Sk_final.shape[2], Sk_final.shape[0], Sk_final.shape[1])
 Sk_final_proj = np.moveaxis(Sk_final_proj, 0, 2)
@@ -548,6 +625,43 @@ Sk_final_proj = np.moveaxis(Sk_final_proj, 0, 2)
 D=Sk_final_proj.reshape(npoint,-1)
 u, s, vh = np.linalg.svd(D, full_matrices=False)
 
+
+D_non_proj=Sk_final.reshape(npoint,-1)
+u_non_proj, s_non_proj, vh_non_proj = np.linalg.svd(D_non_proj, full_matrices=False)
+
+L0 = 8
+
+phi = (vh)[:L0,:]
+phi=vh[:L0,:]
+
+L0 = 8
+phi_non_proj = (vh_non_proj)[:L0,:]
+phi_non_proj=vh_non_proj[:L0,:]
+
+i_sig = np.random.choice(D_non_proj.shape[0])
+
+proj_sig_i = phi.T@phi.conj()@D_non_proj[i_sig]
+proj_sig_i_non_proj = phi_non_proj.T@phi_non_proj.conj()@D_non_proj[i_sig]
+
+
+plt.figure()
+plt.plot(np.abs(proj_sig_i),label="Projected navigator signal - basis constrained by Fingerprints simulation")
+plt.plot(np.abs(proj_sig_i_non_proj),label="Projected navigator signal - basis not constrained by Fingerprints simulation")
+plt.plot(np.abs(D_non_proj[i_sig]),label="Original signal",linestyle="dotted")
+plt.legend()
+
+
+Sk_final_non_proj_HOSVD = phi_non_proj.T@phi_non_proj.conj()@D_non_proj.T
+Sk_final_non_proj_HOSVD =Sk_final_non_proj_HOSVD.reshape(Sk_final_proj.shape[-1],Sk_final_proj.shape[0],Sk_final_proj.shape[1])
+Sk_final_non_proj_HOSVD =np.moveaxis(Sk_final_non_proj_HOSVD,2,0).astype("complex64")
+
+gr=2
+images_nav_mean_nonproj_HOSVD = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_non_proj_HOSVD,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+plt.figure()
+plt.imshow(np.abs(images_nav_mean_nonproj_HOSVD[gr,:,:]),cmap="gray")
+plt.title("Projected Image Respiratory Bin {}".format(gr))
+
+phi=phi_non_proj
 
 # plt.figure()
 # for g in range(len(groups)):
@@ -564,7 +678,7 @@ u, s, vh = np.linalg.svd(D, full_matrices=False)
 
 
 L0 = 8
-phi = (np.diag(s)@vh)[:L0,:]
+phi = (vh)[:L0,:]
 phi=vh[:L0,:]
 phi.shape
 
@@ -744,6 +858,10 @@ def grad_J(m):
 
     return 2*dm
 
+
+def omega(s_k):
+
+
 grad_Jm= grad_J(m0)
 J_m= J(m0)
 
@@ -751,17 +869,22 @@ J_m= J(m0)
 
 
 
-from scipy.optimize import minimize
+from scipy.optimize import minimize,basinhopping,dual_annealing
 
 def f(x):
     global m0
     x=x.reshape((2,)+m0.shape)
     return J((x[0]+1j*x[1]).astype("complex64"))
 
-
 x0=np.expand_dims(m0.flatten(),axis=0)
 x0 = np.concatenate([x0.real,x0.imag],axis=0)
 x0=x0.flatten()
+
+bounds=np.array(len(x0)*[-10,10]).reshape(len(x0),2)
+res=dual_annealing(f,bounds,no_local_search=True)
+
+
+
 
 x_opt=minimize(f,x0,method='Newton-CG',jac="2-point")
 
