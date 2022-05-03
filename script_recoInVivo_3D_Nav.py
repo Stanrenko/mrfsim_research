@@ -75,6 +75,24 @@ localfile="/phantom.004.v1/meas_MID00173_FID62150_raFin_3D_tra_1x1x5mm_FULL_new.
 localfile="/phantom.004.v1/meas_MID00174_FID62151_raFin_3D_tra_1x1x5mm_FULL_new.dat"#Box outside of bottle on top
 localfile="/phantom.004.v1/meas_MID00177_FID62154_raFin_3D_tra_1x1x5mm_FULL_bottom.dat"#Box at the bottom border with more outside
 localfile="/phantom.004.v1/meas_MID00178_FID62155_raFin_3D_tra_1x1x5mm_FULL_top.dat"#Box at the top border with more outside
+localfile="/phantom.004.v2/meas_MID00244_FID62394_raFin_3D_tra_1x1x5mm_FULL_SliceSel500.dat"#Box at the top border with more outside
+localfile="/phantom.004.v2/meas_MID00245_FID62395_raFin_3D_tra_1x1x5mm_FULL_SliceSel60.dat"#Box at the top border with more outside
+localfile="/phantom.004.v2/meas_MID00247_FID62397_raFin_3D_tra_1x1x5mm_FULL_SliceSel180.dat"#Box at the top border with more outside
+#localfile="/phantom.004.v2/meas_MID00248_FID62398_raFin_3D_tra_1x1x5mm_FULL_SliceSel90.dat"#Box at the top border with more outside
+localfile="/phantom.004.v2/meas_MID00291_FID62683_raFin_3D_tra_1x1x5mm_FULL_Sl300RO100.dat"#Box at the top border with more outside
+localfile="/phantom.004.v2/meas_MID00292_FID62684_raFin_3D_tra_1x1x5mm_FULL_Sl90RO100.dat"#Box at the top border with more outside
+localfile="/phantom.004.v2/meas_MID00293_FID62685_raFin_3D_tra_1x1x5mm_FULL_Sl30RO100.dat"#Box at the top border with more outside
+#localfile="/phantom.004.v2/meas_MID00294_FID62686_raFin_3D_tra_1x1x5mm_FULL_Sl30RO100_Out.dat"#Box at the top border with more outside
+
+localfile="/phantom.005.v1/meas_MID00448_FID62840_raFin_3D_tra_1x1x5mm_FULL_P0_Sl400_RO50.dat"#Box at the top border with more outside
+localfile="/phantom.005.v1/meas_MID00449_FID62841_raFin_3D_tra_1x1x5mm_FULL_P0_Sl30_RO50.dat"#Box at the top border with more outside
+localfile="/phantom.005.v1/meas_MID00450_FID62842_raFin_3D_tra_1x1x5mm_FULL_P0_Sl30_RO50_Top.dat"#Box at the top border with more outside
+localfile="/phantom.005.v1/meas_MID00451_FID62843_raFin_3D_tra_1x1x5mm_FULL_P0_Sl30_RO50_Bottom.dat"#Box at the top border with more outside
+localfile="/phantom.005.v1/meas_MID00452_FID62844_raFin_3D_tra_1x1x5mm_FULL_P0_Sl30_RO50_Bottom_SlOut.dat"#Box at the top border with more outside
+localfile="/phantom.005.v1/meas_MID00453_FID62845_raFin_3D_tra_1x1x5mm_FULL_P0_Sl400_RO50_Bottom_SlOut.dat"#Box at the top border with more outside
+localfile="/phantom.005.v1/meas_MID00454_FID62846_raFin_3D_tra_1x1x5mm_FULL_P0_Sl30_RO50_BottomOut.dat"#Box at the top border with more outside
+localfile="/phantom.005.v1/meas_MID00458_FID62850_raFin_3D_tra_1x1x5mm_FULL_P0_Sl200_RO50_FOV220.dat"#Box at the top border with more outside
+localfile="/phantom.005.v1/meas_MID00459_FID62851_raFin_3D_tra_1x1x5mm_FULL_P0_Sl27_RO50_FOV220.dat"#Box at the top border with more outside
 
 
 
@@ -197,16 +215,39 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
         twix = twixtools.read_twix(filename)
 
     mdb_list = twix[-1]['mdb']
-    if nb_gating_spokes > 0:
+    if nb_gating_spokes == 0:
+        data = []
+
+        for i, mdb in enumerate(mdb_list):
+            if mdb.is_image_scan():
+                data.append(mdb)
+
+
+
+    else:
         print("Reading Navigator Data....")
         data_for_nav = []
-        k = 0
+        data = []
+        nav_size_initialized = False
+        #k = 0
         for i, mdb in enumerate(mdb_list):
-            if mdb.is_image_scan() and mdb.mdh[14][9]:
-                data_for_nav.append(mdb)
+            if mdb.is_image_scan() :
+                if not(mdb.mdh[14][9]):
+                    mdb_data_shape = mdb.data.shape
+                    mdb_dtype = mdb.data.dtype
+                    nav_size_initialized = True
+                    break
+
+        for i, mdb in enumerate(mdb_list):
+            if mdb.is_image_scan():
+                if not (mdb.mdh[14][9]):
+                    data.append(mdb)
+                else:
+                    data_for_nav.append(mdb)
+                    data.append(np.zeros(mdb_data_shape,dtype=mdb_dtype))
 
                 #print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
-                k += 1
+                #k += 1
         data_for_nav = np.array([mdb.data for mdb in data_for_nav])
         data_for_nav = data_for_nav.reshape((int(nb_part),int(nb_gating_spokes))+data_for_nav.shape[1:])
 
@@ -216,40 +257,18 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
         data_for_nav = np.moveaxis(data_for_nav,-2,0)
         np.save(filename_nav_save, data_for_nav)
 
-    # data = []
-    # k = 0
-    # for i, mdb in enumerate(mdb_list):
-    #     if mdb.is_image_scan() and not (mdb.mdh[14][9]):
-    #
-    #         data.append(mdb)
-    #          #if i < 1400:
-    #          #    print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
-    #         k += 1
-    #
-    # data = np.array([mdb.data for mdb in data])
-    # data = data.reshape((int(nb_part), int(nb_segments-nb_gating_spokes)) + data.shape[1:])
-    # if data.ndim==3
-    #     data=np.expand_dims(data,axis=-2)
-    # data=np.move_axis(data,-2,0)
-    # data=np.moveaxis(1,-2)
+    data = np.array([mdb.data for mdb in data])
+    data = data.reshape((-1, int(nb_segments)) + data.shape[1:])
+    data = np.moveaxis(data, 2, 0)
+    data = np.moveaxis(data, 2, 1)
 
     del mdb_list
 
     ##################################################
-    mapped = twixtools.map_twix(twix)
     try:
         del twix
     except:
         pass
-    data = mapped[-1]['image']
-    del mapped
-    data = data[:].squeeze()
-    if data.ndim == 3:
-        data = np.expand_dims(data, axis=0)
-        data=np.moveaxis(data,-2,-3)
-    else:
-        data = np.moveaxis(data, 0, -2)
-        data = np.moveaxis(data, 1, 0)
 
     np.save(filename_save,data)
     #
@@ -488,16 +507,20 @@ if nb_gating_spokes>0:
 
     ch=0
     image_nav_ch =simulate_nav_images_multi(np.expand_dims(data_for_nav[ch],axis=0),nav_traj, nav_image_size)
-    plt.imshow(np.abs(b1_nav[ch].reshape(-1, int(npoint/2))))
+    #plt.imshow(np.abs(b1_nav[ch].reshape(-1, int(npoint/2))))
 
+    plt.figure()
     plt.imshow(np.abs(image_nav_ch.reshape(-1, int(npoint/2))), cmap="gray")
     plt.figure()
-    plt.plot(np.abs(image_nav_ch.reshape(-1, int(npoint/2)))[5])
+    plt.plot(np.abs(image_nav_ch.reshape(-1, int(npoint/2)))[10])
 
     print("Rebuilding Nav Images...")
     images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
-    plt.imshow(np.abs(images_nav_mean.reshape(-1, 400)),cmap="gray")
+    plt.figure()
+    plt.imshow(np.abs(images_nav_mean.reshape(-1, int(npoint/2))),cmap="gray")
 
+    plt.figure()
+    plt.plot(np.abs(images_nav_mean.reshape(-1, int(npoint/2)))[10,:])
 
 
     print("Estimating Movement...")
