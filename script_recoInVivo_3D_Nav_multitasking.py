@@ -751,177 +751,6 @@ def J(m):
     return np.linalg.norm(kdata_error)**2
 
 
-def grad_J(m):
-    global L0
-    global phi
-    global traj
-    global ntimesteps
-    global data
-    global nb_slices
-    global nb_channels
-    global npoint
-    global groups
-    global nb_part
-    global nb_segments
-    global nb_gating_spokes
-    global nb_allspokes
-    global undersampling_factor
-    global mode
-    global incoherent
-    global image_size
-
-
-
-    FU = finufft.nufft3d2(traj[:, 2], traj[:, 0], traj[:, 1], m)
-
-    FU = FU.reshape(L0, ntimesteps, -1)
-    FU = np.moveaxis(FU, 0, -1)
-    phi = phi.reshape(L0, -1, ntimesteps)
-    ngroups = phi.shape[1]
-    kdata_model = []
-    for ts in tqdm(range(ntimesteps)):
-        kdata_model.append(FU[ts] @ phi[:, :, ts])
-    kdata_model = np.array(kdata_model)
-
-    kdata_model = kdata_model.reshape(ntimesteps, 8, nb_slices, npoint, ngroups)
-    kdata_model = np.expand_dims(kdata_model, axis=0)
-    kdata_model_retained = np.zeros(kdata_model.shape[:-1], dtype=data.dtype)
-
-    for ts in tqdm(range(ntimesteps)):
-        for sl in range(nb_slices):
-            for sp in range(8):
-                for g in range(ngroups):
-                    if data_mask[0, sp, sl, g, ts]:
-                        kdata_model_retained[:, ts, sp, sl, :] = kdata_model[:, ts, sp, sl, :, g]
-
-    kdata_error = kdata_model_retained - data.reshape(nb_channels, ntimesteps, -1, nb_slices, npoint)
-
-
-    density = np.abs(np.linspace(-1, 1, npoint))
-    density = np.expand_dims(density,tuple(range(kdata_error.ndim-1)))
-    kdata_error *= density
-
-    #j=2
-    #g=groups[j]
-    v_error_final = np.zeros((len(groups), ntimesteps,) + image_size, dtype=m0.dtype)
-
-    for j, g in tqdm(enumerate(groups)):
-        print("######################  BUILDING FULL VOLUME AND MASK FOR GROUP {} ##########################".format(j))
-        retained_nav_spokes_index = np.argwhere(g).flatten()
-        spoke_groups = np.argmin(np.abs(
-            np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
-                                                                              nb_segments / nb_gating_spokes).reshape(1,
-                                                                                                                      -1)),
-                                 axis=-1)
-        included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
-        included_spokes[::int(nb_segments / nb_gating_spokes)] = False
-        print("Filtering KData for movement...")
-        kdata_retained_final_list_volume = []
-        for i in tqdm(range(nb_channels)):
-            kdata_retained_final, traj_retained_final_volume, retained_timesteps = correct_mvt_kdata(
-                kdata_error[i].reshape(nb_segments, -1), radial_traj, included_spokes, ntimesteps,
-                density_adj=True, log=False)
-            kdata_retained_final_list_volume.append(kdata_retained_final)
-
-        radial_traj_3D_corrected_single_volume = Radial3D(total_nspokes=nb_allspokes,
-                                                          undersampling_factor=undersampling_factor, npoint=npoint,
-                                                          nb_slices=nb_slices, incoherent=incoherent, mode=mode)
-        radial_traj_3D_corrected_single_volume.traj_for_reconstruction = traj_retained_final_volume
-        volume_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list_volume,
-                                                                     radial_traj_3D_corrected_single_volume, image_size,
-                                                                     b1=None, density_adj=False, ntimesteps=ntimesteps,
-                                                                     useGPU=False, normalize_kdata=False, memmap_file=None,
-                                                                     light_memory_usage=True, normalize_volumes=True,
-                                                                     is_theta_z_adjusted=True)
-
-        curr_i=0
-        for t in range(ntimesteps):
-            if t in retained_timesteps:
-                v_error_final[j, t] = volume_corrected[curr_i]
-                curr_i += 1
-            else:
-                v_error_final[j, t] = 0
-
-    v_error_final = v_error_final.reshape(ngroups * ntimesteps, nb_slices, -1)
-    dm = np.zeros((L0, nb_slices, v_error_final.shape[-1]), dtype=m.dtype)
-
-    for j in tqdm(range(nb_slices)):
-        dm[:, j, :] = phi.reshape(L0, -1).conj() @ v_error_final[:, j, :]
-
-    dm = dm.reshape(m.shape)
-
-    return 2*dm
-
-
-m=m0
-
-FU = finufft.nufft3d2(traj[:, 2], traj[:, 0], traj[:, 1], m)
-
-FU = FU.reshape(L0, ntimesteps, -1)
-FU = np.moveaxis(FU, 0, -1)
-phi = phi.reshape(L0, -1, ntimesteps)
-ngroups = phi.shape[1]
-kdata_model = []
-for ts in tqdm(range(ntimesteps)):
-    kdata_model.append(FU[ts] @ phi[:, :, ts])
-kdata_model = np.array(kdata_model)
-
-kdata_model = kdata_model.reshape(ntimesteps, 8, nb_slices, npoint, ngroups)
-kdata_model = np.expand_dims(kdata_model, axis=0)
-kdata_model_retained = np.zeros(kdata_model.shape[:-1], dtype=data.dtype)
-
-for ts in tqdm(range(ntimesteps)):
-    for sl in range(nb_slices):
-        for sp in range(8):
-            for g in range(ngroups):
-                if data_mask[0, sp, sl, g, ts]:
-                    kdata_model_retained[:, ts, sp, sl, :] = kdata_model[:, ts, sp, sl, :, g]
-
-kdata_error = kdata_model_retained - data.reshape(nb_channels, ntimesteps, -1, nb_slices, npoint)
-
-# density = np.abs(np.linspace(-1, 1, npoint))
-# density = np.expand_dims(density, tuple(range(kdata_error.ndim - 1)))
-# kdata_error *= density
-
-kdata_error_phiH = np.zeros(kdata_model.shape[:-1]+(L0,),dtype=kdata_error.dtype)
-#kdata_error_reshaped=np.zeros(kdata_model.shape+(ntimesteps,),dtype=kdata_model.dtype)
-
-#phi_H = phi.conj().reshape(L0,-1).T
-
-for ts in tqdm(range(ntimesteps)):
-    for sl in range(nb_slices):
-        for sp in range(8):
-            for g in range(ngroups):
-                if data_mask[0, sp, sl, g, ts]:
-                    #kdata_error_reshaped[:, ts, sp, sl, :,g,ts] = kdata_error[:, ts, sp, sl, :]
-                    for l in range(L0):
-                        kdata_error_phiH[:,ts,sp,sl,:,l]=kdata_error[:, ts, sp, sl, :]*phi.conj()[l,g,ts]
-
-#phi_H = phi.conj().reshape(L0,-1).T
-#kdata_error_reshaped=kdata_error_reshaped.reshape(-1,ngroups*ntimesteps)
-
-
-kdata_error_phiH=np.moveaxis(kdata_error_phiH,-1,0)
-density = np.abs(np.linspace(-1, 1, npoint))
-density = np.expand_dims(density, tuple(range(kdata_error_phiH.ndim - 1)))
-kdata_error_phiH *=density
-
-dtheta = np.pi / 8
-dz = 1/nb_slices
-
-kdata_error_phiH*=1/(2*npoint)*dz * dtheta
-
-kdata_error_phiH=kdata_error_phiH.reshape(L0*nb_channels,-1)
-
-grad_m = finufft.nufft3d1(traj[:,2],traj[:, 0], traj[:, 1], kdata_error_phiH, image_size)
-
-sl=int(nb_slices/2)
-l=np.random.choice(L0)
-plt.figure()
-plt.imshow(np.abs(grad_m[l,sl,:,:]))
-plt.title("grad abs image for l={}".format(l))
-
-
 
 def grad_J(m):
     global L0
@@ -1017,17 +846,12 @@ def f(x):
     x=x.reshape((2,)+m0.shape)
     return J((x[0]+1j*x[1]).astype("complex64"))
 
-x0=np.expand_dims(m0.flatten(),axis=0)
-x0 = np.concatenate([x0.real,x0.imag],axis=0)
-x0=x0.flatten()
-
-bounds=np.array(len(x0)*[-10,10]).reshape(len(x0),2)
-res=dual_annealing(f,bounds,no_local_search=True)
-
-
-
-
-x_opt=minimize(f,x0,method='Newton-CG',jac="2-point")
+# x0=np.expand_dims(m0.flatten(),axis=0)
+# x0 = np.concatenate([x0.real,x0.imag],axis=0)
+# x0=x0.flatten()
+#
+#
+# x_opt=minimize(f,x0,method='Newton-CG',jac="2-point")
 
 
 eps=0.001
@@ -1054,8 +878,14 @@ plt.plot(J_list)
 
 
 m_opt=conjgrad(J,grad_J,m0,alpha=0.1,beta=0.3,log=True,tolgrad=1e-10)
+
+filename_m_opt=str.split(filename,".dat") [0]+"_m_opt_L0{}.npy".format(L0)
+
 np.save(filename_m_opt,m_opt)
 
+
+filename_phi=str.split(filename,".dat") [0]+"_phi_L0{}.npy".format(L0)
+np.save(filename_phi,phi)
 
 
 sl=int(nb_slices/2)
@@ -1067,9 +897,17 @@ plt.title("basis image for l={}".format(l))
 gr=2
 phi_gr=phi[:,gr,:]
 sl=int(nb_slices/2)
-volumes_rebuilt_gr=(m_opt[:,sl,:,:].reshape((L0,-1)).T@phi_gr)..reshape(image_size[1],image_size[2],ntimesteps)
+volumes_rebuilt_gr=(m_opt[:,sl,:,:].reshape((L0,-1)).T@phi_gr).reshape(image_size[1],image_size[2],ntimesteps)
 volumes_rebuilt_gr=np.moveaxis(volumes_rebuilt_gr,-1,0)
 animate_images(volumes_rebuilt_gr)
+
+
+volumes_all_rebuilt = (m_opt.reshape((L0,-1)).T@phi_gr).reshape(image_size[0],image_size[1],image_size[2],ntimesteps)
+volumes_all_rebuilt=np.moveaxis(volumes_all_rebuilt,-1,0)
+
+filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
+np.save(filename_volume_rebuilt_multitasking,volumes_all_rebuilt)
+
 
 v_error_final= grad_J(m0)
 
@@ -1082,250 +920,6 @@ plot_image_grid(image_list,(3,3))
 v_error_final=np.moveaxis(v_error_final,0,1)
 
 dm = v_error_final@(phi.reshape(L0,-1).T.conj())
-
-# group_1 = (categories == 1) | (categories == 2)
-# group_2 = (categories == 3)
-# group_3 = (categories == 4) | (categories == 5)
-#
-# groups = [group_1, group_2, group_3]
-
-
-# group_1=(categories==1)|(categories==2)|(categories==3)
-# group_2=(categories==4)
-# group_3=(categories==5)
-# group_4=(categories==6)
-# group_5=(categories==7)|(categories==8)|(categories==9)
-#
-# groups=[group_1,group_2,group_3,group_4,group_5]
-
-# dico_kdata_retained_registration={}
-
-dico_volume = {}
-dico_mask = {}
-
-#j=2
-#g=groups[j]
-
-for j, g in tqdm(enumerate(groups)):
-    print("######################  BUILDING FULL VOLUME AND MASK FOR GROUP {} ##########################".format(j))
-    retained_nav_spokes_index = np.argwhere(g).flatten()
-    spoke_groups = np.argmin(np.abs(
-        np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
-                                                                          nb_segments / nb_gating_spokes).reshape(1,
-                                                                                                                  -1)),
-                             axis=-1)
-    included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
-    included_spokes[::int(nb_segments / nb_gating_spokes)] = False
-    print("Filtering KData for movement...")
-    kdata_retained_final_list_volume = []
-    for i in tqdm(range(nb_channels)):
-        kdata_retained_final, traj_retained_final_volume, retained_timesteps = correct_mvt_kdata(
-            kdata_all_channels_all_slices[i].reshape(nb_segments, -1), radial_traj, included_spokes, 1,
-            density_adj=True, log=False)
-        kdata_retained_final_list_volume.append(kdata_retained_final)
-
-    radial_traj_3D_corrected_single_volume = Radial3D(total_nspokes=nb_allspokes,
-                                                      undersampling_factor=undersampling_factor, npoint=npoint,
-                                                      nb_slices=nb_slices, incoherent=incoherent, mode=mode)
-    radial_traj_3D_corrected_single_volume.traj_for_reconstruction = traj_retained_final_volume
-
-    volume_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list_volume,
-                                                                 radial_traj_3D_corrected_single_volume, image_size,
-                                                                 b1=None, density_adj=False, ntimesteps=1,
-                                                                 useGPU=False, normalize_kdata=False, memmap_file=None,
-                                                                 light_memory_usage=True, normalize_volumes=True,
-                                                                 is_theta_z_adjusted=True)
-    dico_volume[j] = copy(volume_corrected[0])
-    mask = build_mask_single_image_multichannel(kdata_retained_final_list_volume,
-                                                radial_traj_3D_corrected_single_volume, image_size, b1=None,
-                                                density_adj=False, threshold_factor=1 / 10, normalize_kdata=False,
-                                                light_memory_usage=True, selected_spokes=None, is_theta_z_adjusted=True,
-                                                normalize_volumes=True)
-    dico_mask[j] = copy(mask)
-
-
-animate_images(mask)
-
-del volume_corrected
-del kdata_retained_final_list_volume
-del radial_traj_3D_corrected_single_volume
-del mask
-
-import cv2
-import numpy as np
-
-
-
-
-for j in dico_volume.keys():
-    plt.figure(figsize=(10,10))
-    #plt.imshow(denoise_tv_chambolle(np.abs((dico_mask[j]*dico_volume[j])[int(nb_slices/2),:,:]),weight=0.00001))
-    plt.imshow(np.abs((dico_mask[j][int(nb_slices/2),:,:]*dico_volume[j][int(nb_slices/2),:,:])))
-    #plt.imshow(np.abs((dico_mask[j][int(nb_slices / 2), :, :])))
-
-index_ref = 2
-
-dico_homographies = {}
-
-for index_to_align in dico_volume.keys():
-    dico_homographies[index_to_align] = {}
-    for sl in range(nb_slices):
-
-        # Open the image files.
-        array_to_align = np.abs(dico_mask[index_to_align][sl] * dico_volume[index_to_align][sl])
-        array_ref = np.abs(dico_mask[index_ref][sl] * dico_volume[index_ref][sl])
-
-        array_to_align = array_to_align / (array_to_align).max()
-        array_ref = array_ref / (array_ref).max()
-
-        uint_img_to_align = np.array(array_to_align * 255).astype('uint8')
-        uint_img_ref = np.array(array_ref * 255).astype('uint8')
-
-        # img1_color = np.abs() # Image to be aligned.
-        # img2_color = np.abs(dico_volume[1][int(nb_slices/2)])
-
-        # Convert to grayscale.
-        img1_color = cv2.cvtColor(uint_img_to_align, cv2.COLOR_GRAY2BGR)
-        img2_color = cv2.cvtColor(uint_img_ref, cv2.COLOR_GRAY2BGR)
-
-        img1 = cv2.cvtColor(img1_color, cv2.COLOR_BGR2GRAY)
-        img2 = cv2.cvtColor(img2_color, cv2.COLOR_BGR2GRAY)
-
-        # Find size of image1
-        sz = img1.shape
-
-        # Define the motion model
-        warp_mode = cv2.MOTION_TRANSLATION
-
-        # Define 2x3 or 3x3 matrices and initialize the matrix to identity
-        if warp_mode == cv2.MOTION_HOMOGRAPHY:
-            warp_matrix = np.eye(3, 3, dtype=np.float32)
-        else:
-            warp_matrix = np.eye(2, 3, dtype=np.float32)
-
-        # Specify the number of iterations.
-        number_of_iterations = 5000;
-
-        # Specify the threshold of the increment
-        # in the correlation coefficient between two iterations
-        termination_eps = 1e-10;
-
-        # Define termination criteria
-        criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, number_of_iterations, termination_eps)
-
-        # Run the ECC algorithm. The results are stored in warp_matrix.
-        (cc, warp_matrix) = cv2.findTransformECC(img2, img1, warp_matrix, warp_mode, criteria)
-
-        # if warp_mode == cv2.MOTION_HOMOGRAPHY :
-        # Use warpPerspective for Homography
-        #    transformed_img = cv2.warpPerspective (img1, warp_matrix, (sz[1],sz[0]), flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP)
-        # else :
-        # Use warpAffine for Translation, Euclidean and Affine
-        #    transformed_img = cv2.warpAffine(img1, warp_matrix, (sz[1],sz[0]), flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP);
-
-        dico_homographies[index_to_align][sl] = warp_matrix
-
-sl = int(nb_slices / 2)
-test_index=1
-
-animate_images([scipy.ndimage.affine_transform(np.abs(dico_volume[test_index][sl].T), dico_homographies[test_index][sl]).T,
-                np.abs(dico_volume[index_ref][sl])])
-
-volumes_corrected_final=np.zeros((ntimesteps,nb_slices,int(npoint/2),int(npoint/2)),dtype="complex64")
-ts_indices=np.zeros(len(groups)).astype(int)
-count=np.zeros(ntimesteps).astype(int)
-#total_weight=np.zeros(ntimesteps).astype(int)
-
-del dico_mask
-del dico_volume
-#
-# dico_kdata_retained_registration = {}
-# dico_volumes_corrected = {}
-#
-# J=0
-# g=groups[0]
-for j, g in tqdm(enumerate(groups)):
-    retained_nav_spokes_index = np.argwhere(g).flatten()
-    spoke_groups = np.argmin(np.abs(
-        np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
-                                                                          nb_segments / nb_gating_spokes).reshape(1,
-                                                                                                                  -1)),
-                             axis=-1)
-    included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
-    included_spokes[::int(nb_segments / nb_gating_spokes)] = False
-    print("Filtering KData for movement...")
-    kdata_retained_final_list = []
-    for i in (range(nb_channels)):
-        kdata_retained_final, traj_retained_final, retained_timesteps = correct_mvt_kdata(
-            kdata_all_channels_all_slices[i].reshape(nb_segments, -1), radial_traj, included_spokes, ntimesteps,
-            density_adj=True, log=False)
-        kdata_retained_final_list.append(kdata_retained_final)
-
-    #dico_kdata_retained_registration[j] = retained_timesteps
-
-
-
-    radial_traj_3D_corrected = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=undersampling_factor,
-                                        npoint=npoint, nb_slices=nb_slices, incoherent=incoherent, mode=mode)
-    radial_traj_3D_corrected.traj_for_reconstruction = traj_retained_final
-
-    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list, radial_traj_3D_corrected,
-                                                                  image_size, b1=b1_all_slices,
-                                                                  ntimesteps=len(retained_timesteps), density_adj=False,
-                                                                  useGPU=False, normalize_kdata=False, memmap_file=None,
-                                                                  light_memory_usage=True, is_theta_z_adjusted=True,
-                                                                  normalize_volumes=True)
-
-    print("Re-registering corrected volumes")
-    for ts in tqdm(range(volumes_corrected.shape[0])):
-        for sl in range(volumes_corrected.shape[1]):
-            volumes_corrected[ts, sl, :, :] = scipy.ndimage.affine_transform(volumes_corrected[ts, sl, :, :].T,
-                                                                             dico_homographies[j][sl]).T
-    #dico_volumes_corrected[j] = copy(volumes_corrected)
-    print("Forming final volumes with contribution from group {}".format(j))
-    for ts in tqdm(range(ntimesteps)):
-        if ts in retained_timesteps:
-            volumes_corrected_final[ts]+=volumes_corrected[ts_indices[j]]*traj_retained_final[ts_indices[j]].shape[0]
-            #count[ts]+=1
-            count[ts] += traj_retained_final[ts_indices[j]].shape[0]
-            ts_indices[j] += 1
-            #total_weight[ts]+=traj_retained_final[ts_indices[j]].shape[0]
-
-
-del volumes_corrected
-del radial_traj_3D_corrected
-del dico_homographies
-del kdata_retained_final_list
-
-# volumes_corrected_final=np.zeros((ntimesteps,nb_slices,int(npoint/2),int(npoint/2)),dtype=dico_volumes_corrected[0].dtype)
-# ts_indices=np.zeros(len(dico_kdata_retained_registration.keys())).astype(int)
-# count=np.zeros(ntimesteps).astype(int)
-
-
-# for ts in tqdm(range(ntimesteps)):
-#     count=0
-#     for j in dico_kdata_retained_registration.keys():
-#         if ts in dico_kdata_retained_registration[j]:
-#             volumes_corrected_final[ts]+=dico_volumes_corrected[j][ts_indices[j]]
-#             ts_indices[j]+=1
-#             count+=1
-#     volumes_corrected_final[ts]/=count
-
-# for j in tqdm(dico_kdata_retained_registration.keys()):
-#     for ts in tqdm(range(ntimesteps)):
-#         if ts in dico_kdata_retained_registration[j]:
-#             volumes_corrected_final[ts]+=dico_volumes_corrected[j][ts_indices[j]]
-#             ts_indices[j]+=1
-#             count[ts]+=1
-#     del dico_kdata_retained_registration[j]
-#     del dico_volumes_corrected[j]
-
-count=np.expand_dims(count,axis=tuple(range(1,volumes_corrected_final.ndim)))
-volumes_corrected_final/=count
-
-np.save(filename_volume_corrected_final,volumes_corrected_final)
-
-animate_images(volumes_corrected_final[:,int(nb_slices/2),:,:])
 
 ##volumes for slice taking into account coil sensi
 # print("Building Volumes....")
@@ -1384,16 +978,20 @@ load_map=False
 save_map=True
 
 
-#dictfile = "mrf175_SimReco2_light.dict"
+dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
-dictfile = "mrf175_Dico2_Invivo.dict"
+#dictfile = "mrf175_Dico2_Invivo.dict"
 
 mask = np.load(filename_mask)
 #volumes_all = np.load(filename_volume)
-volumes_corrected_final=np.load(filename_volume_corrected_final)
+#volumes_corrected_final=np.load(filename_volume_corrected_final)
 
+gr=2
+L0=8
+filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
+volumes_corrected_final=np.load(filename_volume_rebuilt_multitasking)
 
 #ani = animate_images(volumes_all[:,4,:,:])
 #ani = animate_images(volumes_corrected[:,4,:,:])
@@ -1401,11 +999,11 @@ volumes_corrected_final=np.load(filename_volume_corrected_final)
 # plt.figure()
 # plt.plot(volumes_all[:,sl,200,200])
 
-
-
+suffix="Multitasking_L0{}_gr{}".format(L0,gr)
+ntimesteps=175
 if not(load_map):
     niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_final,retained_timesteps=None)
 
     if(save_map):
@@ -1425,3 +1023,26 @@ else:
     file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
     file = open(file_map, "rb")
     all_maps = pickle.load(file)
+
+
+
+curr_file=file_map
+file = open(curr_file, "rb")
+all_maps = pickle.load(file)
+file.close()
+for iter in list(all_maps.keys()):
+
+    map_rebuilt=all_maps[iter][0]
+    mask=all_maps[iter][1]
+
+    keys_simu = list(map_rebuilt.keys())
+    values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+    map_for_sim = dict(zip(keys_simu, values_simu))
+
+    #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+    #map_Python.buildParamMap()
+
+
+    for key in ["ff","wT1","df","attB1"]:
+        file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
+        io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
