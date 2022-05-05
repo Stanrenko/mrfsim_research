@@ -2906,6 +2906,7 @@ def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,log=False)
     while (np.linalg.norm(g)>tolgrad)and(k<maxiter):
         norm_g = np.linalg.norm(g)
         if log:
+            print("################ Iter {} ##################".format(k))
             norm_g_list.append(norm_g)
         print("Grad norm for iter {}: {}".format(k,norm_g))
         if k%10==0:
@@ -2926,7 +2927,7 @@ def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,log=False)
 
     if log:
         norm_g_list=np.array(norm_g_list)
-        np.save('./log/conjgrad_{}.npy'.format(date_time),norm_g_list)
+        np.save('./logs/conjgrad_{}.npy'.format(date_time),norm_g_list)
 
     return m
 

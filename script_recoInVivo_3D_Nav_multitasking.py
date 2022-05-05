@@ -99,6 +99,7 @@ filename_oop_corrected=str.split(filename,".dat") [0]+"_volumes_oop_corrected{}.
 
 filename_dico_volumes_corrected=str.split(filename,".dat") [0]+"_dico_volumes_corrected{}.pkl".format(suffix)
 filename_dico_kdata_retained=str.split(filename,".dat") [0]+"_dico_kdata_retained{}.pkl".format(suffix)
+filename_m_opt=str.split(filename,".dat") [0]+"_m_opt{}.pkl".format(suffix)
 
 dictfile = "./mrf175_SimReco2.dict"
 ind_dico = 200
@@ -584,7 +585,7 @@ Sk_for_nav_image = np.moveaxis(Sk_for_nav_image,2,1)
 
 
 nav_traj_completed_proj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=len(groups),
-                       applied_timesteps=list(range(Sk_final_3_proj_for_nav_image.shape[0])))
+                       applied_timesteps=list(range(len(groups))))
 
 images_nav_mean_original = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
 
@@ -604,10 +605,7 @@ plt.figure()
 plt.imshow(np.abs(images_nav_mean_proj[1,:,:]),cmap="gray")
 plt.title("Projected Image Respiratory Bin {}".format(gr))
 
-nav_traj_timesteps = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=nb_slices,
-                       applied_timesteps=list(range(ntimesteps)))
-
-images_nav_mean_timesteps = np.abs(simulate_nav_images_multi(np.expand_dims(data_mt_training_on_timesteps,axis=0), nav_traj_timesteps, nav_image_size, b1_nav_mean))
+images_nav_mean_timesteps = np.abs(simulate_nav_images_multi(np.expand_dims(data_mt_training_on_timesteps,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
 sl=0
 plt.figure()
 plt.imshow(np.abs(images_nav_mean_timesteps[sl,:,:]),cmap="gray")
@@ -626,17 +624,11 @@ D=Sk_final_proj.reshape(npoint,-1)
 u, s, vh = np.linalg.svd(D, full_matrices=False)
 
 
-D_non_proj=Sk_final.reshape(npoint,-1)
-u_non_proj, s_non_proj, vh_non_proj = np.linalg.svd(D_non_proj, full_matrices=False)
-
 L0 = 8
 
 phi = (vh)[:L0,:]
 phi=vh[:L0,:]
 
-L0 = 8
-phi_non_proj = (vh_non_proj)[:L0,:]
-phi_non_proj=vh_non_proj[:L0,:]
 
 i_sig = np.random.choice(D_non_proj.shape[0])
 
@@ -652,8 +644,8 @@ plt.legend()
 
 
 Sk_final_non_proj_HOSVD = phi_non_proj.T@phi_non_proj.conj()@D_non_proj.T
-Sk_final_non_proj_HOSVD =Sk_final_non_proj_HOSVD.reshape(Sk_final_proj.shape[-1],Sk_final_proj.shape[0],Sk_final_proj.shape[1])
-Sk_final_non_proj_HOSVD =np.moveaxis(Sk_final_non_proj_HOSVD,2,0).astype("complex64")
+Sk_final_non_proj_HOSVD =Sk_final_non_proj_HOSVD.reshape(Sk_final.shape[1],Sk_final.shape[-1],Sk_final.shape[0]).astype("complex64")
+#Sk_final_non_proj_HOSVD =np.moveaxis(Sk_final_non_proj_HOSVD,2,0).astype("complex64")
 
 gr=2
 images_nav_mean_nonproj_HOSVD = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_non_proj_HOSVD,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
@@ -661,7 +653,6 @@ plt.figure()
 plt.imshow(np.abs(images_nav_mean_nonproj_HOSVD[gr,:,:]),cmap="gray")
 plt.title("Projected Image Respiratory Bin {}".format(gr))
 
-phi=phi_non_proj
 
 # plt.figure()
 # for g in range(len(groups)):
@@ -677,10 +668,13 @@ phi=phi_non_proj
 # plt.plot(vh.reshape(-1,len(groups),ntimesteps)[0,1,:])
 
 
+D_non_proj=Sk_final.reshape(npoint,-1)
+u_non_proj, s_non_proj, vh_non_proj = np.linalg.svd(D_non_proj, full_matrices=False)
 L0 = 8
-phi = (vh)[:L0,:]
-phi=vh[:L0,:]
-phi.shape
+phi_non_proj = (vh_non_proj)[:L0,:]
+phi_non_proj=vh_non_proj[:L0,:]
+phi=phi_non_proj
+
 
 
 data = np.load(filename_save)
@@ -695,9 +689,9 @@ if m0.dtype == "complex64":
 
 traj=traj.reshape(-1,3)
 
-
 data_mask = np.zeros((nb_channels, 8, nb_slices, len(groups), ntimesteps))
 dico_data_retained = {}
+
 for j, g in tqdm(enumerate(groups)):
     retained_nav_spokes_index = np.argwhere(g).flatten()
     spoke_groups = np.argmin(np.abs(
@@ -859,7 +853,154 @@ def grad_J(m):
     return 2*dm
 
 
-def omega(s_k):
+m=m0
+
+FU = finufft.nufft3d2(traj[:, 2], traj[:, 0], traj[:, 1], m)
+
+FU = FU.reshape(L0, ntimesteps, -1)
+FU = np.moveaxis(FU, 0, -1)
+phi = phi.reshape(L0, -1, ntimesteps)
+ngroups = phi.shape[1]
+kdata_model = []
+for ts in tqdm(range(ntimesteps)):
+    kdata_model.append(FU[ts] @ phi[:, :, ts])
+kdata_model = np.array(kdata_model)
+
+kdata_model = kdata_model.reshape(ntimesteps, 8, nb_slices, npoint, ngroups)
+kdata_model = np.expand_dims(kdata_model, axis=0)
+kdata_model_retained = np.zeros(kdata_model.shape[:-1], dtype=data.dtype)
+
+for ts in tqdm(range(ntimesteps)):
+    for sl in range(nb_slices):
+        for sp in range(8):
+            for g in range(ngroups):
+                if data_mask[0, sp, sl, g, ts]:
+                    kdata_model_retained[:, ts, sp, sl, :] = kdata_model[:, ts, sp, sl, :, g]
+
+kdata_error = kdata_model_retained - data.reshape(nb_channels, ntimesteps, -1, nb_slices, npoint)
+
+# density = np.abs(np.linspace(-1, 1, npoint))
+# density = np.expand_dims(density, tuple(range(kdata_error.ndim - 1)))
+# kdata_error *= density
+
+kdata_error_phiH = np.zeros(kdata_model.shape[:-1]+(L0,),dtype=kdata_error.dtype)
+#kdata_error_reshaped=np.zeros(kdata_model.shape+(ntimesteps,),dtype=kdata_model.dtype)
+
+#phi_H = phi.conj().reshape(L0,-1).T
+
+for ts in tqdm(range(ntimesteps)):
+    for sl in range(nb_slices):
+        for sp in range(8):
+            for g in range(ngroups):
+                if data_mask[0, sp, sl, g, ts]:
+                    #kdata_error_reshaped[:, ts, sp, sl, :,g,ts] = kdata_error[:, ts, sp, sl, :]
+                    for l in range(L0):
+                        kdata_error_phiH[:,ts,sp,sl,:,l]=kdata_error[:, ts, sp, sl, :]*phi.conj()[l,g,ts]
+
+#phi_H = phi.conj().reshape(L0,-1).T
+#kdata_error_reshaped=kdata_error_reshaped.reshape(-1,ngroups*ntimesteps)
+
+
+kdata_error_phiH=np.moveaxis(kdata_error_phiH,-1,0)
+density = np.abs(np.linspace(-1, 1, npoint))
+density = np.expand_dims(density, tuple(range(kdata_error_phiH.ndim - 1)))
+kdata_error_phiH *=density
+
+dtheta = np.pi / 8
+dz = 1/nb_slices
+
+kdata_error_phiH*=1/(2*npoint)*dz * dtheta
+
+kdata_error_phiH=kdata_error_phiH.reshape(L0*nb_channels,-1)
+
+grad_m = finufft.nufft3d1(traj[:,2],traj[:, 0], traj[:, 1], kdata_error_phiH, image_size)
+
+sl=int(nb_slices/2)
+l=np.random.choice(L0)
+plt.figure()
+plt.imshow(np.abs(grad_m[l,sl,:,:]))
+plt.title("grad abs image for l={}".format(l))
+
+
+
+def grad_J(m):
+    global L0
+    global phi
+    global traj
+    global ntimesteps
+    global data
+    global nb_slices
+    global nb_channels
+    global npoint
+    global groups
+    global nb_part
+    global nb_segments
+    global nb_gating_spokes
+    global nb_allspokes
+    global undersampling_factor
+    global mode
+    global incoherent
+    global image_size
+
+
+
+    FU = finufft.nufft3d2(traj[:, 2], traj[:, 0], traj[:, 1], m)
+
+    FU = FU.reshape(L0, ntimesteps, -1)
+    FU = np.moveaxis(FU, 0, -1)
+    phi = phi.reshape(L0, -1, ntimesteps)
+    ngroups = phi.shape[1]
+    kdata_model = []
+    for ts in tqdm(range(ntimesteps)):
+        kdata_model.append(FU[ts] @ phi[:, :, ts])
+    kdata_model = np.array(kdata_model)
+
+    kdata_model = kdata_model.reshape(ntimesteps, 8, nb_slices, npoint, ngroups)
+    kdata_model = np.expand_dims(kdata_model, axis=0)
+    kdata_model_retained = np.zeros(kdata_model.shape[:-1], dtype=data.dtype)
+
+    for ts in tqdm(range(ntimesteps)):
+        for sl in range(nb_slices):
+            for sp in range(8):
+                for g in range(ngroups):
+                    if data_mask[0, sp, sl, g, ts]:
+                        kdata_model_retained[:, ts, sp, sl, :] = kdata_model[:, ts, sp, sl, :, g]
+
+    kdata_error = kdata_model_retained - data.reshape(nb_channels, ntimesteps, -1, nb_slices, npoint)
+
+    kdata_error_phiH = np.zeros(kdata_model.shape[:-1] + (L0,), dtype=kdata_error.dtype)
+    # kdata_error_reshaped=np.zeros(kdata_model.shape+(ntimesteps,),dtype=kdata_model.dtype)
+
+    # phi_H = phi.conj().reshape(L0,-1).T
+
+    for ts in tqdm(range(ntimesteps)):
+        for sl in range(nb_slices):
+            for sp in range(8):
+                for g in range(ngroups):
+                    if data_mask[0, sp, sl, g, ts]:
+                        # kdata_error_reshaped[:, ts, sp, sl, :,g,ts] = kdata_error[:, ts, sp, sl, :]
+                        for l in range(L0):
+                            kdata_error_phiH[:, ts, sp, sl, :, l] = kdata_error[:, ts, sp, sl, :] * phi.conj()[l, g, ts]
+
+    # phi_H = phi.conj().reshape(L0,-1).T
+    # kdata_error_reshaped=kdata_error_reshaped.reshape(-1,ngroups*ntimesteps)
+
+    kdata_error_phiH = np.moveaxis(kdata_error_phiH, -1, 0)
+    density = np.abs(np.linspace(-1, 1, npoint))
+    density = np.expand_dims(density, tuple(range(kdata_error_phiH.ndim - 1)))
+    kdata_error_phiH *= density
+
+    dtheta = np.pi / (8*ntimesteps)
+    dz = 1 / nb_slices
+
+    kdata_error_phiH *= 1 / (2 * npoint) * dz * dtheta
+
+    kdata_error_phiH = kdata_error_phiH.reshape(L0 * nb_channels, -1)
+
+    dm = finufft.nufft3d1(traj[:, 2], traj[:, 0], traj[:, 1], kdata_error_phiH, image_size)
+    #dm = dm/np.linalg.norm(dm)
+
+    return 2*dm
 
 
 grad_Jm= grad_J(m0)
@@ -912,7 +1053,23 @@ plt.plot(J_list)
 
 
 
-m_opt=conjgrad(J,grad_J,m0,alpha=0.1,beta=0.3,log=True)
+m_opt=conjgrad(J,grad_J,m0,alpha=0.1,beta=0.3,log=True,tolgrad=1e-10)
+np.save(filename_m_opt,m_opt)
+
+
+
+sl=int(nb_slices/2)
+l=np.random.choice(L0)
+plt.figure()
+plt.imshow(np.abs(m_opt[l,sl,:,:]))
+plt.title("basis image for l={}".format(l))
+
+gr=2
+phi_gr=phi[:,gr,:]
+sl=int(nb_slices/2)
+volumes_rebuilt_gr=(m_opt[:,sl,:,:].reshape((L0,-1)).T@phi_gr)..reshape(image_size[1],image_size[2],ntimesteps)
+volumes_rebuilt_gr=np.moveaxis(volumes_rebuilt_gr,-1,0)
+animate_images(volumes_rebuilt_gr)
 
 v_error_final= grad_J(m0)
 
