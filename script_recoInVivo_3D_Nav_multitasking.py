@@ -421,55 +421,55 @@ for i in tqdm(range(len(groups))):
 
         data_mt_training_on_timesteps[:,ts,:]=data_mt_training[:,gating_spoke_of_ts,:]
 
-
-dictfile = "./mrf175_SimReco2.dict"
-ind_dico = 50
-
-filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
-
-if str.split(filename_dico_comp,"/")[-1]  not in os.listdir():
-
-    FF_list = list(np.arange(0., 1.05, 0.05))
-    keys, signal = read_mrf_dict(dictfile, FF_list)
-
-    import dask.array as da
-
-    A_r=signal.real
-    A_i=signal.imag
-
-    X_1 = np.concatenate([A_r,-A_i],axis=-1)
-    X_2 = np.concatenate([A_i,A_r],axis=-1)
-    X=np.concatenate([X_1,X_2],axis=0)
-
-    u_dico, s_dico, vh_dico = da.linalg.svd(da.from_array(X))
-
-    vh_dico=np.array(vh_dico[::2,:])
-    s_dico=np.array(s_dico[::2])
-
-    # plt.figure()
-    # plt.plot(np.cumsum(s_dico)/np.sum(s_dico))
-
-    #ind_dico = ((np.cumsum(s_dico)/np.sum(s_dico))<0.99).sum()
-    #ind_dico=20
-
-    vh_dico_retained = vh_dico[:ind_dico,:]
-    phi_dico = vh_dico_retained[:,:ntimesteps] - 1j * vh_dico_retained[:,ntimesteps:]
-
-    del u_dico
-    del s_dico
-    del vh_dico
-
-    del vh_dico_retained
-    del X_1
-    del X_2
-    del X
-    #del signal
-
-
-    np.save(filename_dico_comp,phi_dico)
-else:
-    filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
-    phi_dico=np.load(filename_dico_comp)
+#
+# dictfile = "./mrf175_SimReco2.dict"
+# ind_dico = 50
+#
+# filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
+#
+# if str.split(filename_dico_comp,"/")[-1]  not in os.listdir():
+#
+#     FF_list = list(np.arange(0., 1.05, 0.05))
+#     keys, signal = read_mrf_dict(dictfile, FF_list)
+#
+#     import dask.array as da
+#
+#     A_r=signal.real
+#     A_i=signal.imag
+#
+#     X_1 = np.concatenate([A_r,-A_i],axis=-1)
+#     X_2 = np.concatenate([A_i,A_r],axis=-1)
+#     X=np.concatenate([X_1,X_2],axis=0)
+#
+#     u_dico, s_dico, vh_dico = da.linalg.svd(da.from_array(X))
+#
+#     vh_dico=np.array(vh_dico[::2,:])
+#     s_dico=np.array(s_dico[::2])
+#
+#     # plt.figure()
+#     # plt.plot(np.cumsum(s_dico)/np.sum(s_dico))
+#
+#     #ind_dico = ((np.cumsum(s_dico)/np.sum(s_dico))<0.99).sum()
+#     #ind_dico=20
+#
+#     vh_dico_retained = vh_dico[:ind_dico,:]
+#     phi_dico = vh_dico_retained[:,:ntimesteps] - 1j * vh_dico_retained[:,ntimesteps:]
+#
+#     del u_dico
+#     del s_dico
+#     del vh_dico
+#
+#     del vh_dico_retained
+#     del X_1
+#     del X_2
+#     del X
+#     #del signal
+#
+#
+#     np.save(filename_dico_comp,phi_dico)
+# else:
+#     filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
+#     phi_dico=np.load(filename_dico_comp)
 
 
 Sk_cur = copy(Sk)
@@ -527,131 +527,131 @@ for i in tqdm(range(niter)):
 
 Sk_final = copy(Sk_cur)
 del Sk_cur
+#
+# plt.figure()
+# plt.plot(np.abs(Sk_final[-1,-1,:]))
+# plt.plot(np.abs(Sk_final[-1,-1,:])*Sk_mask[-1,-1,:],linestyle="dotted")
+#
+# # D=Sk_final.reshape(npoint,-1)
+# # u, s, vh = np.linalg.svd(D, full_matrices=False)
+#
+#
+#
+# # plt.figure()
+# # plt.plot(vh.reshape(-1,len(groups),ntimesteps)[0,:,-1])
+# # plt.figure()
+# # plt.plot(vh.reshape(-1,len(groups),ntimesteps)[0,1,:])
+#
+#
+#
+# i_sig=np.random.choice(signal.shape[0])
+# proj_sig_i = phi_dico.T@phi_dico.conj()@signal[i_sig]
+#
+# plt.figure()
+# plt.plot(np.abs(proj_sig_i),label="Projected signal")
+# plt.plot(np.abs(signal[i_sig]),label="Original signal {}".format(i_sig),linestyle="dotted")
+# plt.legend()
+#
+#
+# Sk_final_3 = np.moveaxis(Sk_final,2,0).reshape(Sk_final.shape[2],-1)
+# Sk_final_3_proj = phi_dico.T@phi_dico.conj()@Sk_final_3
+# Sk_mask_reshaped = np.moveaxis(Sk_mask,2,0).reshape(Sk_mask.shape[2],-1)
+#
+#
+# kdata=data_for_nav
+# nb_channels = kdata.shape[0]
+# npoint = kdata.shape[-1]
+# nb_slices = kdata.shape[1]
+# nb_gating_spokes = kdata.shape[2]
+#
+# j = np.random.choice(Sk_final_3_proj.shape[-1])
+# j=1917
+# plt.figure()
+# plt.plot(np.abs(Sk_final_3[:,j]*Sk_mask_reshaped[:,j]),label="Original fingerprint {}".format(""),linestyle="dotted")
+# plt.plot(np.abs(Sk_final_3[:,j]),label="Completed fingerprint {}".format(""))
+# plt.plot(np.abs(Sk_final_3_proj[:,j]),label="Projected fingerprint")
+# plt.legend()
+#
+# Sk_final_3_proj_for_nav_image=Sk_final_3_proj.reshape(ntimesteps,npoint,len(groups))
+# Sk_final_3_proj_for_nav_image=np.moveaxis(Sk_final_3_proj_for_nav_image,2,0).astype("complex64")
+#
+# Sk_final_3_for_nav_image=Sk_final_3.reshape(ntimesteps,npoint,len(groups))
+# Sk_final_3_for_nav_image=np.moveaxis(Sk_final_3_for_nav_image,2,0).astype("complex64")
+#
+# Sk_for_nav_image = np.moveaxis(Sk,1,0)
+# Sk_for_nav_image = np.moveaxis(Sk_for_nav_image,2,1)
+#
+#
+#
+#
+# nav_traj_completed_proj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=len(groups),
+#                        applied_timesteps=list(range(len(groups))))
+#
+# images_nav_mean_original = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+#
+# gr=2
+# plt.figure()
+# plt.imshow(np.abs(images_nav_mean_original[gr,:,:]),cmap="gray")
+# plt.title("Original 0-filled Image Respiratory Bin {}".format(gr))
+#
+# images_nav_mean_completed = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_3_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+#
+# plt.figure()
+# plt.imshow(np.abs(images_nav_mean_completed[0,:,:]),cmap="gray")
+# plt.title("Completed Image Respiratory Bin {}".format(gr))
+#
+# images_nav_mean_proj = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_3_proj_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+# plt.figure()
+# plt.imshow(np.abs(images_nav_mean_proj[1,:,:]),cmap="gray")
+# plt.title("Projected Image Respiratory Bin {}".format(gr))
+#
+# images_nav_mean_timesteps = np.abs(simulate_nav_images_multi(np.expand_dims(data_mt_training_on_timesteps,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+# sl=0
+# plt.figure()
+# plt.imshow(np.abs(images_nav_mean_timesteps[sl,:,:]),cmap="gray")
+# plt.title("Original Nav Image Slice {}".format(sl))
 
-plt.figure()
-plt.plot(np.abs(Sk_final[-1,-1,:]))
-plt.plot(np.abs(Sk_final[-1,-1,:])*Sk_mask[-1,-1,:],linestyle="dotted")
 
-# D=Sk_final.reshape(npoint,-1)
+
+
+
+
+#
+# Sk_final_proj = Sk_final_3_proj.reshape(Sk_final.shape[2], Sk_final.shape[0], Sk_final.shape[1])
+# Sk_final_proj = np.moveaxis(Sk_final_proj, 0, 2)
+#
+# D=Sk_final_proj.reshape(npoint,-1)
 # u, s, vh = np.linalg.svd(D, full_matrices=False)
-
-
-
+#
+#
+# L0 = 8
+#
+# phi = (vh)[:L0,:]
+# phi=vh[:L0,:]
+#
+#
+# i_sig = np.random.choice(D_non_proj.shape[0])
+#
+# proj_sig_i = phi.T@phi.conj()@D_non_proj[i_sig]
+# #proj_sig_i_non_proj = phi_non_proj.T@phi_non_proj.conj()@D_non_proj[i_sig]
+#
+#
 # plt.figure()
-# plt.plot(vh.reshape(-1,len(groups),ntimesteps)[0,:,-1])
+# plt.plot(np.abs(proj_sig_i),label="Projected navigator signal - basis constrained by Fingerprints simulation")
+# #plt.plot(np.abs(proj_sig_i_non_proj),label="Projected navigator signal - basis not constrained by Fingerprints simulation")
+# plt.plot(np.abs(D_non_proj[i_sig]),label="Original signal",linestyle="dotted")
+# plt.legend()
+#
+#
+# Sk_final_non_proj_HOSVD = phi_non_proj.T@phi_non_proj.conj()@D_non_proj.T
+# Sk_final_non_proj_HOSVD =Sk_final_non_proj_HOSVD.reshape(Sk_final.shape[1],Sk_final.shape[-1],Sk_final.shape[0]).astype("complex64")
+# #Sk_final_non_proj_HOSVD =np.moveaxis(Sk_final_non_proj_HOSVD,2,0).astype("complex64")
+#
+# gr=2
+# images_nav_mean_nonproj_HOSVD = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_non_proj_HOSVD,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
 # plt.figure()
-# plt.plot(vh.reshape(-1,len(groups),ntimesteps)[0,1,:])
-
-
-
-i_sig=np.random.choice(signal.shape[0])
-proj_sig_i = phi_dico.T@phi_dico.conj()@signal[i_sig]
-
-plt.figure()
-plt.plot(np.abs(proj_sig_i),label="Projected signal")
-plt.plot(np.abs(signal[i_sig]),label="Original signal {}".format(i_sig),linestyle="dotted")
-plt.legend()
-
-
-Sk_final_3 = np.moveaxis(Sk_final,2,0).reshape(Sk_final.shape[2],-1)
-Sk_final_3_proj = phi_dico.T@phi_dico.conj()@Sk_final_3
-Sk_mask_reshaped = np.moveaxis(Sk_mask,2,0).reshape(Sk_mask.shape[2],-1)
-
-
-kdata=data_for_nav
-nb_channels = kdata.shape[0]
-npoint = kdata.shape[-1]
-nb_slices = kdata.shape[1]
-nb_gating_spokes = kdata.shape[2]
-
-j = np.random.choice(Sk_final_3_proj.shape[-1])
-j=1917
-plt.figure()
-plt.plot(np.abs(Sk_final_3[:,j]*Sk_mask_reshaped[:,j]),label="Original fingerprint {}".format(""),linestyle="dotted")
-plt.plot(np.abs(Sk_final_3[:,j]),label="Completed fingerprint {}".format(""))
-plt.plot(np.abs(Sk_final_3_proj[:,j]),label="Projected fingerprint")
-plt.legend()
-
-Sk_final_3_proj_for_nav_image=Sk_final_3_proj.reshape(ntimesteps,npoint,len(groups))
-Sk_final_3_proj_for_nav_image=np.moveaxis(Sk_final_3_proj_for_nav_image,2,0).astype("complex64")
-
-Sk_final_3_for_nav_image=Sk_final_3.reshape(ntimesteps,npoint,len(groups))
-Sk_final_3_for_nav_image=np.moveaxis(Sk_final_3_for_nav_image,2,0).astype("complex64")
-
-Sk_for_nav_image = np.moveaxis(Sk,1,0)
-Sk_for_nav_image = np.moveaxis(Sk_for_nav_image,2,1)
-
-
-
-
-nav_traj_completed_proj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=len(groups),
-                       applied_timesteps=list(range(len(groups))))
-
-images_nav_mean_original = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
-
-gr=2
-plt.figure()
-plt.imshow(np.abs(images_nav_mean_original[gr,:,:]),cmap="gray")
-plt.title("Original 0-filled Image Respiratory Bin {}".format(gr))
-
-images_nav_mean_completed = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_3_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
-
-plt.figure()
-plt.imshow(np.abs(images_nav_mean_completed[0,:,:]),cmap="gray")
-plt.title("Completed Image Respiratory Bin {}".format(gr))
-
-images_nav_mean_proj = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_3_proj_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
-plt.figure()
-plt.imshow(np.abs(images_nav_mean_proj[1,:,:]),cmap="gray")
-plt.title("Projected Image Respiratory Bin {}".format(gr))
-
-images_nav_mean_timesteps = np.abs(simulate_nav_images_multi(np.expand_dims(data_mt_training_on_timesteps,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
-sl=0
-plt.figure()
-plt.imshow(np.abs(images_nav_mean_timesteps[sl,:,:]),cmap="gray")
-plt.title("Original Nav Image Slice {}".format(sl))
-
-
-
-
-
-
-
-Sk_final_proj = Sk_final_3_proj.reshape(Sk_final.shape[2], Sk_final.shape[0], Sk_final.shape[1])
-Sk_final_proj = np.moveaxis(Sk_final_proj, 0, 2)
-
-D=Sk_final_proj.reshape(npoint,-1)
-u, s, vh = np.linalg.svd(D, full_matrices=False)
-
-
-L0 = 8
-
-phi = (vh)[:L0,:]
-phi=vh[:L0,:]
-
-
-i_sig = np.random.choice(D_non_proj.shape[0])
-
-proj_sig_i = phi.T@phi.conj()@D_non_proj[i_sig]
-proj_sig_i_non_proj = phi_non_proj.T@phi_non_proj.conj()@D_non_proj[i_sig]
-
-
-plt.figure()
-plt.plot(np.abs(proj_sig_i),label="Projected navigator signal - basis constrained by Fingerprints simulation")
-plt.plot(np.abs(proj_sig_i_non_proj),label="Projected navigator signal - basis not constrained by Fingerprints simulation")
-plt.plot(np.abs(D_non_proj[i_sig]),label="Original signal",linestyle="dotted")
-plt.legend()
-
-
-Sk_final_non_proj_HOSVD = phi_non_proj.T@phi_non_proj.conj()@D_non_proj.T
-Sk_final_non_proj_HOSVD =Sk_final_non_proj_HOSVD.reshape(Sk_final.shape[1],Sk_final.shape[-1],Sk_final.shape[0]).astype("complex64")
-#Sk_final_non_proj_HOSVD =np.moveaxis(Sk_final_non_proj_HOSVD,2,0).astype("complex64")
-
-gr=2
-images_nav_mean_nonproj_HOSVD = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_non_proj_HOSVD,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
-plt.figure()
-plt.imshow(np.abs(images_nav_mean_nonproj_HOSVD[gr,:,:]),cmap="gray")
-plt.title("Projected Image Respiratory Bin {}".format(gr))
+# plt.imshow(np.abs(images_nav_mean_nonproj_HOSVD[gr,:,:]),cmap="gray")
+# plt.title("Projected Image Respiratory Bin {}".format(gr))
 
 
 # plt.figure()
@@ -670,8 +670,8 @@ plt.title("Projected Image Respiratory Bin {}".format(gr))
 
 D_non_proj=Sk_final.reshape(npoint,-1)
 u_non_proj, s_non_proj, vh_non_proj = np.linalg.svd(D_non_proj, full_matrices=False)
-L0 = 8
-phi_non_proj = (vh_non_proj)[:L0,:]
+L0 = 32
+#phi_non_proj = (vh_non_proj)[:L0,:]
 phi_non_proj=vh_non_proj[:L0,:]
 phi=phi_non_proj
 
@@ -690,7 +690,7 @@ if m0.dtype == "complex64":
 traj=traj.reshape(-1,3)
 
 data_mask = np.zeros((nb_channels, 8, nb_slices, len(groups), ntimesteps))
-dico_data_retained = {}
+
 
 for j, g in tqdm(enumerate(groups)):
     retained_nav_spokes_index = np.argwhere(g).flatten()
@@ -706,15 +706,10 @@ for j, g in tqdm(enumerate(groups)):
     for i in range(nb_channels):
         data_mask[i, :, :, j, :] = included_spokes_for_mask
 
-    print("Filtering KData for movement...")
-    data_retained_final_list = []
-    for i in (range(nb_channels)):
-        data_retained_final, traj_retained_final, retained_timesteps = correct_mvt_kdata(
-            data[i].reshape(nb_segments, -1), radial_traj, included_spokes, ntimesteps, density_adj=False, log=False)
-        data_retained_final_list.append(data_retained_final)
 
-    dico_data_retained[j] = (data_retained_final_list, traj_retained_final, retained_timesteps)
-
+eps=1e-6
+useGPU = True
+b1=1
 
 def J(m):
     global L0
@@ -724,8 +719,37 @@ def J(m):
     global data
     global nb_slices
     global nb_channels
+    global useGPU
+    global eps
     print(m.dtype)
-    FU = finufft.nufft3d2(traj[:, 2],traj[:, 0], traj[:, 1], m)
+
+    if not(useGPU):
+        FU = finufft.nufft3d2(traj[:, 2],traj[:, 0], traj[:, 1], m)
+    else:
+        dtype = np.float32  # Datatype (real)
+        complex_dtype = np.complex64
+        N1, N2, N3 = m.shape[1], m.shape[2], m.shape[3]
+        M = traj.shape[0]
+        c_gpu = GPUArray((M), dtype=complex_dtype)
+        kdata = []
+        for i in list(range(m.shape[0])):
+            fk = m[i, :, :,:]
+            kx = traj[:, 0]
+            ky = traj[:, 1]
+            kz = traj[:, 2]
+
+            kx = kx.astype(dtype)
+            ky = ky.astype(dtype)
+            kz = kz.astype(dtype)
+            fk = fk.astype(complex_dtype)
+
+            plan = cufinufft(2, (N1, N2, N3), 1, eps=eps, dtype=dtype)
+            plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+            plan.execute(c_gpu, to_gpu(fk))
+            c = np.squeeze(c_gpu.get())
+            kdata.append(c)
+            plan.__del__()
+        FU = np.array(kdata)
 
     FU=FU.reshape(L0,ntimesteps,-1)
     FU=np.moveaxis(FU,0,-1)
@@ -751,7 +775,6 @@ def J(m):
     return np.linalg.norm(kdata_error)**2
 
 
-
 def grad_J(m):
     global L0
     global phi
@@ -770,10 +793,40 @@ def grad_J(m):
     global mode
     global incoherent
     global image_size
+    global useGPU
+    global eps
+    global b1
 
 
+    if not(useGPU):
+        FU = finufft.nufft3d2(traj[:, 2], traj[:, 0], traj[:, 1], m)
+    else:
+        dtype = np.float32  # Datatype (real)
+        complex_dtype = np.complex64
+        N1, N2, N3 = m.shape[1], m.shape[2], m.shape[3]
+        M = traj.shape[0]
+        c_gpu = GPUArray((M), dtype=complex_dtype)
+        kdata = []
+        for i in list(range(m.shape[0])):
+            fk = m[i, :, :, :]
+            kx = traj[:, 0]
+            ky = traj[:, 1]
+            kz = traj[:, 2]
 
-    FU = finufft.nufft3d2(traj[:, 2], traj[:, 0], traj[:, 1], m)
+            kx = kx.astype(dtype)
+            ky = ky.astype(dtype)
+            kz = kz.astype(dtype)
+            fk = fk.astype(complex_dtype)
+
+            plan = cufinufft(2, (N1, N2, N3), 1, eps=eps, dtype=dtype)
+            plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+            plan.execute(c_gpu, to_gpu(fk))
+            c = np.squeeze(c_gpu.get())
+            kdata.append(c)
+            plan.__del__()
+        FU = np.array(kdata)
+
+
 
     FU = FU.reshape(L0, ntimesteps, -1)
     FU = np.moveaxis(FU, 0, -1)
@@ -824,225 +877,394 @@ def grad_J(m):
 
     kdata_error_phiH *= 1 / (2 * npoint) * dz * dtheta
 
-    kdata_error_phiH = kdata_error_phiH.reshape(L0 * nb_channels, -1)
 
-    dm = finufft.nufft3d1(traj[:, 2], traj[:, 0], traj[:, 1], kdata_error_phiH, image_size)
+
+    if not(useGPU):
+        kdata_error_phiH = kdata_error_phiH.reshape(L0 * nb_channels, -1)
+        dm = finufft.nufft3d1(traj[:, 2], traj[:, 0], traj[:, 1], kdata_error_phiH, image_size)
+    else:
+        dm = np.zeros(m.shape,dtype=m.dtype)
+        kdata_error_phiH = kdata_error_phiH.reshape(L0,nb_channels, -1)
+        N1, N2, N3 = image_size[0], image_size[1], image_size[2]
+        dtype = np.float32  # Datatype (real)
+        complex_dtype = np.complex64
+
+        for i in tqdm(list(range(L0))):
+            fk_gpu = GPUArray((nb_channels, N1, N2, N3), dtype=complex_dtype)
+            c_retrieved = kdata_error_phiH[i, :,:]
+            kx = traj[:, 0]
+            ky = traj[:, 1]
+            kz = traj[:, 2]
+
+            # Cast to desired datatype.
+            kx = kx.astype(dtype)
+            ky = ky.astype(dtype)
+            kz = kz.astype(dtype)
+            c_retrieved = c_retrieved.astype(complex_dtype)
+
+            # Allocate memory for the uniform grid on the GPU.
+            c_retrieved_gpu = to_gpu(c_retrieved)
+
+            # Initialize the plan and set the points.
+            plan = cufinufft(1, (N1, N2, N3), nb_channels, eps=eps, dtype=dtype)
+            plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+
+            # Execute the plan, reading from the strengths array c and storing the
+            # result in fk_gpu.
+            plan.execute(c_retrieved_gpu, fk_gpu)
+
+            fk = np.squeeze(fk_gpu.get())
+
+            fk_gpu.gpudata.free()
+            c_retrieved_gpu.gpudata.free()
+
+            if b1 is None:
+                dm[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+            elif b1==1:
+                dm[i] = fk
+            else:
+                dm[i] = np.sum(b1.conj() * fk, axis=0)
+
+            plan.__del__()
+
+        if (b1 is not None)and(not(b1==1)):
+            dm /= np.expand_dims(np.sum(np.abs(b1) ** 2, axis=0), axis=0)
+
     #dm = dm/np.linalg.norm(dm)
 
     return 2*dm
 
-
-grad_Jm= grad_J(m0)
+import time
+start_time = time.time()
+useGPU=True
 J_m= J(m0)
+print("GPU --- %s seconds ---" % (time.time() - start_time))
+
+start_time = time.time()
+useGPU=False
+J_m= J(m0)
+print("No GPU --- %s seconds ---" % (time.time() - start_time))
+
+start_time = time.time()
+useGPU=True
+grad_Jm= grad_J(m0)
+print("Grad GPU --- %s seconds ---" % (time.time() - start_time))
+
+start_time = time.time()
+useGPU=False
+grad_Jm= grad_J(m0)
+print("Grad No GPU --- %s seconds ---" % (time.time() - start_time))
 
 
 
-
-
-from scipy.optimize import minimize,basinhopping,dual_annealing
-
-def f(x):
-    global m0
-    x=x.reshape((2,)+m0.shape)
-    return J((x[0]+1j*x[1]).astype("complex64"))
-
+#
+# J_list=[]
+# num=10
+# max_t = 1000
+# for t in tqdm(np.arange(0,max_t,max_t/num)):
+#     J_list.append(J(m0-t*grad_Jm))
+#
+# plt.plot(J_list)
+#
+#
+#
+#
+#
+#
+# from scipy.optimize import minimize,basinhopping,dual_annealing
+#
+# def f(x):
+#     global m0
+#     x=x.reshape((2,)+m0.shape)
+#     return J((x[0]+1j*x[1]).astype("complex64"))
+#
+# def  Jf(x):
+#     global m0
+#     x = x.reshape((2,) + m0.shape)
+#     grad = grad_J((x[0] + 1j * x[1]).astype("complex64"))
+#     grad=np.expand_dims(grad.flatten(),axis=0)
+#     grad = np.concatenate([grad.real, grad.imag], axis=0)
+#     grad = grad.flatten()
+#     return grad
+#
+#
 # x0=np.expand_dims(m0.flatten(),axis=0)
 # x0 = np.concatenate([x0.real,x0.imag],axis=0)
 # x0=x0.flatten()
+# #
+# #
+# x_opt=minimize(f,x0,method='CG',jac=Jf)
+# np.save("x_opt_CG_32.npy",x_opt)
+
+
+
+
+#
+# eps=0.001
+# ind=(0,0,0,0)
+# h = np.zeros(m0.shape,dtype=m0.dtype)
+# h[ind[0],ind[1],ind[2],ind[3]]=eps
+#
+# diff_Jm = J(m0+h)-J_m
+# diff_Jm_approx = grad_Jm[ind[0],ind[1],ind[2],ind[3]]*eps
+#
+
+
+
+# m_opt=graddesc(J,grad_J,m0,alpha=0.1,log=True,tolgrad=1e-10)
 #
 #
-# x_opt=minimize(f,x0,method='Newton-CG',jac="2-point")
-
-
-eps=0.001
-ind=(0,0,0,0)
-h = np.zeros(m0.shape,dtype=m0.dtype)
-h[ind[0],ind[1],ind[2],ind[3]]=eps
-
-diff_Jm = J(m0+h)-J_m
-diff_Jm_approx = grad_Jm[ind[0],ind[1],ind[2],ind[3]]*eps
+# m_opt=graddesc_linsearch(J,grad_J,m0,alpha=0.1,beta=0.6,log=True,tolgrad=1e-10,t0=300)
 
 
 
-
-
-
-
-J_list=[]
-for t in np.arange(-10,10):
-    J_list.append(J(m+grad_J(m+t*grad_Jm)))
-
-plt.plot(J_list)
-
-
-
-
-m_opt=conjgrad(J,grad_J,m0,alpha=0.1,beta=0.3,log=True,tolgrad=1e-10)
-
+import time
+start_time = time.time()
 filename_m_opt=str.split(filename,".dat") [0]+"_m_opt_L0{}.npy".format(L0)
+filename_m_opt_figure=str.split(filename,".dat") [0]+"_m_opt_L0{}.jpg".format(L0)
+#m_opt=conjgrad(J,grad_J,m0,alpha=0.1,beta=0.3,log=True,tolgrad=1e-10,t0=100,maxiter=1000,plot=True,filename_save=filename_m_opt)
 
+
+log=True
+plot=True
+filename_save = filename_m_opt
+t0=100
+beta=0.3
+alpha=0.1
+tolgrad=1e-10
+maxiter=1000
+
+k=0
+m=m0
+if log:
+    now = datetime.now()
+    date_time = now.strftime("%Y%m%d_%H%M%S")
+    norm_g_list=[]
+
+g=grad_J(m)
+d_m=-g
+#store = [m]
+
+if plot:
+    plt.ion()
+    fig, axs = plt.subplots(1, 2, figsize=(30, 10))
+    axs[0].set_title("Evolution of cost function")
+while (np.linalg.norm(g)>tolgrad)and(k<maxiter):
+    norm_g = np.linalg.norm(g)
+    if log:
+        print("################ Iter {} ##################".format(k))
+        norm_g_list.append(norm_g)
+    print("Grad norm for iter {}: {}".format(k,norm_g))
+    if k%10==0:
+        print(k)
+        if filename_save is not None:
+            np.save(filename_save,m)
+    t = t0
+    J_m = J(m)
+    print("J for iter {}: {}".format(k,J_m))
+    J_m_next = J(m+t*d_m)
+    slope = np.real(np.dot(g.flatten(),d_m.flatten()))
+    if plot:
+        axs[0].scatter(k,J_m,c="r",marker="+")
+        axs[1].cla()
+        axs[1].set_title("Line search for iteration {}".format(k))
+        t_array = np.arange(0.,t0,t0/100)
+        axs[1].plot(t_array,J_m+t_array*slope)
+        axs[1].scatter(0,J_m,c="b",marker="x")
+        plt.draw()
+
+    while(J_m_next>J_m+alpha*t*slope):
+        print(t)
+        t = beta*t
+        if plot:
+            axs[1].scatter(t,J_m_next,c="b",marker="x")
+        J_m_next=J(m+t*d_m)
+
+
+    if plot:
+        plt.savefig(filename_m_opt_figure)
+
+
+    m = m + t*d_m
+    g_prev = g
+    g = grad_J(m)
+    gamma = np.linalg.norm(g)**2/np.linalg.norm(g_prev)**2
+    d_m = -g + gamma*d_m
+    k=k+1
+    #store.append(m)
+
+if log:
+    norm_g_list=np.array(norm_g_list)
+    np.save('./logs/conjgrad_{}.npy'.format(date_time),norm_g_list)
+
+#
+#
+# #filename_m_opt=str.split(filename,".dat") [0]+"_m_opt_L0{}.npy".format(L0)
 np.save(filename_m_opt,m_opt)
 
 
-filename_phi=str.split(filename,".dat") [0]+"_phi_L0{}.npy".format(L0)
-np.save(filename_phi,phi)
 
-
-sl=int(nb_slices/2)
-l=np.random.choice(L0)
-plt.figure()
-plt.imshow(np.abs(m_opt[l,sl,:,:]))
-plt.title("basis image for l={}".format(l))
-
-gr=2
-phi_gr=phi[:,gr,:]
-sl=int(nb_slices/2)
-volumes_rebuilt_gr=(m_opt[:,sl,:,:].reshape((L0,-1)).T@phi_gr).reshape(image_size[1],image_size[2],ntimesteps)
-volumes_rebuilt_gr=np.moveaxis(volumes_rebuilt_gr,-1,0)
-animate_images(volumes_rebuilt_gr)
-
-
-volumes_all_rebuilt = (m_opt.reshape((L0,-1)).T@phi_gr).reshape(image_size[0],image_size[1],image_size[2],ntimesteps)
-volumes_all_rebuilt=np.moveaxis(volumes_all_rebuilt,-1,0)
-
-filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
-np.save(filename_volume_rebuilt_multitasking,volumes_all_rebuilt)
-
-
-v_error_final= grad_J(m0)
-
-
-
-sl=int(nb_slices/2)
-image_list = list(np.abs(dm[:,sl,:,:]))
-plot_image_grid(image_list,(3,3))
-
-v_error_final=np.moveaxis(v_error_final,0,1)
-
-dm = v_error_final@(phi.reshape(L0,-1).T.conj())
-
-##volumes for slice taking into account coil sensi
-# print("Building Volumes....")
-# if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-#     volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
-#     np.save(filename_volume,volumes_all)
-#     # sl=20
-#     # ani = animate_images(volumes_all[:,sl,:,:])
-#     del volumes_all
+# filename_phi=str.split(filename,".dat") [0]+"_phi_L0{}.npy".format(L0)
+# np.save(filename_phi,phi)
+# print("--- %s seconds ---" % (time.time() - start_time))
 #
-# print("Building Mask....")
-# if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
-#     selected_spokes = np.r_[10:400]
-#     selected_spokes=None
-#     mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/25, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
-#     np.save(filename_mask,mask)
-#     animate_images(mask)
-#     del mask
-
-#animate_images(np.abs(volumes_all[:,int(nb_slices/2),:,:]))
-
-# #Check modulation of nav signal by MRF
-# plt.figure()
-# rep=0
-# signal_MRF = np.abs(volumes_all[:,int(nb_slices/2),int(npoint/4),int(npoint/4)])
-# signal_MRF = signal_MRF/np.max(signal_MRF)
-# signal_nav =image_nav[rep,:,int(npoint/4)]
-# signal_nav = signal_nav/np.max(signal_nav)
-# plt.plot(signal_MRF,label="MRF signal at centre pixel")
-# plt.scatter(x=(nav_timesteps/8).astype(int),y=signal_nav,c="r",label="Nav image at centre pixel for rep {}".format(rep))
-# rep=4
-# plt.scatter(x=(nav_timesteps/8).astype(int),y=signal_nav,c="g",label="Nav image at centre pixel for rep {}".format(rep))
-# plt.legend()
-
-##MASK
-
-
-
-
-
-del kdata_all_channels_all_slices
-del b1_all_slices
-
-
-
-########################## Dict mapping ########################################
-
-with open("mrf_sequence.json") as f:
-    sequence_config = json.load(f)
-
-
-seq = T1MRF(**sequence_config)
-
-
-load_map=False
-save_map=True
-
-
-dictfile = "mrf175_SimReco2_light.dict"
-#dictfile = "mrf175_SimReco2_window_1.dict"
-#dictfile = "mrf175_SimReco2_window_21.dict"
-#dictfile = "mrf175_SimReco2_window_55.dict"
-#dictfile = "mrf175_Dico2_Invivo.dict"
-
-mask = np.load(filename_mask)
-#volumes_all = np.load(filename_volume)
-#volumes_corrected_final=np.load(filename_volume_corrected_final)
-
-gr=2
-L0=8
-filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
-volumes_corrected_final=np.load(filename_volume_rebuilt_multitasking)
-
-#ani = animate_images(volumes_all[:,4,:,:])
-#ani = animate_images(volumes_corrected[:,4,:,:])
 #
+#
+# sl=int(nb_slices/2)
+# l=np.random.choice(L0)
 # plt.figure()
-# plt.plot(volumes_all[:,sl,200,200])
-
-suffix="Multitasking_L0{}_gr{}".format(L0,gr)
-ntimesteps=175
-if not(load_map):
-    niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
-    all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_final,retained_timesteps=None)
-
-    if(save_map):
-        import pickle
-
-        file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format(suffix)
-        #file_map = filename.split(".dat")[0] + "_corrected_dens_adj{}_MRF_map.pkl".format(suffix)
-        #file_map = filename.split(".dat")[0] + "_5iter_MRF_map.pkl".format("")
-        file = open(file_map, "wb")
-        # dump information to that file
-        pickle.dump(all_maps, file)
-        # close the file
-        file.close()
-
-else:
-    import pickle
-    file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
-    file = open(file_map, "rb")
-    all_maps = pickle.load(file)
-
-
-
-curr_file=file_map
-file = open(curr_file, "rb")
-all_maps = pickle.load(file)
-file.close()
-for iter in list(all_maps.keys()):
-
-    map_rebuilt=all_maps[iter][0]
-    mask=all_maps[iter][1]
-
-    keys_simu = list(map_rebuilt.keys())
-    values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
-    map_for_sim = dict(zip(keys_simu, values_simu))
-
-    #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
-    #map_Python.buildParamMap()
-
-
-    for key in ["ff","wT1","df","attB1"]:
-        file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
-        io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+# plt.imshow(np.abs(m_opt[l,sl,:,:]))
+# plt.title("basis image for l={}".format(l))
+#
+# gr=2
+# phi_gr=phi[:,gr,:]
+# sl=int(nb_slices/2)
+# volumes_rebuilt_gr=(m_opt[:,sl,:,:].reshape((L0,-1)).T@phi_gr).reshape(image_size[1],image_size[2],ntimesteps)
+# volumes_rebuilt_gr=np.moveaxis(volumes_rebuilt_gr,-1,0)
+# animate_images(volumes_rebuilt_gr)
+#
+#
+# volumes_all_rebuilt = (m_opt.reshape((L0,-1)).T@phi_gr).reshape(image_size[0],image_size[1],image_size[2],ntimesteps)
+# volumes_all_rebuilt=np.moveaxis(volumes_all_rebuilt,-1,0)
+#
+# filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
+# np.save(filename_volume_rebuilt_multitasking,volumes_all_rebuilt)
+#
+#
+# v_error_final= grad_J(m0)
+#
+#
+#
+# sl=int(nb_slices/2)
+# image_list = list(np.abs(dm[:,sl,:,:]))
+# plot_image_grid(image_list,(3,3))
+#
+# v_error_final=np.moveaxis(v_error_final,0,1)
+#
+# dm = v_error_final@(phi.reshape(L0,-1).T.conj())
+#
+# ##volumes for slice taking into account coil sensi
+# # print("Building Volumes....")
+# # if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
+# #     volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+# #     np.save(filename_volume,volumes_all)
+# #     # sl=20
+# #     # ani = animate_images(volumes_all[:,sl,:,:])
+# #     del volumes_all
+# #
+# # print("Building Mask....")
+# # if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
+# #     selected_spokes = np.r_[10:400]
+# #     selected_spokes=None
+# #     mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/25, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
+# #     np.save(filename_mask,mask)
+# #     animate_images(mask)
+# #     del mask
+#
+# #animate_images(np.abs(volumes_all[:,int(nb_slices/2),:,:]))
+#
+# # #Check modulation of nav signal by MRF
+# # plt.figure()
+# # rep=0
+# # signal_MRF = np.abs(volumes_all[:,int(nb_slices/2),int(npoint/4),int(npoint/4)])
+# # signal_MRF = signal_MRF/np.max(signal_MRF)
+# # signal_nav =image_nav[rep,:,int(npoint/4)]
+# # signal_nav = signal_nav/np.max(signal_nav)
+# # plt.plot(signal_MRF,label="MRF signal at centre pixel")
+# # plt.scatter(x=(nav_timesteps/8).astype(int),y=signal_nav,c="r",label="Nav image at centre pixel for rep {}".format(rep))
+# # rep=4
+# # plt.scatter(x=(nav_timesteps/8).astype(int),y=signal_nav,c="g",label="Nav image at centre pixel for rep {}".format(rep))
+# # plt.legend()
+#
+# ##MASK
+#
+#
+#
+#
+#
+# del kdata_all_channels_all_slices
+# del b1_all_slices
+#
+#
+#
+# ########################## Dict mapping ########################################
+#
+# with open("mrf_sequence.json") as f:
+#     sequence_config = json.load(f)
+#
+#
+# seq = T1MRF(**sequence_config)
+#
+#
+# load_map=False
+# save_map=True
+#
+#
+# dictfile = "mrf175_SimReco2_light.dict"
+# #dictfile = "mrf175_SimReco2_window_1.dict"
+# #dictfile = "mrf175_SimReco2_window_21.dict"
+# #dictfile = "mrf175_SimReco2_window_55.dict"
+# #dictfile = "mrf175_Dico2_Invivo.dict"
+#
+# mask = np.load(filename_mask)
+# #volumes_all = np.load(filename_volume)
+# #volumes_corrected_final=np.load(filename_volume_corrected_final)
+#
+# gr=2
+# L0=8
+# filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
+# volumes_corrected_final=np.load(filename_volume_rebuilt_multitasking)
+#
+# #ani = animate_images(volumes_all[:,4,:,:])
+# #ani = animate_images(volumes_corrected[:,4,:,:])
+# #
+# # plt.figure()
+# # plt.plot(volumes_all[:,sl,200,200])
+#
+# suffix="Multitasking_L0{}_gr{}".format(L0,gr)
+# ntimesteps=175
+# if not(load_map):
+#     niter = 0
+#     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
+#     all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_final,retained_timesteps=None)
+#
+#     if(save_map):
+#         import pickle
+#
+#         file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format(suffix)
+#         #file_map = filename.split(".dat")[0] + "_corrected_dens_adj{}_MRF_map.pkl".format(suffix)
+#         #file_map = filename.split(".dat")[0] + "_5iter_MRF_map.pkl".format("")
+#         file = open(file_map, "wb")
+#         # dump information to that file
+#         pickle.dump(all_maps, file)
+#         # close the file
+#         file.close()
+#
+# else:
+#     import pickle
+#     file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
+#     file = open(file_map, "rb")
+#     all_maps = pickle.load(file)
+#
+#
+#
+# curr_file=file_map
+# file = open(curr_file, "rb")
+# all_maps = pickle.load(file)
+# file.close()
+# for iter in list(all_maps.keys()):
+#
+#     map_rebuilt=all_maps[iter][0]
+#     mask=all_maps[iter][1]
+#
+#     keys_simu = list(map_rebuilt.keys())
+#     values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+#     map_for_sim = dict(zip(keys_simu, values_simu))
+#
+#     #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+#     #map_Python.buildParamMap()
+#
+#
+#     for key in ["ff","wT1","df","attB1"]:
+#         file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
+#         io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})

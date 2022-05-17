@@ -2886,7 +2886,77 @@ def array_to_coef(array):
     return c
 
 
-def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,log=False):
+def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,t0=1,log=False,plot=False,filename_save=None):
+    '''
+    J : function from W (domain of m) to R
+    grad_J : function from W to W - gradient of J
+    m0 : initial value of m
+    '''
+    k=0
+    m=m0
+    if log:
+        now = datetime.now()
+        date_time = now.strftime("%Y%m%d_%H%M%S")
+        norm_g_list=[]
+
+    g=grad_J(m)
+    d_m=-g
+    #store = [m]
+
+    if plot:
+        plt.ion()
+        fig, axs = plt.subplots(1, 2, figsize=(30, 10))
+        axs[0].set_title("Evolution of cost function")
+    while (np.linalg.norm(g)>tolgrad)and(k<maxiter):
+        norm_g = np.linalg.norm(g)
+        if log:
+            print("################ Iter {} ##################".format(k))
+            norm_g_list.append(norm_g)
+        print("Grad norm for iter {}: {}".format(k,norm_g))
+        if k%10==0:
+            print(k)
+            if filename_save is not None:
+                np.save(filename_save,m)
+        t = t0
+        J_m = J(m)
+        print("J for iter {}: {}".format(k,J_m))
+        J_m_next = J(m+t*d_m)
+        slope = np.real(np.dot(g.flatten(),d_m.flatten()))
+        if plot:
+            axs[0].scatter(k,J_m,c="r",marker="+")
+            axs[1].cla()
+            axs[1].set_title("Line search for iteration {}".format(k))
+            t_array = np.arange(0.,t0,t0/100)
+            axs[1].plot(t_array,J_m+t_array*slope)
+            axs[1].scatter(0,J_m,c="b",marker="x")
+            plt.draw()
+
+        while(J_m_next>J_m+alpha*t*slope):
+            print(t)
+            t = beta*t
+            if plot:
+                axs[1].scatter(t,J_m_next,c="b",marker="x")
+            J_m_next=J(m+t*d_m)
+
+
+
+
+        m = m + t*d_m
+        g_prev = g
+        g = grad_J(m)
+        gamma = np.linalg.norm(g)**2/np.linalg.norm(g_prev)**2
+        d_m = -g + gamma*d_m
+        k=k+1
+        #store.append(m)
+
+    if log:
+        norm_g_list=np.array(norm_g_list)
+        np.save('./logs/conjgrad_{}.npy'.format(date_time),norm_g_list)
+
+    return m
+
+
+def graddesc(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,t0=1,log=False):
     '''
     J : function from W (domain of m) to R
     grad_J : function from W to W - gradient of J
@@ -2911,26 +2981,111 @@ def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,log=False)
         print("Grad norm for iter {}: {}".format(k,norm_g))
         if k%10==0:
             print(k)
-        t = 1
+        t = t0
         J_m = J(m)
+        print("J for iter {}: {}".format(k,J_m))
         while(J(m+t*d_m)>J_m+alpha*t*np.real(np.dot(g.flatten(),d_m.flatten()))):
             print(t)
             t = beta*t
 
         m = m + t*d_m
-        g_prev = g
         g = grad_J(m)
-        gamma = np.linalg.norm(g)**2/np.linalg.norm(g_prev)**2
-        d_m = -g + gamma*d_m
+        d_m = -g
         k=k+1
         #store.append(m)
 
     if log:
         norm_g_list=np.array(norm_g_list)
-        np.save('./logs/conjgrad_{}.npy'.format(date_time),norm_g_list)
+        np.save('./logs/graddesc_{}.npy'.format(date_time),norm_g_list)
 
     return m
 
+def graddesc_linsearch(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,t0=1,log=False):
+    '''
+    J : function from W (domain of m) to R
+    grad_J : function from W to W - gradient of J
+    m0 : initial value of m
+    '''
+    k=0
+    m=m0
+    if log:
+        now = datetime.now()
+        date_time = now.strftime("%Y%m%d_%H%M%S")
+        norm_g_list=[]
+
+    g=grad_J(m)
+    d_m=-g
+    #store = [m]
+
+    while (np.linalg.norm(g)>tolgrad)and(k<maxiter):
+        norm_g = np.linalg.norm(g)
+        if log:
+            print("################ Iter {} ##################".format(k))
+            norm_g_list.append(norm_g)
+        print("Grad norm for iter {}: {}".format(k,norm_g))
+        if k%10==0:
+            print(k)
+
+        J_m = J(m)
+        t = t0
+        print("J for iter {}: {}".format(k,J_m))
+        while(J(m+t*d_m)>J_m+alpha*t*np.real(np.dot(g.flatten(),d_m.flatten()))):
+            print(t)
+            t = beta*t
+
+        m = m + t*d_m
+        g = grad_J(m)
+        d_m = -g
+        k=k+1
+        #store.append(m)
+
+    if log:
+        norm_g_list=np.array(norm_g_list)
+        np.save('./logs/graddesc_linsearch_{}.npy'.format(date_time),norm_g_list)
+
+    return m
+
+
+def graddesc(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.1,log=False):
+    '''
+    J : function from W (domain of m) to R
+    grad_J : function from W to W - gradient of J
+    m0 : initial value of m
+    '''
+    k=0
+    m=m0
+    if log:
+        now = datetime.now()
+        date_time = now.strftime("%Y%m%d_%H%M%S")
+        norm_g_list=[]
+
+    g=grad_J(m)
+    d_m=-g
+    #store = [m]
+
+    while (np.linalg.norm(g)>tolgrad)and(k<maxiter):
+        norm_g = np.linalg.norm(g)
+        if log:
+            print("################ Iter {} ##################".format(k))
+            norm_g_list.append(norm_g)
+        print("Grad norm for iter {}: {}".format(k,norm_g))
+        if k%10==0:
+            print(k)
+
+        J_m = J(m)
+        print("J for iter {}: {}".format(k,J_m))
+
+        m = m + alpha*d_m/norm_g*np.linalg.norm(J_m)
+        g = grad_J(m)
+        d_m = -g
+        k=k+1
+        #store.append(m)
+
+    if log:
+        norm_g_list=np.array(norm_g_list)
+        np.save('./logs/graddesc_{}.npy'.format(date_time),norm_g_list)
+
+    return m
 
 def simulate_image_series_from_maps(map_rebuilt,mask_rebuilt,window=8):
     keys_simu = list(map_rebuilt.keys())
