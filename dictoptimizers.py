@@ -14,7 +14,13 @@ try:
     #from pycuda.autoinit import _finish_up
     import cupy as cp
 except:
-    print("I was here")
+    print("Could not import cupy")
+    pass
+
+try :
+    from SPIJN import *
+except:
+    print("Could not import SPIJN")
     pass
 
 from sklearn.preprocessing import MinMaxScaler,StandardScaler
@@ -1915,3 +1921,69 @@ class ToyNN(Optimizer):
 
 
 
+
+#
+# class SPIJNSearch(Optimizer):
+#
+#     def __init__(self,num_comp=2,max_iter=10,ff_list=np.arange(0.,1.05,0.05),pca=True,threshold_pca=15,**kwargs):
+#         #transf is a function that takes as input timesteps arrays and outputs shifts as output
+#         super().__init__(**kwargs)
+#
+#         self.paramDict["num_comp"]=num_comp
+#         self.paramDict["max_iter"] = max_iter
+#         self.paramDict["ff_list"] = ff_list
+#         self.paramDict["pca"] = pca
+#         self.paramDict["threshold_pca"] = threshold_pca
+#
+# 
+#
+#     def search_patterns(self,dictfile,volumes):
+#
+#         num_comp=self.paramDict["num_comp"]
+#         max_iter=self.paramDict["max_iter"]
+#         ff_list=self.paramDict["ff_list"]
+#         pca=self.paramDict["pca"]
+#         threshold_pca=self.paramDict["threshold_pca"]
+#
+#         keys,values=read_mrf_dict(dictfile,ff_list)
+#
+#         mask=self.mask
+#         all_signals = volumes[:, mask > 0]
+#         #values=values.T
+#
+#
+#         if pca:
+#             pca_values = PCAComplex(n_components_=threshold_pca)
+#
+#             pca_values.fit(values)
+#
+#             print(
+#                 "Components Retained {} out of {} timesteps".format(pca_signal.n_components_, values.shape[1]))
+#
+#             transformed_values= pca_values.transform(values)
+#
+#             transformed_all_signals = np.transpose(
+#                 pca_values.transform(np.transpose(all_signals)))
+#
+#
+#         else:
+#             pca_values=None
+#             transformed_values=values
+#             transformed_all_signals=all_signals
+#
+#
+#         transformed_values=values.T
+#
+#         print(transformed_values.T)
+#
+#         map_rebuilt = {
+#             "wT1": params_all[:, 0],
+#             "fT1": params_all[:, 1],
+#             "attB1": params_all[:, 2],
+#             "df": params_all[:, 3],
+#             "ff": params_all[:, 4]
+#
+#         }
+#
+#         return {0:(map_rebuilt,mask)}
+#
