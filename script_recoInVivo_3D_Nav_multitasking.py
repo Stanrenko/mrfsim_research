@@ -868,14 +868,14 @@ def grad_J(m):
     # kdata_error_reshaped=kdata_error_reshaped.reshape(-1,ngroups*ntimesteps)
 
     kdata_error_phiH = np.moveaxis(kdata_error_phiH, -1, 0)
-    density = np.abs(np.linspace(-1, 1, npoint))
-    density = np.expand_dims(density, tuple(range(kdata_error_phiH.ndim - 1)))
-    kdata_error_phiH *= density
+    #density = np.abs(np.linspace(-1, 1, npoint))
+    #density = np.expand_dims(density, tuple(range(kdata_error_phiH.ndim - 1)))
+    #kdata_error_phiH *= density
 
-    dtheta = np.pi / (8*ntimesteps)
-    dz = 1 / nb_slices
+    #dtheta = np.pi / (8*ntimesteps)
+    #dz = 1 / nb_slices
 
-    kdata_error_phiH *= 1 / (2 * npoint) * dz * dtheta
+    #kdata_error_phiH *= 1 / (2 * npoint) * dz * dtheta
 
 
 
@@ -1104,31 +1104,39 @@ np.save(filename_m_opt,m_opt)
 
 
 
-# filename_phi=str.split(filename,".dat") [0]+"_phi_L0{}.npy".format(L0)
-# np.save(filename_phi,phi)
+#filename_phi=str.split(filename,".dat") [0]+"_phi_L0{}.npy".format(L0)
+#np.save(filename_phi,phi)
 # print("--- %s seconds ---" % (time.time() - start_time))
 #
 #
 #
-# sl=int(nb_slices/2)
-# l=np.random.choice(L0)
-# plt.figure()
-# plt.imshow(np.abs(m_opt[l,sl,:,:]))
-# plt.title("basis image for l={}".format(l))
+
+L0 = 32
+filename_phi=str.split(filename,".dat") [0]+"_phi_L0{}.npy".format(L0)
+filename_m_opt=str.split(filename,".dat") [0]+"_m_opt_L0{}.npy".format(L0)
+
+m_opt = np.load(filename_m_opt)
+phi = np.load(filename_phi)
+
+sl=int(nb_slices/2)
+l=np.random.choice(L0)
+plt.figure()
+plt.imshow(np.abs(m_opt[l,sl,:,:]))
+plt.title("basis image for l={}".format(l))
+
+gr=3
+phi_gr=phi[:,gr,:]
+sl=int(nb_slices/2)
+volumes_rebuilt_gr=(m_opt[:,sl,:,:].reshape((L0,-1)).T@phi_gr).reshape(image_size[1],image_size[2],ntimesteps)
+volumes_rebuilt_gr=np.moveaxis(volumes_rebuilt_gr,-1,0)
+animate_images(volumes_rebuilt_gr)
 #
-# gr=2
-# phi_gr=phi[:,gr,:]
-# sl=int(nb_slices/2)
-# volumes_rebuilt_gr=(m_opt[:,sl,:,:].reshape((L0,-1)).T@phi_gr).reshape(image_size[1],image_size[2],ntimesteps)
-# volumes_rebuilt_gr=np.moveaxis(volumes_rebuilt_gr,-1,0)
-# animate_images(volumes_rebuilt_gr)
 #
+volumes_all_rebuilt = (m_opt.reshape((L0,-1)).T@phi_gr).reshape(image_size[0],image_size[1],image_size[2],ntimesteps)
+volumes_all_rebuilt=np.moveaxis(volumes_all_rebuilt,-1,0)
 #
-# volumes_all_rebuilt = (m_opt.reshape((L0,-1)).T@phi_gr).reshape(image_size[0],image_size[1],image_size[2],ntimesteps)
-# volumes_all_rebuilt=np.moveaxis(volumes_all_rebuilt,-1,0)
-#
-# filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
-# np.save(filename_volume_rebuilt_multitasking,volumes_all_rebuilt)
+filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
+np.save(filename_volume_rebuilt_multitasking,volumes_all_rebuilt)
 #
 #
 # v_error_final= grad_J(m0)
@@ -1187,84 +1195,85 @@ np.save(filename_m_opt,m_opt)
 #
 #
 #
-# ########################## Dict mapping ########################################
+########################## Dict mapping ########################################
+
+with open("mrf_sequence.json") as f:
+    sequence_config = json.load(f)
+
+
+seq = T1MRF(**sequence_config)
+
+
+load_map=False
+save_map=True
+
+
+dictfile = "mrf175_SimReco2_light.dict"
+#dictfile = "mrf175_SimReco2_window_1.dict"
+#dictfile = "mrf175_SimReco2_window_21.dict"
+#dictfile = "mrf175_SimReco2_window_55.dict"
+#dictfile = "mrf175_Dico2_Invivo.dict"
+
+mask = np.load(filename_mask)
+#volumes_all = np.load(filename_volume)
+#volumes_corrected_final=np.load(filename_volume_corrected_final)
+
+gr=3
+L0=32
+filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
+volumes_corrected_final=np.load(filename_volume_rebuilt_multitasking)
+
+volumes_corrected_final=volumes_all_rebuilt
+#ani = animate_images(volumes_all[:,4,:,:])
+#ani = animate_images(volumes_corrected[:,4,:,:])
 #
-# with open("mrf_sequence.json") as f:
-#     sequence_config = json.load(f)
-#
-#
-# seq = T1MRF(**sequence_config)
-#
-#
-# load_map=False
-# save_map=True
-#
-#
-# dictfile = "mrf175_SimReco2_light.dict"
-# #dictfile = "mrf175_SimReco2_window_1.dict"
-# #dictfile = "mrf175_SimReco2_window_21.dict"
-# #dictfile = "mrf175_SimReco2_window_55.dict"
-# #dictfile = "mrf175_Dico2_Invivo.dict"
-#
-# mask = np.load(filename_mask)
-# #volumes_all = np.load(filename_volume)
-# #volumes_corrected_final=np.load(filename_volume_corrected_final)
-#
-# gr=2
-# L0=8
-# filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
-# volumes_corrected_final=np.load(filename_volume_rebuilt_multitasking)
-#
-# #ani = animate_images(volumes_all[:,4,:,:])
-# #ani = animate_images(volumes_corrected[:,4,:,:])
-# #
-# # plt.figure()
-# # plt.plot(volumes_all[:,sl,200,200])
-#
-# suffix="Multitasking_L0{}_gr{}".format(L0,gr)
-# ntimesteps=175
-# if not(load_map):
-#     niter = 0
-#     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
-#     all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_final,retained_timesteps=None)
-#
-#     if(save_map):
-#         import pickle
-#
-#         file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format(suffix)
-#         #file_map = filename.split(".dat")[0] + "_corrected_dens_adj{}_MRF_map.pkl".format(suffix)
-#         #file_map = filename.split(".dat")[0] + "_5iter_MRF_map.pkl".format("")
-#         file = open(file_map, "wb")
-#         # dump information to that file
-#         pickle.dump(all_maps, file)
-#         # close the file
-#         file.close()
-#
-# else:
-#     import pickle
-#     file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
-#     file = open(file_map, "rb")
-#     all_maps = pickle.load(file)
-#
-#
-#
-# curr_file=file_map
-# file = open(curr_file, "rb")
-# all_maps = pickle.load(file)
-# file.close()
-# for iter in list(all_maps.keys()):
-#
-#     map_rebuilt=all_maps[iter][0]
-#     mask=all_maps[iter][1]
-#
-#     keys_simu = list(map_rebuilt.keys())
-#     values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
-#     map_for_sim = dict(zip(keys_simu, values_simu))
-#
-#     #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
-#     #map_Python.buildParamMap()
+# plt.figure()
+# plt.plot(volumes_all[:,sl,200,200])
+
+suffix="Multitasking_L0{}_gr{}".format(L0,gr)
+ntimesteps=175
+if not(load_map):
+    niter = 0
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
+    all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_final,retained_timesteps=None)
+
+    if(save_map):
+        import pickle
+
+        file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format(suffix)
+        #file_map = filename.split(".dat")[0] + "_corrected_dens_adj{}_MRF_map.pkl".format(suffix)
+        #file_map = filename.split(".dat")[0] + "_5iter_MRF_map.pkl".format("")
+        file = open(file_map, "wb")
+        # dump information to that file
+        pickle.dump(all_maps, file)
+        # close the file
+        file.close()
+
+else:
+    import pickle
+    file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
+    file = open(file_map, "rb")
+    all_maps = pickle.load(file)
 #
 #
-#     for key in ["ff","wT1","df","attB1"]:
-#         file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
-#         io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+#
+curr_file=file_map
+file = open(curr_file, "rb")
+all_maps = pickle.load(file)
+file.close()
+for iter in list(all_maps.keys()):
+
+    map_rebuilt=all_maps[iter][0]
+    mask=all_maps[iter][1]
+
+    keys_simu = list(map_rebuilt.keys())
+    values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+    map_for_sim = dict(zip(keys_simu, values_simu))
+
+    #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+    #map_Python.buildParamMap()
+
+
+    for key in ["ff","wT1","df","attB1"]:
+        file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
+        io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
