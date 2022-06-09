@@ -451,7 +451,7 @@ class ImageSeries(object):
                         df = pd.DataFrame(index=range(self.paramDict["nb_rep"]), columns=["Timesteps", "Images"])
                         df["Timesteps"] = self.t[:, i].reshape(-1, 1)
                         images_for_df = list(
-                            np.tile(current_image, (nb_rep,1,1,1)))
+                            np.tile(current_image,(nb_rep,1,1,1)))
                         df["Images"] = images_for_df
 
                         for movements in self.list_movements:
@@ -596,7 +596,7 @@ class ImageSeries(object):
                             for image in df.Images:
                                 fk = image
                                 fk = fk.astype(complex_dtype)
-                                c_gpu = GPUArray((kx.shape[0]), dtype=complex_dtype)
+                                c_gpu = GPUArray((trajectory.paramDict["npoint"]), dtype=complex_dtype)
                                 # fk_gpu = GPUArray(fk.shape, dtype=complex_dtype)
                                 # fk_gpu.fill(fk)
                                 fk_gpu = to_gpu(fk)

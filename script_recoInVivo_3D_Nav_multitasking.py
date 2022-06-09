@@ -721,6 +721,9 @@ def J(m):
     global nb_channels
     global useGPU
     global eps
+    global dx
+    global dy
+    global dz
     print(m.dtype)
 
     if not(useGPU):
@@ -772,8 +775,12 @@ def J(m):
                         kdata_model_retained[:,ts,sp,sl,:]=kdata_model[:,ts,sp,sl,:,g]
 
     kdata_error = kdata_model_retained-data.reshape(nb_channels,ntimesteps,-1,nb_slices,npoint)
-    return np.linalg.norm(kdata_error)**2
+    # return np.linalg.norm(kdata_error)**2
+    density = np.abs(np.linspace(-1, 1, npoint))
+    density = np.expand_dims(density, tuple(range(kdata_error.ndim - 1)))
+    kdata_error *= np.sqrt(density)
 
+    return np.linalg.norm(kdata_error)**2
 
 def grad_J(m):
     global L0
@@ -940,15 +947,19 @@ useGPU=True
 J_m= J(m0)
 print("GPU --- %s seconds ---" % (time.time() - start_time))
 
-start_time = time.time()
-useGPU=False
-J_m= J(m0)
-print("No GPU --- %s seconds ---" % (time.time() - start_time))
 
 start_time = time.time()
 useGPU=True
 grad_Jm= grad_J(m0)
 print("Grad GPU --- %s seconds ---" % (time.time() - start_time))
+
+
+
+start_time = time.time()
+useGPU=False
+J_m= J(m0)
+print("No GPU --- %s seconds ---" % (time.time() - start_time))
+
 
 start_time = time.time()
 useGPU=False
@@ -956,15 +967,50 @@ grad_Jm= grad_J(m0)
 print("Grad No GPU --- %s seconds ---" % (time.time() - start_time))
 
 
+sl = int(nb_slices/2)
+l=np.random.choice(L0)
 
-#
-# J_list=[]
-# num=10
-# max_t = 1000
-# for t in tqdm(np.arange(0,max_t,max_t/num)):
-#     J_list.append(J(m0-t*grad_Jm))
-#
-# plt.plot(J_list)
+plt.imshow(np.abs(grad_Jm[l,sl]))
+
+
+
+use_GPU=True
+J_list=[]
+num=10
+max_t = 0.00001
+t_array = np.arange(0,max_t,max_t/num)
+for t in tqdm(t_array):
+    J_list.append(J(m0-t*grad_Jm))
+
+
+slope = -np.linalg.norm(grad_Jm)**2
+
+plt.figure()
+plt.plot(J_list)
+plt.plot(np.arange(num),J_m+t_array*slope)
+
+
+#Conj grad test
+use_GPU = True
+J_list = []
+
+g=grad_Jm
+d_m=-g
+slope = np.real(np.dot(g.flatten(),d_m.flatten().conj()))
+
+num = 10
+max_t = 0.00001
+t_array = np.arange(0, max_t, max_t / num)
+for t in tqdm(t_array):
+    J_list.append(J(m0 +t*d_m))
+
+plt.figure()
+plt.plot(J_list)
+plt.plot(np.arange(num), J_m + t_array * slope)
+
+
+
+
 #
 #
 #
@@ -1000,14 +1046,15 @@ print("Grad No GPU --- %s seconds ---" % (time.time() - start_time))
 
 
 #
-# eps=0.001
-# ind=(0,0,0,0)
-# h = np.zeros(m0.shape,dtype=m0.dtype)
-# h[ind[0],ind[1],ind[2],ind[3]]=eps
-#
-# diff_Jm = J(m0+h)-J_m
-# diff_Jm_approx = grad_Jm[ind[0],ind[1],ind[2],ind[3]]*eps
-#
+useGPU=True
+eps_grad=0.001
+ind=(0,0,0,0)
+h = np.zeros(m0.shape,dtype=m0.dtype)
+h[ind[0],ind[1],ind[2],ind[3]]=eps_grad
+
+diff_Jm = J(m0+h)-J_m
+diff_Jm_approx = grad_Jm[ind[0],ind[1],ind[2],ind[3]]*eps_grad
+
 
 
 
@@ -1027,12 +1074,20 @@ filename_m_opt_figure=str.split(filename,".dat") [0]+"_m_opt_L0{}.jpg".format(L0
 
 log=True
 plot=True
+useGPU=False
+
 filename_save = filename_m_opt
-t0=100
-beta=0.3
-alpha=0.1
-tolgrad=1e-10
-maxiter=1000
+# t0=100
+# beta=0.3
+# alpha=0.1
+# tolgrad=1e-10
+
+t0=0.00001
+beta=0.6
+alpha=0.05
+tolgrad=1e-4
+
+maxiter=200
 
 k=0
 m=m0
@@ -1063,7 +1118,7 @@ while (np.linalg.norm(g)>tolgrad)and(k<maxiter):
     J_m = J(m)
     print("J for iter {}: {}".format(k,J_m))
     J_m_next = J(m+t*d_m)
-    slope = np.real(np.dot(g.flatten(),d_m.flatten()))
+    slope = np.real(np.dot(g.flatten(),d_m.flatten().conj()))
     if plot:
         axs[0].scatter(k,J_m,c="r",marker="+")
         axs[1].cla()
@@ -1078,11 +1133,9 @@ while (np.linalg.norm(g)>tolgrad)and(k<maxiter):
         t = beta*t
         if plot:
             axs[1].scatter(t,J_m_next,c="b",marker="x")
+            plt.savefig(filename_m_opt_figure)
         J_m_next=J(m+t*d_m)
 
-
-    if plot:
-        plt.savefig(filename_m_opt_figure)
 
 
     m = m + t*d_m
@@ -1101,7 +1154,7 @@ if log:
 #
 # #filename_m_opt=str.split(filename,".dat") [0]+"_m_opt_L0{}.npy".format(L0)
 np.save(filename_m_opt,m_opt)
-
+print("--- %s seconds ---" % (time.time() - start_time))
 
 
 #filename_phi=str.split(filename,".dat") [0]+"_phi_L0{}.npy".format(L0)

@@ -66,7 +66,7 @@ localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_
 #localfile = "/20220113_CS/meas_MID00164_FID49559_raFin_3D_tra_1x1x5mm_FULL_50GS_slice.dat"
 #localfile = "/20220118_BM/meas_MID00151_FID49924_raFin_3D_tra_1x1x5mm_FULL_read_nav.dat"
 
-localfile="/phantom.001.v1/phantom.001.v1.dat"
+#localfile="/phantom.001.v1/phantom.001.v1.dat"
 #localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
 
 
@@ -377,7 +377,7 @@ top = 150
 displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
 displacement_for_binning = displacements
-bin_width = 8
+bin_width = 5
 max_bin = np.max(displacement_for_binning)
 min_bin = np.min(displacement_for_binning)
 
@@ -388,18 +388,18 @@ df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, c
 df_groups = df_cat.groupby("cat").count()
 
 #INVIVO BW 5
-# group_1 = (categories == 1) | (categories == 2)| (categories == 3)
-# group_2 = (categories == 4)
-# group_3 = (categories == 5)
-# group_4 = (categories == 6) | (categories == 7)
-# groups = [group_1, group_2, group_3,group_4]
+group_1 = (categories == 1) | (categories == 2)| (categories == 3)
+group_2 = (categories == 4)
+group_3 = (categories == 5)
+group_4 = (categories == 6) | (categories == 7)
+groups = [group_1, group_2, group_3,group_4]
 
 #PHANTOM BW 8
-group_1 = (categories == 1) | (categories == 2)
-group_2 = (categories == 3)
-group_3 = (categories == 4) | (categories == 5)
-
-groups = [group_1, group_2, group_3]
+# group_1 = (categories == 1) | (categories == 2)
+# group_2 = (categories == 3)
+# group_3 = (categories == 4) | (categories == 5)
+#
+# groups = [group_1, group_2, group_3]
 
 
 # group_1=(categories==1)|(categories==2)|(categories==3)
@@ -478,121 +478,121 @@ for j in dico_volume.keys():
 
 
 #TEST FABIAN CODE
-from pymia.filtering.registration import MultiModalRegistration,MultiModalRegistrationParams,RegistrationType
-import SimpleITK as sitk
-
-
-
-index_ref = 1
-
-dico_homographies = {}
-registration = MultiModalRegistration(registration_type=RegistrationType.RIGID)
-
-for index_to_align in dico_volume.keys():
-    dico_homographies[index_to_align] = {}
-    for sl in range(nb_slices):
-        array_to_align = np.abs(dico_mask[index_to_align][sl] * dico_volume[index_to_align][sl])
-        array_ref = np.abs(dico_mask[index_ref][sl] * dico_volume[index_ref][sl])
-
-        fixed_image = sitk.GetImageFromArray(array_ref)
-        moving_image = sitk.GetImageFromArray(array_to_align)
-
-          # specify parameters to your needs
-        parameters = MultiModalRegistrationParams(fixed_image)
-
-        dico_homographies[index_to_align][sl] = parameters
-
-
-
-sl = int(nb_slices / 2)
-test_index=2
-
-array_ref = np.abs(dico_mask[index_ref][sl] * dico_volume[index_ref][sl])
-
-array_to_align = np.abs(dico_mask[test_index][sl] * dico_volume[test_index][sl])
-moving_image = sitk.GetImageFromArray(array_to_align)
-
-registered_image = registration.execute(moving_image, dico_homographies[test_index][sl])
-registered_array = sitk.GetArrayFromImage(registered_image)
-
-animate_images([array_ref,registered_array])
-
-
-
-
-volumes_corrected_final=np.zeros((ntimesteps,nb_slices,int(npoint/2),int(npoint/2)),dtype="complex64")
-ts_indices=np.zeros(len(groups)).astype(int)
-count=np.zeros(ntimesteps).astype(int)
-#total_weight=np.zeros(ntimesteps).astype(int)
-
-del dico_mask
-del dico_volume
+# from pymia.filtering.registration import MultiModalRegistration,MultiModalRegistrationParams,RegistrationType
+# import SimpleITK as sitk
 #
-# dico_kdata_retained_registration = {}
-# dico_volumes_corrected = {}
 #
-# J=0
-# g=groups[0]
-for j, g in tqdm(enumerate(groups)):
-    retained_nav_spokes_index = np.argwhere(g).flatten()
-    spoke_groups = np.argmin(np.abs(
-        np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
-                                                                          nb_segments / nb_gating_spokes).reshape(1,
-                                                                                                                  -1)),
-                             axis=-1)
-    included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
-    included_spokes[::int(nb_segments / nb_gating_spokes)] = False
-    print("Filtering KData for movement...")
-    kdata_retained_final_list = []
-    for i in (range(nb_channels)):
-        kdata_retained_final, traj_retained_final, retained_timesteps = correct_mvt_kdata(
-            kdata_all_channels_all_slices[i].reshape(nb_segments, -1), radial_traj, included_spokes, ntimesteps,
-            density_adj=True, log=False)
-        kdata_retained_final_list.append(kdata_retained_final)
-
-    #dico_kdata_retained_registration[j] = retained_timesteps
-
-
-
-    radial_traj_3D_corrected = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=undersampling_factor,
-                                        npoint=npoint, nb_slices=nb_slices, incoherent=incoherent, mode=mode)
-    radial_traj_3D_corrected.traj_for_reconstruction = traj_retained_final
-
-    volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list, radial_traj_3D_corrected,
-                                                                  image_size, b1=b1_all_slices,
-                                                                  ntimesteps=len(retained_timesteps), density_adj=False,
-                                                                  useGPU=False, normalize_kdata=False, memmap_file=None,
-                                                                  light_memory_usage=True, is_theta_z_adjusted=True,
-                                                                  normalize_volumes=True)
-
-    print("Re-registering corrected volumes")
-    for ts in tqdm(range(volumes_corrected.shape[0])):
-        for sl in range(volumes_corrected.shape[1]):
-            volumes_corrected[ts, sl, :, :] = sitk.GetArrayFromImage(registration.execute(sitk.GetImageFromArray(volumes_corrected[ts, sl, :, :].real),
-                                                                             dico_homographies[j][sl]))+1j*sitk.GetArrayFromImage(registration.execute(sitk.GetImageFromArray(volumes_corrected[ts, sl, :, :].imag),
-                                                                             dico_homographies[j][sl]))
-    #dico_volumes_corrected[j] = copy(volumes_corrected)
-    print("Forming final volumes with contribution from group {}".format(j))
-    for ts in tqdm(range(ntimesteps)):
-        if ts in retained_timesteps:
-            volumes_corrected_final[ts]+=volumes_corrected[ts_indices[j]]*traj_retained_final[ts_indices[j]].shape[0]
-            #count[ts]+=1
-            count[ts] += traj_retained_final[ts_indices[j]].shape[0]
-            ts_indices[j] += 1
-            #total_weight[ts]+=traj_retained_final[ts_indices[j]].shape[0]
-
-
-del volumes_corrected
-del radial_traj_3D_corrected
-del dico_homographies
-del kdata_retained_final_list
-
-count=np.expand_dims(count,axis=tuple(range(1,volumes_corrected_final.ndim)))
-volumes_corrected_final/=count
-
-np.save(filename_volume_corrected_final,volumes_corrected_final)
-
-animate_images(volumes_corrected_final[:,int(nb_slices/2),:,:])
+#
+# index_ref = 1
+#
+# dico_homographies = {}
+# registration = MultiModalRegistration(registration_type=RegistrationType.RIGID)
+#
+# for index_to_align in dico_volume.keys():
+#     dico_homographies[index_to_align] = {}
+#     for sl in range(nb_slices):
+#         array_to_align = np.abs(dico_mask[index_to_align][sl] * dico_volume[index_to_align][sl])
+#         array_ref = np.abs(dico_mask[index_ref][sl] * dico_volume[index_ref][sl])
+#
+#         fixed_image = sitk.GetImageFromArray(array_ref)
+#         moving_image = sitk.GetImageFromArray(array_to_align)
+#
+#           # specify parameters to your needs
+#         parameters = MultiModalRegistrationParams(fixed_image)
+#
+#         dico_homographies[index_to_align][sl] = parameters
+#
+#
+#
+# sl = int(nb_slices / 2)
+# test_index=2
+#
+# array_ref = np.abs(dico_mask[index_ref][sl] * dico_volume[index_ref][sl])
+#
+# array_to_align = np.abs(dico_mask[test_index][sl] * dico_volume[test_index][sl])
+# moving_image = sitk.GetImageFromArray(array_to_align)
+#
+# registered_image = registration.execute(moving_image, dico_homographies[test_index][sl])
+# registered_array = sitk.GetArrayFromImage(registered_image)
+#
+# animate_images([array_ref,registered_array])
+#
+#
+#
+#
+# volumes_corrected_final=np.zeros((ntimesteps,nb_slices,int(npoint/2),int(npoint/2)),dtype="complex64")
+# ts_indices=np.zeros(len(groups)).astype(int)
+# count=np.zeros(ntimesteps).astype(int)
+# #total_weight=np.zeros(ntimesteps).astype(int)
+#
+# del dico_mask
+# del dico_volume
+# #
+# # dico_kdata_retained_registration = {}
+# # dico_volumes_corrected = {}
+# #
+# # J=0
+# # g=groups[0]
+# for j, g in tqdm(enumerate(groups)):
+#     retained_nav_spokes_index = np.argwhere(g).flatten()
+#     spoke_groups = np.argmin(np.abs(
+#         np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
+#                                                                           nb_segments / nb_gating_spokes).reshape(1,
+#                                                                                                                   -1)),
+#                              axis=-1)
+#     included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
+#     included_spokes[::int(nb_segments / nb_gating_spokes)] = False
+#     print("Filtering KData for movement...")
+#     kdata_retained_final_list = []
+#     for i in (range(nb_channels)):
+#         kdata_retained_final, traj_retained_final, retained_timesteps = correct_mvt_kdata(
+#             kdata_all_channels_all_slices[i].reshape(nb_segments, -1), radial_traj, included_spokes, ntimesteps,
+#             density_adj=True, log=False)
+#         kdata_retained_final_list.append(kdata_retained_final)
+#
+#     #dico_kdata_retained_registration[j] = retained_timesteps
+#
+#
+#
+#     radial_traj_3D_corrected = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=undersampling_factor,
+#                                         npoint=npoint, nb_slices=nb_slices, incoherent=incoherent, mode=mode)
+#     radial_traj_3D_corrected.traj_for_reconstruction = traj_retained_final
+#
+#     volumes_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list, radial_traj_3D_corrected,
+#                                                                   image_size, b1=b1_all_slices,
+#                                                                   ntimesteps=len(retained_timesteps), density_adj=False,
+#                                                                   useGPU=False, normalize_kdata=False, memmap_file=None,
+#                                                                   light_memory_usage=True, is_theta_z_adjusted=True,
+#                                                                   normalize_volumes=True)
+#
+#     print("Re-registering corrected volumes")
+#     for ts in tqdm(range(volumes_corrected.shape[0])):
+#         for sl in range(volumes_corrected.shape[1]):
+#             volumes_corrected[ts, sl, :, :] = sitk.GetArrayFromImage(registration.execute(sitk.GetImageFromArray(volumes_corrected[ts, sl, :, :].real),
+#                                                                              dico_homographies[j][sl]))+1j*sitk.GetArrayFromImage(registration.execute(sitk.GetImageFromArray(volumes_corrected[ts, sl, :, :].imag),
+#                                                                              dico_homographies[j][sl]))
+#     #dico_volumes_corrected[j] = copy(volumes_corrected)
+#     print("Forming final volumes with contribution from group {}".format(j))
+#     for ts in tqdm(range(ntimesteps)):
+#         if ts in retained_timesteps:
+#             volumes_corrected_final[ts]+=volumes_corrected[ts_indices[j]]*traj_retained_final[ts_indices[j]].shape[0]
+#             #count[ts]+=1
+#             count[ts] += traj_retained_final[ts_indices[j]].shape[0]
+#             ts_indices[j] += 1
+#             #total_weight[ts]+=traj_retained_final[ts_indices[j]].shape[0]
+#
+#
+# del volumes_corrected
+# del radial_traj_3D_corrected
+# del dico_homographies
+# del kdata_retained_final_list
+#
+# count=np.expand_dims(count,axis=tuple(range(1,volumes_corrected_final.ndim)))
+# volumes_corrected_final/=count
+#
+# np.save(filename_volume_corrected_final,volumes_corrected_final)
+#
+# animate_images(volumes_corrected_final[:,int(nb_slices/2),:,:])
 
 ######################################################################################""
 
@@ -604,7 +604,7 @@ animate_images(volumes_corrected_final[:,int(nb_slices/2),:,:])
 
 
 
-index_ref = 1
+index_ref = 2
 
 dico_homographies = {}
 
@@ -667,7 +667,20 @@ for index_to_align in dico_volume.keys():
         dico_homographies[index_to_align][sl] = warp_matrix
 
 sl = int(nb_slices / 2)
-test_index=1
+test_index=0
+
+animate_multiple_images(np.abs(dico_volume[index_ref]),np.abs(dico_volume[test_index]))
+
+registered_volume=[]
+for sl in range(nb_slices):
+    registered_volume.append(scipy.ndimage.affine_transform(np.abs(dico_volume[test_index][sl].T), dico_homographies[test_index][sl]).T)
+registered_volume=np.array(registered_volume)
+
+animate_multiple_images(np.abs(dico_volume[index_ref]),registered_volume)
+
+
+animate_images([np.abs(dico_volume[test_index][sl]),
+                np.abs(dico_volume[index_ref][sl])])
 
 animate_images([scipy.ndimage.affine_transform(np.abs(dico_volume[test_index][sl].T), dico_homographies[test_index][sl]).T,
                 np.abs(dico_volume[index_ref][sl])])
@@ -825,11 +838,13 @@ load_map=False
 save_map=True
 
 
-#dictfile = "mrf175_SimReco2_light.dict"
+dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
-dictfile = "mrf175_Dico2_Invivo.dict"
+#dictfile = "mrf175_Dico2_Invivo.dict"
+filename_volume_corrected_final = str.split(filename,".dat") [0]+"_volumes_corrected_final_old{}.npy".format("")
+
 
 mask = np.load(filename_mask)
 #volumes_all = np.load(filename_volume)
@@ -843,10 +858,10 @@ volumes_corrected_final=np.load(filename_volume_corrected_final)
 # plt.plot(volumes_all[:,sl,200,200])
 
 
-
+ntimesteps=175
 if not(load_map):
     niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_final,retained_timesteps=None)
 
     if(save_map):
@@ -866,3 +881,25 @@ else:
     file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
     file = open(file_map, "rb")
     all_maps = pickle.load(file)
+
+
+curr_file=file_map
+file = open(curr_file, "rb")
+all_maps = pickle.load(file)
+file.close()
+for iter in list(all_maps.keys()):
+
+    map_rebuilt=all_maps[iter][0]
+    mask=all_maps[iter][1]
+
+    keys_simu = list(map_rebuilt.keys())
+    values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+    map_for_sim = dict(zip(keys_simu, values_simu))
+
+    #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+    #map_Python.buildParamMap()
+
+
+    for key in ["ff","wT1","df","attB1"]:
+        file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
+        io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
