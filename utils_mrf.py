@@ -200,11 +200,25 @@ def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slic
     return result.reshape(result.shape[0],-1,result.shape[-1])
 
 
-def radial_golden_angle_traj_random_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,frac_center=0.25):
+def radial_golden_angle_traj_random_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,frac_center=0.25,mode="old",incoherent=True):
     timesteps = int(total_nspoke / nspoke)
     nb_rep = int(nb_slices / undersampling_factor)
     all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
         #traj = np.reshape(all_spokes, (-1, nspoke * npoint))
+
+    if incoherent:
+        golden_angle = 111.246 * np.pi / 180
+        if mode=="old":
+            all_rotations = np.exp(1j * np.arange(nb_rep) * total_nspoke * golden_angle)
+        elif mode=="new":
+            all_rotations = np.exp(1j * np.arange(nb_rep) * golden_angle)
+        else:
+            raise ValueError("Unknown value for mode")
+        all_spokes = np.repeat(np.expand_dims(all_spokes, axis=1), nb_rep, axis=1)
+        traj = all_rotations[np.newaxis, :, np.newaxis] * all_spokes
+    else:
+        traj = np.expand_dims(all_spokes, axis=-2)
+
     k_z = np.zeros((timesteps, nb_rep))
     all_slices = np.linspace(-np.pi, np.pi, nb_slices)
     kz_center=all_slices[(int(nb_slices/2)+np.array(range(int(-frac_center*nb_rep/2),int(frac_center*nb_rep/2),1)))]
@@ -215,7 +229,7 @@ def radial_golden_angle_traj_random_3D(total_nspoke, npoint, nspoke, nb_slices, 
 
     k_z=np.repeat(k_z, nspoke, axis=0)
     k_z = np.expand_dims(k_z, axis=-1)
-    traj = np.expand_dims(all_spokes, axis=-2)
+
     k_z, traj = np.broadcast_arrays(k_z, traj)
 
     # k_z = np.reshape(k_z, (timesteps, -1))

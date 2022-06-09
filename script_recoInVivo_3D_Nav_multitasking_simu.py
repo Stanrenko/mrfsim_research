@@ -35,19 +35,24 @@ with open("mrf_sequence.json") as f:
 
 seq = T1MRF(**sequence_config)
 
-nb_filled_slices = 4
-nb_empty_slices=0
-repeat_slice=4
+nb_filled_slices = 16
+nb_empty_slices=2
+repeat_slice=8
 nb_slices = nb_filled_slices+2*nb_empty_slices
 
-undersampling_factor=1
+undersampling_factor=2
 
-name = "SquareSimu3DGrappa"
+is_random=True
+
+if is_random :
+    name = "SquareSimu3DMTRandom"
+else:
+    name = "SquareSimu3DMT"
 
 
 use_GPU = False
 light_memory_usage=True
-gen_mode="other"
+gen_mode="loop"
 
 
 localfile="/"+name
@@ -94,11 +99,11 @@ file_map_all_spokes = filename + "_all_spokes_sl{}_rp{}{}_MRF_map.pkl".format(nb
 ntimesteps=175
 nb_channels=1
 nb_allspokes = 1400
-npoint = 512
+npoint = 128
 
 
 
-incoherent=False
+incoherent=True
 mode="old"
 
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
@@ -110,7 +115,7 @@ with open(dictjson) as f:
     dict_config = json.load(f)
 dict_config["ff"]=np.arange(0.,1.05,0.05)
 
-if name=="SquareSimu3DGrappa":
+if "SquareSimu3DMT" in name:
     region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
     mask_reduction_factor=1/4
 
@@ -170,7 +175,7 @@ if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
 # io.write(file_mha, np.abs(image), tags={"spacing": [5, 1, 1]})
 
 
-radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,is_random=is_random)
 
 nb_channels=1
 
@@ -186,6 +191,18 @@ if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
 else:
     #kdata_all_channels_all_slices = open_memmap(filename_kdata)
     data = np.load(filename_kdata)
+
+##volumes for slice taking into account coil sensi
+print("Building Volumes....")
+if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
+    volumes_all=simulate_radial_undersampled_images(data,radial_traj,image_size,density_adj=True,useGPU=False)
+    np.save(filename_volume,volumes_all)
+    # sl=20
+    # ani = animate_images(volumes_all[:,sl,:,:])
+    del volumes_all
+
+volumes_all=np.load(filename_volume)
+ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
 
 
 dictfile = "./mrf175_SimReco2.dict"
@@ -565,7 +582,7 @@ dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_Dico2_Invivo.dict"
 
 mask = m.mask
-#volumes_all = np.load(filename_volume)
+volumes_all = np.load(filename_volume)
 #volumes_corrected_final=np.load(filename_volume_corrected_final)
 
 gr=0
@@ -580,11 +597,12 @@ volumes_corrected_final=np.load(filename_volume_rebuilt_multitasking)
 # plt.plot(volumes_all[:,sl,200,200])
 
 suffix="Multitasking_L0{}_gr{}".format(L0,gr)
+suffix=""
 ntimesteps=175
 if not(load_map):
     niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
-    all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_final,retained_timesteps=None)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
+    all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -628,7 +646,8 @@ for iter in list(all_maps.keys()):
         io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
 
 
-
+maskROI=buildROImask_unique(m.paramMap)
+regression_paramMaps_ROI(m.paramMap,all_maps[0][0],m.mask>0,all_maps[0][1]>0,maskROI,adj_wT1=True)
 
 
 
@@ -688,7 +707,7 @@ nb_slices = nb_filled_slices+2*nb_empty_slices
 
 undersampling_factor=1
 
-name = "SquareSimu3DGrappa"
+name = "SquareSimu3DMTRandom"
 
 
 use_GPU = False
@@ -801,7 +820,7 @@ if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
 # io.write(file_mha, np.abs(image), tags={"spacing": [5, 1, 1]})
 
 
-radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,is_random=True)
 
 nb_channels=1
 

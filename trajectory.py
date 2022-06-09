@@ -113,10 +113,10 @@ class Radial3D(Trajectory):
             undersampling_factor=self.paramDict["undersampling_factor"]
             if self.paramDict["random"]:
                 if "frac_center" in self.paramDict:
-                    self.traj = radial_golden_angle_traj_random_3D(total_nspokes, npoint, nspoke, nb_slices, undersampling_factor,self.paramDict["frac_center"])
+                    self.traj = radial_golden_angle_traj_random_3D(total_nspokes, npoint, nspoke, nb_slices, undersampling_factor,self.paramDict["frac_center"],self.paramDict["mode"],self.paramDict["incoherent"])
                 else:
                     self.traj = radial_golden_angle_traj_random_3D(total_nspokes, npoint, nspoke, nb_slices,
-                                                                   undersampling_factor)
+                                                                   undersampling_factor,0.25,self.paramDict["mode"],self.paramDict["incoherent"])
             else:
                 if self.paramDict["incoherent"]:
                     self.traj=radial_golden_angle_traj_3D_incoherent(total_nspokes, npoint, nspoke, nb_slices, undersampling_factor,mode)

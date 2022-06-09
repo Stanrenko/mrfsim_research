@@ -451,7 +451,7 @@ class ImageSeries(object):
                         df = pd.DataFrame(index=range(self.paramDict["nb_rep"]), columns=["Timesteps", "Images"])
                         df["Timesteps"] = self.t[:, i].reshape(-1, 1)
                         images_for_df = list(
-                            np.repeat(current_image, nb_rep, axis=0).reshape((nb_rep,) + current_image.shape))
+                            np.tile(current_image, (nb_rep,1,1,1)))
                         df["Images"] = images_for_df
 
                         for movements in self.list_movements:
@@ -541,7 +541,7 @@ class ImageSeries(object):
                         df = pd.DataFrame(index=range(self.paramDict["nb_rep"]), columns=["Timesteps", "Images"])
                         df["Timesteps"] = self.t[:, i].reshape(-1, 1)
                         images_for_df = list(
-                            np.repeat(current_image, nb_rep, axis=0).reshape((nb_rep,) + current_image.shape))
+                            np.tile(current_image, (nb_rep, 1, 1, 1)))
                         df["Images"] = images_for_df
 
                         for movements in self.list_movements:
