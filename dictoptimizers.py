@@ -36,7 +36,7 @@ class GaussianWeighting(object):
         return np.exp(-np.linalg.norm(traj,axis=-1)**2/(2*self.sig**2))
 
 
-def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fat_unique,transformed_array_water_unique,transformed_array_fat_unique,var_w,var_f,sig_wf,pca,index_water_unique,index_fat_unique,remove_duplicates,verbose,niter,split,useGPU_dictsearch,mask,tv_denoising_weight):
+def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fat_unique,transformed_array_water_unique,transformed_array_fat_unique,var_w,var_f,sig_wf,pca,index_water_unique,index_fat_unique,remove_duplicates,verbose,niter,split,useGPU_dictsearch,mask,tv_denoising_weight,log_phase=False):
 
     nb_signals = all_signals.shape[1]
 
@@ -58,6 +58,9 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
     if niter > 0:
         phase_optim = []
         J_optim = []
+
+    elif log_phase:
+        phase_optim = []
 
     for j in tqdm(range(num_group)):
         j_signal = j * split
@@ -215,6 +218,104 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
 
             del cond
 
+            ##############################################################################################################################
+            def J_alpha_pixel(alpha,phi, i, j):
+
+                current_sig_ws = (current_sig_ws_for_phase[i,j] * np.exp(1j * phi)).real
+                current_sig_fs = (current_sig_fs_for_phase[i,j] * np.exp(1j * phi)).real
+                return ((
+                         1 - alpha) * current_sig_ws + alpha * current_sig_fs) / np.sqrt(
+                    (
+                            1 - alpha) ** 2 * var_w[i] + alpha ** 2 * var_f[i] + 2 * alpha * (
+                            1 - alpha) * sig_wf[i])
+
+            phi = np.arange(-2*np.pi,2*np.pi,np.pi/10)
+            alpha = np.arange(-0.5,1.5,0.05)
+            alphav_np, phiv_np = np.meshgrid(alpha, phi, sparse=False, indexing='ij')
+
+            i=0
+            j=0
+
+            s,t=current_sig_ws_for_phase.shape
+            n,m = alphav_np.shape
+            result_np=np.zeros(alphav_np.shape)
+
+
+            i,j=np.unravel_index(np.random.choice(np.arange(s*t)),(s,t))
+
+            for p in tqdm(range(n)):
+                for q in range(m):
+                    result_np[p,q]=J_alpha_pixel(alphav_np[p,q],phiv_np[p,q],i,j)
+
+
+            import matplotlib.pyplot as plt
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+
+            ax.plot_surface(alphav_np, phiv_np, result_np,alpha=0.5)
+
+
+
+            index_min_p,index_min_q = np.unravel_index(np.argmax(result_np), result_np.shape)
+            alpha_min = alphav_np[index_min_p,index_min_q]
+            phi_min = phiv_np[index_min_p, index_min_q]
+            result_min = result_np[index_min_p, index_min_q]
+
+            # alpha_ = (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1)) * alpha1[i, j] + (
+            #             1 - (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1))) * alpha2[i, j]
+
+            print("Max alpha on surface : {}".format(np.round(alpha_min,2)))
+            #print("Alpha 1 : {}".format(np.round(alpha1[i,j],2)))
+            #print("Alpha 2 : {}".format(np.round(alpha2[i,j],2)))
+            print("Alpha calc : {}".format(np.round(current_alpha_all_unique[i,j], 2)))
+
+            # phi_calc = -np.angle((
+            #                               1 - alpha_) * current_sig_ws_for_phase[i, j] + alpha_ * current_sig_fs_for_phase[i, j])
+            #
+            # d = (1 - alpha_) * current_sig_ws_for_phase[i, j] + alpha_ * \
+            #      current_sig_fs_for_phase[i, j]
+            # phi_form = -np.arctan(d.imag / d.real)
+            # phi_form = (phi_form) * (
+            #             1 * (np.sin(phi_form) * d.imag - np.cos(phi_form) * d.real) <= 0) + (
+            #                  np.mod(phi_form + np.pi, 2 * np.pi)) * (
+            #                          1 * (np.sin(phi_form) * d.imag - np.cos(phi_form) * d.real) > 0)
+
+            # phi_calc1 = -np.angle((
+            #                              1 - alpha1[i,j]) * current_sig_ws_for_phase[i,j] + alpha1[i,j] * current_sig_fs_for_phase[i,j])
+            # phi_calc2 = -np.angle((
+            #                              1 - alpha2[i, j]) * current_sig_ws_for_phase[i, j] +  alpha2[i, j] *
+            #                      current_sig_fs_for_phase[i, j])
+            #
+            # d1 = (1 - alpha1[i,j]) * current_sig_ws_for_phase[i,j] + alpha1[i,j] * current_sig_fs_for_phase[i,j]
+            # phi_form_1 = -np.arctan(d1.imag/d1.real)
+            # d2 = (1 - alpha2[i, j]) * current_sig_ws_for_phase[i, j] + alpha2[i, j] * current_sig_fs_for_phase[
+            #     i, j]
+            # phi_form_2 = -np.arctan(d2.imag/d2.real)
+            #
+            # phi_form_1 = (phi_form_1)*(1*(np.sin(phi_form_1)*d1.imag-np.cos(phi_form_1)*d1.real)<=0)+(np.mod(phi_form_1+np.pi,2*np.pi))*(1*(np.sin(phi_form_1)*d1.imag-np.cos(phi_form_1)*d1.real)>0)
+            # phi_form_2 = (phi_form_2) * (
+            #             1 * (np.sin(phi_form_2) * d2.imag - np.cos(phi_form_2) * d2.real) <= 0) + (
+            #                  np.mod(phi_form_2 + np.pi, 2 * np.pi)) * (
+            #                          1 * (np.sin(phi_form_2) * d2.imag - np.cos(phi_form_2) * d2.real) > 0)
+
+            print("Max phi on surface : {}".format(np.round(phi_min, 2)))
+            # print("Phi Ideal 1 : {}".format(np.round(phi_calc1, 2)))
+            # print("Phi Ideal 2 : {}".format(np.round(phi_calc2, 2)))
+            # print("Phi Formula 1 : {}".format(np.round(phi_form_1, 2)))
+            # print("Phi Formula 2 : {}".format(np.round(phi_form_2, 2)))
+            print("Phi optim: {}".format(np.round(phase_adj[i,j], 2)))
+
+            print("Max correl on surface {}".format(np.round(result_min,2)))
+            print("Retrieved correl on surface {}".format(np.round( J_alpha_pixel(current_alpha_all_unique[i,j], phase_adj[i,j], i, j)[0],2)))
+
+            ax.plot(alpha_min,phi_min,result_min,marker="x")
+            ax.plot(current_alpha_all_unique[i,j], phase_adj[i,j], J_alpha_pixel(current_alpha_all_unique[i,j], phase_adj[i,j], i, j)[0], marker="o")
+            ax.set_title("Signal {},{}".format(i,j))
+            # ax.plot(alpha1[i,j], phi_form_1, J_alpha_pixel(alpha1[i,j],phi_form_1,i,j)[0], marker="o")
+            # ax.plot(alpha2[i,j], phi_form_2,
+            #         J_alpha_pixel(alpha2[i, j], phi_form_2, i, j)[0], marker="o")
+            #################################################################################################################################""""
+
             if verbose:
                 end = datetime.now()
                 print(end - start)
@@ -327,8 +428,9 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
             J_all = J_all.get()
             current_alpha_all_unique = current_alpha_all_unique.get()
 
-            if niter > 0:
+            if niter > 0 or log_phase:
                 phase_adj=phase_adj.get()
+
 
             del current_sig_fs
             del current_sig_ws
@@ -359,6 +461,9 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
             phase_optim.extend(phase_adj[idx_max_all_current, np.arange(J_all.shape[1])])
             J_optim.extend(J_all[idx_max_all_current, np.arange(J_all.shape[1])])
 
+        elif log_phase:
+            phase_optim.extend(phase_adj[idx_max_all_current, np.arange(J_all.shape[1])])
+
         del phase_adj
 
         if verbose:
@@ -372,6 +477,8 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
     if niter > 0:
         phase_optim = np.array(phase_optim)
         J_optim = np.array(J_optim)
+    elif log_phase:
+        phase_optim = np.array(phase_optim)
 
 
 
@@ -410,7 +517,10 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
 
 
     if niter==0:
-        return map_rebuilt,None,None
+        if not(log_phase):
+            return map_rebuilt,None,None
+        else:
+            return map_rebuilt, None, phase_optim
     else:
         return map_rebuilt,J_optim,phase_optim
 
@@ -431,7 +541,7 @@ class Optimizer(object):
 
 class SimpleDictSearch(Optimizer):
 
-    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,useGPU_simulation=True,movement_correction=False,cond=None,remove_duplicate_signals=False,threshold=None,tv_denoising_weight=None,**kwargs):
+    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,useGPU_simulation=True,movement_correction=False,cond=None,remove_duplicate_signals=False,threshold=None,tv_denoising_weight=None,log_phase=False,**kwargs):
         #transf is a function that takes as input timesteps arrays and outputs shifts as output
         super().__init__(**kwargs)
         self.paramDict["niter"]=niter
@@ -457,6 +567,7 @@ class SimpleDictSearch(Optimizer):
         self.paramDict["cond"]=cond
         self.paramDict["threshold"]=threshold
         self.paramDict["tv_denoising_weight"] = tv_denoising_weight
+        self.paramDict["log_phase"] = log_phase
 
     def search_patterns(self,dictfile,volumes,retained_timesteps=None):
 
@@ -1598,6 +1709,7 @@ class SimpleDictSearch(Optimizer):
         remove_duplicates = self.paramDict["remove_duplicate_signals"]
         threshold = self.paramDict["threshold"]
         tv_denoising_weight = self.paramDict["tv_denoising_weight"]
+        log_phase=self.paramDict["log_phase"]
         # adj_phase=self.paramDict["adj_phase"]
 
         if movement_correction:
@@ -1688,11 +1800,16 @@ class SimpleDictSearch(Optimizer):
             print("Calculating optimal fat fraction and best pattern per signal for iteration {}".format(i))
             map_rebuilt,J_optim,phase_optim=match_signals(all_signals,keys, pca_water, pca_fat, array_water_unique, array_fat_unique,
                           transformed_array_water_unique, transformed_array_fat_unique, var_w,var_f,sig_wf,pca,index_water_unique,index_fat_unique,remove_duplicates, verbose,
-                          niter, split, useGPU_dictsearch,mask,tv_denoising_weight)
+                          niter, split, useGPU_dictsearch,mask,tv_denoising_weight,log_phase)
+
 
             print("Maps build for iteration {}".format(i))
 
-            values_results.append((map_rebuilt, mask))
+            if not(log_phase):
+                values_results.append((map_rebuilt, mask))
+
+            else:
+                values_results.append((map_rebuilt, mask,phase_optim))
 
             if log:
                 with open('./log/maps_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
