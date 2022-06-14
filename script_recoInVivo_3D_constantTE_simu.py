@@ -22,8 +22,11 @@ from scipy.optimize import minimize
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
 base_folder = "./3D"
 
-dictfile = "mrf175_SimReco2_light.dict"
-dictjson="mrf_dictconf_SimReco2_light_df0.json"
+suffix_simu="_df0"
+
+#dictfile = "mrf175_SimReco2_light.dict"
+#dictjson="mrf_dictconf_SimReco2_light_df0.json"
+dictjson="mrf_dictconf_SimReco2_light{}.json".format(suffix_simu)
 #dictfile = "mrf175_SimReco2.dict"
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
@@ -31,9 +34,10 @@ dictjson="mrf_dictconf_SimReco2_light_df0.json"
 #dictfile = "mrf175_Dico2_Invivo.dict"
 
 suffix=""
-#suffix="_constantTE_first"
+suffix="_constantTE_first"
 suffix="_constantTE_mid"
 #suffix="_constantTE_last"
+#suffix=""
 
 with open("mrf_sequence{}.json".format(suffix)) as f:
     sequence_config = json.load(f)
@@ -72,15 +76,22 @@ if is_random:
     suffix+="_random_frac{}".format("_".join(str.split(str(frac_center),".")))
 
 suffix+="_df0"
+#suffix=""
+filename_paramMap=filename+"_paramMap_sl{}_rp{}{}.pkl".format(nb_slices,repeat_slice,suffix_simu)
 
-filename_paramMap=filename+"_paramMap_sl{}_rp{}.pkl".format(nb_slices,repeat_slice)
+if not(len(suffix_simu)==0):
+    suffix_simu=suffix+suffix_simu
+else:
+    suffix_simu=suffix
+
+
 filename_paramMask=filename+"_paramMask_sl{}_rp{}.npy".format(nb_slices,repeat_slice)
-filename_volume = filename+"_volumes_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,suffix)
-filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,suffix)
+filename_volume = filename+"_volumes_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,suffix_simu)
+filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,suffix_simu)
 
-filename_kdata = filename+"_kdata_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,suffix)
-filename_mask= filename+"_mask_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,suffix)
-file_map = filename + "_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,suffix)
+filename_kdata = filename+"_kdata_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,suffix_simu)
+filename_mask= filename+"_mask_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,suffix_simu)
+file_map = filename + "_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,suffix_simu)
 
 filename_random_traj = filename+"_currtraj_grappa_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 
@@ -341,24 +352,6 @@ plt.plot([np.mod(df,1/TE)]*ntimesteps,linestyle="dotted",label="df")
 plt.plot([phase_optim[ind_sig]/(TE*2*np.pi)]*ntimesteps,label="Phase optim")
 plt.title("Recalc df")
 plt.legend()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 ### Movements simulation

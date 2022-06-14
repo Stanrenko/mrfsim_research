@@ -229,8 +229,8 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
                             1 - alpha) ** 2 * var_w[i] + alpha ** 2 * var_f[i] + 2 * alpha * (
                             1 - alpha) * sig_wf[i])
 
-            phi = np.arange(-2*np.pi,2*np.pi,np.pi/10)
-            alpha = np.arange(-0.5,1.5,0.05)
+            phi = np.arange(-np.pi,np.pi,np.pi/20)
+            alpha = np.arange(0.,1.01,0.01)
             alphav_np, phiv_np = np.meshgrid(alpha, phi, sparse=False, indexing='ij')
 
             i=0

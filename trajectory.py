@@ -102,6 +102,7 @@ class Radial3D(Trajectory):
         self.paramDict["incoherent"]=incoherent
         self.paramDict["mode"] = mode
 
+
     def get_traj(self):
         if self.traj is None:
             nspoke = self.paramDict["nspoke"]
