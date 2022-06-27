@@ -3190,10 +3190,9 @@ def simulate_nav_images_multi(kdata, trajectory, image_size=(400,), b1=None):
     return images_series_rebuilt_nav
 
 
-def calculate_displacement(image, bottom, top, shifts):
+def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001):
     nb_gating_spokes = image.shape[1]
     nb_slices = image.shape[0]
-
     npoint_image = image.shape[-1]
     ft = np.mean(image, axis=0)
     # ft=np.mean(image_nav_best_channel,axis=0)
@@ -3201,22 +3200,30 @@ def calculate_displacement(image, bottom, top, shifts):
     image_nav_for_correl = image.reshape(-1, npoint_image)
     nb_images = image_nav_for_correl.shape[0]
     correls = []
+    mvt = []
     # adj=[]
     for j in tqdm(range(nb_images)):
         corrs = np.zeros(len(shifts))
-
         for i, shift in enumerate(shifts):
             corr = np.corrcoef(np.concatenate([ft[j % nb_gating_spokes, bottom:top].reshape(1, -1),
                                                image_nav_for_correl[j, bottom + shift:top + shift].reshape(1, -1)],
                                               axis=0))[0, 1]
             # corr = np.linalg.norm(image_nav_for_correl[0, bottom:top]-image_nav_for_correl[j + 1, (bottom + shift):(top + shift)])
             corrs[i] = corr
-
         # adjustment=np.sum(dft_x[j+1]*dft_t[j])/np.sum(dft_x[j+1]**2)
         # adj.append(adjustment)
-        correls.append(corrs)
-    correls_array = np.array(correls)
-    mvt = [shifts[i] for i in np.argmax(correls_array, axis=-1)]
+        if (j % nb_gating_spokes == 0):
+            J = corrs
+
+
+        else:
+            J = corrs - lambda_tv * (np.array(shifts) - mvt[j - 1]) ** 2  # penalty to not be too far from last disp
+
+        current_mvt = shifts[np.argmax(J)]
+        mvt.append(current_mvt)
+        # correls.append(corrs)
+    # correls_array = np.array(correls)
+    # mvt = [shifts[i] for i in np.argmax(correls_array, axis=-1)]
     # mvt=[shifts[i] for i in np.argmin(correls_array,axis=-1)]
     # mvt=np.array(mvt)+np.array(adj)
     # mvt=np.concatenate([[0],mvt]).astype(int)

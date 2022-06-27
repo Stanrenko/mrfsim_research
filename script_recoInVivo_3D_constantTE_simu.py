@@ -35,7 +35,7 @@ dictjson="mrf_dictconf_SimReco2_light{}.json".format(suffix_simu)
 
 suffix=""
 suffix="_constantTE_first"
-suffix="_constantTE_mid"
+#suffix="_plateau600"
 #suffix="_constantTE_last"
 #suffix=""
 
@@ -75,7 +75,7 @@ folder = "/".join(str.split(filename,"/")[:-1])
 if is_random:
     suffix+="_random_frac{}".format("_".join(str.split(str(frac_center),".")))
 
-suffix+="_df0"
+suffix+=""
 #suffix=""
 filename_paramMap=filename+"_paramMap_sl{}_rp{}{}.pkl".format(nb_slices,repeat_slice,suffix_simu)
 
@@ -193,12 +193,12 @@ else:
     #kdata_all_channels_all_slices = open_memmap(filename_kdata)
     data = np.load(filename_kdata)
 
-plt.plot(np.unique(radial_traj.get_traj()[:,:,2],axis=-1),"s")
+#plt.plot(np.unique(radial_traj.get_traj()[:,:,2],axis=-1),"s")
 
 ##volumes for slice taking into account coil sensi
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    volumes_all=simulate_radial_undersampled_images(data,radial_traj,image_size,density_adj=True,useGPU=use_GPU)
+    volumes_all=simulate_radial_undersampled_images(data,radial_traj,image_size,density_adj=True,useGPU=use_GPU,ntimesteps=int(nb_allspokes/8))
     np.save(filename_volume,volumes_all)
     # sl=20
     # ani = animate_images(volumes_all[:,sl,:,:])
@@ -214,7 +214,7 @@ ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
 #      sequence_config = json.load(f)
 
 
-seq = T1MRF(**sequence_config)
+seq = None
 
 
 load_map=False
@@ -236,7 +236,7 @@ volumes_all = np.load(filename_volume)
 #filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
 #volumes_corrected_final=np.load(filename_volume_rebuilt_multitasking)
 
-ntimesteps=175
+ntimesteps=int(nb_allspokes/8)
 if not(load_map):
     niter = 0
     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,log_phase=True)

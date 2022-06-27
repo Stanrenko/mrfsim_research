@@ -747,7 +747,7 @@ with open(dictjson) as f:
     dict_config = json.load(f)
 dict_config["ff"]=np.arange(0.,1.05,0.05)
 
-if name=="SquareSimu3DGrappa":
+if name=="SquareSimu3DMT":
     region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
     mask_reduction_factor=1/4
 
@@ -969,8 +969,9 @@ for i in tqdm(range(niter)):
     Sk_3 = np.moveaxis(Sk_3, 0, 2)
 
     Sk_cur_prev = copy(Sk_cur)
+    Sk_cur_prev_mask=Sk_cur_prev>0
     Sk_cur=Sk*Sk_mask + np.mean(np.stack([Sk_1,Sk_2,Sk_3],axis=-1),axis=-1)*(1-Sk_mask)
-    diff = np.linalg.norm((Sk_cur-Sk_cur_prev )/Sk_cur_prev/np.sqrt(np.sum(Sk_mask)))
+    diff = np.linalg.norm((Sk_cur-Sk_cur_prev )[Sk_cur_prev_mask]/Sk_cur_prev[Sk_cur_prev_mask]/np.sqrt(np.sum(Sk_mask)))
     diffs.append(diff)
 
     if diff<tol_diff:
