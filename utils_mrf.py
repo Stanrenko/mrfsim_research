@@ -3230,7 +3230,7 @@ def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001):
     # mvt=np.array(mvt).reshape(int(nb_slices),int(nb_gating_spokes))
     # displacement=-np.cumsum(mvt,axis=-1).flatten()
     displacement = np.array(mvt)
-    return displacement, correls_array
+    return displacement
 
 
 
@@ -3320,3 +3320,19 @@ def mrisensesim(size, ncoils=8, array_cent=None, coil_width=2, n_rings=None, phi
         smap[i] = s * np.exp(i * 1j * ph * np.pi / 180)
 
     return smap
+
+
+def calc_grad_entropy(v):
+    ndim = v.ndim
+    grad_norm = 0
+    for axis in range(ndim):
+        pad = v.ndim * [(0, 0)]
+        pad[axis] = (0, 1)
+        pad = tuple(pad)
+        grad = np.diff(np.pad(v, pad, mode="constant"), axis=axis)
+
+        grad_norm += np.abs(grad) ** 2
+
+    grad_norm = np.sqrt(grad_norm)
+    p = grad_norm / np.sum(grad_norm)
+    return np.sum(-np.log2(p) * p)

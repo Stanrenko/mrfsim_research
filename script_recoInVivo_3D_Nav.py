@@ -94,6 +94,7 @@ localfile="/phantom.005.v1/meas_MID00454_FID62846_raFin_3D_tra_1x1x5mm_FULL_P0_S
 localfile="/phantom.005.v1/meas_MID00458_FID62850_raFin_3D_tra_1x1x5mm_FULL_P0_Sl200_RO50_FOV220.dat"#Box at the top border with more outside
 localfile="/phantom.005.v1/meas_MID00459_FID62851_raFin_3D_tra_1x1x5mm_FULL_P0_Sl27_RO50_FOV220.dat"#Box at the top border with more outside
 
+localfile="/phantom.001.v1/phantom.001.v1.dat"
 
 
 filename = base_folder+localfile
@@ -108,7 +109,12 @@ filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
 
 folder = "/".join(str.split(filename,"/")[:-1])
 
+
+
 suffix="_disp5"
+low_freq_encode_corrected_perc=0.5
+if low_freq_encode_corrected_perc is not None:
+    suffix+="_{}".format("_".join(str.split(str(low_freq_encode_corrected_perc),".")))
 
 filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
@@ -527,7 +533,10 @@ if nb_gating_spokes>0:
     shifts = list(range(-20, 20))
     bottom = 50
     top = 150
-    displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
+    displacements = calculate_displacement(images_nav_mean, bottom, top, shifts,0.)
+
+    plt.figure()
+    plt.plot(displacements)
 
     displacement_for_binning = displacements
     bin_width = 5
@@ -550,7 +559,21 @@ if nb_gating_spokes>0:
 
     retained_nav_spokes_index = np.argwhere(retained_nav_spokes).flatten()
     spoke_groups = np.argmin(np.abs(np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,nb_segments / nb_gating_spokes).reshape(1,-1)),axis=-1)
+    if not (nb_segments == nb_gating_spokes):
+        spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
+        spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
+            nb_segments / nb_gating_spokes / 2) + 1:] - 1
+        spoke_groups = spoke_groups.flatten()
+
     included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
+
+    if low_freq_encode_corrected_perc is not None :
+        included_spokes = included_spokes.reshape(nb_slices, nb_segments)
+        width = int(nb_slices/2*low_freq_encode_corrected_perc)
+        included_spokes[:int(nb_slices/2)-width,:]=True
+        included_spokes[int(nb_slices/2)+width:,:]=True
+        included_spokes=included_spokes.flatten()
+
     included_spokes[::int(nb_segments/nb_gating_spokes)]=False
     #included_spokes[:]=True
 
@@ -838,11 +861,11 @@ load_map=False
 save_map=True
 
 
-#dictfile = "mrf175_SimReco2_light.dict"
+dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
-dictfile = "mrf175_Dico2_Invivo.dict"
+#dictfile = "mrf175_Dico2_Invivo.dict"
 
 mask = np.load(filename_mask)
 #volumes_all = np.load(filename_volume)
@@ -858,8 +881,8 @@ volumes_corrected=np.load(filename_volume_corrected)
 
 
 if not(load_map):
-    niter = 2
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes,ntimesteps=ntimesteps)
+    niter = 0
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes,ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected,retained_timesteps=retained_timesteps)
 
     if(save_map):
@@ -867,7 +890,7 @@ if not(load_map):
 
         #file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format(suffix)
         #file_map = filename.split(".dat")[0] + "_corrected_dens_adj{}_MRF_map.pkl".format(suffix)
-        file_map = filename.split(".dat")[0] + "_5iter_MRF_map.pkl".format("")
+        file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format(suffix)
         file = open(file_map, "wb")
         # dump information to that file
         pickle.dump(all_maps, file)
@@ -879,6 +902,28 @@ else:
     file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
     file = open(file_map, "rb")
     all_maps = pickle.load(file)
+
+from mutools import io
+curr_file=file_map
+file = open(curr_file, "rb")
+all_maps = pickle.load(file)
+file.close()
+for iter in list(all_maps.keys()):
+
+    map_rebuilt=all_maps[iter][0]
+    mask=all_maps[iter][1]
+
+    keys_simu = list(map_rebuilt.keys())
+    values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+    map_for_sim = dict(zip(keys_simu, values_simu))
+
+    #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+    #map_Python.buildParamMap()
+
+
+    for key in ["ff","wT1","df","attB1"]:
+        file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
+        io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
 
 
 map_rebuilt=all_maps[0][0]

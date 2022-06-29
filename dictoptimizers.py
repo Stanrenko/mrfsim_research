@@ -219,101 +219,101 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
             del cond
 
             ##############################################################################################################################
-            def J_alpha_pixel(alpha,phi, i, j):
-
-                current_sig_ws = (current_sig_ws_for_phase[i,j] * np.exp(1j * phi)).real
-                current_sig_fs = (current_sig_fs_for_phase[i,j] * np.exp(1j * phi)).real
-                return ((
-                         1 - alpha) * current_sig_ws + alpha * current_sig_fs) / np.sqrt(
-                    (
-                            1 - alpha) ** 2 * var_w[i] + alpha ** 2 * var_f[i] + 2 * alpha * (
-                            1 - alpha) * sig_wf[i])
-
-            phi = np.arange(-np.pi,np.pi,np.pi/20)
-            alpha = np.arange(0.,1.01,0.01)
-            alphav_np, phiv_np = np.meshgrid(alpha, phi, sparse=False, indexing='ij')
-
-            i=0
-            j=0
-
-            s,t=current_sig_ws_for_phase.shape
-            n,m = alphav_np.shape
-            result_np=np.zeros(alphav_np.shape)
-
-
-            i,j=np.unravel_index(np.random.choice(np.arange(s*t)),(s,t))
-
-            for p in tqdm(range(n)):
-                for q in range(m):
-                    result_np[p,q]=J_alpha_pixel(alphav_np[p,q],phiv_np[p,q],i,j)
-
-
-            import matplotlib.pyplot as plt
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-
-            ax.plot_surface(alphav_np, phiv_np, result_np,alpha=0.5)
-
-
-
-            index_min_p,index_min_q = np.unravel_index(np.argmax(result_np), result_np.shape)
-            alpha_min = alphav_np[index_min_p,index_min_q]
-            phi_min = phiv_np[index_min_p, index_min_q]
-            result_min = result_np[index_min_p, index_min_q]
-
-            # alpha_ = (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1)) * alpha1[i, j] + (
-            #             1 - (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1))) * alpha2[i, j]
-
-            print("Max alpha on surface : {}".format(np.round(alpha_min,2)))
-            #print("Alpha 1 : {}".format(np.round(alpha1[i,j],2)))
-            #print("Alpha 2 : {}".format(np.round(alpha2[i,j],2)))
-            print("Alpha calc : {}".format(np.round(current_alpha_all_unique[i,j], 2)))
-
-            # phi_calc = -np.angle((
-            #                               1 - alpha_) * current_sig_ws_for_phase[i, j] + alpha_ * current_sig_fs_for_phase[i, j])
+            # def J_alpha_pixel(alpha,phi, i, j):
             #
-            # d = (1 - alpha_) * current_sig_ws_for_phase[i, j] + alpha_ * \
-            #      current_sig_fs_for_phase[i, j]
-            # phi_form = -np.arctan(d.imag / d.real)
-            # phi_form = (phi_form) * (
-            #             1 * (np.sin(phi_form) * d.imag - np.cos(phi_form) * d.real) <= 0) + (
-            #                  np.mod(phi_form + np.pi, 2 * np.pi)) * (
-            #                          1 * (np.sin(phi_form) * d.imag - np.cos(phi_form) * d.real) > 0)
-
-            # phi_calc1 = -np.angle((
-            #                              1 - alpha1[i,j]) * current_sig_ws_for_phase[i,j] + alpha1[i,j] * current_sig_fs_for_phase[i,j])
-            # phi_calc2 = -np.angle((
-            #                              1 - alpha2[i, j]) * current_sig_ws_for_phase[i, j] +  alpha2[i, j] *
-            #                      current_sig_fs_for_phase[i, j])
+            #     current_sig_ws = (current_sig_ws_for_phase[i,j] * np.exp(1j * phi)).real
+            #     current_sig_fs = (current_sig_fs_for_phase[i,j] * np.exp(1j * phi)).real
+            #     return ((
+            #              1 - alpha) * current_sig_ws + alpha * current_sig_fs) / np.sqrt(
+            #         (
+            #                 1 - alpha) ** 2 * var_w[i] + alpha ** 2 * var_f[i] + 2 * alpha * (
+            #                 1 - alpha) * sig_wf[i])
             #
-            # d1 = (1 - alpha1[i,j]) * current_sig_ws_for_phase[i,j] + alpha1[i,j] * current_sig_fs_for_phase[i,j]
-            # phi_form_1 = -np.arctan(d1.imag/d1.real)
-            # d2 = (1 - alpha2[i, j]) * current_sig_ws_for_phase[i, j] + alpha2[i, j] * current_sig_fs_for_phase[
-            #     i, j]
-            # phi_form_2 = -np.arctan(d2.imag/d2.real)
+            # phi = np.arange(-np.pi,np.pi,np.pi/20)
+            # alpha = np.arange(0.,1.01,0.01)
+            # alphav_np, phiv_np = np.meshgrid(alpha, phi, sparse=False, indexing='ij')
             #
-            # phi_form_1 = (phi_form_1)*(1*(np.sin(phi_form_1)*d1.imag-np.cos(phi_form_1)*d1.real)<=0)+(np.mod(phi_form_1+np.pi,2*np.pi))*(1*(np.sin(phi_form_1)*d1.imag-np.cos(phi_form_1)*d1.real)>0)
-            # phi_form_2 = (phi_form_2) * (
-            #             1 * (np.sin(phi_form_2) * d2.imag - np.cos(phi_form_2) * d2.real) <= 0) + (
-            #                  np.mod(phi_form_2 + np.pi, 2 * np.pi)) * (
-            #                          1 * (np.sin(phi_form_2) * d2.imag - np.cos(phi_form_2) * d2.real) > 0)
-
-            print("Max phi on surface : {}".format(np.round(phi_min, 2)))
-            # print("Phi Ideal 1 : {}".format(np.round(phi_calc1, 2)))
-            # print("Phi Ideal 2 : {}".format(np.round(phi_calc2, 2)))
-            # print("Phi Formula 1 : {}".format(np.round(phi_form_1, 2)))
-            # print("Phi Formula 2 : {}".format(np.round(phi_form_2, 2)))
-            print("Phi optim: {}".format(np.round(phase_adj[i,j], 2)))
-
-            print("Max correl on surface {}".format(np.round(result_min,2)))
-            print("Retrieved correl on surface {}".format(np.round( J_alpha_pixel(current_alpha_all_unique[i,j], phase_adj[i,j], i, j)[0],2)))
-
-            ax.plot(alpha_min,phi_min,result_min,marker="x")
-            ax.plot(current_alpha_all_unique[i,j], phase_adj[i,j], J_alpha_pixel(current_alpha_all_unique[i,j], phase_adj[i,j], i, j)[0], marker="o")
-            ax.set_title("Signal {},{}".format(i,j))
-            # ax.plot(alpha1[i,j], phi_form_1, J_alpha_pixel(alpha1[i,j],phi_form_1,i,j)[0], marker="o")
-            # ax.plot(alpha2[i,j], phi_form_2,
-            #         J_alpha_pixel(alpha2[i, j], phi_form_2, i, j)[0], marker="o")
+            # i=0
+            # j=0
+            #
+            # s,t=current_sig_ws_for_phase.shape
+            # n,m = alphav_np.shape
+            # result_np=np.zeros(alphav_np.shape)
+            #
+            #
+            # i,j=np.unravel_index(np.random.choice(np.arange(s*t)),(s,t))
+            #
+            # for p in tqdm(range(n)):
+            #     for q in range(m):
+            #         result_np[p,q]=J_alpha_pixel(alphav_np[p,q],phiv_np[p,q],i,j)
+            #
+            #
+            # import matplotlib.pyplot as plt
+            # fig = plt.figure()
+            # ax = fig.add_subplot(111, projection='3d')
+            #
+            # ax.plot_surface(alphav_np, phiv_np, result_np,alpha=0.5)
+            #
+            #
+            #
+            # index_min_p,index_min_q = np.unravel_index(np.argmax(result_np), result_np.shape)
+            # alpha_min = alphav_np[index_min_p,index_min_q]
+            # phi_min = phiv_np[index_min_p, index_min_q]
+            # result_min = result_np[index_min_p, index_min_q]
+            #
+            # # alpha_ = (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1)) * alpha1[i, j] + (
+            # #             1 - (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1))) * alpha2[i, j]
+            #
+            # print("Max alpha on surface : {}".format(np.round(alpha_min,2)))
+            # #print("Alpha 1 : {}".format(np.round(alpha1[i,j],2)))
+            # #print("Alpha 2 : {}".format(np.round(alpha2[i,j],2)))
+            # print("Alpha calc : {}".format(np.round(current_alpha_all_unique[i,j], 2)))
+            #
+            # # phi_calc = -np.angle((
+            # #                               1 - alpha_) * current_sig_ws_for_phase[i, j] + alpha_ * current_sig_fs_for_phase[i, j])
+            # #
+            # # d = (1 - alpha_) * current_sig_ws_for_phase[i, j] + alpha_ * \
+            # #      current_sig_fs_for_phase[i, j]
+            # # phi_form = -np.arctan(d.imag / d.real)
+            # # phi_form = (phi_form) * (
+            # #             1 * (np.sin(phi_form) * d.imag - np.cos(phi_form) * d.real) <= 0) + (
+            # #                  np.mod(phi_form + np.pi, 2 * np.pi)) * (
+            # #                          1 * (np.sin(phi_form) * d.imag - np.cos(phi_form) * d.real) > 0)
+            #
+            # # phi_calc1 = -np.angle((
+            # #                              1 - alpha1[i,j]) * current_sig_ws_for_phase[i,j] + alpha1[i,j] * current_sig_fs_for_phase[i,j])
+            # # phi_calc2 = -np.angle((
+            # #                              1 - alpha2[i, j]) * current_sig_ws_for_phase[i, j] +  alpha2[i, j] *
+            # #                      current_sig_fs_for_phase[i, j])
+            # #
+            # # d1 = (1 - alpha1[i,j]) * current_sig_ws_for_phase[i,j] + alpha1[i,j] * current_sig_fs_for_phase[i,j]
+            # # phi_form_1 = -np.arctan(d1.imag/d1.real)
+            # # d2 = (1 - alpha2[i, j]) * current_sig_ws_for_phase[i, j] + alpha2[i, j] * current_sig_fs_for_phase[
+            # #     i, j]
+            # # phi_form_2 = -np.arctan(d2.imag/d2.real)
+            # #
+            # # phi_form_1 = (phi_form_1)*(1*(np.sin(phi_form_1)*d1.imag-np.cos(phi_form_1)*d1.real)<=0)+(np.mod(phi_form_1+np.pi,2*np.pi))*(1*(np.sin(phi_form_1)*d1.imag-np.cos(phi_form_1)*d1.real)>0)
+            # # phi_form_2 = (phi_form_2) * (
+            # #             1 * (np.sin(phi_form_2) * d2.imag - np.cos(phi_form_2) * d2.real) <= 0) + (
+            # #                  np.mod(phi_form_2 + np.pi, 2 * np.pi)) * (
+            # #                          1 * (np.sin(phi_form_2) * d2.imag - np.cos(phi_form_2) * d2.real) > 0)
+            #
+            # print("Max phi on surface : {}".format(np.round(phi_min, 2)))
+            # # print("Phi Ideal 1 : {}".format(np.round(phi_calc1, 2)))
+            # # print("Phi Ideal 2 : {}".format(np.round(phi_calc2, 2)))
+            # # print("Phi Formula 1 : {}".format(np.round(phi_form_1, 2)))
+            # # print("Phi Formula 2 : {}".format(np.round(phi_form_2, 2)))
+            # print("Phi optim: {}".format(np.round(phase_adj[i,j], 2)))
+            #
+            # print("Max correl on surface {}".format(np.round(result_min,2)))
+            # print("Retrieved correl on surface {}".format(np.round( J_alpha_pixel(current_alpha_all_unique[i,j], phase_adj[i,j], i, j)[0],2)))
+            #
+            # ax.plot(alpha_min,phi_min,result_min,marker="x")
+            # ax.plot(current_alpha_all_unique[i,j], phase_adj[i,j], J_alpha_pixel(current_alpha_all_unique[i,j], phase_adj[i,j], i, j)[0], marker="o")
+            # ax.set_title("Signal {},{}".format(i,j))
+            # # ax.plot(alpha1[i,j], phi_form_1, J_alpha_pixel(alpha1[i,j],phi_form_1,i,j)[0], marker="o")
+            # # ax.plot(alpha2[i,j], phi_form_2,
+            # #         J_alpha_pixel(alpha2[i, j], phi_form_2, i, j)[0], marker="o")
             #################################################################################################################################""""
 
             if verbose:

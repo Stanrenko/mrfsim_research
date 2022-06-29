@@ -66,7 +66,7 @@ localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_
 #localfile = "/20220113_CS/meas_MID00164_FID49559_raFin_3D_tra_1x1x5mm_FULL_50GS_slice.dat"
 #localfile = "/20220118_BM/meas_MID00151_FID49924_raFin_3D_tra_1x1x5mm_FULL_read_nav.dat"
 
-#localfile="/phantom.001.v1/phantom.001.v1.dat"
+localfile="/phantom.001.v1/phantom.001.v1.dat"
 #localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
 
 
@@ -419,10 +419,11 @@ print("Estimating Movement...")
 shifts = list(range(-20, 20))
 bottom = 50
 top = 150
-displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
+displacements = calculate_displacement(images_nav_mean, bottom, top, shifts,lambda_tv=0)
+
 
 displacement_for_binning = displacements
-bin_width = 5
+bin_width = 8
 max_bin = np.max(displacement_for_binning)
 min_bin = np.min(displacement_for_binning)
 
@@ -433,18 +434,18 @@ df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, c
 df_groups = df_cat.groupby("cat").count()
 
 #INVIVO BW 5
-group_1 = (categories == 1) | (categories == 2)| (categories == 3)
-group_2 = (categories == 4)
-group_3 = (categories == 5)
-group_4 = (categories == 6) | (categories == 7)
-groups = [group_1, group_2, group_3,group_4]
+# group_1 = (categories == 1) | (categories == 2)| (categories == 3)
+# group_2 = (categories == 4)
+# group_3 = (categories == 5)
+# group_4 = (categories == 6) | (categories == 7)
+# groups = [group_1, group_2, group_3,group_4]
 
 #PHANTOM BW 8
-# group_1 = (categories == 1) | (categories == 2)
-# group_2 = (categories == 3)
-# group_3 = (categories == 4) | (categories == 5)
+group_1 = (categories == 1) | (categories == 2)
+group_2 = (categories == 3)
+group_3 = (categories == 4) | (categories == 5)
 #
-# groups = [group_1, group_2, group_3]
+groups = [group_1, group_2, group_3]
 
 
 # group_1=(categories==1)|(categories==2)|(categories==3)
@@ -463,7 +464,7 @@ dico_mask = {}
 #j=2
 #g=groups[j]
 
-resol_factor=0.25
+resol_factor=1.0
 center_point=int(npoint/2)
 
 
@@ -475,6 +476,13 @@ for j, g in tqdm(enumerate(groups)):
                                                                           nb_segments / nb_gating_spokes).reshape(1,
                                                                                                                   -1)),
                              axis=-1)
+
+    if not (nb_segments == nb_gating_spokes):
+        spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
+        spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
+            nb_segments / nb_gating_spokes / 2) + 1:] - 1
+        spoke_groups = spoke_groups.flatten()
+
     included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
     included_spokes[::int(nb_segments / nb_gating_spokes)] = False
     print("Filtering KData for movement...")
@@ -616,6 +624,12 @@ for j, g in tqdm(enumerate(groups)):
                                                                           nb_segments / nb_gating_spokes).reshape(1,
                                                                                                                   -1)),
                              axis=-1)
+
+    if not (nb_segments == nb_gating_spokes):
+        spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
+        spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
+            nb_segments / nb_gating_spokes / 2) + 1:] - 1
+        spoke_groups = spoke_groups.flatten()
     included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
     included_spokes[::int(nb_segments / nb_gating_spokes)] = False
     print("Filtering KData for movement...")
@@ -681,7 +695,7 @@ volumes_corrected_final/=count
 
 np.save(filename_volume_corrected_final,volumes_corrected_final)
 #
-# animate_images(volumes_corrected_final[:,int(nb_slices/2),:,:])
+animate_images(volumes_corrected_final[:,int(nb_slices/2),:,:])
 
 ######################################################################################""
 
@@ -950,7 +964,7 @@ volumes_corrected_final=np.load(filename_volume_corrected_final)
 ntimesteps=175
 if not(load_map):
     niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_final,retained_timesteps=None)
 
     if(save_map):
