@@ -362,19 +362,38 @@ nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=nb_slices,
 
 nav_image_size = (int(npoint / 2),)
 
-print("Calculating Sensitivity Maps for Nav Images...")
-b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
-b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
+# print("Calculating Sensitivity Maps for Nav Images...")
+# b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
+# b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
+#
+#
+# print("Rebuilding Nav Images...")
+# images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
+#
+# print("Estimating Movement...")
+# shifts = list(range(-20, 20))
+# bottom = 50
+# top = 150
+# displacements = calculate_displacement(images_nav_mean, bottom, top, shifts,lambda_tv=0)
 
+shifts=np.arange(-30,30)
+bottom=-shifts[0]
+top=int(npoint/2)-shifts[-1]
 
-print("Rebuilding Nav Images...")
-images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
+displacements_all_channels=[]
+for j in tqdm(range(nb_channels)):
+    images_series_rebuilt_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[j],axis=0), nav_traj, nav_image_size, b1=None)
+    image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
+    curr_displacement=calculate_displacement(image_nav_ch,bottom,top,shifts)
+    displacements_all_channels.append(curr_displacement)
+    # plt.figure()
 
-print("Estimating Movement...")
-shifts = list(range(-20, 20))
-bottom = 50
-top = 150
-displacements = calculate_displacement(images_nav_mean, bottom, top, shifts,lambda_tv=0)
+pca=PCAComplex(n_components_=1)
+disp_transf=pca.fit_transform(displacements_all_channels)
+
+ch=np.argsort(np.abs(disp_transf[:,0]))[-1]
+displacements=displacements_all_channels[ch]
+
 
 plt.figure()
 plt.plot(displacements)

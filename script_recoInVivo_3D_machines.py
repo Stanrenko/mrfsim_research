@@ -32,6 +32,21 @@ sys.path.append(path+"/dicomstack")
 from machines import machine, Toolbox, Config, set_parameter, set_output, printer, file_handler, Parameter, RejectException, get_context
 
 
+def calc_grad_entropy(v):
+    ndim = v.ndim
+    grad_norm = 0
+    for axis in range(ndim):
+        pad = v.ndim * [(0, 0)]
+        pad[axis] = (0, 1)
+        pad = tuple(pad)
+        grad = np.diff(np.pad(v, pad, mode="constant"), axis=axis)
+
+        grad_norm += np.abs(grad) ** 2
+
+    grad_norm = np.sqrt(grad_norm)
+    p = grad_norm / np.sum(grad_norm)
+    return np.sum(-np.log2(p) * p)
+
 @machine
 @set_parameter("filename", str, default=None, description="Siemens K-space data .dat file")
 @set_parameter("suffix",str,default="")
@@ -562,6 +577,163 @@ def build_volumes(filename_kdata,filename_traj,sampling_mode,undersampling_facto
     gif[0].save(filename_gif,save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
 
     return
+
+
+@machine
+@set_parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
+@set_parameter("filename_nav_save", str, default=None, description="Saved K-space navigator data .npy file")
+@set_parameter("filename_traj", str, default=None, description="Saved traj data .npy file (useful for traj not covered by Trajectory object e.g. Grappa rebuilt data")
+@set_parameter("sampling_mode", ["stack","incoherent_old","incoherent_new"], default="stack", description="Radial sampling strategy over partitions")
+@set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
+@set_parameter("use_GPU", bool, default=True, description="Use GPU")
+@set_parameter("light_mem", bool, default=True, description="Memory usage")
+@set_parameter("dens_adj", bool, default=False, description="Density adjustment for radial data")
+@set_parameter("suffix",str,default="")
+def build_data_autofocus(filename_kdata,filename_traj,filename_nav_save,sampling_mode,undersampling_factor,use_GPU,light_mem,dens_adj,suffix):
+    # b1_all_slices=b1_full
+
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+    filename_b1 = ("_b1" + suffix).join(str.split(filename_kdata, "_kdata"))
+
+    b1_all_slices = np.load(filename_b1)
+    filename_kdata_modif = ("_kdata_modif" + suffix).join(str.split(filename_kdata, "_kdata"))
+    print(filename_volume)
+    sampling_mode_list = str.split(sampling_mode, "_")
+
+    if sampling_mode_list[0] == "stack":
+        incoherent = False
+    else:
+        incoherent = True
+
+    if len(sampling_mode_list) > 1:
+        mode = sampling_mode_list[1]
+    else:
+        mode = "old"
+
+    data_shape = kdata_all_channels_all_slices.shape
+    nb_segments = data_shape[1]
+    npoint = data_shape[-1]
+    nb_slices = data_shape[2] * undersampling_factor
+    image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
+
+    print("Processing Nav Data...")
+    data_for_nav = np.load(filename_nav_save)
+
+    nb_allspokes = nb_segments
+    nb_slices = data_for_nav.shape[1]
+    nb_gating_spokes=data_for_nav.shape[2]
+    nb_channels = data_for_nav.shape[0]
+    npoint_for_nav = data_for_nav.shape[-1]
+
+    all_timesteps = np.arange(nb_allspokes)
+    nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
+
+    nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint_for_nav, nb_slices=nb_slices,
+                           applied_timesteps=list(nav_timesteps))
+
+    nav_image_size = (int(npoint_for_nav / 2),)
+
+    print("Calculating Sensitivity Maps for Nav Images...")
+    b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
+    b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
+
+    print("Rebuilding Nav Images...")
+    images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
+
+    images_nav_mean_reshaped = images_nav_mean.reshape(-1, 400)
+
+
+    print("Estimating Movement...")
+    shifts = list(range(-20, 20))
+    bottom = 50
+    top = 150
+    displacements = calculate_displacement(images_nav_mean, bottom, top, shifts, lambda_tv=0)
+
+
+
+    if filename_traj is None:
+        radial_traj = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=undersampling_factor, npoint=npoint,
+                               nb_slices=nb_slices, incoherent=incoherent, mode=mode)
+    else:
+        curr_traj_completed_all_ts=np.load(filename_traj)
+        radial_traj=Radial3D(total_nspokes=nb_allspokes, undersampling_factor=1, npoint=npoint,
+                                  nb_slices=nb_slices, incoherent=incoherent, mode=mode)
+        radial_traj.traj = curr_traj_completed_all_ts
+
+    spoke_groups = np.argmin(np.abs(
+        np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
+                                                                          nb_segments / nb_gating_spokes).reshape(1,
+                                                                                                                  -1)),
+        axis=-1)
+
+    if not (nb_segments == nb_gating_spokes):
+        spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
+        spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
+            nb_segments / nb_gating_spokes / 2) + 1:] - 1
+        spoke_groups = spoke_groups.flatten()
+
+    displacements_extrapolated = np.array([displacements[j] for j in spoke_groups])
+
+    plt.figure()
+    plt.plot(displacements_extrapolated)
+
+    x = np.arange(-1., 1.2, 0.1)
+    y = np.arange(-0.4, 0.6, 0.1)
+    #z = np.arange(-0.4, 0.6, 0.2)
+
+
+    entropy_all = []
+    ent_min = np.inf
+    for dx in tqdm(x):
+        entropy_x = []
+        for dy in y:
+            alpha = np.array([dx, dy, 0])
+            dr = np.expand_dims(alpha, axis=(0, 1)) * np.expand_dims(
+                displacements_extrapolated.reshape(nb_slices, 1400).T, axis=(2))
+            modif = np.exp(
+                1j * np.sum((radial_traj.get_traj().reshape(1400, -1, npoint, 3) * np.expand_dims(dr, axis=2)),
+                            axis=-1))
+            data_modif = kdata_all_channels_all_slices * modif
+            volume_full_modif = \
+                simulate_radial_undersampled_images_multi(data_modif, radial_traj, image_size, b1=b1_all_slices,
+                                                          density_adj=False, ntimesteps=1, useGPU=False,
+                                                          normalize_kdata=True, memmap_file=None,
+                                                          light_memory_usage=light_memory_usage,
+                                                          normalize_volumes=True)[0]
+            ent = calc_grad_entropy(volume_full_modif)
+            entropy_x.append(ent)
+            if ent < ent_min:
+                modif_final = modif
+                alpha_min = alpha
+                ent_min = ent
+
+        entropy_all.append(entropy_x)
+
+    X, Y = np.meshgrid(x, y)
+
+    fig = plt.figure(figsize=(15, 15))
+    ax = fig.gca(projection='3d')
+    surf = ax.plot_surface(X, Y, np.array(entropy_all), rstride=1, cstride=1, cmap='hot', linewidth=0,
+                           antialiased=False)
+
+    filename_entropy = str.split(filename_kdata, ".npy")[0] + "_entropy.jpg"
+    plt.savefig(filename_entropy)
+    np.save(filename_kdata_modif, kdata_all_channels_all_slices*modif)
+
+
+    # gif=[]
+    # sl=int(volumes_all.shape[1]/2)
+    # volume_for_gif = np.abs(volumes_all[:,sl,:,:])
+    # for i in range(volume_for_gif.shape[0]):
+    #     img = Image.fromarray(np.uint8(volume_for_gif[i]/np.max(volume_for_gif[i])*255), 'L')
+    #     img=img.convert("P")
+    #     gif.append(img)
+    #
+    # filename_gif = str.split(filename_volume,".npy") [0]+".gif"
+    # gif[0].save(filename_gif,save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
+
+    return
+
 
 @machine
 @set_parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
