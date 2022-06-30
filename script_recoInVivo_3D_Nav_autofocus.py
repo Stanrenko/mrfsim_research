@@ -84,13 +84,14 @@ filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
 
 folder = "/".join(str.split(filename,"/")[:-1])
 
-suffix="_allspokes8"
+suffix="_autofocus"
 
 filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 
 filename_volume = str.split(filename,".dat") [0]+"_volumes{}.npy".format(suffix)
 filename_volume_corrected = str.split(filename,".dat") [0]+"_volumes_corrected{}.npy".format(suffix)
+filename_mask_corrected = str.split(filename,".dat") [0]+"_mask_corrected{}.npy".format(suffix)
 filename_volume_corrected_final = str.split(filename,".dat") [0]+"_volumes_corrected_final{}.npy".format("")
 filename_kdata = str.split(filename,".dat") [0]+"_kdata{}.npy".format("")
 filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
@@ -375,20 +376,40 @@ bottom = 50
 top = 150
 displacements = calculate_displacement(images_nav_mean, bottom, top, shifts,lambda_tv=0)
 
+plt.figure()
+plt.plot(displacements)
 
-displacement_for_binning = displacements
-bin_width = 8
-max_bin = np.max(displacement_for_binning)
-min_bin = np.min(displacement_for_binning)
+# displacement_for_binning = displacements
+# bin_width = 8
+# max_bin = np.max(displacement_for_binning)
+# min_bin = np.min(displacement_for_binning)
+#
+# bins = np.arange(min_bin, max_bin + bin_width, bin_width)
+# #print(bins)
+# categories = np.digitize(displacement_for_binning, bins)
+# df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, columns=["displacement", "cat"])
+# df_groups = df_cat.groupby("cat").count()
 
-bins = np.arange(min_bin, max_bin + bin_width, bin_width)
-#print(bins)
-categories = np.digitize(displacement_for_binning, bins)
-df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, columns=["displacement", "cat"])
-df_groups = df_cat.groupby("cat").count()
+spoke_groups = np.argmin(np.abs(
+        np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
+                                                                          nb_segments / nb_gating_spokes).reshape(1,
+                                                                                                                  -1)),
+                             axis=-1)
 
-x = np.arange(-1, 1, 0.1)
-y = np.arange(-1, 1, 0.1)
+if not (nb_segments == nb_gating_spokes):
+    spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
+    spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
+            nb_segments / nb_gating_spokes / 2) + 1:] - 1
+    spoke_groups = spoke_groups.flatten()
+
+displacements_extrapolated = np.array([displacements[j] for j in spoke_groups])
+
+plt.figure()
+plt.plot(displacements_extrapolated)
+
+
+x = np.arange(0., 2.2, 0.2)
+y = np.arange(-1, 1.2, 0.2)
 
 entropy_all = []
 ent_min = np.inf
@@ -396,16 +417,16 @@ for dx in tqdm(x):
     entropy_x = []
     for dy in y:
         alpha = np.array([dx, dy, 0])
-        dr = np.expand_dims(alpha, axis=(0, 1)) * np.expand_dims(displacements.reshape(nb_slices, 1400).T, axis=(2))
+        dr = np.expand_dims(alpha, axis=(0, 1)) * np.expand_dims(displacements_extrapolated.reshape(nb_slices, 1400).T, axis=(2))
         modif = np.exp(
             1j * np.sum((radial_traj.get_traj().reshape(1400, -1, npoint, 3) * np.expand_dims(dr, axis=2)), axis=-1))
-        data_modif = data * modif
+        data_modif = kdata_all_channels_all_slices * modif
         volume_full_modif = \
         simulate_radial_undersampled_images_multi(data_modif, radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)[0]
         ent = calc_grad_entropy(volume_full_modif)
         entropy_x.append(ent)
         if ent < ent_min:
-            data_final = data_modif
+            modif_final = modif
             alpha_min = alpha
             ent_min = ent
 
@@ -417,6 +438,27 @@ X, Y = np.meshgrid(x, y)
 fig = plt.figure(figsize=(15,15))
 ax = fig.gca(projection='3d')
 surf = ax.plot_surface(X, Y, np.array(entropy_all), rstride=1, cstride=1, cmap='hot', linewidth=0, antialiased=False)
+
+
+#volumes for slice taking into account coil sensi
+print("Building Volumes Corrected....")
+if str.split(filename_volume_corrected,"/")[-1] not in os.listdir(folder):
+    data_modif = kdata_all_channels_all_slices*modif_final
+    volumes_all_modif=simulate_radial_undersampled_images_multi(data_modif,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+    np.save(filename_volume_corrected,volumes_all_modif)
+    # sl=20
+    ani = animate_images(volumes_all_modif[:,int(nb_slices/2),:,:])
+    del volumes_all_modif
+
+print("Building Mask Corrected....")
+if str.split(filename_mask_corrected,"/")[-1] not in os.listdir(folder):
+    selected_spokes = np.r_[10:400]
+    selected_spokes=None
+    data_modif = kdata_all_channels_all_slices * modif_final
+    mask_modif=build_mask_single_image_multichannel(data_modif,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/25, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
+    np.save(filename_mask_corrected,mask_modif)
+    animate_images(mask_modif)
+    del mask_modif
 
 ##volumes for slice taking into account coil sensi
 # print("Building Volumes....")
@@ -461,12 +503,12 @@ dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
 #dictfile = "mrf175_Dico2_Invivo.dict"
-filename_volume_corrected_final = str.split(filename,".dat") [0]+"_volumes_corrected_final_old{}.npy".format("")
+#filename_volume_corrected_final = str.split(filename,".dat") [0]+"_volumes_corrected_final_old{}.npy".format("")
 
 
-mask = np.load(filename_mask)
+mask = np.load(filename_mask_corrected)
 #volumes_all = np.load(filename_volume)
-volumes_corrected_final=np.load(filename_volume_corrected_final)
+volumes_all=np.load(filename_volume_corrected)
 
 
 #ani = animate_images(volumes_all[:,4,:,:])
@@ -480,7 +522,7 @@ ntimesteps=175
 if not(load_map):
     niter = 0
     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
-    all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_final,retained_timesteps=None)
+    all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
         import pickle
