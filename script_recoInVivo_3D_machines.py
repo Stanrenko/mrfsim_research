@@ -32,21 +32,6 @@ sys.path.append(path+"/dicomstack")
 from machines import machine, Toolbox, Config, set_parameter, set_output, printer, file_handler, Parameter, RejectException, get_context
 
 
-def calc_grad_entropy(v):
-    ndim = v.ndim
-    grad_norm = 0
-    for axis in range(ndim):
-        pad = v.ndim * [(0, 0)]
-        pad[axis] = (0, 1)
-        pad = tuple(pad)
-        grad = np.diff(np.pad(v, pad, mode="constant"), axis=axis)
-
-        grad_norm += np.abs(grad) ** 2
-
-    grad_norm = np.sqrt(grad_norm)
-    p = grad_norm / np.sum(grad_norm)
-    return np.sum(-np.log2(p) * p)
-
 @machine
 @set_parameter("filename", str, default=None, description="Siemens K-space data .dat file")
 @set_parameter("suffix",str,default="")
@@ -585,19 +570,22 @@ def build_volumes(filename_kdata,filename_traj,sampling_mode,undersampling_facto
 @set_parameter("filename_traj", str, default=None, description="Saved traj data .npy file (useful for traj not covered by Trajectory object e.g. Grappa rebuilt data")
 @set_parameter("sampling_mode", ["stack","incoherent_old","incoherent_new"], default="stack", description="Radial sampling strategy over partitions")
 @set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
-@set_parameter("use_GPU", bool, default=True, description="Use GPU")
 @set_parameter("light_mem", bool, default=True, description="Memory usage")
 @set_parameter("dens_adj", bool, default=False, description="Density adjustment for radial data")
 @set_parameter("suffix",str,default="")
-def build_data_autofocus(filename_kdata,filename_traj,filename_nav_save,sampling_mode,undersampling_factor,use_GPU,light_mem,dens_adj,suffix):
+def build_data_autofocus(filename_kdata,filename_traj,filename_nav_save,sampling_mode,undersampling_factor,light_mem,dens_adj,suffix):
     # b1_all_slices=b1_full
 
+    print("Loading Files...")
     kdata_all_channels_all_slices = np.load(filename_kdata)
-    filename_b1 = ("_b1" + suffix).join(str.split(filename_kdata, "_kdata"))
 
+    print("Loading coil sensi")
+    filename_b1 = ("_b1" + suffix).join(str.split(filename_kdata, "_kdata"))
     b1_all_slices = np.load(filename_b1)
+
+    print("Parsing parameters")
     filename_kdata_modif = ("_kdata_modif" + suffix).join(str.split(filename_kdata, "_kdata"))
-    print(filename_volume)
+    #print(filename_volume)
     sampling_mode_list = str.split(sampling_mode, "_")
 
     if sampling_mode_list[0] == "stack":
@@ -616,14 +604,19 @@ def build_data_autofocus(filename_kdata,filename_traj,filename_nav_save,sampling
     nb_slices = data_shape[2] * undersampling_factor
     image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
 
+    print(data_shape)
+
     print("Processing Nav Data...")
     data_for_nav = np.load(filename_nav_save)
+
+    print(data_for_nav.shape)
 
     nb_allspokes = nb_segments
     nb_slices = data_for_nav.shape[1]
     nb_gating_spokes=data_for_nav.shape[2]
     nb_channels = data_for_nav.shape[0]
     npoint_for_nav = data_for_nav.shape[-1]
+
 
     all_timesteps = np.arange(nb_allspokes)
     nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
@@ -633,21 +626,25 @@ def build_data_autofocus(filename_kdata,filename_traj,filename_nav_save,sampling
 
     nav_image_size = (int(npoint_for_nav / 2),)
 
-    print("Calculating Sensitivity Maps for Nav Images...")
+    print("Rebuilding Nav Images...")
+    #print("Calculating Sensitivity Maps for Nav Images...")
     b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
     b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
 
-    print("Rebuilding Nav Images...")
-    images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
+    images_nav = np.abs(
+        simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1=b1_nav_mean))
 
-    images_nav_mean_reshaped = images_nav_mean.reshape(-1, 400)
+    #best_ch=4
+    #images_nav = np.abs(simulate_nav_images_multi(np.expand_dims(data_for_nav[best_ch],axis=0), nav_traj, nav_image_size, b1=None))
+
+
 
 
     print("Estimating Movement...")
-    shifts = list(range(-20, 20))
-    bottom = 50
-    top = 150
-    displacements = calculate_displacement(images_nav_mean, bottom, top, shifts, lambda_tv=0)
+    shifts = list(range(-30, 30))
+    bottom = -shifts[0]
+    top = nav_image_size[0]-shifts[-1]
+    displacements = calculate_displacement(images_nav, bottom, top, shifts, lambda_tv=0.001)
 
 
 
@@ -661,7 +658,7 @@ def build_data_autofocus(filename_kdata,filename_traj,filename_nav_save,sampling
         radial_traj.traj = curr_traj_completed_all_ts
 
     spoke_groups = np.argmin(np.abs(
-        np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
+        np.arange(0, nb_segments * nb_slices, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_slices,
                                                                           nb_segments / nb_gating_spokes).reshape(1,
                                                                                                                   -1)),
         axis=-1)
@@ -674,50 +671,57 @@ def build_data_autofocus(filename_kdata,filename_traj,filename_nav_save,sampling
 
     displacements_extrapolated = np.array([displacements[j] for j in spoke_groups])
 
-    plt.figure()
-    plt.plot(displacements_extrapolated)
+    x = np.arange(-1.0, 1.01, 0.1)
+    y = np.array([0])
+    z = np.arange(-0.5, 0.51, 0.1)
 
-    x = np.arange(-1., 1.2, 0.1)
-    y = np.arange(-0.4, 0.6, 0.1)
-    #z = np.arange(-0.4, 0.6, 0.2)
-
-
+    print("Calculating Entropy for all movement ranges...")
     entropy_all = []
     ent_min = np.inf
     for dx in tqdm(x):
-        entropy_x = []
-        for dy in y:
-            alpha = np.array([dx, dy, 0])
-            dr = np.expand_dims(alpha, axis=(0, 1)) * np.expand_dims(
-                displacements_extrapolated.reshape(nb_slices, 1400).T, axis=(2))
-            modif = np.exp(
-                1j * np.sum((radial_traj.get_traj().reshape(1400, -1, npoint, 3) * np.expand_dims(dr, axis=2)),
-                            axis=-1))
-            data_modif = kdata_all_channels_all_slices * modif
-            volume_full_modif = \
-                simulate_radial_undersampled_images_multi(data_modif, radial_traj, image_size, b1=b1_all_slices,
-                                                          density_adj=False, ntimesteps=1, useGPU=False,
-                                                          normalize_kdata=True, memmap_file=None,
-                                                          light_memory_usage=light_memory_usage,
-                                                          normalize_volumes=True)[0]
-            ent = calc_grad_entropy(volume_full_modif)
-            entropy_x.append(ent)
-            if ent < ent_min:
-                modif_final = modif
-                alpha_min = alpha
-                ent_min = ent
+        entropy_xzy = []
+        for dz in z:
+            entropy_zy=[]
+            for dy in y:
+                alpha = np.array([dx, dy, dz])
+                dr = np.expand_dims(alpha, axis=(0, 1)) * np.expand_dims(
+                    displacements_extrapolated.reshape(nb_slices, nb_segments).T, axis=(2))
+                modif = np.exp(
+                    1j * np.sum((radial_traj.get_traj().reshape(nb_segments, -1, npoint, 3) * np.expand_dims(dr, axis=2)),
+                                axis=-1))
+                data_modif = kdata_all_channels_all_slices * modif
+                volume_full_modif = \
+                    simulate_radial_undersampled_images_multi(data_modif, radial_traj, image_size, b1=b1_all_slices,
+                                                              density_adj=dens_adj, ntimesteps=1, useGPU=False,
+                                                              normalize_kdata=False, memmap_file=None,
+                                                              light_memory_usage=light_mem,
+                                                              normalize_volumes=True)[0]
+                ent = calc_grad_entropy(volume_full_modif)
+                entropy_zy.append(ent)
+                if ent < ent_min:
+                    modif_final = modif
+                    alpha_min = alpha
+                    ent_min = ent
 
-        entropy_all.append(entropy_x)
+            entropy_xzy.append(entropy_zy)
+        entropy_all.append(entropy_xzy)
 
-    X, Y = np.meshgrid(x, y)
+    print("Alpha min: {}".format(alpha_min))
 
-    fig = plt.figure(figsize=(15, 15))
-    ax = fig.gca(projection='3d')
-    surf = ax.plot_surface(X, Y, np.array(entropy_all), rstride=1, cstride=1, cmap='hot', linewidth=0,
-                           antialiased=False)
+    filename_entropy = str.split(filename_kdata, ".npy")[0] + "_entropy.npy"
+    np.save(filename_entropy,np.array(entropy_all))
 
-    filename_entropy = str.split(filename_kdata, ".npy")[0] + "_entropy.jpg"
-    plt.savefig(filename_entropy)
+    #X, Y = np.meshgrid(x, y)
+
+
+    #fig = plt.figure(figsize=(15, 15))
+    #ax = fig.gca(projection='3d')
+    #surf = ax.plot_surface(X, Y, np.array(entropy_all), rstride=1, cstride=1, cmap='hot', linewidth=0,
+    #                       antialiased=False)
+
+    #filename_entropy_image = str.split(filename_kdata, ".npy")[0] + "_entropy.jpg"
+    #plt.savefig(filename_entropy_image)
+
     np.save(filename_kdata_modif, kdata_all_channels_all_slices*modif)
 
 
@@ -808,6 +812,8 @@ toolbox.add_program("build_volumes", build_volumes)
 toolbox.add_program("build_mask", build_mask)
 toolbox.add_program("build_data_for_grappa_simulation", build_data_for_grappa_simulation)
 toolbox.add_program("calib_and_estimate_kdata_grappa", calib_and_estimate_kdata_grappa)
+toolbox.add_program("build_data_autofocus", build_data_autofocus)
+
 
 if __name__ == "__main__":
     toolbox.cli()

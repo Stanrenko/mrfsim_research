@@ -28,14 +28,15 @@ from numpy import memmap
 import pickle
 
 def main():
+    sl =None
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hv:m:d:s:p:")
+        opts, args = getopt.getopt(sys.argv[1:], "hv:m:d:s:p:i:")
     except getopt.GetoptError:
-        print("script_reconinVivo_3D_console.py -v <volumes_file> -m <mask_file> -d <dict_file> -s <split> --p <pca_comp_number>")
+        print("script_reconinVivo_3D_console.py -v <volumes_file> -m <mask_file> -d <dict_file> -s <split> --p <pca_comp_number> --i <slice>")
         sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print("script_reconinVivo_3D_console.py -v <volumes_file> -m <mask_file> -d <dict_file> -s <split> -p <pca_comp_number>")
+            print("script_reconinVivo_3D_console.py -v <volumes_file> -m <mask_file> -d <dict_file> -s <split> -p <pca_comp_number> --i <slice>")
             sys.exit()
         elif opt in ("-v"):
             filename_volume=arg
@@ -48,8 +49,19 @@ def main():
             split=int(arg)
         elif opt in ("--pca"):
             threshold_pca = int(arg)
+        elif opt in ("--pca"):
+            threshold_pca = int(arg)
+        elif opt in ("--i"):
+            if not(arg==""):
+                sl = int(arg)
 
     output_file = filename_volume.split(".npy")[0] + "_MRF_map.pkl"
+
+    if sl is not None:
+        mask_slice=np.zeros(mask.shape,dtype=mask.dtype)
+        mask_slice[sl]=1
+        mask *= mask_slice
+        output_file = filename_volume.split(".npy")[0] + "_sl{}_MRF_map.pkl".format(sl)
 
     optimizer = SimpleDictSearch(mask=mask,niter=0,seq=None,trajectory=None,split=split,pca=True,threshold_pca=threshold_pca,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
     all_maps=optimizer.search_patterns(dictfile,volumes_all)
