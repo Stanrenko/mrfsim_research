@@ -1,5 +1,5 @@
 import numpy as np
-from utils_mrf import radial_golden_angle_traj,radial_golden_angle_traj_3D,spiral_golden_angle_traj,spiral_golden_angle_traj_v2,radial_golden_angle_traj_random_3D,radial_golden_angle_traj_3D_incoherent
+from utils_mrf import radial_golden_angle_traj,radial_golden_angle_traj_3D,spiral_golden_angle_traj,spiral_golden_angle_traj_v2,radial_golden_angle_traj_random_3D,radial_golden_angle_traj_3D_incoherent,cartesian_traj_2D
 from mrfsim import groupby
 
 
@@ -131,13 +131,23 @@ class Radial3D(Trajectory):
 
 class Cartesian3D(Trajectory):
 
-    def __init__(self,total_nspokes=1400,npoint_x=256,npoint_y=256,**kwargs):
+    def __init__(self,total_nspokes=1400,npoint_x=256,npoint_y=256,npoint_z=16,**kwargs):
         super().__init__(**kwargs)
 
-        self.paramDict["total_nspokes"]=total_nspokes #total nspokes per rep
+        if self.applied_timesteps is not None:
+            self.paramDict["total_nspokes"] = len(self.applied_timesteps)  # total nspokes per rep
+
+        else:
+            self.paramDict["total_nspokes"]=total_nspokes #total nspokes per rep
+
         self.paramDict["npoint_x"] = npoint_x
         self.paramDict["npoint_y"] = npoint_y
         self.paramDict["npoint_z"] = npoint_z
+
+        if "reconstruct_each_partition" in self.paramDict:#Navigator - full k-space sampled at each rep
+            self.reconstruct_each_partition = self.paramDict["reconstruct_each_partition"]
+            if self.paramDict["reconstruct_each_partition"]:
+                self.paramDict["npoint"]=npoint_x*npoint_y*npoint_z
 
         self.paramDict["nb_rep"]=1
 
@@ -145,15 +155,17 @@ class Cartesian3D(Trajectory):
         if self.traj is None:
             npoint_x = self.paramDict["npoint_x"]
             npoint_y = self.paramDict["npoint_y"]
+            npoint_z = self.paramDict["npoint_z"]
             total_nspokes = self.paramDict["total_nspokes"]
 
-            base_traj=cartesian_traj_2D(npoint_x,npoint_y)
+            #base_traj=cartesian_traj_2D(npoint_x,npoint_y)
             k_max=np.pi
             kx = -k_max + np.arange(npoint_x) * 2 * k_max / (npoint_x - 1)
             ky = -k_max + np.arange(npoint_y) * 2 * k_max / (npoint_y - 1)
+            kz = -k_max + np.arange(npoint_z) * 2 * k_max / (npoint_z - 1)
 
-            KX, KY = np.meshgrid(kx, ky)
-            base_traj=np.stack([KX.flatten(), KY.flatten()], axis=-1)
+            KX, KY,KZ = np.meshgrid(kx, ky,kz)
+            base_traj=np.stack([KX.flatten(), KY.flatten(),KZ.flatten()], axis=-1)
 
             #traj = np.reshape(groupby(all_spokes, nspoke), (-1, npoint * nspoke))
             traj = np.tile(base_traj,(total_nspokes,1,1))
@@ -219,7 +231,7 @@ class Navigator3D(Trajectory):
         if self.traj is None:
             npoint = self.paramDict["npoint"]
             direction=self.paramDict["direction"]
-            nb_rep=self.paramDict["nb_rep"]
+            #nb_rep=self.paramDict["nb_rep"]
             total_nspoke=self.paramDict["total_nspokes"]
             k_max=np.pi
 

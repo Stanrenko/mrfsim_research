@@ -39,7 +39,7 @@ from machines import machine, Toolbox, Config, set_parameter, set_output, printe
 from mutools import io
 from mutools.tables import aggregate
 from mutools.optim.dictsearch import dictsearch, groupmatch, utils
-from mutools.toolbox.main import GetResults, handlers_common
+#from mutools.toolbox.main import GetResults, handlers_common
 
 DEFAULT_SEQUENCE = "mrf_sequence.json"
 DEFAULT_CONFIG = "mrf_dictconf.json"

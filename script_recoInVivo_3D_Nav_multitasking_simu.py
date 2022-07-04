@@ -687,9 +687,9 @@ with open("mrf_sequence.json") as f:
 
 seq = T1MRF(**sequence_config)
 
-nb_filled_slices = 4
-nb_empty_slices=0
-repeat_slice=4
+nb_filled_slices = 16
+nb_empty_slices=2
+repeat_slice=16
 nb_slices = nb_filled_slices+2*nb_empty_slices
 
 undersampling_factor=1
@@ -697,7 +697,7 @@ undersampling_factor=1
 name = "SquareSimu3DMTRandom"
 
 
-use_GPU = False
+use_GPU = True
 light_memory_usage=True
 gen_mode="other"
 
@@ -718,6 +718,8 @@ filename_paramMask=filename+"_paramMask_sl{}_rp{}.npy".format(nb_slices,repeat_s
 filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
 
 filename_kdata = filename+"_kdata_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_kdata_gt = filename+"_kdata_mvt_gt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
 filename_volume = filename+"_volumes_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 filename_mask= filename+"_mask_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 file_map = filename + "_mvt_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,suffix)
@@ -731,11 +733,11 @@ file_map = filename + "_mvt_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repea
 ntimesteps=175
 nb_channels=1
 nb_allspokes = 1400
-npoint = 512
+npoint = 128
 
 
 
-incoherent=False
+incoherent=True
 mode="old"
 
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
@@ -747,7 +749,7 @@ with open(dictjson) as f:
     dict_config = json.load(f)
 dict_config["ff"]=np.arange(0.,1.05,0.05)
 
-if name=="SquareSimu3DMT":
+if name=="SquareSimu3DMTRandom":
     region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
     mask_reduction_factor=1/4
 
@@ -807,7 +809,7 @@ if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
 # io.write(file_mha, np.abs(image), tags={"spacing": [5, 1, 1]})
 
 
-radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,is_random=True)
+radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,is_random=False)
 
 nb_channels=1
 
@@ -821,7 +823,7 @@ m_.add_movements([move])
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
 
     #images = copy(m.images_series)
-    data=m_.generate_kdata(radial_traj)
+    data=m_.generate_kdata(radial_traj,useGPU=use_GPU)
 
     data=np.array(data)
     np.save(filename_kdata, data)
@@ -831,32 +833,58 @@ else:
     data = np.load(filename_kdata)
 
 
+if str.split(filename_kdata_gt,"/")[-1] not in os.listdir(folder):
+    m_.list_movements=[]
+    #images = copy(m.images_series)
+    data_gt=m_.generate_kdata(radial_traj,useGPU=use_GPU)
+
+    data_gt=np.array(data_gt)
+    np.save(filename_kdata_gt, data_gt)
+
+    m_.add_movements([move])
+
+else:
+    #kdata_all_channels_all_slices = open_memmap(filename_kdata)
+    data_gt = np.load(filename_kdata_gt)
+
 ##volumes for slice taking into account coil sensi
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    volumes_all=simulate_radial_undersampled_images(data,radial_traj,image_size,density_adj=True,useGPU=False)
+    volumes_all=simulate_radial_undersampled_images(data,radial_traj,image_size,density_adj=True,useGPU=use_GPU)
     np.save(filename_volume,volumes_all)
     # sl=20
     # ani = animate_images(volumes_all[:,sl,:,:])
     del volumes_all
 
 volumes_all=np.load(filename_volume)
-
-
+sl=int(nb_slices/2)
+ani = animate_images(volumes_all[:,sl,:,:])
 
 nb_gating_spokes=50
 ts_between_spokes=int(nb_allspokes/50)
 timesteps = list(np.arange(1400)[::ts_between_spokes])
 
-nav_z=Navigator3D(direction=[1,0,0.0],applied_timesteps=timesteps,npoint=512)
-kdata_nav = m_.generate_kdata(nav_z)
-
+nav_z=Navigator3D(direction=[1,0,0.0],applied_timesteps=timesteps,npoint=npoint)
+kdata_nav = m_.generate_kdata(nav_z,useGPU=use_GPU)
 
 kdata_nav=np.array(kdata_nav)
 
 data_for_nav = np.expand_dims(kdata_nav,axis=0)
 data_for_nav =  np.moveaxis(data_for_nav,1,2)
 data_for_nav = data_for_nav.astype("complex64")
+
+
+m_.list_movements=[]
+kdata_nav_gt = m_.generate_kdata(nav_z,useGPU=use_GPU)
+
+kdata_nav_gt=np.array(kdata_nav_gt)
+
+data_for_nav_gt = np.expand_dims(kdata_nav_gt,axis=0)
+data_for_nav_gt =  np.moveaxis(data_for_nav_gt,1,2)
+data_for_nav_gt = data_for_nav_gt.astype("complex64")
+
+m_.add_movements([move])
+
 
 all_timesteps = np.arange(nb_allspokes)
 nav_timesteps = timesteps
@@ -874,12 +902,11 @@ images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_i
 
 plt.imshow(np.abs(images_nav_mean.reshape(-1,int(npoint/2))).T)
 
-
-
 print("Estimating Movement...")
-shifts = list(range(-20, 20))
-bottom = 50
-top = 150
+shifts = list(range(-10, 10))
+bottom = 20
+top = 50
+
 displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
 displacement_for_binning = displacements
@@ -893,10 +920,34 @@ categories = np.digitize(displacement_for_binning, bins)
 df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, columns=["displacement", "cat"])
 df_groups = df_cat.groupby("cat").count()
 
+data_reshaped = data.reshape(data.shape[0],-1,npoint)
+data_gt_reshaped = data_gt.reshape(data.shape[0],-1,npoint)
 
-group_1=(categories==1)
-group_2=(categories==2)
-group_3=(categories==5)|(categories==8)|(categories==9)
+metric=np.angle
+
+kpoint = 64
+sl=int(nb_slices/2)
+kpoint=np.random.choice(npoint)
+sl = np.random.choice(nb_slices)
+plt.figure()
+plt.plot(metric(data_reshaped[:,sl,kpoint]),label="Movement")
+plt.plot(metric(data_gt_reshaped[:,sl,kpoint]),label="No Movement",linestyle="dashed")
+plt.title("Comparison Mvt vs No Mvt Slice {} Point {}".format(sl,kpoint))
+plt.legend()
+
+metric=np.abs
+plt.figure()
+plt.plot(metric(data_gt_reshaped[:,sl,kpoint]-data_reshaped[:,sl,kpoint]),label="Movement")
+plt.title("Error Mvt vs No Mvt Slice {} Point {}".format(sl,kpoint))
+plt.legend()
+
+
+
+
+
+group_1=(categories==1)|(categories==2)
+group_2=(categories==3)|(categories==4)
+group_3=(categories==5)|(categories==6)
 
 groups=[group_1,group_2,group_3]
 
@@ -980,28 +1031,180 @@ for i in tqdm(range(niter)):
 # plt.figure()
 # plt.plot(diffs)
 
+
+
 Sk_mask.sum()/np.prod(Sk_mask.shape)
 
 Sk_final = copy(Sk_cur)
 del Sk_cur
 
+#
+# Sk_final_gt = np.zeros((npoint,ntimesteps),dtype=data_for_nav_gt.dtype)
+#
+# for t in range(ntimesteps):
+#     Sk_final_gt[:,t] = data_for_nav_gt[0,:,np.minimum(round(t/ntimesteps*nb_gating_spokes),nb_gating_spokes-1)]
+#
+#
+# kpoint=np.random.choice(npoint)
+# #kpoint=64
+# metric=np.angle
+#
+# plt.figure()
+# for j in range(len(groups)):
+#     plt.plot(metric(Sk_final[kpoint,j,:]),label="group {}".format(j))
+# plt.plot(metric(Sk_final_gt[kpoint,:]),label="no movement")
+# plt.legend()
+# plt.title("Navigator data completed vs no movement point {}".format(kpoint))
+#
+# gr=0
+# metric=np.angle
+# ts=np.random.choice(ntimesteps)
+# plt.figure()
+# plt.scatter(metric(Sk_final_gt[:,ts]),metric(Sk_final[:,gr,ts]))
+# plt.title("Regression of phase of group {} vs ground truth on ts {}".format(gr,ts))
+
 
 D_non_proj=Sk_final.reshape(npoint,-1)
 u_non_proj, s_non_proj, vh_non_proj = np.linalg.svd(D_non_proj, full_matrices=False)
-L0 = 32
+L0 = 16
 #phi_non_proj = (vh_non_proj)[:L0,:]
 phi_non_proj=vh_non_proj[:L0,:]
 phi=phi_non_proj
 
 D_proj_on_phi = D_non_proj@phi_non_proj.T.conj()@phi_non_proj
 
-k_num=256
+k_num=64
 k_num=np.random.choice(npoint)
 metric=np.abs
 plt.figure()
 plt.plot(metric(D_non_proj[k_num,:]),label="Original k {}".format(k_num))
 plt.plot(metric(D_proj_on_phi[k_num,:]),label="Projected")
 plt.legend()
+
+#volumes_gt = m_.images_series[::nspoke]
+
+del cart_traj
+cart_traj = Cartesian3D(npoint_x=128,npoint_y=128,npoint_z=nb_slices,applied_timesteps=nav_timesteps,reconstruct_each_partition=True)
+
+kdata_cartesian = m_.generate_kdata(cart_traj,useGPU=True)
+kdata_cartesian=np.array(kdata_cartesian)
+kdata_cartesian = np.expand_dims(kdata_cartesian,axis=0)
+kdata_cartesian =  np.moveaxis(kdata_cartesian,1,2)
+kdata_cartesian = kdata_cartesian.astype("complex64")
+
+npoint_cart=cart_traj.paramDict["npoint"]
+
+kdata_cartesian=np.squeeze(kdata_cartesian)
+Sk_cartesian=np.zeros((npoint_cart,len(groups),ntimesteps),dtype=data_for_nav.dtype)
+Sk_cartesian_mask=np.ones((npoint_cart,len(groups),ntimesteps),dtype=int)
+
+#data_mt_training_on_timesteps = np.zeros((nb_slices,ntimesteps,npoint),dtype=data_for_nav.dtype)
+
+#nb_part=nb_slices
+
+for i in tqdm(range(len(groups))):
+    for ts in range(ntimesteps):
+        g=groups[i]
+        gating_spoke_of_ts=nav_spoke_groups[ts]
+        g_reshaped=copy(g).reshape(int(nb_part),int(nb_gating_spokes))
+        g_reshaped[:,list(set(range(nb_gating_spokes))-set([gating_spoke_of_ts]))]=False
+        retained_spokes = np.argwhere(g_reshaped)
+        if len(retained_spokes)==0:
+            Sk_mask[:,i,ts]=0
+        else:
+            Sk_cartesian[:,i,ts]=kdata_cartesian[retained_spokes[:,0],retained_spokes[:,1],:].mean(axis=0)
+
+        #data_mt_training_on_timesteps[:,ts,:]=kdata_cartesian[:,gating_spoke_of_ts,:]
+
+
+Sk_cur_cartesian = copy(Sk_cartesian)
+niter=100
+diffs = []
+tol_diff = 1e-2
+variance_explained=0.99
+proj_on_fingerprints=False
+
+for i in tqdm(range(niter)):
+    Sk_1 = Sk_cur_cartesian.reshape(Sk_cur_cartesian.shape[0],-1)
+    u_1, s_1, vh_1 = np.linalg.svd(Sk_1, full_matrices=False)
+
+    Sk_2 = np.moveaxis(Sk_cur_cartesian,1,0).reshape(Sk_cur_cartesian.shape[1],-1)
+    u_2, s_2, vh_2 = np.linalg.svd(Sk_2, full_matrices=False)
+
+    Sk_3 = np.moveaxis(Sk_cur_cartesian, 2, 0).reshape(Sk_cur_cartesian.shape[2], -1)
+    if proj_on_fingerprints:
+        Sk_3 = phi_dico.T @ phi_dico.conj() @ Sk_final_3
+    else:
+        u_3, s_3, vh_3 = np.linalg.svd(Sk_3, full_matrices=False)
+        cum_3 = np.cumsum(s_3) / np.sum(s_3)
+        ind_3 = (cum_3 < variance_explained).sum()
+        Sk_3 = u_3[:, :ind_3] @ (np.diag(s_3[:ind_3])) @ vh_3[:ind_3, :]
+
+
+    cum_1=np.cumsum(s_1)/np.sum(s_1)
+    cum_2=np.cumsum(s_2)/np.sum(s_2)
+
+
+    ind_1 = (cum_1<variance_explained).sum()
+    ind_2 = (cum_2<variance_explained).sum()
+
+    Sk_1 = u_1[:,:ind_1]@(np.diag(s_1[:ind_1]))@vh_1[:ind_1,:]
+    Sk_2 = u_2[:, :ind_2] @ (np.diag(s_2[:ind_2])) @ vh_2[:ind_2, :]
+
+
+    Sk_1 = Sk_1.reshape(Sk_cur_cartesian.shape[0],Sk_cur_cartesian.shape[1],Sk_cur_cartesian.shape[2])
+    Sk_2 = Sk_2.reshape(Sk_cur_cartesian.shape[1], Sk_cur_cartesian.shape[0], Sk_cur_cartesian.shape[2])
+    Sk_3 = Sk_3.reshape(Sk_cur_cartesian.shape[2], Sk_cur_cartesian.shape[0], Sk_cur_cartesian.shape[1])
+
+    Sk_2=np.moveaxis(Sk_2,0,1)
+    Sk_3 = np.moveaxis(Sk_3, 0, 2)
+
+    Sk_cur_prev = copy(Sk_cur_cartesian)
+    Sk_cur_cartesian=Sk_cartesian*Sk_cartesian_mask + np.mean(np.stack([Sk_1,Sk_2,Sk_3],axis=-1),axis=-1)*(1-Sk_cartesian_mask)
+    mask_Sk_cur_prev = (1-Sk_cur_prev==0)*1
+    diff = np.linalg.norm((Sk_cur_cartesian-Sk_cur_prev )[mask_Sk_cur_prev>0]/(Sk_cur_prev[mask_Sk_cur_prev>0])/np.sqrt(np.sum(Sk_cartesian_mask)))
+    diffs.append(diff)
+
+    if diff<tol_diff:
+        break
+
+Sk_cartesian_final = copy(Sk_cur_cartesian)
+del Sk_cur_cartesian
+
+D_non_proj_cartesian=Sk_cartesian_final.reshape(npoint_cart,-1)
+
+D_proj_cartesian = D_non_proj_cartesian@phi_non_proj.T.conj()@phi_non_proj
+
+k_num=64
+k_num=np.random.choice(npoint_cart)
+metric=np.abs
+plt.figure()
+plt.plot(metric(D_non_proj_cartesian[k_num,:]),label="Cartesian sampling - Original k {}".format(k_num))
+plt.plot(metric(D_proj_cartesian[k_num,:]),label="Cartesian sampling - Projected on navigator completed data SVD")
+plt.legend()
+
+cart_traj_allts = Cartesian3D(npoint_x=128,npoint_y=128,npoint_z=nb_slices,applied_timesteps=nav_timesteps,reconstruct_each_partition=True)
+cart_traj_allts.traj_for_reconstruction=np.tile(cart_traj.get_traj(),(nb_slices,1,1,1)).reshape(-1,npoint_cart,3)
+volumes_cartesian_all_part = simulate_radial_undersampled_images(kdata_cartesian.reshape(-1,npoint_cart),cart_traj_allts,image_size,density_adj=False,ntimesteps=50)
+animate_images(volumes_cartesian_all_part[:,int(nb_slices/2),:,:])
+
+cart_traj_group = Cartesian3D(npoint_x=128,npoint_y=128,npoint_z=nb_slices,reconstruct_each_partition=True)
+cart_traj_group.traj_for_reconstruction=np.tile(cart_traj.get_traj()[0],(ntimesteps,1,1)).reshape(-1,npoint_cart,3)
+
+gr=0
+volumes_cartesian_group_non_proj = simulate_radial_undersampled_images(D_non_proj_cartesian.reshape(npoint_cart,len(groups),ntimesteps)[:,gr,:].T,cart_traj_group,image_size,density_adj=False,ntimesteps=50)
+animate_images(volumes_cartesian_group_non_proj[:,int(nb_slices/2),:,:])
+
+volumes_cartesian_group_proj = simulate_radial_undersampled_images(D_proj_cartesian.reshape(npoint_cart,len(groups),ntimesteps)[:,gr,:].T,cart_traj_group,image_size,density_adj=False,ntimesteps=50)
+animate_images(volumes_cartesian_group_proj[:,int(nb_slices/2),:,:])
+
+animate_multiple_images(volumes_cartesian_group_non_proj[:,int(nb_slices/2),:,:],volumes_cartesian_group_proj[:,int(nb_slices/2),:,:])
+
+
+
+
+
+
 
 
 m0=np.zeros((L0,)+image_size,dtype=data.dtype)
@@ -1031,6 +1234,8 @@ for j, g in tqdm(enumerate(groups)):
     included_spokes_for_mask = np.moveaxis(included_spokes_for_mask, -1, 0)
     for i in range(nb_channels):
         data_mask[i, :, :, j, :] = included_spokes_for_mask
+
+
 
 
 eps=1e-6

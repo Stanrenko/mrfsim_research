@@ -3321,6 +3321,56 @@ def mrisensesim(size, ncoils=8, array_cent=None, coil_width=2, n_rings=None, phi
 
     return smap
 
+def calc_grad_entropy(v,w=None):
+    ndim = v.ndim
+    grad_norm = 0
+    if w is None:
+        w=v.ndim*[1]
+    for axis in range(ndim):
+        pad = v.ndim * [(0, 0)]
+        pad[axis] = (0, 1)
+        pad = tuple(pad)
+        grad = np.diff(np.pad(v, pad, mode="constant"), axis=axis)
+
+        grad_norm += (w[axis]*np.abs(grad)) ** 2
+
+    grad_norm = np.sqrt(grad_norm)
+    p = grad_norm / np.sum(grad_norm)
+    p[p==0]=1 #pixel with value 0 are crashing the algo
+    return np.sum(-np.log2(p) * p)
+
+def calc_entropy(v):
+    ndim = v.ndim
+    #grad_norm = 0
+    p = np.abs(v)
+    p/=np.max(p)
+    #p[p==0]=1 #pixel with value 0 are crashing the algo
+    return np.sum(-np.log2(p) * p)
+
+def best_channel_selection(data_for_nav,nav_traj,nav_image_size,shifts=list(range(-30,30))):
+    nb_channels=data_for_nav.shape[0]
+    image_nav_all_channels = []
+    displacements_all_ch = []
+    bottom = -shifts[0]
+    top = nav_image_size[0] - shifts[-1]
+    for j in range(nb_channels):
+        images_series_rebuilt_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[j], axis=0), nav_traj,
+                                                                 nav_image_size, b1=None)
+        image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
+        # plt.figure()
+        # plt.imshow(image_nav_ch.reshape(-1, int(npoint / 2)).T, cmap="gray")
+        # plt.title("Image channel {}".format(j))
+        image_nav_all_channels.append(image_nav_ch)
+
+        displacements = calculate_displacement(image_nav_ch, bottom, top, shifts, lambda_tv=0.001)
+        displacements_all_ch.append(displacements)
+
+    displacements_all_ch = np.array(displacements_all_ch)
+    pca = PCAComplex(n_components_=1)
+    disp_transf = pca.fit_transform(displacements_all_ch)
+
+    return np.argsort(disp_transf[:, 0]),image_nav_all_channels
+
 
 def calc_grad_entropy(v):
     ndim = v.ndim

@@ -66,13 +66,17 @@ localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_
 #localfile = "/20220113_CS/meas_MID00164_FID49559_raFin_3D_tra_1x1x5mm_FULL_50GS_slice.dat"
 #localfile = "/20220118_BM/meas_MID00151_FID49924_raFin_3D_tra_1x1x5mm_FULL_read_nav.dat"
 
-localfile="/phantom.001.v1/phantom.001.v1.dat"
+#localfile="/phantom.001.v1/phantom.001.v1.dat"
 #localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
+
+localfile="/patient.002.v1/meas_MID00099_FID01839_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+#localfile="/patient.002.v1/meas_MID00103_FID01843_raFin_3D_tra_1x1x5mm_FULL_TR7000.dat"
+
+localfile="/patient.002.v2/meas_MID00037_FID01900_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/patient.002.v2/meas_MID00038_FID01901_raFin_3D_tra_1x1x5mm_FULL_FOV90_Sl160.dat"
 
 
 filename = base_folder+localfile
-
-
 
 #filename="./data/InVivo/3D/20211221_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
 #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
@@ -89,9 +93,10 @@ suffix="_allspokes8"
 filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 
-filename_volume = str.split(filename,".dat") [0]+"_volumes{}.npy".format(suffix)
-filename_volume_corrected = str.split(filename,".dat") [0]+"_volumes_corrected{}.npy".format(suffix)
+filename_volume = str.split(filename,".dat") [0]+"_volumes{}.npy".format("")
+filename_volume_corrected_bestgroup = str.split(filename,".dat") [0]+"_volumes_corrected_bestgroup{}.npy".format("")
 filename_volume_corrected_final = str.split(filename,".dat") [0]+"_volumes_corrected_final{}.npy".format("")
+filename_mask_corrected_final = str.split(filename,".dat") [0]+"_mask_corrected_final{}.npy".format("")
 filename_kdata = str.split(filename,".dat") [0]+"_kdata{}.npy".format("")
 filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
 filename_oop=str.split(filename,".dat") [0]+"_volumes_oop{}.npy".format(suffix)
@@ -195,42 +200,60 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
         twix = twixtools.read_twix(filename)
 
     mdb_list = twix[-1]['mdb']
-    if nb_gating_spokes > 0:
+    if nb_gating_spokes == 0:
+        data = []
+
+        for i, mdb in enumerate(mdb_list):
+            if mdb.is_image_scan():
+                data.append(mdb)
+
+
+
+    else:
         print("Reading Navigator Data....")
         data_for_nav = []
-        k = 0
+        data = []
+        nav_size_initialized = False
+        # k = 0
         for i, mdb in enumerate(mdb_list):
-            if mdb.is_image_scan() and mdb.mdh[14][9]:
-                data_for_nav.append(mdb)
+            if mdb.is_image_scan():
+                if not (mdb.mdh[14][9]):
+                    mdb_data_shape = mdb.data.shape
+                    mdb_dtype = mdb.data.dtype
+                    nav_size_initialized = True
+                    break
 
-                #print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
-                k += 1
+        for i, mdb in enumerate(mdb_list):
+            if mdb.is_image_scan():
+                if not (mdb.mdh[14][9]):
+                    data.append(mdb)
+                else:
+                    data_for_nav.append(mdb)
+                    data.append(np.zeros(mdb_data_shape, dtype=mdb_dtype))
+
+                # print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
+                # k += 1
         data_for_nav = np.array([mdb.data for mdb in data_for_nav])
-        data_for_nav = data_for_nav.reshape((int(nb_part),int(nb_gating_spokes))+data_for_nav.shape[1:])
+        data_for_nav = data_for_nav.reshape((int(nb_part), int(nb_gating_spokes)) + data_for_nav.shape[1:])
 
-        if data_for_nav.ndim==3:
-            data_for_nav=np.expand_dims(data_for_nav,axis=-2)
+        if data_for_nav.ndim == 3:
+            data_for_nav = np.expand_dims(data_for_nav, axis=-2)
 
-        data_for_nav = np.moveaxis(data_for_nav,-2,0)
+        data_for_nav = np.moveaxis(data_for_nav, -2, 0)
         np.save(filename_nav_save, data_for_nav)
+
+    data = np.array([mdb.data for mdb in data])
+    data = data.reshape((-1, int(nb_segments)) + data.shape[1:])
+    data = np.moveaxis(data, 2, 0)
+    data = np.moveaxis(data, 2, 1)
 
     del mdb_list
 
     ##################################################
-    mapped = twixtools.map_twix(twix)
     try:
         del twix
     except:
         pass
-    data = mapped[-1]['image']
-    del mapped
-    data = data[:].squeeze()
-    if data.ndim == 3:
-        data = np.expand_dims(data, axis=0)
-        data=np.moveaxis(data,-2,-3)
-    else:
-        data = np.moveaxis(data, 0, -2)
-        data = np.moveaxis(data, 1, 0)
 
     np.save(filename_save,data)
 
@@ -337,9 +360,20 @@ sl=int(b1_all_slices.shape[1]/2)
 list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
 plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
 
+volume_rebuilt = build_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,density_adj=False,eps=1e-6,b1=b1_all_slices,useGPU=True,normalize_kdata=False,light_memory_usage=True,is_theta_z_adjusted=False,normalize_volumes=True)
+del kdata_all_channels_all_slices
+kdata_all_channels_all_slices = np.load(filename_kdata)
 
-b1_full = np.ones(image_size)
-b1_full=np.expand_dims(b1_full,axis=0)
+np.save(str.split(filename,".dat") [0]+"_volume_allspokes.npy",volume_rebuilt)
+
+from mutools import io
+file_mha = filename.split(".dat")[0] + "_volume_allspokes.mha"
+io.write(file_mha,np.abs(volume_rebuilt),tags={"spacing":[dz,dx,dy]})
+animate_images(volume_rebuilt,cmap="gray")
+plt.imshow(np.abs(volume_rebuilt[10]))
+#
+# b1_full = np.ones(image_size)
+# b1_full=np.expand_dims(b1_full,axis=0)
 
 
 
@@ -351,15 +385,15 @@ data_for_nav=np.load(filename_nav_save)
 nb_allspokes=nb_segments
 nb_slices=data_for_nav.shape[1]
 nb_channels=data_for_nav.shape[0]
-npoint=data_for_nav.shape[-1]
+npoint_nav=data_for_nav.shape[-1]
 
 all_timesteps = np.arange(nb_allspokes)
 nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
 
-nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=nb_slices,
+nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint_nav, nb_slices=nb_slices,
                        applied_timesteps=list(nav_timesteps))
 
-nav_image_size = (int(npoint / 2),)
+nav_image_size = (int(npoint_nav/2),)
 
 print("Calculating Sensitivity Maps for Nav Images...")
 b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
@@ -368,10 +402,28 @@ b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
 
 print("Rebuilding Nav Images...")
 images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
+plt.figure()
+nb_cycles=10
+plt.imshow(np.abs(images_nav_mean.reshape(-1,int(npoint_nav/2))).T[:,:(nb_cycles*nb_gating_spokes)])
 
-images_nav_mean_reshaped=images_nav_mean.reshape(-1,400)
+
+image_nav_all_channels=[]
+for j in range(nb_channels):
+    images_series_rebuilt_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[j],axis=0), nav_traj, nav_image_size, b1=None)
+    image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
+    # plt.figure()
+    #plt.imshow(image_nav_ch.reshape(-1, int(npoint / 2)).T, cmap="gray")
+    #plt.title("Image channel {}".format(j))
+    image_nav_all_channels.append(image_nav_ch)
+#plt.close("all")
+image_nav_all_channels=np.array(image_nav_all_channels)
 
 
+nb_cycles=10
+for ch in range(nb_channels):
+    plt.figure()
+    plt.imshow(np.abs(image_nav_all_channels[ch].reshape(-1,int(npoint_nav/2)).T[:,:(nb_cycles*nb_gating_spokes)]),cmap="gray")
+    plt.title("{}".format(ch))
 
 #TEST FABIAN CODE
 # from pymia.filtering.registration import MultiModalRegistration,MultiModalRegistrationParams,RegistrationType
@@ -416,14 +468,17 @@ images_nav_mean_reshaped=images_nav_mean.reshape(-1,400)
 # plt.figure();plt.imshow(image_nav_for_correl.T)
 
 print("Estimating Movement...")
-shifts = list(range(-20, 20))
-bottom = 50
-top = 150
-displacements = calculate_displacement(images_nav_mean, bottom, top, shifts,lambda_tv=0)
+shifts = list(range(-30, 30))
+bottom = -shifts[0]
+top = nav_image_size[0]-shifts[-1]
+displacements = calculate_displacement(image_nav_all_channels[4], bottom, top, shifts,lambda_tv=0.001)
+plt.figure()
+plt.plot(100+displacements[:nb_cycles*nb_gating_spokes])
+plt.imshow(np.abs(image_nav_all_channels[4].reshape(-1,int(npoint_nav/2)).T[:,:(nb_cycles*nb_gating_spokes)]),cmap="gray")
 
 
 displacement_for_binning = displacements
-bin_width = 8
+bin_width = 5
 max_bin = np.max(displacement_for_binning)
 min_bin = np.min(displacement_for_binning)
 
@@ -433,19 +488,98 @@ categories = np.digitize(displacement_for_binning, bins)
 df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, columns=["displacement", "cat"])
 df_groups = df_cat.groupby("cat").count()
 
+
+
+#INVIVO BW 5
+group_1 = (categories == 4)| (categories == 3)
+group_2=(categories == 5)| (categories == 6)
+group_3 = (categories == 7)
+
+groups=[group_1,group_2,group_3]
+
+#Building volume for most spokes group
+
+
+
+if str.split(filename_volume_corrected_bestgroup,"/")[-1] not in os.listdir(folder):
+
+    displacement_for_binning = displacements
+    bin_width = 5
+    max_bin = np.max(displacement_for_binning)
+    min_bin = np.min(displacement_for_binning)
+
+    maxi = 0
+    for j in range(bin_width):
+        min_bin = np.min(displacement_for_binning) + j
+        bins = np.arange(min_bin, max_bin + bin_width, bin_width)
+        # print(bins)
+        categories = np.digitize(displacement_for_binning, bins)
+        df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, columns=["displacement", "cat"])
+        df_groups = df_cat.groupby("cat").count()
+        curr_max = df_groups.displacement.max()
+        if curr_max > maxi:
+            maxi = curr_max
+            idx_cat = df_groups.displacement.idxmax()
+            retained_nav_spokes = (categories == idx_cat)
+
+    retained_nav_spokes_index = np.argwhere(retained_nav_spokes).flatten()
+    spoke_groups = np.argmin(np.abs(
+        np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
+                                                                          nb_segments / nb_gating_spokes).reshape(1,
+                                                                                                                  -1)),
+        axis=-1)
+
+    spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
+    spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
+        nb_segments / nb_gating_spokes / 2) + 1:] - 1  # adjustment for change of partition
+    spoke_groups = spoke_groups.flatten()
+
+    included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
+    included_spokes[::int(nb_segments / nb_gating_spokes)] = False
+    print("Filtering KData for movement...")
+    kdata_retained_final_list = []
+    for i in (range(nb_channels)):
+        kdata_retained_final, traj_retained_final, retained_timesteps = correct_mvt_kdata(
+            kdata_all_channels_all_slices[i].reshape(nb_segments, -1), radial_traj, included_spokes, ntimesteps,
+            density_adj=True, log=False)
+        kdata_retained_final_list.append(kdata_retained_final)
+
+    #dico_kdata_retained_registration[j] = retained_timesteps
+
+
+
+    radial_traj_3D_corrected = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=undersampling_factor,
+                                        npoint=npoint, nb_slices=nb_slices, incoherent=incoherent, mode=mode)
+    radial_traj_3D_corrected.traj_for_reconstruction = traj_retained_final
+
+    volumes_corrected_best_group = simulate_radial_undersampled_images_multi(kdata_retained_final_list, radial_traj_3D_corrected,
+                                                                  image_size, b1=b1_all_slices,
+                                                                  ntimesteps=len(retained_timesteps), density_adj=False,
+                                                                  useGPU=False, normalize_kdata=False, memmap_file=None,
+                                                                  light_memory_usage=True, is_theta_z_adjusted=True,
+                                                                  normalize_volumes=True)
+
+    np.save(filename_volume_corrected_bestgroup,volumes_corrected_best_group)
+else:
+    volumes_corrected_best_group=np.load(filename_volume_corrected_bestgroup)
+
+
+
 #INVIVO BW 5
 # group_1 = (categories == 1) | (categories == 2)| (categories == 3)
 # group_2 = (categories == 4)
 # group_3 = (categories == 5)
 # group_4 = (categories == 6) | (categories == 7)
 # groups = [group_1, group_2, group_3,group_4]
+# groups=[group_2,group_3]
+
 
 #PHANTOM BW 8
-group_1 = (categories == 1) | (categories == 2)
-group_2 = (categories == 3)
-group_3 = (categories == 4) | (categories == 5)
+# group_1 = (categories == 1) | (categories == 2)
+# group_2 = (categories == 3)
+# group_3 = (categories == 4) | (categories == 5)
 #
-groups = [group_1, group_2, group_3]
+# groups = [group_1, group_2, group_3]
 
 
 # group_1=(categories==1)|(categories==2)|(categories==3)
@@ -458,14 +592,68 @@ groups = [group_1, group_2, group_3]
 
 # dico_kdata_retained_registration={}
 
+
+dico_traj_retained = {}
+for j, g in tqdm(enumerate(groups)):
+    print("######################  BUILDING FULL VOLUME AND MASK FOR GROUP {} ##########################".format(j))
+    retained_nav_spokes_index = np.argwhere(g).flatten()
+    spoke_groups = np.argmin(np.abs(
+        np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
+                                                                          nb_segments / nb_gating_spokes).reshape(1,
+                                                                                                                  -1)),
+        axis=-1)
+
+    spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
+    spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
+        nb_segments / nb_gating_spokes / 2) + 1:] - 1  # adjustment for change of partition
+    spoke_groups = spoke_groups.flatten()
+
+    included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
+    included_spokes[::int(nb_segments / nb_gating_spokes)] = False
+    #print(np.sum(included_spokes))
+
+    kdata_retained_final, traj_retained_final_volume, retained_timesteps = correct_mvt_kdata(
+        kdata_all_channels_all_slices[0].reshape(nb_segments, -1), radial_traj, included_spokes, 1,
+        density_adj=True, log=False)
+    #print(traj_retained_final_volume.shape[1]/800)
+
+    dico_traj_retained[j] = traj_retained_final_volume
+
+nyquist_total_points = np.prod(image_size)*np.pi/2
+for j,gr in enumerate(groups):
+    print("Group {} : {} % of Nyquist criteria".format(j,np.round(dico_traj_retained[j].shape[1]/nyquist_total_points*100,2)))
+
+for j,gr in enumerate(groups):
+    print("Group {} : {} % of Kz Nyquist criteria".format(j,len(np.unique(dico_traj_retained[j][:,:,2]))/nb_slices*100,2))
+
+all_kz = np.unique(radial_traj.get_traj()[:,:,-1])
+
+df_sampling = pd.DataFrame(columns=range(len(groups)),index=all_kz,data=0)
+df_sampling
+
+kz=all_kz[10]
+j=0
+
+for j,g in tqdm(enumerate(groups)):
+    traj_retained = dico_traj_retained[j]
+    for kz in all_kz:
+        curr_traj = traj_retained[traj_retained[:,:,2]==kz]
+        df_sampling.loc[kz,j]=curr_traj.shape[0]/(npoint**2*np.pi/8)
+
+df_sampling.loc["Total"]=[len(np.unique(dico_traj_retained[j][:,:,2]))/nb_slices for j,g in enumerate(groups)]
+
 dico_volume = {}
 dico_mask = {}
 
 #j=2
 #g=groups[j]
 
+
 resol_factor=1.0
 center_point=int(npoint/2)
+
+
+
 
 
 for j, g in tqdm(enumerate(groups)):
@@ -477,11 +665,10 @@ for j, g in tqdm(enumerate(groups)):
                                                                                                                   -1)),
                              axis=-1)
 
-    if not (nb_segments == nb_gating_spokes):
-        spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
-        spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
-            nb_segments / nb_gating_spokes / 2) + 1:] - 1
-        spoke_groups = spoke_groups.flatten()
+    spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
+    spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
+        nb_segments / nb_gating_spokes / 2) + 1:] - 1  # adjustment for change of partition
+    spoke_groups = spoke_groups.flatten()
 
     included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
     included_spokes[::int(nb_segments / nb_gating_spokes)] = False
@@ -509,18 +696,36 @@ for j, g in tqdm(enumerate(groups)):
 
     volume_corrected = simulate_radial_undersampled_images_multi(kdata_retained_final_list_volume,
                                                                  radial_traj_3D_corrected_single_volume, image_size,
-                                                                 b1=None, density_adj=False, ntimesteps=1,
+                                                                 b1=b1_all_slices, density_adj=False, ntimesteps=1,
                                                                  useGPU=False, normalize_kdata=False, memmap_file=None,
                                                                  light_memory_usage=True, normalize_volumes=True,
                                                                  is_theta_z_adjusted=True)
+
+    file_mha = "/".join(["/".join(str.split(filename_volume, "/")[:-1]),
+                         "_".join(str.split(str.split(filename_volume, "/")[-1], ".")[
+                                  :-1])]) + "_fullvol_gr{}_resol_{}_b1.mha".format(j, "_".join(str.split(str(resol_factor), ".")))
+
+    io.write(file_mha, np.abs(volume_corrected[0]), tags={"spacing": [dz, dx, dy]})
+
     dico_volume[j] = copy(volume_corrected[0])
     mask = build_mask_single_image_multichannel(kdata_retained_final_list_volume,
-                                                radial_traj_3D_corrected_single_volume, image_size, b1=None,
+                                                radial_traj_3D_corrected_single_volume, image_size, b1=b1_all_slices,
                                                 density_adj=False, threshold_factor=1 / 10, normalize_kdata=False,
                                                 light_memory_usage=True, selected_spokes=None, is_theta_z_adjusted=True,
                                                 normalize_volumes=True)
     dico_mask[j] = copy(mask)
 
+volume_all = simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,
+                                                                 radial_traj, image_size,
+                                                                 b1=None, density_adj=False, ntimesteps=1,
+                                                                 useGPU=False, normalize_kdata=False, memmap_file=None,
+                                                                 light_memory_usage=True, normalize_volumes=True,
+                                                                 is_theta_z_adjusted=False)
+
+file_mha = "/".join(["/".join(str.split(filename_volume, "/")[:-1]),
+                         "_".join(str.split(str.split(filename_volume, "/")[-1], ".")[:-1])]) + "_fullvol_all_groups.mha"
+
+io.write(file_mha,np.abs(volume_all[0]),tags={"spacing":[dz,dx,dy]})
 
 animate_images(mask)
 
@@ -550,6 +755,10 @@ import SimpleITK as sitk
 
 
 index_ref = 1
+mask=dico_mask[index_ref]
+
+if str.split(filename_mask_corrected_final, "/")[-1] not in os.listdir(folder):
+    np.save(filename_mask_corrected_final,mask)
 
 dico_homographies = {}
 registration = MultiModalRegistration(registration_type=RegistrationType.RIGID)
@@ -557,17 +766,20 @@ registration = MultiModalRegistration(registration_type=RegistrationType.RIGID)
 for index_to_align in tqdm(dico_volume.keys()):
     dico_homographies[index_to_align] = {}
     for sl in range(nb_slices):
-        array_to_align = np.abs(dico_mask[index_to_align][sl] * dico_volume[index_to_align][sl])
-        array_ref = np.abs(dico_mask[index_ref][sl] * dico_volume[index_ref][sl])
+        if index_to_align==index_ref:
+            dico_homographies[index_to_align][sl] = sitk.Transform(3, sitk.sitkIdentity)
+        else:
+            array_to_align = np.abs(dico_mask[index_to_align][sl] * dico_volume[index_to_align][sl])
+            array_ref = np.abs(dico_mask[index_ref][sl] * dico_volume[index_ref][sl])
 
-        fixed_image = sitk.GetImageFromArray(array_ref)
-        moving_image = sitk.GetImageFromArray(array_to_align)
+            fixed_image = sitk.GetImageFromArray(array_ref)
+            moving_image = sitk.GetImageFromArray(array_to_align)
 
-          # specify parameters to your needs
-        params = MultiModalRegistrationParams(fixed_image)
-        registration.execute(moving_image, params)
+              # specify parameters to your needs
+            params = MultiModalRegistrationParams(fixed_image)
+            registration.execute(moving_image, params)
 
-        dico_homographies[index_to_align][sl] = registration.transform
+            dico_homographies[index_to_align][sl] = registration.transform
 
 
 
@@ -584,8 +796,41 @@ for index_to_align in tqdm(dico_volume.keys()):
 #
 # animate_images([array_ref,registered_array])
 
+#
+from sklearn.metrics import mutual_info_score
+
+def calc_MI(x, y, bins):
+    c_xy = np.histogram2d(x, y, bins)[0]
+    mi = mutual_info_score(None, None, contingency=c_xy)
+    return mi
+
+test_index=0
+for sl in range(nb_slices):
+    print("############### SLICE {} ################".format(sl))
+    array_ref = np.abs(dico_mask[index_ref][sl] * dico_volume[index_ref][sl])
+    fixed_image = sitk.GetImageFromArray(array_ref)
+
+    array_to_align = np.abs(dico_mask[test_index][sl] * dico_volume[test_index][sl])
+    moving_image = sitk.GetImageFromArray(array_to_align)
+
+    registered_image = sitk.Resample(moving_image, transform=dico_homographies[test_index][sl],
+                                     interpolator=registration.resampling_interpolator,
+                                     outputPixelType=moving_image.GetPixelIDValue())
+    registered_array = sitk.GetArrayFromImage(registered_image)
+
+    #animate_images([array_ref, registered_array])
+    #animate_images([array_ref, array_to_align])
+
+    print("MI score for unregistered image : {}".format(np.round(calc_MI(array_ref.flatten(),array_to_align.flatten(),bins=100),3)))
+    print("MI score for registered image : {}".format(
+        np.round(calc_MI(array_ref.flatten(),registered_array.flatten(),bins=100), 3)))
+
+
 
 sl = int(nb_slices / 2)
+sl=1
+sl=31
+#sl=30
 test_index=0
 
 array_ref = np.abs(dico_mask[index_ref][sl] * dico_volume[index_ref][sl])
@@ -600,9 +845,7 @@ registered_array = sitk.GetArrayFromImage(registered_image)
 animate_images([array_ref,registered_array])
 animate_images([array_ref,array_to_align])
 
-
-
-
+animate_images([array_to_align,registered_array])
 
 volumes_corrected_final=np.zeros((ntimesteps,nb_slices,int(npoint/2),int(npoint/2)),dtype="complex64")
 ts_indices=np.zeros(len(groups)).astype(int)
@@ -625,11 +868,11 @@ for j, g in tqdm(enumerate(groups)):
                                                                                                                   -1)),
                              axis=-1)
 
-    if not (nb_segments == nb_gating_spokes):
-        spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
-        spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
-            nb_segments / nb_gating_spokes / 2) + 1:] - 1
-        spoke_groups = spoke_groups.flatten()
+    spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
+    spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
+        nb_segments / nb_gating_spokes / 2) + 1:] - 1  # adjustment for change of partition
+    spoke_groups = spoke_groups.flatten()
+
     included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
     included_spokes[::int(nb_segments / nb_gating_spokes)] = False
     print("Filtering KData for movement...")
@@ -661,10 +904,6 @@ for j, g in tqdm(enumerate(groups)):
 
             moving_image_real = sitk.GetImageFromArray(volumes_corrected[ts, sl, :, :].real)
             moving_image_imag = sitk.GetImageFromArray(volumes_corrected[ts, sl, :, :].imag)
-            registered_image = sitk.Resample(moving_image, transform=dico_homographies[test_index][sl],
-                                             interpolator=registration.resampling_interpolator,
-                                             outputPixelType=moving_image.GetPixelIDValue())
-
 
             volumes_corrected[ts, sl, :, :] = sitk.GetArrayFromImage( sitk.Resample(moving_image_real, transform=dico_homographies[j][sl],
                                              interpolator=registration.resampling_interpolator,
@@ -695,7 +934,7 @@ volumes_corrected_final/=count
 
 np.save(filename_volume_corrected_final,volumes_corrected_final)
 #
-animate_images(volumes_corrected_final[:,int(nb_slices/2),:,:])
+# animate_images(volumes_corrected_final[:,int(nb_slices/2),:,:])
 
 ######################################################################################""
 
@@ -884,23 +1123,23 @@ animate_images(volumes_corrected_final[:,int(nb_slices/2),:,:])
 #
 # animate_images(volumes_corrected_final[:,int(nb_slices/2),:,:])
 
-##volumes for slice taking into account coil sensi
-# print("Building Volumes....")
-# if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-#     volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
-#     np.save(filename_volume,volumes_all)
-#     # sl=20
-#     # ani = animate_images(volumes_all[:,sl,:,:])
-#     del volumes_all
-#
-# print("Building Mask....")
-# if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
-#     selected_spokes = np.r_[10:400]
-#     selected_spokes=None
-#     mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/25, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
-#     np.save(filename_mask,mask)
-#     animate_images(mask)
-#     del mask
+#volumes for slice taking into account coil sensi
+print("Building Volumes....")
+if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=True,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+    np.save(filename_volume,volumes_all)
+    # sl=20
+    # ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
+    del volumes_all
+
+print("Building Mask....")
+if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
+    selected_spokes = np.r_[10:400]
+    selected_spokes=None
+    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/25, normalize_kdata=True,light_memory_usage=True,selected_spokes=selected_spokes)
+    np.save(filename_mask,mask)
+    animate_images(mask)
+    del mask
 
 #animate_images(np.abs(volumes_all[:,int(nb_slices/2),:,:]))
 
@@ -941,17 +1180,44 @@ load_map=False
 save_map=True
 
 
-dictfile = "mrf175_SimReco2_light.dict"
+#dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
-#dictfile = "mrf175_Dico2_Invivo.dict"
-filename_volume_corrected_final = str.split(filename,".dat") [0]+"_volumes_corrected_final_old{}.npy".format("")
+dictfile = "mrf175_Dico2_Invivo.dict"
+#dictfile = "mrf175_Dico2_Invivo_adjusted_TR7500.dict"
+#filename_volume_corrected_final = str.split(filename,".dat") [0]+"_volumes_corrected_final_old{}.npy".format("")
 
 
 mask = np.load(filename_mask)
-#volumes_all = np.load(filename_volume)
+volumes_all = np.load(filename_volume)
 volumes_corrected_final=np.load(filename_volume_corrected_final)
+
+filename_volume_corrected_disp5= "./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes_corrected_disp5.npy"
+volumes_corrected_disp5 = np.load(filename_volume_corrected_disp5)
+
+center_z = int(nb_slices/2)
+center_pixel=int(image_size[1]/2)
+
+dplane = image_size[1]/8
+dz = image_size[0]/8
+
+x = int(np.random.normal(center_pixel,dplane))
+y = int(np.random.normal(center_pixel,dplane))
+z = int(np.random.normal(center_z,dz))
+
+
+
+plt.close("all")
+metric=np.real
+plt.figure()
+plt.plot(metric(volumes_all[:,z,x,y]),label="All spokes")
+plt.plot(metric(volumes_corrected_final[:,z,x,y]),label="Corrected spokes")
+plt.plot(metric(volumes_corrected_disp5[:,z,x,y]),label="Only one cycle")
+plt.title("Volume series comparison {}".format((z,x,y)))
+plt.legend()
+
+
 
 
 #ani = animate_images(volumes_all[:,4,:,:])
@@ -960,12 +1226,18 @@ volumes_corrected_final=np.load(filename_volume_corrected_final)
 # plt.figure()
 # plt.plot(volumes_all[:,sl,200,200])
 
+sl = 10
+suffix ="_bestgroup_testsl{}".format(sl)
+suffix ="_bestgroup".format(sl)
+mask_slice=np.zeros(mask.shape,dtype=mask.dtype)
+mask_slice[sl,:,:]=1
+mask*=mask_slice
 
 ntimesteps=175
 if not(load_map):
     niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
-    all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_final,retained_timesteps=None)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=10,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
+    all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected_best_group,retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -1006,3 +1278,32 @@ for iter in list(all_maps.keys()):
     for key in ["ff","wT1","df","attB1"]:
         file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
         io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

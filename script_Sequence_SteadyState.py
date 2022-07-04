@@ -70,6 +70,7 @@ dictfile = "mrf175_SimReco2_mid_point.dict"
 dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
 
+
 with open("./mrf_sequence.json") as f:
     sequence_config = json.load(f)
 
@@ -87,8 +88,8 @@ df = dict_config["delta_freqs"]
 df = [- value / 1000 for value in df] # temp
 # df = np.linspace(-0.1, 0.1, 101)
 
-rep=10
-TR_total = 6000
+rep=2
+TR_total = 7000
 
 Treco = TR_total-np.sum(sequence_config["TR"])
 # other options
@@ -141,16 +142,134 @@ for j in range(num_sig):
 # fat_cs = [- value / 1000 for value in fat_cs] # temp
 
 
-Fisher_information =0
 
-for k in derivs.keys():
 
-    plt.figure()
-    derivatives = np.abs(np.array(derivs[k])[:, 0])
-    lines = plt.plot(derivatives.reshape((len(derivatives), -1)))
-    plt.title(f"MRF deriv {k}")
-    plt.grid()
-    plt.xlabel("iter")
-    plt.ylabel("sensibility")
-    plt.legend(lines)
-    plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#import matplotlib
+#matplotlib.use("TkAgg")
+from mrfsim import *
+from image_series import *
+from utils_mrf import *
+import json
+from finufft import nufft1d1,nufft1d2
+from scipy import signal,interpolate
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
+import matplotlib.pyplot as plt
+import numpy as np
+from movements import *
+from dictoptimizers import *
+import glob
+from tqdm import tqdm
+import pickle
+from scipy.io import savemat
+
+
+
+with open("./mrf_sequence_adjusted.json") as f:
+    sequence_config = json.load(f)
+
+with open("./mrf_dictconf_Dico2_Invivo.json") as f:
+    dict_config = json.load(f)
+
+
+# generate signals
+wT1 = dict_config["water_T1"]
+fT1 = dict_config["fat_T1"]
+wT2 = dict_config["water_T2"]
+fT2 = dict_config["fat_T2"]
+att = dict_config["B1_att"]
+df = dict_config["delta_freqs"]
+df = [- value / 1000 for value in df] # temp
+# df = np.linspace(-0.1, 0.1, 101)
+
+rep=2
+TR_total = 7500
+
+Treco = TR_total-np.sum(sequence_config["TR"])
+# other options
+sequence_config["T_recovery"]=Treco
+sequence_config["nrep"]=rep
+
+
+seq=T1MRFSS(**sequence_config)
+
+water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
+
+
+
+
+
+
+dictfile = "mrf175_SimReco2_mid_point.dict"
+dictfile = "mrf175_SimReco2_light.dict"
+#dictfile = "mrf175_CS.dict"
+dictfile = "mrf175_Dico2_Invivo_adjusted_TR7500.dict"
+
+
+
+sim_mode="mean"
+overwrite=False
+
+fat_amp = dict_config["fat_amp"]
+fat_cs = dict_config["fat_cshift"]
+fat_cs = [- value / 1000 for value in fat_cs] # temp
+
+# other options
+
+window = dict_config["window_size"]
+
+# water
+printer("Generate water signals.")
+water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
+water=water.reshape((rep,-1)+water.shape[1:])[-1]
+
+if sim_mode == "mean":
+    water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
+elif sim_mode == "mid_point":
+    water = water[(int(window / 2) - 1):-1:window]
+else:
+    raise ValueError("Unknow sim_mode")
+
+# fat
+printer("Generate fat signals.")
+eval = "dot(signal, amps)"
+args = {"amps": fat_amp}
+# merge df and fat_cs df to dict
+fatdf = [[cs + f for cs in fat_cs] for f in df]
+fat = seq(T1=[fT1], T2=fT2, att=[[att]], g=[[[fatdf]]], eval=eval, args=args)
+fat=fat.reshape((rep,-1)+fat.shape[1:])[-1]
+
+if sim_mode == "mean":
+    fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
+elif sim_mode == "mid_point":
+    fat = fat[(int(window / 2) - 1):-1:window]
+else:
+    raise ValueError("Unknow sim_mode")
+
+water=np.array(water)
+fat=np.array(fat)
+# join water and fat
+printer("Build dictionary.")
+keys = list(itertools.product(wT1, fT1, att, df))
+values = np.stack(np.broadcast_arrays(water, fat), axis=-1)
+values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
+
+printer("Save dictionary.")
+mrfdict = dictsearch.Dictionary(keys, values)
+mrfdict.save(dictfile, overwrite=overwrite)
+
+
