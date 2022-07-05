@@ -69,6 +69,9 @@ localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_
 localfile="/phantom.001.v1/phantom.001.v1.dat"
 #localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
 
+localfile = "/patient.003.v1/meas_MID00125_FID02111_raFin_3D_tra_1x1x5mm_FULL_1.dat"
+localfile = "/patient.003.v1/meas_MID00130_FID02116_raFin_3D_tra_0_68x0_68x3mm_FULL_NoInv.dat"
+
 
 filename = base_folder+localfile
 
@@ -196,44 +199,62 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
         twix = twixtools.read_twix(filename)
 
     mdb_list = twix[-1]['mdb']
-    if nb_gating_spokes > 0:
+    if nb_gating_spokes == 0:
+        data = []
+
+        for i, mdb in enumerate(mdb_list):
+            if mdb.is_image_scan():
+                data.append(mdb)
+
+
+
+    else:
         print("Reading Navigator Data....")
         data_for_nav = []
-        k = 0
+        data = []
+        nav_size_initialized = False
+        # k = 0
         for i, mdb in enumerate(mdb_list):
-            if mdb.is_image_scan() and mdb.mdh[14][9]:
-                data_for_nav.append(mdb)
+            if mdb.is_image_scan():
+                if not (mdb.mdh[14][9]):
+                    mdb_data_shape = mdb.data.shape
+                    mdb_dtype = mdb.data.dtype
+                    nav_size_initialized = True
+                    break
 
-                #print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
-                k += 1
+        for i, mdb in enumerate(mdb_list):
+            if mdb.is_image_scan():
+                if not (mdb.mdh[14][9]):
+                    data.append(mdb)
+                else:
+                    data_for_nav.append(mdb)
+                    data.append(np.zeros(mdb_data_shape, dtype=mdb_dtype))
+
+                # print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
+                # k += 1
         data_for_nav = np.array([mdb.data for mdb in data_for_nav])
-        data_for_nav = data_for_nav.reshape((int(nb_part),int(nb_gating_spokes))+data_for_nav.shape[1:])
+        data_for_nav = data_for_nav.reshape((int(nb_part), int(nb_gating_spokes)) + data_for_nav.shape[1:])
 
-        if data_for_nav.ndim==3:
-            data_for_nav=np.expand_dims(data_for_nav,axis=-2)
+        if data_for_nav.ndim == 3:
+            data_for_nav = np.expand_dims(data_for_nav, axis=-2)
 
-        data_for_nav = np.moveaxis(data_for_nav,-2,0)
+        data_for_nav = np.moveaxis(data_for_nav, -2, 0)
         np.save(filename_nav_save, data_for_nav)
+
+    data = np.array([mdb.data for mdb in data])
+    data = data.reshape((-1, int(nb_segments)) + data.shape[1:])
+    data = np.moveaxis(data, 2, 0)
+    data = np.moveaxis(data, 2, 1)
 
     del mdb_list
 
     ##################################################
-    mapped = twixtools.map_twix(twix)
     try:
         del twix
     except:
         pass
-    data = mapped[-1]['image']
-    del mapped
-    data = data[:].squeeze()
-    if data.ndim == 3:
-        data = np.expand_dims(data, axis=0)
-        data=np.moveaxis(data,-2,-3)
-    else:
-        data = np.moveaxis(data, 0, -2)
-        data = np.moveaxis(data, 1, 0)
 
-    np.save(filename_save,data)
+    np.save(filename_save, data)
 
 
 
@@ -363,18 +384,18 @@ nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=nb_slices,
 nav_image_size = (int(npoint / 2),)
 
 # print("Calculating Sensitivity Maps for Nav Images...")
-# b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
-# b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
+b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=8, image_size=nav_image_size)
+b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
 #
 #
 # print("Rebuilding Nav Images...")
-# images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
+images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
 #
 # print("Estimating Movement...")
-# shifts = list(range(-20, 20))
-# bottom = 50
-# top = 150
-# displacements = calculate_displacement(images_nav_mean, bottom, top, shifts,lambda_tv=0)
+shifts=np.arange(-30,30)
+bottom=-shifts[0]
+top=int(npoint/2)-shifts[-1]
+displacements = calculate_displacement(images_nav_mean, bottom, top, shifts,lambda_tv=0)
 
 shifts=np.arange(-30,30)
 bottom=-shifts[0]

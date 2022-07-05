@@ -14,6 +14,10 @@ from sklearn.decomposition import PCA
 from tqdm import tqdm
 from scipy.spatial import Voronoi,ConvexHull
 from Transformers import PCAComplex
+import pickle
+import twixtools
+import os
+
 try:
     import freud
 except:
@@ -2711,9 +2715,10 @@ def plot_image_grid(list_images,nb_row_col,figsize=(10,10),title="",cmap=None,sa
     for ax, im in zip(grid, list_images):
         ax.imshow(im,cmap=cmap)
 
-    plt.show()
     if save_file is not None:
         plt.savefig(save_file)
+    else:
+        plt.show()
 
 def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256)):
     traj_all = trajectory.get_traj()
@@ -3386,3 +3391,143 @@ def calc_grad_entropy(v):
     grad_norm = np.sqrt(grad_norm)
     p = grad_norm / np.sum(grad_norm)
     return np.sum(-np.log2(p) * p)
+
+
+def build_dico_seqParams(filename,folder):
+    filename_seqParams = str.split(filename, ".dat")[0] + "_seqParams.pkl"
+
+    if str.split(filename_seqParams, "/")[-1] not in os.listdir(folder):
+
+        twix = twixtools.read_twix(filename, optional_additional_maps=["sWipMemBlock", "sKSpace"],
+                                   optional_additional_arrays=["SliceThickness"])
+
+        if np.max(np.argwhere(np.array(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]) > 0)) >= 16:
+            use_navigator_dll = True
+        else:
+            use_navigator_dll = False
+
+        alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
+        x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
+        y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
+        z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
+
+        nb_part = twix[-1]["hdr"]["Meas"]["Partitions"]
+
+        dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV, "z_FOV": z_FOV,
+                          "use_navigator_dll": use_navigator_dll, "nb_part": nb_part}
+
+        del alFree
+
+        file = open(filename_seqParams, "wb")
+        pickle.dump(dico_seqParams, file)
+        file.close()
+
+    else:
+        file = open(filename_seqParams, "rb")
+        dico_seqParams = pickle.load(file)
+        file.close()
+
+    return dico_seqParams
+
+
+def build_data(filename,folder, nb_segments, nb_gating_spokes):
+    filename_save = str.split(filename, ".dat")[0] + ".npy"
+    # filename_nav_save=str.split(base_folder+"/phantom.001.v1/phantom.001.v1.dat",".dat") [0]+"_nav.npy"
+    filename_nav_save = str.split(filename, ".dat")[0] + "_nav.npy"
+
+
+
+    if str.split(filename_save, "/")[-1] not in os.listdir(folder):
+        if 'twix' not in locals():
+            print("Re-loading raw data")
+            twix = twixtools.read_twix(filename)
+
+        mdb_list = twix[-1]['mdb']
+        if nb_gating_spokes == 0:
+            data = []
+
+            for i, mdb in enumerate(mdb_list):
+                if mdb.is_image_scan():
+                    data.append(mdb)
+
+            data_for_nav = None
+
+
+        else:
+            print("Reading Navigator Data....")
+            data_for_nav = []
+            data = []
+            nav_size_initialized = False
+            # k = 0
+            for i, mdb in enumerate(mdb_list):
+                if mdb.is_image_scan():
+                    if not (mdb.mdh[14][9]):
+                        mdb_data_shape = mdb.data.shape
+                        mdb_dtype = mdb.data.dtype
+                        nav_size_initialized = True
+                        break
+
+            for i, mdb in enumerate(mdb_list):
+                if mdb.is_image_scan():
+                    if not (mdb.mdh[14][9]):
+                        data.append(mdb)
+                    else:
+                        data_for_nav.append(mdb)
+                        data.append(np.zeros(mdb_data_shape, dtype=mdb_dtype))
+
+                    # print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
+                    # k += 1
+            data_for_nav = np.array([mdb.data for mdb in data_for_nav])
+            data_for_nav = data_for_nav.reshape((-1, int(nb_gating_spokes)) + data_for_nav.shape[1:])
+
+            if data_for_nav.ndim == 3:
+                data_for_nav = np.expand_dims(data_for_nav, axis=-2)
+
+            data_for_nav = np.moveaxis(data_for_nav, -2, 0)
+            np.save(filename_nav_save, data_for_nav)
+
+        data = np.array([mdb.data for mdb in data])
+        data = data.reshape((-1, int(nb_segments)) + data.shape[1:])
+        data = np.moveaxis(data, 2, 0)
+        data = np.moveaxis(data, 2, 1)
+
+        del mdb_list
+
+        ##################################################
+        try:
+            del twix
+        except:
+            pass
+
+        np.save(filename_save, data)
+        #
+        ##################################################
+        #
+        # Parsed_File = rT.map_VBVD(filename)
+        # idx_ok = rT.detect_TwixImg(Parsed_File)
+        # start_time = time.time()
+        # data = Parsed_File[str(idx_ok)]["image"].readImage()
+        # elapsed_time = time.time()
+        # elapsed_time = elapsed_time - start_time
+        #
+        # progress_str = "Data read in %f s \n" % round(elapsed_time, 2)
+        # print(progress_str)
+        #
+        # data = np.squeeze(data)
+        #
+        # if nb_gating_spokes>0:
+        #     data = np.moveaxis(data, 0, -1)
+        #     data = np.moveaxis(data, -2, 0)
+        #
+        # else:
+        #     data = np.moveaxis(data, 0, -1)
+
+        # np.save(filename_save, data)
+
+
+    else:
+        data = np.load(filename_save)
+        if nb_gating_spokes > 0:
+            data_for_nav = np.load(filename_nav_save)
+
+    return data, data_for_nav

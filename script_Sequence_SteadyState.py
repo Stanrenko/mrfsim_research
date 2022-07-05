@@ -331,7 +331,7 @@ class T1MRFNoInv:
 with open("./mrf_sequence_adjusted.json") as f:
     sequence_config = json.load(f)
 
-with open("./mrf_dictconf_Dico2_Invivo.json") as f:
+with open("./mrf_dictconf_SimReco2_light.json") as f:
     dict_config = json.load(f)
 
 
@@ -345,15 +345,6 @@ df = dict_config["delta_freqs"]
 df = [- value / 1000 for value in df] # temp
 # df = np.linspace(-0.1, 0.1, 101)
 
-rep=2
-TR_total = 7500
-
-Treco = TR_total-np.sum(sequence_config["TR"])
-# other options
-sequence_config["T_recovery"]=Treco
-sequence_config["nrep"]=rep
-
-
 seq=T1MRFNoInv(**sequence_config)
 
 
@@ -363,7 +354,7 @@ seq=T1MRFNoInv(**sequence_config)
 dictfile = "mrf175_SimReco2_mid_point.dict"
 dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
-dictfile = "mrf175_Dico2_Invivo_adjusted_NoInv.dict"
+dictfile = "mrf175_SimReco2_light_adjusted_NoInv.dict"
 
 
 
@@ -381,7 +372,6 @@ window = dict_config["window_size"]
 # water
 printer("Generate water signals.")
 water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
-water=water.reshape((rep,-1)+water.shape[1:])[-1]
 
 if sim_mode == "mean":
     water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
@@ -397,7 +387,6 @@ args = {"amps": fat_amp}
 # merge df and fat_cs df to dict
 fatdf = [[cs + f for cs in fat_cs] for f in df]
 fat = seq(T1=[fT1], T2=fT2, att=[[att]], g=[[[fatdf]]], eval=eval, args=args)
-fat=fat.reshape((rep,-1)+fat.shape[1:])[-1]
 
 if sim_mode == "mean":
     fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
