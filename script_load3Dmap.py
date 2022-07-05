@@ -51,6 +51,7 @@ filename='./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5
 filename='./data/InVivo/3D/patient.001.v1/meas_MID00215_FID60605_raFin_3D_tra_FULl_Tikhonov_0_01_us8ref10_volumes_grappa.dat'
 #meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes_corrected_final_MRF_map.pkl
 filename='./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes_corrected_final.dat'
+filename='./data/InVivo/3D/patient.002.v2/meas_MID00038_FID01901_raFin_3D_tra_1x1x5mm_FULL_FOV90_Sl160_volumes_modif.dat'
 
 #filename="./3D/SquareSimu3D_sl8_rp2fullysampled.dat"
 #filename="./3D/SquareSimu3D_sl8_rp2_fullysampled.dat"

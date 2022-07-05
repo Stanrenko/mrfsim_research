@@ -384,7 +384,7 @@ displacements_all_channels=[]
 for j in tqdm(range(nb_channels)):
     images_series_rebuilt_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[j],axis=0), nav_traj, nav_image_size, b1=None)
     image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
-    curr_displacement=calculate_displacement(image_nav_ch,bottom,top,shifts)
+    curr_displacement=calculate_displacement(image_nav_ch,bottom,top,shifts,lambda_tv=0.001)
     displacements_all_channels.append(curr_displacement)
     # plt.figure()
 
