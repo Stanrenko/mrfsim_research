@@ -5,7 +5,7 @@
 import numpy as np
 from mrfsim import T1MRF
 from image_series import *
-from dictoptimizers import SimpleDictSearch,GaussianWeighting
+from dictoptimizers import SimpleDictSearch,GaussianWeighting,BruteDictSearch
 from utils_mrf import *
 import json
 import readTwix as rT
@@ -36,13 +36,23 @@ dictjson="mrf_dictconf_SimReco2_light{}.json".format(suffix_simu)
 suffix=""
 suffix="_FFDf"
 #suffix="_Cohen"
-suffix="_CohenWeighted"
+#suffix="_CohenWeighted"
+#suffix="_CohenCSWeighted"
+#suffix="_CohenBS"
+#suffix="_PW"
+suffix="_PWCR"
+#suffix="_"
+
+nb_allspokes = 80
+ntimesteps=10
+nb_segments=nb_allspokes
+nspoke=int(nb_segments/ntimesteps)
 
 #suffix="_plateau600"
 #suffix="_constantTE_last"
 #suffix=""
 
-with open("mrf78_SeqFF{}_config.json".format(suffix)) as f:
+with open("mrf{}_SeqFF{}_config.json".format(nb_allspokes,suffix)) as f:
     sequence_config = json.load(f)
 
 
@@ -91,6 +101,9 @@ class FFMRF:
 seq = FFMRF(**sequence_config)
 #seq=T1MRF(**sequence_config)
 
+
+
+
 nb_filled_slices = 8
 nb_empty_slices=2
 repeat_slice=1
@@ -123,18 +136,16 @@ filename_paramMap=filename+"_paramMap_sl{}_rp{}{}.pkl".format(nb_slices,repeat_s
 
 filename_paramMask=filename+"_paramMask_sl{}_rp{}.npy".format(nb_slices,repeat_slice)
 
-filename_volume = filename+"_volumes_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,suffix)
-filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,suffix)
+filename_volume = filename+"_volumes_sl{}_rp{}_us{}_{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
+filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}_{}w{}{}.npy".format(nb_slices,repeat_slice,nb_allspokes,nspoke,suffix)
 
-filename_kdata = filename+"_kdata_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,suffix)
-filename_mask= filename+"_mask_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,suffix)
-file_map = filename + "_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,suffix)
+filename_kdata = filename+"_kdata_sl{}_rp{}_us{}{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
+filename_mask= filename+"_mask_sl{}_rp{}_us{}{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
+file_map = filename + "_sl{}_rp{}_us{}{}w{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
-ntimesteps=17
 nb_channels=1
-nb_allspokes = 78
 npoint = 128
 
 
@@ -143,8 +154,7 @@ incoherent=True
 mode="old"
 
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
-nb_segments=nb_allspokes
-nspoke=int(nb_segments/ntimesteps)
+
 size = image_size[1:]
 
 with open(dictjson) as f:
@@ -256,8 +266,10 @@ seq = None
 load_map=False
 save_map=True
 
-
-dictfile = "mrf{}w{}_SeqFF{}_light.dict".format(nb_allspokes,nspoke,suffix)
+if nspoke==1:
+    dictfile = "mrf{}_SeqFF{}_light.dict".format(nb_allspokes,suffix)
+else:
+    dictfile = "mrf{}w{}_SeqFF{}_light.dict".format(nb_allspokes,nspoke,suffix)
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
@@ -271,11 +283,36 @@ volumes_all = np.load(filename_volume)
 #L0=8
 #filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
 #volumes_corrected_final=np.load(filename_volume_rebuilt_multitasking)
+#
+# if not(load_map):
+#     niter = 0
+#     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,log_phase=True)
+#     all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
+#
+#     if(save_map):
+#         import pickle
+#
+#         #file_map = filename.split(".dat")[0] + "_corrected_dens_adj{}_MRF_map.pkl".format(suffix)
+#         #file_map = filename.split(".dat")[0] + "_5iter_MRF_map.pkl".format("")
+#         file = open(file_map, "wb")
+#         # dump information to that file
+#         pickle.dump(all_maps, file)
+#         # close the file
+#         file.close()
+#
+# else:
+#     import pickle
+#     file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
+#     file = open(file_map, "rb")
+#     all_maps = pickle.load(file)
+
+
+
 
 if not(load_map):
     niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,log_phase=True)
-    all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
+    optimizer = BruteDictSearch(mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
+    all_maps=optimizer.search_patterns(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -293,8 +330,6 @@ else:
     file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
     file = open(file_map, "rb")
     all_maps = pickle.load(file)
-
-
 
 
 maskROI=buildROImask_unique(m.paramMap)
@@ -342,9 +377,6 @@ def simulate_image_series_from_maps(map_rebuilt,mask_rebuilt,window=8):
     return rebuilt_image_series,map_for_sim
 
 
-phase_optim=all_maps[0][2]
-
-TE = sequence_config["TE"][0]
 original_image_series,_=simulate_image_series_from_maps(m.paramMap,m.mask)
 rebuilt_image_series,map_for_sim=simulate_image_series_from_maps(all_maps[0][0],all_maps[0][1])
 
@@ -354,11 +386,27 @@ masked_orig = original_image_series[:,m.mask>0]
 masked_rebuilt =rebuilt_image_series[:,m.mask>0]
 masked_sim=volumes_all[:,m.mask>0]
 
+best_ff_fit=np.argsort(np.abs(all_maps[0][0]["ff"]-m.paramMap["ff"]))[0]
+worst_ff_fit=np.argsort(np.abs(all_maps[0][0]["ff"]-m.paramMap["ff"]))[-1]
+
+
+
 nb_mask_elements=int(np.sum(m.mask))
 
-
-
 ind_sig=np.random.choice(range(nb_mask_elements))
+ind_sig=worst_ff_fit
+
+corr_orig=np.real(np.corrcoef(masked_orig[:,ind_sig],masked_sim[:,ind_sig]))
+corr_rebuilt=np.real(np.corrcoef(masked_rebuilt[:,ind_sig],masked_sim[:,ind_sig]))
+
+metric=np.real
+plt.figure()
+plt.plot(metric(masked_orig[:,ind_sig]),label="Original T1 {} - FF {} - Df {} - B1 {}".format(m.paramMap["wT1"][ind_sig],m.paramMap["ff"][ind_sig],m.paramMap["df"][ind_sig],m.paramMap["attB1"][ind_sig]))
+plt.plot(metric(masked_sim[:,ind_sig]),label="Simulated")
+plt.plot(metric(masked_rebuilt[:,ind_sig]),label="RebuiltT1 {} - FF {} - Df {} - B1 {}".format(all_maps[0][0]["wT1"][ind_sig],all_maps[0][0]["ff"][ind_sig],all_maps[0][0]["df"][ind_sig],all_maps[0][0]["attB1"][ind_sig]))
+plt.title("Magnitude")
+plt.legend()
+
 
 df=m.paramMap["df"][ind_sig]
 b0_phase = df*TE*2*np.pi

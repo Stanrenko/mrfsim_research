@@ -14,6 +14,7 @@ from numpy import memmap
 import pickle
 import twixtools
 from PIL import Image
+from mutools import io
 
 try :
     import cupy as cp
@@ -31,6 +32,7 @@ sys.path.append(path+"/dicomstack")
 
 from machines import machine, Toolbox, Config, set_parameter, set_output, printer, file_handler, Parameter, RejectException, get_context
 
+DEFAULT_OPT_CONFIG="opt_config.json"
 
 @machine
 @set_parameter("filename", str, default=None, description="Siemens K-space data .dat file")
@@ -39,21 +41,31 @@ def build_kdata(filename,suffix):
 
     filename_kdata = str.split(filename, ".dat")[0] + suffix + "_kdata.npy"
     filename_save = str.split(filename, ".dat")[0] + ".npy"
+    filename_nav_save = str.split(filename, ".dat")[0] + "_nav.npy"
     filename_seqParams = str.split(filename, ".dat")[0] + "_seqParams.pkl"
 
     folder = "/".join(str.split(filename, "/")[:-1])
+
 
     if str.split(filename_seqParams, "/")[-1] not in os.listdir(folder):
 
         twix = twixtools.read_twix(filename, optional_additional_maps=["sWipMemBlock", "sKSpace"],
                                    optional_additional_arrays=["SliceThickness"])
 
+        if np.max(np.argwhere(np.array(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]) > 0)) >= 16:
+            use_navigator_dll = True
+        else:
+            use_navigator_dll = False
+
         alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
         x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
         y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
         z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
 
-        dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV, "z_FOV": z_FOV}
+        nb_part = twix[-1]["hdr"]["Meas"]["Partitions"]
+
+        dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV, "z_FOV": z_FOV,
+                          "use_navigator_dll": use_navigator_dll, "nb_part": nb_part}
 
         del alFree
 
@@ -64,35 +76,87 @@ def build_kdata(filename,suffix):
     else:
         file = open(filename_seqParams, "rb")
         dico_seqParams = pickle.load(file)
+        file.close()
+
+    use_navigator_dll = dico_seqParams["use_navigator_dll"]
+
+    if use_navigator_dll:
+        meas_sampling_mode = dico_seqParams["alFree"][14]
+        nb_gating_spokes = dico_seqParams["alFree"][6]
+    else:
+        meas_sampling_mode = dico_seqParams["alFree"][12]
+        nb_gating_spokes = 0
+
+    nb_segments = dico_seqParams["alFree"][4]
+    nb_part = dico_seqParams["nb_part"]
+
+    del dico_seqParams
 
     if str.split(filename_save, "/")[-1] not in os.listdir(folder):
         if 'twix' not in locals():
             print("Re-loading raw data")
             twix = twixtools.read_twix(filename)
 
-        mapped = twixtools.map_twix(twix)
+        mdb_list = twix[-1]['mdb']
+        if nb_gating_spokes == 0:
+            data = []
 
+            for i, mdb in enumerate(mdb_list):
+                if mdb.is_image_scan():
+                    data.append(mdb)
+
+        else:
+            print("Reading Navigator Data....")
+            data_for_nav = []
+            data = []
+            nav_size_initialized = False
+            # k = 0
+            for i, mdb in enumerate(mdb_list):
+                if mdb.is_image_scan():
+                    if not (mdb.mdh[14][9]):
+                        mdb_data_shape = mdb.data.shape
+                        mdb_dtype = mdb.data.dtype
+                        nav_size_initialized = True
+                        break
+
+            for i, mdb in enumerate(mdb_list):
+                if mdb.is_image_scan():
+                    if not (mdb.mdh[14][9]):
+                        data.append(mdb)
+                    else:
+                        data_for_nav.append(mdb)
+                        data.append(np.zeros(mdb_data_shape, dtype=mdb_dtype))
+
+                    # print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
+                    # k += 1
+            data_for_nav = np.array([mdb.data for mdb in data_for_nav])
+            data_for_nav = data_for_nav.reshape((int(nb_part), int(nb_gating_spokes)) + data_for_nav.shape[1:])
+
+            if data_for_nav.ndim == 3:
+                data_for_nav = np.expand_dims(data_for_nav, axis=-2)
+
+            data_for_nav = np.moveaxis(data_for_nav, -2, 0)
+            np.save(filename_nav_save, data_for_nav)
+
+        data = np.array([mdb.data for mdb in data])
+        data = data.reshape((-1, int(nb_segments)) + data.shape[1:])
+        data = np.moveaxis(data, 2, 0)
+        data = np.moveaxis(data, 2, 1)
+
+        del mdb_list
+
+        ##################################################
         try:
             del twix
         except:
             pass
 
-        data = mapped[-1]['image']
-        del mapped
-
-        data = data[:].squeeze()
-        data = np.moveaxis(data, 0, -2)
-        data = np.moveaxis(data, 1, 0)
-
         np.save(filename_save, data)
 
     else:
         data = np.load(filename_save)
-
-    try:
-        del twix
-    except:
-        pass
+        if nb_gating_spokes > 0:
+            data_for_nav = np.load(filename_nav_save)
 
     npoint = data.shape[-1]
     #image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
@@ -628,25 +692,26 @@ def build_data_autofocus(filename_kdata,filename_traj,filename_nav_save,sampling
 
     print("Rebuilding Nav Images...")
     #print("Calculating Sensitivity Maps for Nav Images...")
-    b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
-    b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
+    #b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
+    #b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
 
-    images_nav = np.abs(
-        simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1=b1_nav_mean))
+    #images_nav = np.abs(
+    #    simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1=b1_nav_mean))
 
-    #best_ch=4
-    #images_nav = np.abs(simulate_nav_images_multi(np.expand_dims(data_for_nav[best_ch],axis=0), nav_traj, nav_image_size, b1=None))
-
-
+    best_ch=9
+    images_nav = np.abs(simulate_nav_images_multi(np.expand_dims(data_for_nav[best_ch],axis=0), nav_traj, nav_image_size, b1=None))
 
 
-    print("Estimating Movement...")
+
+
+    #print("Estimating Movement...")
     shifts = list(range(-30, 30))
-    bottom = -shifts[0]
-    top = nav_image_size[0]-shifts[-1]
-    displacements = calculate_displacement(images_nav, bottom, top, shifts, lambda_tv=0.001)
+    #bottom = -shifts[0]
+    #top = nav_image_size[0]-shifts[-1]
 
-
+    bottom = 40
+    top=120
+    displacements = calculate_displacement(images_nav, bottom, top, shifts, lambda_tv=0.00)
 
     if filename_traj is None:
         radial_traj = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=undersampling_factor, npoint=npoint,
@@ -671,46 +736,47 @@ def build_data_autofocus(filename_kdata,filename_traj,filename_nav_save,sampling
 
     displacements_extrapolated = np.array([displacements[j] for j in spoke_groups])
 
-    x = np.arange(-1.0, 1.01, 0.1)
-    y = np.array([0])
-    z = np.arange(-0.5, 0.51, 0.1)
+    #x = np.arange(-1.0, 1.01, 0.1)
+    #y = np.array([0])
+    #z = np.arange(-0.5, 0.51, 0.1)
 
-    print("Calculating Entropy for all movement ranges...")
-    entropy_all = []
-    ent_min = np.inf
-    for dx in tqdm(x):
-        entropy_xzy = []
-        for dz in z:
-            entropy_zy=[]
-            for dy in y:
-                alpha = np.array([dx, dy, dz])
-                dr = np.expand_dims(alpha, axis=(0, 1)) * np.expand_dims(
-                    displacements_extrapolated.reshape(nb_slices, nb_segments).T, axis=(2))
-                modif = np.exp(
-                    1j * np.sum((radial_traj.get_traj().reshape(nb_segments, -1, npoint, 3) * np.expand_dims(dr, axis=2)),
-                                axis=-1))
-                data_modif = kdata_all_channels_all_slices * modif
-                volume_full_modif = \
-                    simulate_radial_undersampled_images_multi(data_modif, radial_traj, image_size, b1=b1_all_slices,
-                                                              density_adj=dens_adj, ntimesteps=1, useGPU=False,
-                                                              normalize_kdata=False, memmap_file=None,
-                                                              light_memory_usage=light_mem,
-                                                              normalize_volumes=True)[0]
-                ent = calc_grad_entropy(volume_full_modif)
-                entropy_zy.append(ent)
-                if ent < ent_min:
-                    modif_final = modif
-                    alpha_min = alpha
-                    ent_min = ent
+    #print("Calculating Entropy for all movement ranges...")
+    #entropy_all = []
+    #ent_min = np.inf
+    #for dx in tqdm(x):
+    #    entropy_xzy = []
+    #    for dz in z:
+    #        entropy_zy=[]
+    #        for dy in y:
+    #            alpha = np.array([dx, dy, dz])
+    #            dr = np.expand_dims(alpha, axis=(0, 1)) * np.expand_dims(
+    #                displacements_extrapolated.reshape(nb_slices, nb_segments).T, axis=(2))
+    #            modif = np.exp(
+    #                1j * np.sum((radial_traj.get_traj().reshape(nb_segments, -1, npoint, 3) * np.expand_dims(dr, axis=2)),
+    #                            axis=-1))
+    #            data_modif = kdata_all_channels_all_slices * modif
+    #            volume_full_modif = \
+    #                simulate_radial_undersampled_images_multi(data_modif, radial_traj, image_size, b1=b1_all_slices,
+    #                                                          density_adj=dens_adj, ntimesteps=1, useGPU=False,
+    #                                                          normalize_kdata=False, memmap_file=None,
+    #                                                          light_memory_usage=light_mem,
+    #                                                          normalize_volumes=True)[0]
+    #            ent = calc_grad_entropy(volume_full_modif)
+    #            entropy_zy.append(ent)
+    #            if ent < ent_min:
+    #                modif_final = modif
+    #                alpha_min = alpha
+    #                ent_min = ent
 
-            entropy_xzy.append(entropy_zy)
-        entropy_all.append(entropy_xzy)
+    #        entropy_xzy.append(entropy_zy)
+    #    entropy_all.append(entropy_xzy)
 
-    print("Alpha min: {}".format(alpha_min))
+    #print("Alpha min: {}".format(alpha_min))
 
-    filename_entropy = str.split(filename_kdata, ".npy")[0] + "_entropy.npy"
-    np.save(filename_entropy,np.array(entropy_all))
+    #filename_entropy = str.split(filename_kdata, ".npy")[0] + "_entropy.npy"
+    #np.save(filename_entropy,np.array(entropy_all))
 
+    ###########################
     #X, Y = np.meshgrid(x, y)
 
 
@@ -721,8 +787,116 @@ def build_data_autofocus(filename_kdata,filename_traj,filename_nav_save,sampling
 
     #filename_entropy_image = str.split(filename_kdata, ".npy")[0] + "_entropy.jpg"
     #plt.savefig(filename_entropy_image)
+    ##################################""
 
-    np.save(filename_kdata_modif, kdata_all_channels_all_slices*modif)
+    alpha = np.array([1, 0, 0])
+    dr = np.expand_dims(alpha, axis=(0, 1)) * np.expand_dims(
+                    displacements_extrapolated.reshape(nb_slices, nb_segments).T, axis=(2))
+    modif_final = np.exp(
+                    1j * np.sum((radial_traj.get_traj().reshape(nb_segments, -1, npoint, 3) * np.expand_dims(dr, axis=2)),
+                                axis=-1))
+
+    np.save(filename_kdata_modif, kdata_all_channels_all_slices*modif_final)
+
+
+    # gif=[]
+    # sl=int(volumes_all.shape[1]/2)
+    # volume_for_gif = np.abs(volumes_all[:,sl,:,:])
+    # for i in range(volume_for_gif.shape[0]):
+    #     img = Image.fromarray(np.uint8(volume_for_gif[i]/np.max(volume_for_gif[i])*255), 'L')
+    #     img=img.convert("P")
+    #     gif.append(img)
+    #
+    # filename_gif = str.split(filename_volume,".npy") [0]+".gif"
+    # gif[0].save(filename_gif,save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
+
+    return
+
+
+
+@machine
+@set_parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
+@set_parameter("filename_df_groups_global", str, default=None, description="Number of spokes per cycle per acquisition")
+@set_parameter("filename_categories_global", str, default=None, description="Cycle for each spoke for each acquisition")
+@set_parameter("nb_gating_spokes", int, default=50, description="Number of gating spokes per repetition")
+@set_parameter("files_config", type=Config, default=None, description="Kdata filenames to use for aggregation")
+@set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
+
+
+def aggregate_kdata(filename_kdata,filename_df_groups_global,filename_categories_global,files_config,nb_gating_spokes,undersampling_factor):
+    # b1_all_slices=b1_full
+
+    print("Loading Files...")
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+
+    folder = "/".join(str.split(filename_kdata, "/")[:-1])
+
+    filename_kdata_final = folder + "/aggregated_kdata.npy"
+    #print(filename_volume)
+
+
+
+    data_shape = kdata_all_channels_all_slices.shape
+    nb_channels=data_shape[0]
+    nb_segments = data_shape[1]
+    npoint = data_shape[-1]
+    nb_slices = data_shape[2] * undersampling_factor
+    nb_part = nb_slices
+    image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
+
+    nb_gating_spokes=50
+
+    print(data_shape)
+    print(folder)
+
+    files = files_config["files"]
+    print(files)
+    categories_global = np.load(filename_categories_global)
+    df_groups_global = pd.read_pickle(filename_df_groups_global)
+
+    idx_cat = df_groups_global.displacement.idxmax()
+
+    kdata_final = np.zeros(kdata_all_channels_all_slices.shape, dtype=kdata_all_channels_all_slices.dtype)
+    count = np.zeros((nb_segments, nb_slices))
+
+    for i, localfile in tqdm(enumerate(files)):
+
+        filename = folder + localfile
+
+        retained_nav_spokes = (categories_global[i] == idx_cat)
+
+        retained_nav_spokes_index = np.argwhere(retained_nav_spokes).flatten()
+        spoke_groups = np.argmin(np.abs(
+            np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
+                                                                              nb_segments / nb_gating_spokes).reshape(1,
+                                                                                                                      -1)),
+                                 axis=-1)
+
+        if not (nb_segments == nb_gating_spokes):
+            spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
+            spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
+                nb_segments / nb_gating_spokes / 2) + 1:] - 1
+            spoke_groups = spoke_groups.flatten()
+
+        included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
+
+        included_spokes[::int(nb_segments / nb_gating_spokes)] = False
+        included_spokes = included_spokes.reshape(nb_slices, nb_segments)
+        included_spokes = included_spokes.T
+
+        filename_kdata = str.split(filename, ".dat")[0] + "_kdata{}.npy".format("")
+
+        kdata_all_channels_all_slices = np.load(filename_kdata)
+        kdata_all_channels_all_slices = kdata_all_channels_all_slices.reshape(nb_channels, nb_segments, nb_slices,
+                                                                              npoint)
+
+        kdata_final += (np.expand_dims(1 * included_spokes, axis=(0, -1))) * kdata_all_channels_all_slices
+        count += (1 * included_spokes)
+
+    count[count == 0] = 1
+    kdata_final /= np.expand_dims(count, axis=(0, -1))
+
+    np.save(filename_kdata_final, kdata_final)
 
 
     # gif=[]
@@ -745,8 +919,9 @@ def build_data_autofocus(filename_kdata,filename_traj,filename_nav_save,sampling
 @set_parameter("sampling_mode", ["stack","incoherent_old","incoherent_new"], default="stack", description="Radial sampling strategy over partitions")
 @set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
 @set_parameter("dens_adj", bool, default=False, description="Memory usage")
+@set_parameter("threshold", float, default=None, description="Threshold for mask")
 @set_parameter("suffix",str,default="")
-def build_mask(filename_kdata,filename_traj,sampling_mode,undersampling_factor,dens_adj,suffix):
+def build_mask(filename_kdata,filename_traj,sampling_mode,undersampling_factor,dens_adj,threshold,suffix):
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
     filename_b1 = ("_b1" + suffix).join(str.split(filename_kdata, "_kdata"))
@@ -786,7 +961,7 @@ def build_mask(filename_kdata,filename_traj,sampling_mode,undersampling_factor,d
     selected_spokes=np.r_[10:400] 
     selected_spokes=None 
     mask = build_mask_single_image_multichannel(kdata_all_channels_all_slices, radial_traj, image_size,
-                                                b1=b1_all_slices, density_adj=dens_adj, threshold_factor=None,
+                                                b1=b1_all_slices, density_adj=dens_adj, threshold_factor=threshold,
                                                 normalize_kdata=False, light_memory_usage=True,selected_spokes=selected_spokes,normalize_volumes=True)
 
 
@@ -805,6 +980,69 @@ def build_mask(filename_kdata,filename_traj,sampling_mode,undersampling_factor,d
     return
 
 
+@machine
+@set_parameter("filename_volume", str, default=None, description="MRF time series")
+@set_parameter("filename_mask", str, default=None, description="Mask")
+@set_parameter("dictfile", str, default=None, description="Dictionary file")
+@set_parameter("optimizer_config",type=Config,default=DEFAULT_OPT_CONFIG,description="Optimizer parameters")
+@set_parameter("slices",type=Config,default=None,description="Slices to consider for pattern matching")
+def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
+    file_map = filename_volume.split(".npy")[0] + "_MRF_map.pkl"
+    volumes_all = np.load(filename_volume)
+    mask=np.load(filename_mask)
+
+    if slices is not None:
+        sl = slices["slices"]
+        if not(len(sl)==0):
+            mask_slice = np.zeros(mask.shape, dtype=mask.dtype)
+            mask_slice[sl] = 1
+            mask *= mask_slice
+
+            file_map = filename_volume.split(".npy")[0] + "_sl{}_MRF_map.pkl".format("_".join(sl))
+
+    if (slices is not None) and ("spacing" in slices) and not(len(slices["spacing"])==0):
+        spacing=slices["spacing"]
+    else:
+        spacing = [5, 1, 1]
+
+    dz = spacing[0]
+    dx = spacing[1]
+    dy = spacing[2]
+
+    threshold_pca=optimizer_config["pca"]
+    split=optimizer_config["split"]
+
+    optimizer = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=None, split=split, pca=True,
+                                 threshold_pca=threshold_pca, log=False, useGPU_dictsearch=True,
+                                 useGPU_simulation=False, gen_mode="other")
+    all_maps = optimizer.search_patterns(dictfile, volumes_all)
+
+    file = open(file_map, "wb")
+    # dump information to that file
+    pickle.dump(all_maps, file)
+    # close the file
+    file.close()
+
+    for iter in list(all_maps.keys()):
+
+        map_rebuilt = all_maps[iter][0]
+        mask = all_maps[iter][1]
+
+        keys_simu = list(map_rebuilt.keys())
+        values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+        map_for_sim = dict(zip(keys_simu, values_simu))
+
+        for key in ["ff", "wT1", "df", "attB1"]:
+            file_mha = "/".join(["/".join(str.split(file_map, "/")[:-1]),
+                                 "_".join(str.split(str.split(file_map, "/")[-1], ".")[:-1])]) + "_it{}_{}.mha".format(
+                iter, key)
+            io.write(file_mha, map_for_sim[key], tags={"spacing": [dz, dx, dy]})
+
+    return
+
+
+
+
 toolbox = Toolbox("script_recoInVivo_3D_machines", description="Reading Siemens 3D MRF data and performing image series reconstruction")
 toolbox.add_program("build_kdata", build_kdata)
 toolbox.add_program("build_coil_sensi", build_coil_sensi)
@@ -813,7 +1051,8 @@ toolbox.add_program("build_mask", build_mask)
 toolbox.add_program("build_data_for_grappa_simulation", build_data_for_grappa_simulation)
 toolbox.add_program("calib_and_estimate_kdata_grappa", calib_and_estimate_kdata_grappa)
 toolbox.add_program("build_data_autofocus", build_data_autofocus)
-
+toolbox.add_program("aggregate_kdata", aggregate_kdata)
+toolbox.add_program("build_maps", build_maps)
 
 if __name__ == "__main__":
     toolbox.cli()
