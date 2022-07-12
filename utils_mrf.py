@@ -3377,21 +3377,31 @@ def best_channel_selection(data_for_nav,nav_traj,nav_image_size,shifts=list(rang
     return np.argsort(disp_transf[:, 0]),image_nav_all_channels
 
 
-def calc_grad_entropy(v):
+def calc_grad_entropy(v,w=None):
     ndim = v.ndim
     grad_norm = 0
+    if w is None:
+        w=v.ndim*[1]
     for axis in range(ndim):
         pad = v.ndim * [(0, 0)]
         pad[axis] = (0, 1)
         pad = tuple(pad)
         grad = np.diff(np.pad(v, pad, mode="constant"), axis=axis)
 
-        grad_norm += np.abs(grad) ** 2
+        grad_norm += (w[axis]*np.abs(grad)) ** 2
 
     grad_norm = np.sqrt(grad_norm)
     p = grad_norm / np.sum(grad_norm)
+    p[p==0]=1 #pixel with value 0 are crashing the algo
     return np.sum(-np.log2(p) * p)
 
+def calc_entropy(v):
+    ndim = v.ndim
+    #grad_norm = 0
+    p = np.abs(v)
+    p/=np.max(p)
+    #p[p==0]=1 #pixel with value 0 are crashing the algo
+    return np.sum(-np.log2(p) * p)
 
 def build_dico_seqParams(filename,folder):
     filename_seqParams = str.split(filename, ".dat")[0] + "_seqParams.pkl"

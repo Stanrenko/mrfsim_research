@@ -97,6 +97,8 @@ sequence_config["T_recovery"]=Treco
 sequence_config["nrep"]=rep
 
 
+
+
 seq=T1MRFSS(**sequence_config)
 
 water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
@@ -197,7 +199,7 @@ df = [- value / 1000 for value in df] # temp
 # df = np.linspace(-0.1, 0.1, 101)
 
 rep=2
-TR_total = 7500
+TR_total = 7000
 
 Treco = TR_total-np.sum(sequence_config["TR"])
 # other options
@@ -217,7 +219,7 @@ water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
 dictfile = "mrf175_SimReco2_mid_point.dict"
 dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
-dictfile = "mrf175_Dico2_Invivo_adjusted_TR7500.dict"
+dictfile = "mrf175_Dico2_Invivo_adjusted_TR7000.dict"
 
 
 
@@ -302,13 +304,14 @@ from scipy.io import savemat
 
 
 class T1MRFNoInv:
-    def __init__(self, FA, TI, TE, TR, B1):
+    def __init__(self, FA, TE,TI, TR, B1):
         """ build sequence """
         seqlen = len(TE)
         self.TR=TR
         #self.inversion = epg.T(180, 0) # perfect inversion
         seq = [epg.Offset(TI)]
         for i in range(seqlen):
+
             echo = [
                 epg.T(FA * B1[i], 90),
                 epg.Wait(TE[i]),
@@ -344,6 +347,8 @@ att = dict_config["B1_att"]
 df = dict_config["delta_freqs"]
 df = [- value / 1000 for value in df] # temp
 # df = np.linspace(-0.1, 0.1, 101)
+#del sequence_config["TI"]
+sequence_config["TI"]=0.01
 
 seq=T1MRFNoInv(**sequence_config)
 
@@ -359,7 +364,7 @@ dictfile = "mrf175_SimReco2_light_adjusted_NoInv.dict"
 
 
 sim_mode="mean"
-overwrite=False
+overwrite=True
 
 fat_amp = dict_config["fat_amp"]
 fat_cs = dict_config["fat_cshift"]
@@ -406,3 +411,18 @@ values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
 printer("Save dictionary.")
 mrfdict = dictsearch.Dictionary(keys, values)
 mrfdict.save(dictfile, overwrite=overwrite)
+
+
+
+
+
+
+seq = T1MRF(**sequence_config)
+
+wT1=1380
+wT2=40
+water = seq(T1=wT1, T2=wT2, att=[[1.0]], g=[[[0.0]]])
+
+water.shape
+
+plt.plot(np.squeeze(water))
