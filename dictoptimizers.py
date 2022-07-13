@@ -2298,9 +2298,6 @@ class BruteDictSearch(Optimizer):
                     phi = 0.5 * np.angle(sig ** 2 / np.expand_dims(np.real(var), axis=-1))
                     sig=np.real(np.matmul(transformed_values.conj(), transformed_all_signals ))* np.exp(
                         -1j * phi)
-                    lambd = sig / np.expand_dims(np.real(var), axis=-1)
-
-
 
 
                 else:
@@ -2308,7 +2305,8 @@ class BruteDictSearch(Optimizer):
                     phi = 0.5 * np.angle(sig ** 2 / np.expand_dims(np.real(var), axis=-1))
                     sig=np.real(np.matmul(values.conj(), all_signals[:, j_signal:j_signal_next] * np.exp(
                         -1j * phi)))
-                    lambd = sig / np.expand_dims(np.real(var), axis=-1)
+
+                lambd = sig / np.expand_dims(np.real(var), axis=-1)
 
 
             else:
@@ -2321,16 +2319,21 @@ class BruteDictSearch(Optimizer):
 
                     sig = (cp.matmul(cp.asarray(transformed_values).conj(),
                                                    cp.asarray(transformed_all_signals))).get()
-                    
+
+                    phi = 0.5 * cp.angle(sig ** 2 / np.expand_dims(cp.real(var), axis=-1))
+                    sig = cp.real(cp.matmul(transformed_values.conj(), transformed_all_signals)) * cp.exp(
+                        -1j * phi)
+
                 else:
 
                     sig = (cp.matmul(cp.asarray(values).conj(),
                                                    cp.asarray(all_signals)[:, j_signal:j_signal_next])).get()
 
-                phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(cp.real(var), axis=-1))
-                lambd = cp.real(cp.matmul(values.conj(),
-                                  all_signals[:, j_signal:j_signal_next] * cp.exp(-1j * phi))) / cp.expand_dims(
-                    cp.real(var), axis=-1)
+                    phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(np.real(var), axis=-1))
+                    sig = cp.real(cp.matmul(values.conj(), all_signals[:, j_signal:j_signal_next] * cp.exp(
+                        -1j * phi)))
+
+                lambd = sig / cp.expand_dims(cp.real(var), axis=-1)
 
             if self.verbose:
                 end = datetime.now()
@@ -2361,7 +2364,7 @@ class BruteDictSearch(Optimizer):
 
             else:
 
-                J_all = sig**2/cp.expand_dims(var,axis=-1)
+                J_all=lambd**2*np.expand_dims(var,axis=-1) - 2*lambd*sig
 
                 J_all = J_all.get()
 
