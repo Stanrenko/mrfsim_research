@@ -1365,7 +1365,7 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
                                                          light_memory_usage=light_memory_usage,
                                                          is_theta_z_adjusted=is_theta_z_adjusted,normalize_volumes=normalize_volumes)
 
-    traj = trajectory.get_traj_for_reconstruction()
+    traj = trajectory.get_traj_for_reconstruction(timesteps=1)
 
 
     if traj.shape[-1]==2: # For slices

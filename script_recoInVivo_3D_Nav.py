@@ -3,7 +3,7 @@
 #matplotlib.u<se("TkAgg")
 from mrfsim import T1MRF
 from image_series import *
-from dictoptimizers import SimpleDictSearch
+from dictoptimizers import SimpleDictSearch,BruteDictSearch
 from utils_mrf import *
 import json
 import readTwix as rT
@@ -95,7 +95,10 @@ localfile="/phantom.005.v1/meas_MID00458_FID62850_raFin_3D_tra_1x1x5mm_FULL_P0_S
 localfile="/phantom.005.v1/meas_MID00459_FID62851_raFin_3D_tra_1x1x5mm_FULL_P0_Sl27_RO50_FOV220.dat"#Box at the top border with more outside
 
 localfile="/phantom.001.v1/phantom.001.v1.dat"
-
+localfile="/phantom.006.v1/meas_MID00027_FID02798_raFin_3D_tra_1x1x5mm_FULL_FF.dat"#Box at the top border with more outside
+localfile="/phantom.006.v1/meas_MID00028_FID02799_raFin_3D_tra_1x1x5mm_FULL_new.dat"#Box at the top border with more outside
+localfile="/phantom.006.v1/meas_MID00029_FID02800_raFin_3D_tra_1x1x5mm_FULL_FF_TR4000.dat"#Box at the top border with more outside
+localfile="/phantom.006.v1/meas_MID00023_FID02830_raFin_3D_tra_1x1x5mm_FULL_FF_TR5000.dat"#Box at the top border with more outside
 
 filename = base_folder+localfile
 
@@ -111,8 +114,8 @@ folder = "/".join(str.split(filename,"/")[:-1])
 
 
 
-suffix="_disp5"
-low_freq_encode_corrected_perc=0.5
+suffix=""
+low_freq_encode_corrected_perc=None
 if low_freq_encode_corrected_perc is not None:
     suffix+="_{}".format("_".join(str.split(str(low_freq_encode_corrected_perc),".")))
 
@@ -357,7 +360,8 @@ nb_slices = data_shape[-2]
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
 undersampling_factor=1
 
-npoint_nav=data_for_nav.shape[-1]
+if nb_gating_spokes>0:
+    npoint_nav=data_for_nav.shape[-1]
 
 
 
@@ -397,7 +401,7 @@ else:
 kdata_shape=kdata_all_channels_all_slices.shape
 #kdata_all_channels_all_slices=np.array(groupby(kdata_all_channels_all_slices,window,axis=1))
 #ntimesteps=kdata_all_channels_all_slices.shape[0]
-ntimesteps=175
+ntimesteps=int(nb_allspokes/window)
 #kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,-1,nb_slices,npoint)
 
 #
@@ -430,14 +434,24 @@ sl=int(b1_all_slices.shape[1]/2)
 list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
 plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
 
-# print("Building Volumes....")
-# if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-#     volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=True,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
-#     np.save(filename_volume,volumes_all)
-#     # sl=20
-#     # ani = animate_images(volumes_all[:,sl,:,:])
-#     del volumes_all
+print("Building Volumes....")
+if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
+    kdata_all_channels_all_slices=np.load(filename_kdata)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+    np.save(filename_volume,volumes_all)
+    # sl=20
+    ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
+    del volumes_all
 
+
+if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
+     selected_spokes = np.r_[10:400]
+     kdata_all_channels_all_slices=np.load(filename_kdata)
+     selected_spokes=None
+     mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/10, normalize_kdata=False,light_memory_usage=True,selected_spokes=selected_spokes)
+     np.save(filename_mask,mask)
+     animate_images(mask)
+     del mask
 
 
 
@@ -854,22 +868,24 @@ with open("mrf_sequence.json") as f:
     sequence_config = json.load(f)
 
 
-seq = T1MRF(**sequence_config)
-
+seq = None
 
 load_map=False
 save_map=True
 
-
 dictfile = "mrf175_SimReco2_light.dict"
+dictfile="mrf144w8_SeqFF_PWCR_SimRecoFFDf_light.dict"
+dictfile="mrf144w8_SeqFF_PWCR_SimRecoFFDf_adjusted_light.dict"
+
+
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
 #dictfile = "mrf175_Dico2_Invivo.dict"
 
 mask = np.load(filename_mask)
-#volumes_all = np.load(filename_volume)
-volumes_corrected=np.load(filename_volume_corrected)
+volumes_all = np.load(filename_volume)
+#volumes_corrected=np.load(filename_volume_corrected)
 
 
 #ani = animate_images(volumes_all[:,4,:,:])
@@ -878,12 +894,14 @@ volumes_corrected=np.load(filename_volume_corrected)
 # plt.figure()
 # plt.plot(volumes_all[:,sl,200,200])
 
-
+retained_timesteps=None
 
 if not(load_map):
     niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=True,cond=included_spokes,ntimesteps=ntimesteps)
-    all_maps=optimizer.search_patterns_test(dictfile,volumes_corrected,retained_timesteps=retained_timesteps)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
+    optimizer = BruteDictSearch(FF_list=np.arange(0, 1.01, 0.01), mask=mask, split=100, pca=True, threshold_pca=20,log=False, useGPU_dictsearch=False, ntimesteps=ntimesteps, log_phase=True)
+
+    all_maps=optimizer.search_patterns(dictfile,volumes_all,retained_timesteps=retained_timesteps)
 
     if(save_map):
         import pickle

@@ -2321,7 +2321,7 @@ class BruteDictSearch(Optimizer):
 
                     sig = (cp.matmul(cp.asarray(transformed_values).conj(),
                                                    cp.asarray(transformed_all_signals))).get()
-
+                    
                 else:
 
                     sig = (cp.matmul(cp.asarray(values).conj(),
