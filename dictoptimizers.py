@@ -2213,16 +2213,103 @@ class BruteDictSearch(Optimizer):
                 print("PCA transform")
                 start = datetime.now()
 
+            # if not(useGPU_dictsearch):
+            #
+            #     if pca:
+            #         transformed_all_signals = np.transpose(pca.transform(np.transpose(all_signals[:, j_signal:j_signal_next])))
+            #
+            #         sig = np.matmul(transformed_values,
+            #                                       transformed_all_signals.conj())
+            #
+            #
+            #
+            #     else:
+            #         sig = np.matmul(values, all_signals[:, j_signal:j_signal_next].conj())
+            #
+            #     phi=-np.angle(sig)
+            #     sig *= np.exp(1j*phi)
+            #
+            # else:
+            #
+            #
+            #     if pca:
+            #
+            #         transformed_all_signals = cp.transpose(
+            #             pca.transform(cp.transpose(cp.asarray(all_signals[:, j_signal:j_signal_next])))).get()
+            #
+            #         sig = (cp.matmul(cp.asarray(transformed_values),
+            #                                        cp.asarray(transformed_all_signals).conj())).get()
+            #
+            #     else:
+            #
+            #         sig = (cp.matmul(cp.asarray(values),
+            #                                        cp.asarray(all_signals)[:, j_signal:j_signal_next].conj())).get()
+            #
+            #     phi = -cp.angle(sig)
+            #     sig *= cp.exp(1j * phi)
+            #
+            #
+            # if self.verbose:
+            #     end = datetime.now()
+            #     print(end - start)
+            #
+            # if self.verbose:
+            #     start = datetime.now()
+            #
+            #
+            # #current_sig_ws = current_sig_ws_for_phase.real
+            # #current_sig_fs = current_sig_fs_for_phase.real
+            #
+            # if self.verbose:
+            #     end = datetime.now()
+            #     print(end-start)
+            #
+            # if not(useGPU_dictsearch):
+            #     #if adj_phase:
+            #     if self.verbose:
+            #         print("Adjusting Phase")
+            #         print("Calculating alpha optim and flooring")
+            #
+            #         ### Testing direct phase solving
+            #
+            #     #print("Imag sig {}".format(np.max(np.imag(sig))))
+            #     J_all = sig**2/np.expand_dims(var,axis=-1)
+            #     end = datetime.now()
+            #
+            # else:
+            #
+            #     J_all = sig**2/cp.expand_dims(var,axis=-1)
+            #
+            #     J_all = J_all.get()
+            #
+            #
+            #     if verbose:
+            #         end = datetime.now()
+            #         print(end - start)
+
             if not(useGPU_dictsearch):
 
                 if pca:
                     transformed_all_signals = np.transpose(pca.transform(np.transpose(all_signals[:, j_signal:j_signal_next])))
 
-                    sig = np.matmul(transformed_values,
-                                                  transformed_all_signals.conj())
+                    sig = np.matmul(transformed_values.conj(),
+                                                  transformed_all_signals)
+
+                    phi = 0.5 * np.angle(sig ** 2 / np.expand_dims(np.real(var), axis=-1))
+                    sig=np.real(np.matmul(transformed_values.conj(), transformed_all_signals ))* np.exp(
+                        -1j * phi)
+                    lambd = sig / np.expand_dims(np.real(var), axis=-1)
+
+
+
 
                 else:
-                    sig = np.matmul(values, all_signals[:, j_signal:j_signal_next].conj())
+                    sig = np.matmul(values.conj(), all_signals[:, j_signal:j_signal_next])
+                    phi = 0.5 * np.angle(sig ** 2 / np.expand_dims(np.real(var), axis=-1))
+                    sig=np.real(np.matmul(values.conj(), all_signals[:, j_signal:j_signal_next] * np.exp(
+                        -1j * phi)))
+                    lambd = sig / np.expand_dims(np.real(var), axis=-1)
+
 
             else:
 
@@ -2232,15 +2319,18 @@ class BruteDictSearch(Optimizer):
                     transformed_all_signals = cp.transpose(
                         pca.transform(cp.transpose(cp.asarray(all_signals[:, j_signal:j_signal_next])))).get()
 
-                    sig = (cp.matmul(cp.asarray(transformed_values),
-                                                   cp.asarray(transformed_all_signals).conj())).get()
+                    sig = (cp.matmul(cp.asarray(transformed_values).conj(),
+                                                   cp.asarray(transformed_all_signals))).get()
 
                 else:
 
-                    sig = (cp.matmul(cp.asarray(values),
-                                                   cp.asarray(all_signals)[:, j_signal:j_signal_next].conj())).get()
+                    sig = (cp.matmul(cp.asarray(values).conj(),
+                                                   cp.asarray(all_signals)[:, j_signal:j_signal_next])).get()
 
-
+                phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(cp.real(var), axis=-1))
+                lambd = cp.real(cp.matmul(values.conj(),
+                                  all_signals[:, j_signal:j_signal_next] * cp.exp(-1j * phi))) / cp.expand_dims(
+                    cp.real(var), axis=-1)
 
             if self.verbose:
                 end = datetime.now()
@@ -2265,15 +2355,13 @@ class BruteDictSearch(Optimizer):
 
                     ### Testing direct phase solving
 
+                J_all=lambd**2*np.expand_dims(var,axis=-1) - 2*lambd*sig
 
-                J_all = sig/np.expand_dims(np.sqrt(var),axis=-1)
                 end = datetime.now()
 
             else:
 
-
-
-                J_all = sig/cp.expand_dims(cp.sqrt(var),axis=-1)
+                J_all = sig**2/cp.expand_dims(var,axis=-1)
 
                 J_all = J_all.get()
 
@@ -2282,12 +2370,11 @@ class BruteDictSearch(Optimizer):
                     end = datetime.now()
                     print(end - start)
 
-
             if verbose:
                 print("Extracting index of pattern with max correl")
                 start = datetime.now()
 
-            idx_max_all_current = np.argmax(J_all, axis=0)
+            idx_max_all_current = np.argmin(J_all, axis=0)
             #check_max_correl=np.max(J_all,axis=0)
 
             if verbose:

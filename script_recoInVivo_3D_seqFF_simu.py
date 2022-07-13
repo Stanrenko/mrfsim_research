@@ -41,12 +41,13 @@ suffix="_FFDf"
 #suffix="_CohenBS"
 #suffix="_PW"
 suffix="_PWCR"
+#suffix="_PWWeighted"
 #suffix="_"
 
-nb_allspokes = 80
-ntimesteps=10
+nb_allspokes = 144
+nspoke=8
 nb_segments=nb_allspokes
-nspoke=int(nb_segments/ntimesteps)
+ntimesteps=int(nb_segments/nspoke)
 
 #suffix="_plateau600"
 #suffix="_constantTE_last"
@@ -260,16 +261,16 @@ ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
 #      sequence_config = json.load(f)
 
 
-seq = None
+#seq = None
 
 
 load_map=False
 save_map=True
 
 if nspoke==1:
-    dictfile = "mrf{}_SeqFF{}_light.dict".format(nb_allspokes,suffix)
+    dictfile = "mrf{}_SeqFF{}_RecoFFDf_light.dict".format(nb_allspokes,suffix)
 else:
-    dictfile = "mrf{}w{}_SeqFF{}_light.dict".format(nb_allspokes,nspoke,suffix)
+    dictfile = "mrf{}w{}_SeqFF{}_RecoFFDf_light.dict".format(nb_allspokes,nspoke,suffix)
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
@@ -311,7 +312,7 @@ volumes_all = np.load(filename_volume)
 
 if not(load_map):
     niter = 0
-    optimizer = BruteDictSearch(mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
+    optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.01),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
     all_maps=optimizer.search_patterns(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
