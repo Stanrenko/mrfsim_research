@@ -155,8 +155,8 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
             # current_alpha_all_unique_2 = (1 * (alpha2 >= 0) & (alpha2 <= 1)) * alpha2 + (
             #            1 - (1*(alpha2 >= 0) & (alpha2 <= 1))) * alpha1
 
-            del alpha1
-            del alpha2
+            #del alpha1
+            #del alpha2
 
             if verbose:
                 start = datetime.now()
@@ -266,8 +266,8 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
             #             1 - (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1))) * alpha2[i, j]
 
             print("Max alpha on surface : {}".format(np.round(alpha_min,2)))
-            #print("Alpha 1 : {}".format(np.round(alpha1[i,j],2)))
-            #print("Alpha 2 : {}".format(np.round(alpha2[i,j],2)))
+            print("Alpha 1 : {}".format(np.round(alpha1[i_,j_],2)))
+            print("Alpha 2 : {}".format(np.round(alpha2[i_,j_],2)))
             print("Alpha calc : {}".format(np.round(current_alpha_all_unique[i_,j_], 2)))
 
             # phi_calc = -np.angle((
@@ -1684,7 +1684,7 @@ class SimpleDictSearch(Optimizer):
 
         return dict(zip(keys_results, values_results))
 
-    def search_patterns_test(self, dictfile, volumes, retained_timesteps=None):
+    def search_patterns_matrix(self, dictfile, volumes, retained_timesteps=None):
 
         if self.mask is None:
             mask = build_mask(volumes)
@@ -1732,198 +1732,178 @@ class SimpleDictSearch(Optimizer):
 
         # norm_volumes = np.linalg.norm(volumes, 2, axis=0)
 
-        norm_signals = np.linalg.norm(signals, 2, axis=0)
-        all_signals = signals / norm_signals
+        #norm_signals = np.linalg.norm(signals, 2, axis=0)
+        all_signals = signals #/ norm_signals
 
         mrfdict = dictsearch.Dictionary()
         mrfdict.load(dictfile, force=True)
 
         keys = mrfdict.keys
-        array_water = mrfdict.values[:, :, 0]
-        array_fat = mrfdict.values[:, :, 1]
 
-        del mrfdict
-
-        if retained_timesteps is not None:
-            array_water = array_water[:, retained_timesteps]
-            array_fat = array_fat[:, retained_timesteps]
-
-        array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
-        array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
-
-        nb_water_timesteps = array_water_unique.shape[1]
-        nb_fat_timesteps = array_fat_unique.shape[1]
-
-        del array_water
-        del array_fat
 
         if pca:
-            pca_water = PCAComplex(n_components_=threshold_pca)
-            pca_fat = PCAComplex(n_components_=threshold_pca)
-
-            pca_water.fit(array_water_unique)
-            pca_fat.fit(array_fat_unique)
-
-            print(
-                "Water Components Retained {} out of {} timesteps".format(pca_water.n_components_, nb_water_timesteps))
-            print("Fat Components Retained {} out of {} timesteps".format(pca_fat.n_components_, nb_fat_timesteps))
-
-            transformed_array_water_unique = pca_water.transform(array_water_unique)
-            transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
+            pca=PCAComplex(n_components_=threshold_pca)
+            array_water = mrfdict.values[:, :, 0]
+            array_fat = mrfdict.values[:, :, 1]
+            array_for_pca = np.concatenate([np.unique(array_water, axis=0), np.unique(array_fat, axis=0)], axis=0)
+            pca.fit(array_for_pca)
+            del array_for_pca
+            array_dict = np.stack([pca.transform(array_water), pca.transform(array_fat)], axis=-1)
+            del array_water
+            del array_fat
 
         else:
-            pca_water=None
-            pca_fat=None
-            transformed_array_water_unique=None
-            transformed_array_fat_unique=None
+            array_dict = mrfdict.values
 
-        var_w = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
-        var_f = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
-        sig_wf = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(), axis=1).real
+        del mrfdict.values
 
-        var_w = var_w[index_water_unique]
-        var_f = var_f[index_fat_unique]
+        M = np.real(np.einsum('ijk,ijl->ikl', array_dict.conj(), array_dict))
+        M_inv = np.linalg.pinv(M)
 
-        var_w = np.reshape(var_w, (-1, 1))
-        var_f = np.reshape(var_f, (-1, 1))
-        sig_wf = np.reshape(sig_wf, (-1, 1))
+        M=np.expand_dims(M,axis=1)
+        M_inv = np.expand_dims(M_inv, axis=1)
 
         if useGPU_dictsearch:
-            var_w = cp.asarray(var_w)
-            var_f = cp.asarray(var_f)
-            sig_wf = cp.asarray(sig_wf)
+            M = cp.asarray(M)
+            M_inv=cp.asarray(M_inv)
+
 
         values_results = []
-        keys_results = list(range(niter + 1))
-
-        for i in range(niter + 1):
-            print("################# ITERATION : Number {} out of {} ####################".format(i, niter))
-            print("Calculating optimal fat fraction and best pattern per signal for iteration {}".format(i))
-            map_rebuilt,J_optim,phase_optim=match_signals(all_signals,keys, pca_water, pca_fat, array_water_unique, array_fat_unique,
-                          transformed_array_water_unique, transformed_array_fat_unique, var_w,var_f,sig_wf,pca,index_water_unique,index_fat_unique,remove_duplicates, verbose,
-                          niter, split, useGPU_dictsearch,mask,tv_denoising_weight,log_phase)
+        keys_results = list(range(1))
 
 
-            print("Maps build for iteration {}".format(i))
+        nb_signals = all_signals.shape[1]
 
-            if not(log_phase):
-                values_results.append((map_rebuilt, mask))
+        print("There are {} unique signals to match along {} components".format(nb_signals,
+                                                                                array_dict.shape[
+                                                                                    0]))
 
-            else:
-                values_results.append((map_rebuilt, mask,phase_optim))
+        num_group = int(nb_signals / split) + 1
 
-            if log:
-                with open('./log/maps_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                    pickle.dump({int(i): (map_rebuilt, mask)}, f)
+        idx_max_all_unique = []
+        alpha_optim = []
 
-            if i == niter:
-                break
+        if niter > 0:
+            phase_optim = []
+            J_optim = []
 
-            if i>0 and threshold is not None :
-                all_signals=all_signals_unthresholded
-                map_rebuilt,J_optim,phase_optim = match_signals(all_signals,keys, pca_water, pca_fat, array_water_unique, array_fat_unique,
-                          transformed_array_water_unique, transformed_array_fat_unique, var_w,var_f,sig_wf,pca,index_water_unique,index_fat_unique,remove_duplicates, verbose,
-                          niter, split, useGPU_dictsearch,mask,tv_denoising_weight)
+        elif log_phase:
+            phase_optim = []
 
-            print("Generating prediction volumes and undersampled images for iteration {}".format(i))
-            # generate prediction volumes
-            keys_simu = list(map_rebuilt.keys())
-            values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
-            map_for_sim = dict(zip(keys_simu, values_simu))
+        for j in tqdm(range(num_group)):
+            j_signal = j * split
+            j_signal_next = np.minimum((j + 1) * split, nb_signals)
 
-            # predict spokes
-            images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=True, gen_mode=gen_mode)
-            images_pred.buildParamMap()
+            if verbose:
+                print("PCA transform")
+                start = datetime.now()
 
-            del map_for_sim
+            if not (useGPU_dictsearch):
 
-            del keys_simu
-            del values_simu
+                if pca:
+                    transformed_all_signals = np.transpose(
+                        pca.transform(np.transpose(all_signals[:, j_signal:j_signal_next])))
 
-            nspoke = int(trajectory.paramDict["total_nspokes"] / self.paramDict["ntimesteps"])
 
-            images_pred.build_ref_images(seq, norm=J_optim * norm_signals, phase=phase_optim)
+                else:
+                    transformed_all_signals = all_signals[:, j_signal:j_signal_next]
 
-            print("Normalizing image series")
+                cov = np.einsum('ijk,jl->ilk', array_dict.conj(), transformed_all_signals)[...,None]
+                phi=np.angle(cov.transpose((0,1,3,2))@M_inv@cov)
+                cov_adjusted = np.real(np.einsum('ijk,jl->ilk', array_dict.conj(), transformed_all_signals)[...,None]*np.exp(-1j*phi))
 
-            print("Filling images series with renormalized signals")
-
-            kdatai = images_pred.generate_kdata(trajectory, useGPU=useGPU_simulation)
-
-            if log:
-                print("Saving Ideal Volumes for iteration {}".format(i))
-                with open('./log/predvolumes_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                    np.save(f, images_pred.images_series[::nspoke].astype(np.complex64))
-
-            del images_pred
-
-            if movement_correction:
-                traj = trajectory.get_traj()
-                kdatai, traj_retained_final, _ = correct_mvt_kdata(kdatai, trajectory, cond_mvt,
-                                                                   self.paramDict["ntimesteps"], density_adj=True)
-
-            kdatai = np.array(kdatai)
-            # nans = np.nonzero(np.isnan(kdatai))
-            nans = [np.nonzero(np.isnan(k))[0] for k in kdatai]
-            nans_count = np.array([len(n) for n in nans]).sum()
-
-            if nans_count > 0:
-                print("Warning : Nan Values replaced by zeros in rebuilt kdata")
-                for i, k in enumerate(kdatai):
-                    kdatai[i][nans[i]] = 0.0
-
-            if not (movement_correction):
-                volumesi = simulate_radial_undersampled_images(kdatai, trajectory, mask.shape, useGPU=useGPU_simulation,
-                                                               density_adj=True)
-
-            else:
-                trajectory.traj_for_reconstruction = traj_retained_final
-                volumesi = simulate_radial_undersampled_images(kdatai, trajectory, mask.shape,
-                                                               useGPU=useGPU_simulation, density_adj=True,
-                                                               is_theta_z_adjusted=True)
-
-            # volumesi/=(2*np.pi)
-
-            nans_volumes = np.argwhere(np.isnan(volumesi))
-            if len(nans_volumes) > 0:
-                np.save('./log/kdatai.npy', kdatai)
-                np.save('./log/volumesi.npy', volumesi)
-                raise ValueError("Error : Nan Values in volumes")
-
-            del kdatai
-
-            # volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
-
-            if log:
-                print("Saving correction volumes for iteration {}".format(i))
-                with open('./log/volumes1_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                    np.save(f, np.array(volumesi))
-
-            # correct volumes
-            print("Correcting volumes for iteration {}".format(i))
-
-            signalsi = volumesi[:, mask > 0]
-            # normi= np.linalg.norm(signalsi, axis=0)
-            # signalsi *= norm_signals/normi
-
-            del volumesi
-
-            signals += signals0 - signalsi
-
-            norm_signals = np.linalg.norm(signals, axis=0)
-            all_signals_unthresholded = signals / norm_signals
-
-            if threshold is not None:
-
-                signals_for_map = signals * (1 - (np.abs(signals) > threshold))
-                all_signals = signals_for_map/np.linalg.norm(signals_for_map,axis=0)
+                del cov
+                lambd = np.squeeze(M_inv@cov_adjusted)
+                del cov_adjusted
+                J_all = np.linalg.norm(np.einsum('ijk,ilk->ijl',array_dict,lambd)*np.expand_dims(np.exp(1j*phi.squeeze()),axis=1)-np.expand_dims(transformed_all_signals,axis=0),axis=1)
+                del phi
+                current_alpha_all_unique=np.minimum(np.maximum(lambd[:,:,-1]/np.sum(lambd,axis=-1),0),1)
+                del lambd
 
             else:
 
-                all_signals=all_signals_unthresholded
+                if pca:
 
-        if log:
-            print(date_time)
+                    transformed_all_signals = cp.transpose(
+                        pca.transform(cp.transpose(cp.asarray(all_signals[:, j_signal:j_signal_next]))))#.get()
+
+                else:
+                    transformed_all_signals = cp.asarray(all_signals[:, j_signal:j_signal_next])  # .get()
+
+                cov=cp.einsum('ijk,jl->ilk', array_dict.conj(), transformed_all_signals)[...,None]
+                phi = cp.angle(cp.matmul(cov.transpose((0, 1, 3, 2)),cp.matmul(M_inv,cov)))
+                cov_adjusted = cp.real(
+                    cp.einsum('ijk,jl->ilk', array_dict.conj(), transformed_all_signals)[..., None] * cp.exp(
+                        -1j * phi))
+                lambd = cp.squeeze(cp.matmul(M_inv,cov_adjusted))
+                J_all = cp.linalg.norm(
+                    cp.einsum('ijk,ilk->ijl', array_dict, lambd) - cp.expand_dims(transformed_all_signals, axis=0),
+                    axis=1)
+                current_alpha_all_unique = lambd[:, :, -1] / cp.sum(lambd, axis=-1)
+                del lambd
+
+                J_all = J_all.get()
+                current_alpha_all_unique=current_alpha_all_unique.get()
+
+            if niter > 0 or log_phase:
+                phase_adj = phase_adj.get()
+
+            if verbose:
+                end = datetime.now()
+                print(end - start)
+
+            if verbose:
+                print("Extracting index of pattern with max correl")
+                start = datetime.now()
+
+            idx_max_all_current = np.argmax(J_all, axis=0)
+            # check_max_correl=np.max(J_all,axis=0)
+
+            if verbose:
+                end = datetime.now()
+                print(end - start)
+
+            if verbose:
+                print("Filling the lists with results for this loop")
+                start = datetime.now()
+
+            idx_max_all_unique.extend(idx_max_all_current)
+            alpha_optim.extend(current_alpha_all_unique[idx_max_all_current, np.arange(J_all.shape[1])])
+
+            if niter > 0:
+                phase_optim.extend(phase_adj[idx_max_all_current, np.arange(J_all.shape[1])])
+                J_optim.extend(J_all[idx_max_all_current, np.arange(J_all.shape[1])])
+
+            if verbose:
+                end = datetime.now()
+                print(end - start)
+
+            # idx_max_all_unique = np.argmax(J_all, axis=0)
+            del J_all
+            del current_alpha_all_unique
+
+
+        params_all_unique = np.array(
+            [keys[idx] + (alpha_optim[l],) for l, idx in enumerate(idx_max_all_unique)])
+
+        if remove_duplicates:
+            params_all = params_all_unique[index_signals_unique]
+        else:
+            params_all = params_all_unique
+
+        del params_all_unique
+
+        map_rebuilt = {
+            "wT1": params_all[:, 0],
+            "fT1": params_all[:, 1],
+            "attB1": params_all[:, 2],
+            "df": params_all[:, 3],
+            "ff": params_all[:, 4]
+
+        }
+
+        values_results.append((map_rebuilt, mask))
+
 
         return dict(zip(keys_results, values_results))
 
