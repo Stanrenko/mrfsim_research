@@ -22,7 +22,7 @@ from scipy.optimize import minimize
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
 base_folder = "./3D"
 
-suffix_simu="_df0"
+suffix_simu=""
 
 #dictfile = "mrf175_SimReco2_light.dict"
 #dictjson="mrf_dictconf_SimReco2_light_df0.json"
@@ -34,7 +34,7 @@ dictjson="mrf_dictconf_SimReco2_light{}.json".format(suffix_simu)
 #dictfile = "mrf175_Dico2_Invivo.dict"
 
 suffix=""
-suffix="_constantTE_first"
+#suffix="_constantTE_first"
 #suffix="_plateau600"
 #suffix="_constantTE_last"
 #suffix=""
@@ -239,8 +239,11 @@ volumes_all = np.load(filename_volume)
 ntimesteps=int(nb_allspokes/8)
 if not(load_map):
     niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,log_phase=True)
-    all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
+    #optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,log_phase=False)
+    #all_maps = optimizer.search_patterns_matrix(dictfile, volumes_all, retained_timesteps=None)
+    #all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
+    optimizer = BruteDictSearch(FF_list=np.arange(0, 1.01, 0.01), mask=mask, split=100, pca=True, threshold_pca=20,log=False, useGPU_dictsearch=False, ntimesteps=ntimesteps, log_phase=True)
+    all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -265,7 +268,7 @@ else:
 maskROI=buildROImask_unique(m.paramMap)
 regression_paramMaps_ROI(m.paramMap,all_maps[0][0],m.mask>0,all_maps[0][1]>0,maskROI,adj_wT1=True,title="regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
 
-
+all_maps_CF = all_maps
 
 
 curr_file=file_map

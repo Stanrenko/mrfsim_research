@@ -107,7 +107,7 @@ seq = FFMRF(**sequence_config)
 
 nb_filled_slices = 8
 nb_empty_slices=2
-repeat_slice=1
+repeat_slice=8
 nb_slices = nb_filled_slices+2*nb_empty_slices
 
 undersampling_factor=1
@@ -251,6 +251,11 @@ if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
     # ani = animate_images(volumes_all[:,sl,:,:])
     del volumes_all
 
+##volumes for slice taking into account coil sensi
+print("Building Mask....")
+if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
+    np.save(filename_mask,m.mask)
+
 volumes_all=np.load(filename_volume)
 ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
 
@@ -276,7 +281,9 @@ else:
 #dictfile = "mrf175_SimReco2_window_55.dict"
 #dictfile = "mrf175_Dico2_Invivo.dict"
 
-mask = m.mask
+#mask = m.mask
+
+mask=np.load(filename_mask)
 volumes_all = np.load(filename_volume)
 #volumes_corrected_final=np.load(filename_volume_corrected_final)
 
@@ -312,15 +319,12 @@ volumes_all = np.load(filename_volume)
 
 if not(load_map):
     niter = 0
-    #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.01),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
-    #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
+    optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.01),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
+    all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,
-                                 threshold_pca=20, log=False, useGPU_dictsearch=False, useGPU_simulation=False,
-                                 gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
-
-    all_maps=optimizer.search_patterns_matrix(dictfile,volumes_all,retained_timesteps=None)
+    #optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=20, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
+    #all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -341,9 +345,9 @@ else:
 
 
 maskROI=buildROImask_unique(m.paramMap)
-regression_paramMaps_ROI(m.paramMap,all_maps[0][0],m.mask>0,all_maps[0][1]>0,maskROI,adj_wT1=True,title="regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
+regression_paramMaps_ROI(m.paramMap,all_maps[0][0],m.mask>0,all_maps[0][1]>0,maskROI,adj_wT1=False,title="regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
 
-
+regression_paramMaps(m.paramMap,all_maps[0][0],mode="Boxplot")
 
 
 curr_file=file_map

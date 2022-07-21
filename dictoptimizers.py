@@ -36,7 +36,7 @@ class GaussianWeighting(object):
         return np.exp(-np.linalg.norm(traj,axis=-1)**2/(2*self.sig**2))
 
 
-def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fat_unique,transformed_array_water_unique,transformed_array_fat_unique,var_w,var_f,sig_wf,pca,index_water_unique,index_fat_unique,remove_duplicates,verbose,niter,split,useGPU_dictsearch,mask,tv_denoising_weight,log_phase=False):
+def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fat_unique,transformed_array_water_unique,transformed_array_fat_unique,var_w,var_f,sig_wf,pca,index_water_unique,index_fat_unique,remove_duplicates,verbose,niter,split,useGPU_dictsearch,mask,tv_denoising_weight,log_phase=False,return_matched_signals=False):
 
     nb_signals = all_signals.shape[1]
 
@@ -219,102 +219,102 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
             del cond
 
             ##############################################################################################################################
-            def J_alpha_pixel(alpha,phi, i, j):
-
-                current_sig_ws = (current_sig_ws_for_phase[i,j] * np.exp(1j * phi)).real
-                current_sig_fs = (current_sig_fs_for_phase[i,j] * np.exp(1j * phi)).real
-                return ((
-                         1 - alpha) * current_sig_ws + alpha * current_sig_fs) / np.sqrt(
-                    (
-                            1 - alpha) ** 2 * var_w[i] + alpha ** 2 * var_f[i] + 2 * alpha * (
-                            1 - alpha) * sig_wf[i])
-
-            phi = np.arange(-np.pi,np.pi,np.pi/20)
-            alpha = np.arange(0.,1.01,0.01)
-            alphav_np, phiv_np = np.meshgrid(alpha, phi, sparse=False, indexing='ij')
-
-            i_=0
-            j_=0
-
-            s,t=current_sig_ws_for_phase.shape
-            n,m = alphav_np.shape
-            result_np=np.zeros(alphav_np.shape)
-
-
-            i_,j_=np.unravel_index(np.random.choice(np.arange(s*t)),(s,t))
-
-
-            for p in tqdm(range(n)):
-                for q in range(m):
-                    result_np[p,q]=J_alpha_pixel(alphav_np[p,q],phiv_np[p,q],i_,j_)
-
-
-            import matplotlib.pyplot as plt
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-
-            ax.plot_surface(alphav_np, phiv_np, result_np,alpha=0.5)
-
-
-
-            index_min_p,index_min_q = np.unravel_index(np.argmax(result_np), result_np.shape)
-            alpha_min = alphav_np[index_min_p,index_min_q]
-            phi_min = phiv_np[index_min_p, index_min_q]
-            result_min = result_np[index_min_p, index_min_q]
-
-            # alpha_ = (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1)) * alpha1[i, j] + (
-            #             1 - (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1))) * alpha2[i, j]
-
-            print("Max alpha on surface : {}".format(np.round(alpha_min,2)))
-            print("Alpha 1 : {}".format(np.round(alpha1[i_,j_],2)))
-            print("Alpha 2 : {}".format(np.round(alpha2[i_,j_],2)))
-            print("Alpha calc : {}".format(np.round(current_alpha_all_unique[i_,j_], 2)))
-
-            # phi_calc = -np.angle((
-            #                               1 - alpha_) * current_sig_ws_for_phase[i, j] + alpha_ * current_sig_fs_for_phase[i, j])
+            # def J_alpha_pixel(alpha,phi, i, j):
             #
-            # d = (1 - alpha_) * current_sig_ws_for_phase[i, j] + alpha_ * \
-            #      current_sig_fs_for_phase[i, j]
-            # phi_form = -np.arctan(d.imag / d.real)
-            # phi_form = (phi_form) * (
-            #             1 * (np.sin(phi_form) * d.imag - np.cos(phi_form) * d.real) <= 0) + (
-            #                  np.mod(phi_form + np.pi, 2 * np.pi)) * (
-            #                          1 * (np.sin(phi_form) * d.imag - np.cos(phi_form) * d.real) > 0)
-
-            # phi_calc1 = -np.angle((
-            #                              1 - alpha1[i,j]) * current_sig_ws_for_phase[i,j] + alpha1[i,j] * current_sig_fs_for_phase[i,j])
-            # phi_calc2 = -np.angle((
-            #                              1 - alpha2[i, j]) * current_sig_ws_for_phase[i, j] +  alpha2[i, j] *
-            #                      current_sig_fs_for_phase[i, j])
+            #     current_sig_ws = (current_sig_ws_for_phase[i,j] * np.exp(1j * phi)).real
+            #     current_sig_fs = (current_sig_fs_for_phase[i,j] * np.exp(1j * phi)).real
+            #     return ((
+            #              1 - alpha) * current_sig_ws + alpha * current_sig_fs) / np.sqrt(
+            #         (
+            #                 1 - alpha) ** 2 * var_w[i] + alpha ** 2 * var_f[i] + 2 * alpha * (
+            #                 1 - alpha) * sig_wf[i])
             #
-            # d1 = (1 - alpha1[i,j]) * current_sig_ws_for_phase[i,j] + alpha1[i,j] * current_sig_fs_for_phase[i,j]
-            # phi_form_1 = -np.arctan(d1.imag/d1.real)
-            # d2 = (1 - alpha2[i, j]) * current_sig_ws_for_phase[i, j] + alpha2[i, j] * current_sig_fs_for_phase[
-            #     i, j]
-            # phi_form_2 = -np.arctan(d2.imag/d2.real)
+            # phi = np.arange(-np.pi,np.pi,np.pi/20)
+            # alpha = np.arange(0.,1.01,0.01)
+            # alphav_np, phiv_np = np.meshgrid(alpha, phi, sparse=False, indexing='ij')
             #
-            # phi_form_1 = (phi_form_1)*(1*(np.sin(phi_form_1)*d1.imag-np.cos(phi_form_1)*d1.real)<=0)+(np.mod(phi_form_1+np.pi,2*np.pi))*(1*(np.sin(phi_form_1)*d1.imag-np.cos(phi_form_1)*d1.real)>0)
-            # phi_form_2 = (phi_form_2) * (
-            #             1 * (np.sin(phi_form_2) * d2.imag - np.cos(phi_form_2) * d2.real) <= 0) + (
-            #                  np.mod(phi_form_2 + np.pi, 2 * np.pi)) * (
-            #                          1 * (np.sin(phi_form_2) * d2.imag - np.cos(phi_form_2) * d2.real) > 0)
-
-            print("Max phi on surface : {}".format(np.round(phi_min, 2)))
-            # print("Phi Ideal 1 : {}".format(np.round(phi_calc1, 2)))
-            # print("Phi Ideal 2 : {}".format(np.round(phi_calc2, 2)))
-            # print("Phi Formula 1 : {}".format(np.round(phi_form_1, 2)))
-            # print("Phi Formula 2 : {}".format(np.round(phi_form_2, 2)))
-            print("Phi optim: {}".format(np.round(phase_adj[i_,j_], 2)))
-
-            print("Max correl on surface {}".format(np.round(result_min,2)))
-            print("Retrieved correl on surface {}".format(np.round( J_alpha_pixel(current_alpha_all_unique[i_,j_], phase_adj[i_,j_], i_, j_)[0],2)))
-
-            ax.plot(alpha_min,phi_min,result_min,marker="x")
-            ax.plot(current_alpha_all_unique[i_,j_], phase_adj[i_,j_], J_alpha_pixel(current_alpha_all_unique[i_,j_], phase_adj[i_,j_], i_, j_)[0], marker="o")
-            ax.set_title("Signal {},{}".format(i_,j_))
-            # ax.plot(alpha1[i,j], phi_form_1, J_alpha_pixel(alpha1[i,j],phi_form_1,i,j)[0], marker="o")
-            # ax.plot(alpha2[i,j], phi_form_2,
-            #         J_alpha_pixel(alpha2[i, j], phi_form_2, i, j)[0], marker="o")
+            # i_=0
+            # j_=0
+            #
+            # s,t=current_sig_ws_for_phase.shape
+            # n,m = alphav_np.shape
+            # result_np=np.zeros(alphav_np.shape)
+            #
+            #
+            # i_,j_=np.unravel_index(np.random.choice(np.arange(s*t)),(s,t))
+            #
+            #
+            # for p in tqdm(range(n)):
+            #     for q in range(m):
+            #         result_np[p,q]=J_alpha_pixel(alphav_np[p,q],phiv_np[p,q],i_,j_)
+            #
+            #
+            # import matplotlib.pyplot as plt
+            # fig = plt.figure()
+            # ax = fig.add_subplot(111, projection='3d')
+            #
+            # ax.plot_surface(alphav_np, phiv_np, result_np,alpha=0.5)
+            #
+            #
+            #
+            # index_min_p,index_min_q = np.unravel_index(np.argmax(result_np), result_np.shape)
+            # alpha_min = alphav_np[index_min_p,index_min_q]
+            # phi_min = phiv_np[index_min_p, index_min_q]
+            # result_min = result_np[index_min_p, index_min_q]
+            #
+            # # alpha_ = (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1)) * alpha1[i, j] + (
+            # #             1 - (1 * (alpha1[i, j] >= 0) & (alpha1[i, j] <= 1))) * alpha2[i, j]
+            #
+            # print("Max alpha on surface : {}".format(np.round(alpha_min,2)))
+            # print("Alpha 1 : {}".format(np.round(alpha1[i_,j_],2)))
+            # print("Alpha 2 : {}".format(np.round(alpha2[i_,j_],2)))
+            # print("Alpha calc : {}".format(np.round(current_alpha_all_unique[i_,j_], 2)))
+            #
+            # # phi_calc = -np.angle((
+            # #                               1 - alpha_) * current_sig_ws_for_phase[i, j] + alpha_ * current_sig_fs_for_phase[i, j])
+            # #
+            # # d = (1 - alpha_) * current_sig_ws_for_phase[i, j] + alpha_ * \
+            # #      current_sig_fs_for_phase[i, j]
+            # # phi_form = -np.arctan(d.imag / d.real)
+            # # phi_form = (phi_form) * (
+            # #             1 * (np.sin(phi_form) * d.imag - np.cos(phi_form) * d.real) <= 0) + (
+            # #                  np.mod(phi_form + np.pi, 2 * np.pi)) * (
+            # #                          1 * (np.sin(phi_form) * d.imag - np.cos(phi_form) * d.real) > 0)
+            #
+            # # phi_calc1 = -np.angle((
+            # #                              1 - alpha1[i,j]) * current_sig_ws_for_phase[i,j] + alpha1[i,j] * current_sig_fs_for_phase[i,j])
+            # # phi_calc2 = -np.angle((
+            # #                              1 - alpha2[i, j]) * current_sig_ws_for_phase[i, j] +  alpha2[i, j] *
+            # #                      current_sig_fs_for_phase[i, j])
+            # #
+            # # d1 = (1 - alpha1[i,j]) * current_sig_ws_for_phase[i,j] + alpha1[i,j] * current_sig_fs_for_phase[i,j]
+            # # phi_form_1 = -np.arctan(d1.imag/d1.real)
+            # # d2 = (1 - alpha2[i, j]) * current_sig_ws_for_phase[i, j] + alpha2[i, j] * current_sig_fs_for_phase[
+            # #     i, j]
+            # # phi_form_2 = -np.arctan(d2.imag/d2.real)
+            # #
+            # # phi_form_1 = (phi_form_1)*(1*(np.sin(phi_form_1)*d1.imag-np.cos(phi_form_1)*d1.real)<=0)+(np.mod(phi_form_1+np.pi,2*np.pi))*(1*(np.sin(phi_form_1)*d1.imag-np.cos(phi_form_1)*d1.real)>0)
+            # # phi_form_2 = (phi_form_2) * (
+            # #             1 * (np.sin(phi_form_2) * d2.imag - np.cos(phi_form_2) * d2.real) <= 0) + (
+            # #                  np.mod(phi_form_2 + np.pi, 2 * np.pi)) * (
+            # #                          1 * (np.sin(phi_form_2) * d2.imag - np.cos(phi_form_2) * d2.real) > 0)
+            #
+            # print("Max phi on surface : {}".format(np.round(phi_min, 2)))
+            # # print("Phi Ideal 1 : {}".format(np.round(phi_calc1, 2)))
+            # # print("Phi Ideal 2 : {}".format(np.round(phi_calc2, 2)))
+            # # print("Phi Formula 1 : {}".format(np.round(phi_form_1, 2)))
+            # # print("Phi Formula 2 : {}".format(np.round(phi_form_2, 2)))
+            # print("Phi optim: {}".format(np.round(phase_adj[i_,j_], 2)))
+            #
+            # print("Max correl on surface {}".format(np.round(result_min,2)))
+            # print("Retrieved correl on surface {}".format(np.round( J_alpha_pixel(current_alpha_all_unique[i_,j_], phase_adj[i_,j_], i_, j_)[0],2)))
+            #
+            # ax.plot(alpha_min,phi_min,result_min,marker="x")
+            # ax.plot(current_alpha_all_unique[i_,j_], phase_adj[i_,j_], J_alpha_pixel(current_alpha_all_unique[i_,j_], phase_adj[i_,j_], i_, j_)[0], marker="o")
+            # ax.set_title("Signal {},{}".format(i_,j_))
+            # # ax.plot(alpha1[i,j], phi_form_1, J_alpha_pixel(alpha1[i,j],phi_form_1,i,j)[0], marker="o")
+            # # ax.plot(alpha2[i,j], phi_form_2,
+            # #         J_alpha_pixel(alpha2[i, j], phi_form_2, i, j)[0], marker="o")
             #################################################################################################################################""""
 
             if verbose:
@@ -465,14 +465,16 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
         elif log_phase:
             phase_optim.extend(phase_adj[idx_max_all_current, np.arange(J_all.shape[1])])
 
-        del phase_adj
+        if not (return_matched_signals):
+            del phase_adj
 
         if verbose:
             end = datetime.now()
             print(end - start)
 
     # idx_max_all_unique = np.argmax(J_all, axis=0)
-    del J_all
+    if not(return_matched_signals):
+        del J_all
     del current_alpha_all_unique
 
     if niter > 0:
@@ -496,8 +498,6 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
 
     del params_all_unique
 
-
-
     map_rebuilt = {
         "wT1": params_all[:, 0],
         "fT1": params_all[:, 1],
@@ -518,8 +518,25 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
 
 
     if niter==0:
+
+
         if not(log_phase):
-            return map_rebuilt,None,None
+            if return_matched_signals:
+                J_optim=J_all[idx_max_all_current, np.arange(J_all.shape[1])]
+                phase_optim=phase_adj[idx_max_all_current, np.arange(J_all.shape[1])]
+                print(phase_optim.shape)
+                print(J_optim.shape)
+
+                matched_signals=array_water_unique[index_water_unique, :][idx_max_all_current, :].T * (
+                        1 - np.array(alpha_optim)).reshape(1, -1) + array_fat_unique[index_fat_unique, :][
+                                                                    idx_max_all_current, :].T * np.array(
+                    alpha_optim).reshape(1, -1)
+                print(matched_signals.shape)
+                matched_signals/=np.linalg.norm(matched_signals,axis=0)
+                matched_signals *= J_optim*np.exp(1j*phase_optim)
+                return map_rebuilt,None,None,matched_signals.squeeze()
+            else:
+                return map_rebuilt, None, None
         else:
             return map_rebuilt, None, phase_optim
     else:
@@ -542,7 +559,7 @@ class Optimizer(object):
 
 class SimpleDictSearch(Optimizer):
 
-    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,useGPU_simulation=True,movement_correction=False,cond=None,remove_duplicate_signals=False,threshold=None,tv_denoising_weight=None,log_phase=False,**kwargs):
+    def __init__(self,niter=0,seq=None,trajectory=None,split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,useGPU_simulation=True,movement_correction=False,cond=None,remove_duplicate_signals=False,threshold=None,tv_denoising_weight=None,log_phase=False,return_matched_signals=False,**kwargs):
         #transf is a function that takes as input timesteps arrays and outputs shifts as output
         super().__init__(**kwargs)
         self.paramDict["niter"]=niter
@@ -551,6 +568,7 @@ class SimpleDictSearch(Optimizer):
         self.paramDict["threshold_pca"] = threshold_pca
         self.paramDict["remove_duplicate_signals"] = remove_duplicate_signals
         #self.paramDict["useAdjPred"]=useAdjPred
+        self.paramDict["return_matched_signals"] = return_matched_signals
 
         if niter>0:
             if seq is None:
@@ -1665,15 +1683,6 @@ class SimpleDictSearch(Optimizer):
 
             del volumesi
 
-            # if useAdjPred:
-            #     a = np.sum((volumesi * pred_volumesi.conj()).real) / np.sum(volumesi * volumesi.conj())
-            #     volumes = [vol0 - (a * voli - predvoli) for vol0, voli, predvoli in
-            #                zip(volumes, volumesi, pred_volumesi)]
-            #
-            # else:
-            #     volumes = [vol + (vol0 - voli) for vol, vol0, voli in zip(volumes, volumes0, volumesi)]
-
-            # signals = [s + (s0 - si) for s, s0, si in zip(signals, signals0, signalsi)]
 
             norm_signals = np.linalg.norm(signals, axis=0)
 
@@ -1717,7 +1726,10 @@ class SimpleDictSearch(Optimizer):
             if cond_mvt is None:
                 raise ValueError("indices of retained kdata should be given in cond for movement correction")
 
-        signals = volumes[:, mask > 0]
+        if volumes.ndim > 2:
+            signals = volumes[:, mask > 0]
+        else:  # already masked
+            signals = volumes
 
         if log:
             now = datetime.now()
@@ -1809,16 +1821,18 @@ class SimpleDictSearch(Optimizer):
                     transformed_all_signals = all_signals[:, j_signal:j_signal_next]
 
                 cov = np.einsum('ijk,jl->ilk', array_dict.conj(), transformed_all_signals)[...,None]
-                phi=np.angle(cov.transpose((0,1,3,2))@M_inv@cov)
+                phi=0.5*np.angle(cov.transpose((0,1,3,2))@M_inv@cov)
                 cov_adjusted = np.real(np.einsum('ijk,jl->ilk', array_dict.conj(), transformed_all_signals)[...,None]*np.exp(-1j*phi))
 
                 del cov
                 lambd = np.squeeze(M_inv@cov_adjusted)
                 del cov_adjusted
                 J_all = np.linalg.norm(np.einsum('ijk,ilk->ijl',array_dict,lambd)*np.expand_dims(np.exp(1j*phi.squeeze()),axis=1)-np.expand_dims(transformed_all_signals,axis=0),axis=1)
-                del phi
+                if not self.paramDict["return_matched_signals"]:
+                    del phi
                 current_alpha_all_unique=np.minimum(np.maximum(lambd[:,:,-1]/np.sum(lambd,axis=-1),0),1)
-                del lambd
+                if not self.paramDict["return_matched_signals"]:
+                    del lambd
 
             else:
 
@@ -1840,7 +1854,8 @@ class SimpleDictSearch(Optimizer):
                     cp.einsum('ijk,ilk->ijl', array_dict, lambd) - cp.expand_dims(transformed_all_signals, axis=0),
                     axis=1)
                 current_alpha_all_unique = lambd[:, :, -1] / cp.sum(lambd, axis=-1)
-                del lambd
+                if not(self.paramDict["return_matched_signals"]):
+                    del lambd
 
                 J_all = J_all.get()
                 current_alpha_all_unique=current_alpha_all_unique.get()
@@ -1856,7 +1871,7 @@ class SimpleDictSearch(Optimizer):
                 print("Extracting index of pattern with max correl")
                 start = datetime.now()
 
-            idx_max_all_current = np.argmax(J_all, axis=0)
+            idx_max_all_current = np.argmin(J_all, axis=0)
             # check_max_correl=np.max(J_all,axis=0)
 
             if verbose:
@@ -1905,7 +1920,287 @@ class SimpleDictSearch(Optimizer):
         values_results.append((map_rebuilt, mask))
 
 
-        return dict(zip(keys_results, values_results))
+        if self.paramDict["return_matched_signals"]:
+            matched_signals=(np.einsum('ijk,ilk->ijl', array_dict, lambd) * np.expand_dims(np.exp(1j * phi.squeeze()), axis=1))
+            matched_signals=matched_signals[idx_max_all_unique, :, np.arange(nb_signals)].T
+            if pca:
+                matched_signals=pca.components_@matched_signals
+
+            return dict(zip(keys_results, values_results)),matched_signals
+
+        else:
+            return dict(zip(keys_results, values_results))
+
+
+    def search_patterns_test(self, dictfile, volumes, retained_timesteps=None):
+
+        if self.mask is None:
+            mask = build_mask(volumes)
+        else:
+            mask = self.mask
+
+        verbose = self.verbose
+        niter = self.paramDict["niter"]
+        split = self.paramDict["split"]
+        pca = self.paramDict["pca"]
+        threshold_pca = self.paramDict["threshold_pca"]
+        # useAdjPred=self.paramDict["useAdjPred"]
+        if niter > 0:
+            seq = self.paramDict["sequence"]
+            trajectory = self.paramDict["trajectory"]
+            gen_mode = self.paramDict["gen_mode"]
+        log = self.paramDict["log"]
+        useGPU_dictsearch = self.paramDict["useGPU_dictsearch"]
+        useGPU_simulation = self.paramDict["useGPU_simulation"]
+
+        movement_correction = self.paramDict["movement_correction"]
+        cond_mvt = self.paramDict["cond"]
+        remove_duplicates = self.paramDict["remove_duplicate_signals"]
+        threshold = self.paramDict["threshold"]
+        tv_denoising_weight = self.paramDict["tv_denoising_weight"]
+        log_phase=self.paramDict["log_phase"]
+        # adj_phase=self.paramDict["adj_phase"]
+
+        if movement_correction:
+            if cond_mvt is None:
+                raise ValueError("indices of retained kdata should be given in cond for movement correction")
+
+        if volumes.ndim>2:
+            signals = volumes[:, mask > 0]
+        else:#already masked
+            signals=volumes
+
+        if log:
+            now = datetime.now()
+            date_time = now.strftime("%Y%m%d_%H%M%S")
+            with open('./log/volumes0_{}.npy'.format(date_time), 'wb') as f:
+                np.save(f, volumes)
+
+        del volumes
+
+        if niter > 0:
+            signals0 = signals
+
+        # norm_volumes = np.linalg.norm(volumes, 2, axis=0)
+
+        norm_signals = np.linalg.norm(signals, 2, axis=0)
+        all_signals = signals / norm_signals
+
+        mrfdict = dictsearch.Dictionary()
+        mrfdict.load(dictfile, force=True)
+
+        keys = mrfdict.keys
+        array_water = mrfdict.values[:, :, 0]
+        array_fat = mrfdict.values[:, :, 1]
+
+        del mrfdict
+
+        if retained_timesteps is not None:
+            array_water = array_water[:, retained_timesteps]
+            array_fat = array_fat[:, retained_timesteps]
+
+        array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
+        array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
+
+        nb_water_timesteps = array_water_unique.shape[1]
+        nb_fat_timesteps = array_fat_unique.shape[1]
+
+        del array_water
+        del array_fat
+
+        if pca:
+            pca_water = PCAComplex(n_components_=threshold_pca)
+            pca_fat = PCAComplex(n_components_=threshold_pca)
+
+            pca_water.fit(array_water_unique)
+            pca_fat.fit(array_fat_unique)
+
+            print(
+                "Water Components Retained {} out of {} timesteps".format(pca_water.n_components_, nb_water_timesteps))
+            print("Fat Components Retained {} out of {} timesteps".format(pca_fat.n_components_, nb_fat_timesteps))
+
+            transformed_array_water_unique = pca_water.transform(array_water_unique)
+            transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
+
+        else:
+            pca_water=None
+            pca_fat=None
+            transformed_array_water_unique=None
+            transformed_array_fat_unique=None
+
+        var_w = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
+        var_f = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
+        sig_wf = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(), axis=1).real
+
+        var_w = var_w[index_water_unique]
+        var_f = var_f[index_fat_unique]
+
+        var_w = np.reshape(var_w, (-1, 1))
+        var_f = np.reshape(var_f, (-1, 1))
+        sig_wf = np.reshape(sig_wf, (-1, 1))
+
+        if useGPU_dictsearch:
+            var_w = cp.asarray(var_w)
+            var_f = cp.asarray(var_f)
+            sig_wf = cp.asarray(sig_wf)
+
+        values_results = []
+        keys_results = list(range(niter + 1))
+
+        for i in range(niter + 1):
+            print("################# ITERATION : Number {} out of {} ####################".format(i, niter))
+            print("Calculating optimal fat fraction and best pattern per signal for iteration {}".format(i))
+            if not(self.paramDict["return_matched_signals"]):
+                map_rebuilt,J_optim,phase_optim=match_signals(all_signals,keys, pca_water, pca_fat, array_water_unique, array_fat_unique,
+                          transformed_array_water_unique, transformed_array_fat_unique, var_w,var_f,sig_wf,pca,index_water_unique,index_fat_unique,remove_duplicates, verbose,
+                          niter, split, useGPU_dictsearch,mask,tv_denoising_weight,log_phase)
+            else:
+                map_rebuilt, J_optim, phase_optim,matched_signals = match_signals(all_signals, keys, pca_water, pca_fat,
+                                                                  array_water_unique, array_fat_unique,
+                                                                  transformed_array_water_unique,
+                                                                  transformed_array_fat_unique, var_w, var_f, sig_wf,
+                                                                  pca, index_water_unique, index_fat_unique,
+                                                                  remove_duplicates, verbose,
+                                                                  niter, split, useGPU_dictsearch, mask,
+                                                                  tv_denoising_weight, log_phase,return_matched_signals=True)
+
+            print("Maps build for iteration {}".format(i))
+
+            if not(log_phase):
+                values_results.append((map_rebuilt, mask))
+
+            else:
+                values_results.append((map_rebuilt, mask,phase_optim))
+
+            if log:
+                with open('./log/maps_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+                    pickle.dump({int(i): (map_rebuilt, mask)}, f)
+
+            if i == niter:
+                break
+
+            if i>0 and threshold is not None :
+                all_signals=all_signals_unthresholded
+                if not(self.paramDict["return_matched_signals"]):
+                    map_rebuilt,J_optim,phase_optim = match_signals(all_signals,keys, pca_water, pca_fat, array_water_unique, array_fat_unique,
+                              transformed_array_water_unique, transformed_array_fat_unique, var_w,var_f,sig_wf,pca,index_water_unique,index_fat_unique,remove_duplicates, verbose,
+                              niter, split, useGPU_dictsearch,mask,tv_denoising_weight)
+                else:
+                    map_rebuilt, J_optim, phase_optim,matched_signals = match_signals(all_signals, keys, pca_water, pca_fat,
+                                                                      array_water_unique, array_fat_unique,
+                                                                      transformed_array_water_unique,
+                                                                      transformed_array_fat_unique, var_w, var_f,
+                                                                      sig_wf, pca, index_water_unique, index_fat_unique,
+                                                                      remove_duplicates, verbose,
+                                                                      niter, split, useGPU_dictsearch, mask,
+                                                                      tv_denoising_weight,return_matched_signals=True)
+
+            print("Generating prediction volumes and undersampled images for iteration {}".format(i))
+            # generate prediction volumes
+            keys_simu = list(map_rebuilt.keys())
+            values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+            map_for_sim = dict(zip(keys_simu, values_simu))
+
+            # predict spokes
+            images_pred = MapFromDict("RebuiltMapFromParams", paramMap=map_for_sim, rounding=True, gen_mode=gen_mode)
+            images_pred.buildParamMap()
+
+            del map_for_sim
+
+            del keys_simu
+            del values_simu
+
+            nspoke = int(trajectory.paramDict["total_nspokes"] / self.paramDict["ntimesteps"])
+
+            images_pred.build_ref_images(seq, norm=J_optim * norm_signals, phase=phase_optim)
+
+            print("Normalizing image series")
+
+            print("Filling images series with renormalized signals")
+
+            kdatai = images_pred.generate_kdata(trajectory, useGPU=useGPU_simulation)
+
+            if log:
+                print("Saving Ideal Volumes for iteration {}".format(i))
+                with open('./log/predvolumes_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+                    np.save(f, images_pred.images_series[::nspoke].astype(np.complex64))
+
+            del images_pred
+
+            if movement_correction:
+                traj = trajectory.get_traj()
+                kdatai, traj_retained_final, _ = correct_mvt_kdata(kdatai, trajectory, cond_mvt,
+                                                                   self.paramDict["ntimesteps"], density_adj=True)
+
+            kdatai = np.array(kdatai)
+            # nans = np.nonzero(np.isnan(kdatai))
+            nans = [np.nonzero(np.isnan(k))[0] for k in kdatai]
+            nans_count = np.array([len(n) for n in nans]).sum()
+
+            if nans_count > 0:
+                print("Warning : Nan Values replaced by zeros in rebuilt kdata")
+                for i, k in enumerate(kdatai):
+                    kdatai[i][nans[i]] = 0.0
+
+            if not (movement_correction):
+                volumesi = simulate_radial_undersampled_images(kdatai, trajectory, mask.shape, useGPU=useGPU_simulation,
+                                                               density_adj=True)
+
+            else:
+                trajectory.traj_for_reconstruction = traj_retained_final
+                volumesi = simulate_radial_undersampled_images(kdatai, trajectory, mask.shape,
+                                                               useGPU=useGPU_simulation, density_adj=True,
+                                                               is_theta_z_adjusted=True)
+
+            # volumesi/=(2*np.pi)
+
+            nans_volumes = np.argwhere(np.isnan(volumesi))
+            if len(nans_volumes) > 0:
+                np.save('./log/kdatai.npy', kdatai)
+                np.save('./log/volumesi.npy', volumesi)
+                raise ValueError("Error : Nan Values in volumes")
+
+            del kdatai
+
+            # volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
+
+            if log:
+                print("Saving correction volumes for iteration {}".format(i))
+                with open('./log/volumes1_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+                    np.save(f, np.array(volumesi))
+
+            # correct volumes
+            print("Correcting volumes for iteration {}".format(i))
+
+            signalsi = volumesi[:, mask > 0]
+            # normi= np.linalg.norm(signalsi, axis=0)
+            # signalsi *= norm_signals/normi
+
+            del volumesi
+
+            signals += signals0 - signalsi
+
+            norm_signals = np.linalg.norm(signals, axis=0)
+            all_signals_unthresholded = signals / norm_signals
+
+            if threshold is not None:
+
+                signals_for_map = signals * (1 - (np.abs(signals) > threshold))
+                all_signals = signals_for_map/np.linalg.norm(signals_for_map,axis=0)
+
+            else:
+
+                all_signals=all_signals_unthresholded
+
+        if log:
+            print(date_time)
+
+        if self.paramDict["return_matched_signals"]:
+
+            return dict(zip(keys_results, values_results)),matched_signals
+        else:
+            return dict(zip(keys_results, values_results))
+
 
 
 class ToyNN(Optimizer):
@@ -2090,7 +2385,7 @@ class ToyNN(Optimizer):
 
 class BruteDictSearch(Optimizer):
 
-    def __init__(self,FF_list=np.arange(0.,1.05,0.05),split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,remove_duplicate_signals=False,log_phase=False,**kwargs):
+    def __init__(self,FF_list=np.arange(0.,1.05,0.05),split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,remove_duplicate_signals=False,log_phase=False,return_matched_signals=False,**kwargs):
         #transf is a function that takes as input timesteps arrays and outputs shifts as output
         super().__init__(**kwargs)
         self.paramDict["split"] = split
@@ -2098,6 +2393,7 @@ class BruteDictSearch(Optimizer):
         self.paramDict["threshold_pca"] = threshold_pca
         self.paramDict["remove_duplicate_signals"] = remove_duplicate_signals
         self.paramDict["FF"]=FF_list
+        self.paramDict["return_matched_signals"]=return_matched_signals
         #self.paramDict["useAdjPred"]=useAdjPred
 
 
@@ -2125,7 +2421,10 @@ class BruteDictSearch(Optimizer):
         remove_duplicates = self.paramDict["remove_duplicate_signals"]
         #adj_phase=self.paramDict["adj_phase"]
 
-        signals = volumes[:, mask > 0]
+        if volumes.ndim > 2:
+            signals = volumes[:, mask > 0]
+        else:  # already masked
+            signals = volumes
 
         if log:
             now = datetime.now()
@@ -2182,8 +2481,8 @@ class BruteDictSearch(Optimizer):
         num_group = int(nb_signals / split) + 1
 
         idx_max_all_unique = []
-        alpha_optim = []
 
+        lambd=[]
 
         for j in tqdm(range(num_group)):
             j_signal = j * split
@@ -2193,79 +2492,6 @@ class BruteDictSearch(Optimizer):
                 print("PCA transform")
                 start = datetime.now()
 
-            # if not(useGPU_dictsearch):
-            #
-            #     if pca:
-            #         transformed_all_signals = np.transpose(pca.transform(np.transpose(all_signals[:, j_signal:j_signal_next])))
-            #
-            #         sig = np.matmul(transformed_values,
-            #                                       transformed_all_signals.conj())
-            #
-            #
-            #
-            #     else:
-            #         sig = np.matmul(values, all_signals[:, j_signal:j_signal_next].conj())
-            #
-            #     phi=-np.angle(sig)
-            #     sig *= np.exp(1j*phi)
-            #
-            # else:
-            #
-            #
-            #     if pca:
-            #
-            #         transformed_all_signals = cp.transpose(
-            #             pca.transform(cp.transpose(cp.asarray(all_signals[:, j_signal:j_signal_next])))).get()
-            #
-            #         sig = (cp.matmul(cp.asarray(transformed_values),
-            #                                        cp.asarray(transformed_all_signals).conj())).get()
-            #
-            #     else:
-            #
-            #         sig = (cp.matmul(cp.asarray(values),
-            #                                        cp.asarray(all_signals)[:, j_signal:j_signal_next].conj())).get()
-            #
-            #     phi = -cp.angle(sig)
-            #     sig *= cp.exp(1j * phi)
-            #
-            #
-            # if self.verbose:
-            #     end = datetime.now()
-            #     print(end - start)
-            #
-            # if self.verbose:
-            #     start = datetime.now()
-            #
-            #
-            # #current_sig_ws = current_sig_ws_for_phase.real
-            # #current_sig_fs = current_sig_fs_for_phase.real
-            #
-            # if self.verbose:
-            #     end = datetime.now()
-            #     print(end-start)
-            #
-            # if not(useGPU_dictsearch):
-            #     #if adj_phase:
-            #     if self.verbose:
-            #         print("Adjusting Phase")
-            #         print("Calculating alpha optim and flooring")
-            #
-            #         ### Testing direct phase solving
-            #
-            #     #print("Imag sig {}".format(np.max(np.imag(sig))))
-            #     J_all = sig**2/np.expand_dims(var,axis=-1)
-            #     end = datetime.now()
-            #
-            # else:
-            #
-            #     J_all = sig**2/cp.expand_dims(var,axis=-1)
-            #
-            #     J_all = J_all.get()
-            #
-            #
-            #     if verbose:
-            #         end = datetime.now()
-            #         print(end - start)
 
             if not(useGPU_dictsearch):
 
@@ -2276,15 +2502,15 @@ class BruteDictSearch(Optimizer):
                                                   transformed_all_signals)
 
                     phi = 0.5 * np.angle(sig ** 2 / np.expand_dims(np.real(var), axis=-1))
-                    sig=np.real(np.matmul(transformed_values.conj(), transformed_all_signals ))* np.exp(
-                        -1j * phi)
+                    sig=np.real(np.matmul(transformed_values.conj(), transformed_all_signals) * np.exp(
+                        -1j * phi))
 
 
                 else:
                     sig = np.matmul(values.conj(), all_signals[:, j_signal:j_signal_next])
                     phi = 0.5 * np.angle(sig ** 2 / np.expand_dims(np.real(var), axis=-1))
-                    sig=np.real(np.matmul(values.conj(), all_signals[:, j_signal:j_signal_next] * np.exp(
-                        -1j * phi)))
+                    sig=np.real(np.matmul(values.conj(), all_signals[:, j_signal:j_signal_next]) * np.exp(
+                        -1j * phi))
 
                 lambd = sig / np.expand_dims(np.real(var), axis=-1)
 
@@ -2301,8 +2527,8 @@ class BruteDictSearch(Optimizer):
                                                    cp.asarray(transformed_all_signals))).get()
 
                     phi = 0.5 * cp.angle(sig ** 2 / np.expand_dims(cp.real(var), axis=-1))
-                    sig = cp.real(cp.matmul(transformed_values.conj(), transformed_all_signals)) * cp.exp(
-                        -1j * phi)
+                    sig = cp.real(cp.matmul(transformed_values.conj(), transformed_all_signals) * cp.exp(
+                        -1j * phi))
 
                 else:
 
@@ -2310,8 +2536,8 @@ class BruteDictSearch(Optimizer):
                                                    cp.asarray(all_signals)[:, j_signal:j_signal_next])).get()
 
                     phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(np.real(var), axis=-1))
-                    sig = cp.real(cp.matmul(values.conj(), all_signals[:, j_signal:j_signal_next] * cp.exp(
-                        -1j * phi)))
+                    sig = cp.real(cp.matmul(values.conj(), all_signals[:, j_signal:j_signal_next] )* cp.exp(
+                        -1j * phi))
 
                 lambd = sig / cp.expand_dims(cp.real(var), axis=-1)
 
@@ -2419,6 +2645,13 @@ class BruteDictSearch(Optimizer):
             cp.cuda.set_pinned_memory_allocator(None)
             gc.collect()
 
+        if self.paramDict["return_matched_signals"]:
+            matched_signals=np.expand_dims(lambd,axis=1)*np.expand_dims(transformed_values,axis=-1)*np.expand_dims(np.exp(1j*phi),axis=1)
+            matched_signals = matched_signals[idx_max_all_unique, :, np.arange(nb_signals)].T
+            if pca:
+                matched_signals = pca.components_ @ matched_signals
+            return dict(zip(keys_results, values_results)),matched_signals
 
+        else:
 
-        return dict(zip(keys_results, values_results))
+            return dict(zip(keys_results, values_results))
