@@ -3,7 +3,7 @@
 #matplotlib.use("TkAgg")
 from mrfsim import T1MRF
 from image_series import *
-from dictoptimizers import SimpleDictSearch
+from dictoptimizers import SimpleDictSearch,BruteDictSearch
 from utils_mrf import *
 import json
 import readTwix as rT
@@ -15,6 +15,8 @@ import pickle
 import twixtools
 from PIL import Image
 from mutools import io
+import pandas as pd
+
 
 try :
     import cupy as cp
@@ -830,9 +832,9 @@ def aggregate_kdata(filename_kdata,filename_df_groups_global,filename_categories
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
     folder = "/".join(str.split(filename_kdata, "/")[:-1])
+    base_folder="/".join(str.split(filename_kdata, "/")[:-2])
 
-    filename_kdata_final = folder + "/aggregated_kdata.npy"
-    #print(filename_volume)
+    bin_width=int(str.split(filename_categories_global, "bw")[-1][:-4])
 
 
 
@@ -842,26 +844,28 @@ def aggregate_kdata(filename_kdata,filename_df_groups_global,filename_categories
     npoint = data_shape[-1]
     nb_slices = data_shape[2] * undersampling_factor
     nb_part = nb_slices
-    image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
-
-    nb_gating_spokes=50
 
     print(data_shape)
     print(folder)
 
     files = files_config["files"]
     print(files)
+
+    filename_kdata_final = base_folder + str.split(files[0], "_1.dat")[0] + "_bw{}_aggregated_kdata.npy".format(
+        bin_width)
+
     categories_global = np.load(filename_categories_global)
     df_groups_global = pd.read_pickle(filename_df_groups_global)
 
     idx_cat = df_groups_global.displacement.idxmax()
 
-    kdata_final = np.zeros(kdata_all_channels_all_slices.shape, dtype=kdata_all_channels_all_slices.dtype)
+    kdata_final = np.zeros(data_shape, dtype=kdata_all_channels_all_slices.dtype)
+    del kdata_all_channels_all_slices
     count = np.zeros((nb_segments, nb_slices))
 
     for i, localfile in tqdm(enumerate(files)):
 
-        filename = folder + localfile
+        filename = base_folder + localfile
 
         retained_nav_spokes = (categories_global[i] == idx_cat)
 
@@ -886,15 +890,21 @@ def aggregate_kdata(filename_kdata,filename_df_groups_global,filename_categories
 
         filename_kdata = str.split(filename, ".dat")[0] + "_kdata{}.npy".format("")
 
+        print("Loading kdata for file {}".format(localfile))
         kdata_all_channels_all_slices = np.load(filename_kdata)
+        #print(included_spokes.shape)
         kdata_all_channels_all_slices = kdata_all_channels_all_slices.reshape(nb_channels, nb_segments, nb_slices,
                                                                               npoint)
-
-        kdata_final += (np.expand_dims(1 * included_spokes, axis=(0, -1))) * kdata_all_channels_all_slices
+        print("Aggregating kdata for file {}".format(localfile))
+        for ch in tqdm(range(nb_channels)):
+            kdata_final[ch] += (np.expand_dims(1 * included_spokes, axis=-1)) * kdata_all_channels_all_slices[ch]
         count += (1 * included_spokes)
 
     count[count == 0] = 1
-    kdata_final /= np.expand_dims(count, axis=(0, -1))
+
+    print("Normalizing Final Kdata")
+    for ch in tqdm(range(nb_channels)):
+        kdata_final[ch] /= np.expand_dims(count, axis=(-1))
 
     np.save(filename_kdata_final, kdata_final)
 
@@ -991,14 +1001,17 @@ def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
     volumes_all = np.load(filename_volume)
     mask=np.load(filename_mask)
 
+    opt_type = optimizer_config["type"]
+
     if slices is not None:
         sl = slices["slices"]
         if not(len(sl)==0):
             mask_slice = np.zeros(mask.shape, dtype=mask.dtype)
             mask_slice[sl] = 1
             mask *= mask_slice
+            sl=[str(s) for s in sl]
+            file_map = filename_volume.split(".npy")[0] + "_sl{}_{}_MRF_map.pkl".format("_".join(sl),opt_type)
 
-            file_map = filename_volume.split(".npy")[0] + "_sl{}_MRF_map.pkl".format("_".join(sl))
 
     if (slices is not None) and ("spacing" in slices) and not(len(slices["spacing"])==0):
         spacing=slices["spacing"]
@@ -1011,16 +1024,28 @@ def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
 
     threshold_pca=optimizer_config["pca"]
     split=optimizer_config["split"]
+    useGPU = optimizer_config["useGPU"]
 
-    optimizer = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=None, split=split, pca=True,
-                                 threshold_pca=threshold_pca, log=False, useGPU_dictsearch=True,
+    if opt_type=="CF":
+        optimizer = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=None, split=split, pca=True,
+                                     threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
+                                     useGPU_simulation=False, gen_mode="other")
+        all_maps = optimizer.search_patterns_test(dictfile, volumes_all)
+
+    elif opt_type=="Matrix":
+        optimizer = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=None, split=split, pca=True,
+                                 threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
                                  useGPU_simulation=False, gen_mode="other")
-    all_maps = optimizer.search_patterns(dictfile, volumes_all)
+        all_maps = optimizer.search_patterns_matrix(dictfile, volumes_all)
+
+    elif opt_type=="Brute":
+        optimizer=BruteDictSearch(FF_list=np.arange(0,1.01,0.01),mask=mask,split=split, pca=True,
+                                 threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU
+                                 )
+        all_maps = optimizer.search_patterns(dictfile, volumes_all)
 
     file = open(file_map, "wb")
-    # dump information to that file
     pickle.dump(all_maps, file)
-    # close the file
     file.close()
 
     for iter in list(all_maps.keys()):
@@ -1042,6 +1067,161 @@ def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
 
 
 
+@machine
+
+@set_parameter("files_config",type=Config,default=None,description="Files to consider for aggregate kdata reconstruction")
+@set_parameter("disp_config",type=Config,default=None,description="Parameters for movement identification")
+@set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
+
+def build_data_nacq(files_config,disp_config,undersampling_factor):
+
+    base_folder = "./data/InVivo/3D"
+    files=files_config["files"]
+    shifts=list(range(disp_config["shifts"][0],disp_config["shifts"][1]))
+    ch=disp_config["channel"]
+    bin_width=disp_config["bin_width"]
+
+    folder = base_folder + "/".join(str.split(files[0], "/")[:-1])
+
+
+    filename_categories_global = folder + "/categories_global_bw{}.npy".format(bin_width)
+    filename_df_groups_global = folder + "/df_groups_global_bw{}.pkl".format(bin_width)
+
+    categories_global = []
+    df_groups_global = pd.DataFrame()
+
+    for localfile in files:
+
+        filename = base_folder + localfile
+        filename_nav_save = str.split(filename, ".dat")[0] + "_nav.npy"
+        folder = "/".join(str.split(filename, "/")[:-1])
+        filename_kdata = str.split(filename, ".dat")[0] + "_kdata{}.npy".format("")
+        filename_disp_image=str.split(filename, ".dat")[0] + "_nav_image.jpg".format("")
+
+
+        dico_seqParams = build_dico_seqParams(filename, folder)
+
+        use_navigator_dll = dico_seqParams["use_navigator_dll"]
+
+        if use_navigator_dll:
+            meas_sampling_mode = dico_seqParams["alFree"][14]
+            nb_gating_spokes = dico_seqParams["alFree"][6]
+        else:
+            meas_sampling_mode = dico_seqParams["alFree"][12]
+            nb_gating_spokes = 0
+
+
+        nb_segments = dico_seqParams["alFree"][4]
+
+        del dico_seqParams
+
+        if meas_sampling_mode == 1:
+            incoherent = False
+            mode = None
+        elif meas_sampling_mode == 2:
+            incoherent = True
+            mode = "old"
+        elif meas_sampling_mode == 3:
+            incoherent = True
+            mode = "new"
+
+        data, data_for_nav = build_data(filename, folder, nb_segments, nb_gating_spokes)
+
+        data_shape = data.shape
+
+        nb_allspokes = data_shape[-3]
+        npoint = data_shape[-1]
+        nb_slices = data_shape[-2]
+
+        if str.split(filename_kdata, "/")[-1] in os.listdir(folder):
+            del data
+
+        if str.split(filename_kdata, "/")[-1] not in os.listdir(folder):
+            # Density adjustment all slices
+
+            density = np.abs(np.linspace(-1, 1, npoint))
+            density = np.expand_dims(density, tuple(range(data.ndim - 1)))
+
+            print("Performing Density Adjustment....")
+            data *= density
+            np.save(filename_kdata, data)
+            del data
+
+
+
+        print("Calculating Coil Sensitivity....")
+
+        radial_traj = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=undersampling_factor, npoint=npoint,
+                               nb_slices=nb_slices, incoherent=incoherent, mode=mode)
+
+        nb_segments = radial_traj.get_traj().shape[0]
+
+        if nb_gating_spokes > 0:
+            print("Processing Nav Data...")
+            data_for_nav = np.load(filename_nav_save)
+
+            nb_allspokes = nb_segments
+            nb_slices = data_for_nav.shape[1]
+            nb_channels = data_for_nav.shape[0]
+            npoint_nav = data_for_nav.shape[-1]
+
+            all_timesteps = np.arange(nb_allspokes)
+            nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
+
+            nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint_nav, nb_slices=nb_slices,
+                                   applied_timesteps=list(nav_timesteps))
+
+            nav_image_size = (int(npoint_nav / 2),)
+
+            print("Building nav image for channel {}...".format(ch))
+            # b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
+            # b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
+
+            image_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[ch], axis=0), nav_traj, nav_image_size)
+
+            plt.figure()
+            plt.plot(np.abs(image_nav_ch.reshape(-1, int(npoint / 2)))[5*nb_gating_spokes, :])
+            plt.savefig(filename_disp_image)
+
+            print("Estimating Movement...")
+
+            bottom = -shifts[0]
+            top = nav_image_size[0]-shifts[-1]
+
+
+            displacements = calculate_displacement(image_nav_ch, bottom, top, shifts, 0.001)
+
+            displacement_for_binning = displacements
+
+            max_bin = np.max(displacement_for_binning)
+            min_bin = shifts[0]
+
+            bins = np.arange(min_bin, max_bin + bin_width, bin_width)
+            # print(bins)
+            categories = np.digitize(displacement_for_binning, bins)
+            df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T,
+                                  columns=["displacement", "cat"])
+            df_groups = df_cat.groupby("cat").count()
+            curr_max = df_groups.displacement.max()
+
+            if df_groups_global.empty:
+                df_groups_global = df_groups
+            else:
+                df_groups_global += df_groups
+
+            categories_global.append(categories)
+
+    #################################################################################################################################"
+
+    categories_global = np.array(categories_global)
+
+    np.save(filename_categories_global, categories_global)
+    df_groups_global.to_pickle(filename_df_groups_global)
+
+
+
+    return
+
 
 toolbox = Toolbox("script_recoInVivo_3D_machines", description="Reading Siemens 3D MRF data and performing image series reconstruction")
 toolbox.add_program("build_kdata", build_kdata)
@@ -1053,6 +1233,7 @@ toolbox.add_program("calib_and_estimate_kdata_grappa", calib_and_estimate_kdata_
 toolbox.add_program("build_data_autofocus", build_data_autofocus)
 toolbox.add_program("aggregate_kdata", aggregate_kdata)
 toolbox.add_program("build_maps", build_maps)
+toolbox.add_program("build_data_nacq", build_data_nacq)
 
 if __name__ == "__main__":
     toolbox.cli()

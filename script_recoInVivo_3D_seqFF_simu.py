@@ -34,17 +34,19 @@ dictjson="mrf_dictconf_SimReco2_light{}.json".format(suffix_simu)
 #dictfile = "mrf175_Dico2_Invivo.dict"
 
 suffix=""
-suffix="_FFDf"
+#suffix="_FFDf"
 #suffix="_Cohen"
 #suffix="_CohenWeighted"
 #suffix="_CohenCSWeighted"
 #suffix="_CohenBS"
 #suffix="_PW"
-suffix="_PWCR"
+#suffix="_PWCR"
+#suffix="_PWMag"
+
 #suffix="_PWWeighted"
 #suffix="_"
 
-nb_allspokes = 144
+nb_allspokes = 1400
 nspoke=8
 nb_segments=nb_allspokes
 ntimesteps=int(nb_segments/nspoke)
@@ -53,13 +55,18 @@ ntimesteps=int(nb_segments/nspoke)
 #suffix="_constantTE_last"
 #suffix=""
 
-with open("mrf{}_SeqFF{}_config.json".format(nb_allspokes,suffix)) as f:
+# with open("mrf{}_SeqFF{}_config.json".format(nb_allspokes,suffix)) as f:
+#     sequence_config = json.load(f)
+
+with open("mrf_sequence.json".format(nb_allspokes,suffix)) as f:
     sequence_config = json.load(f)
+
 
 
 with open("mrf_dictconf_SimReco2_light.json") as f:
     dict_config = json.load(f)
 #
+
 # unique_TEs=np.unique(sequence_config["TE"])
 # unique_TRs=np.unique(sequence_config["TR"])
 # FA=20
@@ -99,15 +106,15 @@ class FFMRF:
             return epg.simulate(seq,calc_deriv=calc_deriv, **kwargs)
 
 
-seq = FFMRF(**sequence_config)
-#seq=T1MRF(**sequence_config)
+#seq = FFMRF(**sequence_config)
+seq=T1MRF(**sequence_config)
 
 
 
 
 nb_filled_slices = 8
 nb_empty_slices=2
-repeat_slice=8
+repeat_slice=1
 nb_slices = nb_filled_slices+2*nb_empty_slices
 
 undersampling_factor=1
@@ -273,9 +280,9 @@ load_map=False
 save_map=True
 
 if nspoke==1:
-    dictfile = "mrf{}_SeqFF{}_RecoFFDf_light.dict".format(nb_allspokes,suffix)
+    dictfile = "mrf{}_SeqFF{}_SimRecoFFDf_light.dict".format(nb_allspokes,suffix)
 else:
-    dictfile = "mrf{}w{}_SeqFF{}_RecoFFDf_light.dict".format(nb_allspokes,nspoke,suffix)
+    dictfile = "mrf{}w{}_SeqFF{}_SimRecoFFDf_light.dict".format(nb_allspokes,nspoke,suffix)
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
@@ -319,12 +326,12 @@ volumes_all = np.load(filename_volume)
 
 if not(load_map):
     niter = 0
-    optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.01),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
-    all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
+    #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.01),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
+    #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    #optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=20, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
-    #all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=20, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
+    all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -370,6 +377,22 @@ for iter in list(all_maps.keys()):
     for key in ["ff","wT1","df","attB1"]:
         file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
         io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

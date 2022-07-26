@@ -174,7 +174,7 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
 
 
 
-            d_oobounds_0 = current_sig_ws_for_phase[alpha_out_bounds]
+            d_oobounds_0 = current_sig_ws_for_phase[:]
             phase_adj_0 = -np.arctan(d_oobounds_0.imag / d_oobounds_0.real)
             cond = np.sin(phase_adj_0) * d_oobounds_0.imag - np.cos(phase_adj_0) * d_oobounds_0.real
             del d_oobounds_0
@@ -185,10 +185,10 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
 
             del cond
 
-            current_sig_ws_0 = (current_sig_ws_for_phase[alpha_out_bounds] * np.exp(1j * phase_adj_0)).real
-            J_0=current_sig_ws_0/np.sqrt(np.squeeze(var_w[np.argwhere(alpha_out_bounds)[:,0]]))
+            current_sig_ws_0 = (current_sig_ws_for_phase[:] * np.exp(1j * phase_adj_0)).real
+            J_0=current_sig_ws_0/np.sqrt(var_w)
 
-            d_oobounds_1 = current_sig_fs_for_phase[alpha_out_bounds]
+            d_oobounds_1 = current_sig_fs_for_phase[:]
             phase_adj_1 = -np.arctan(d_oobounds_1.imag / d_oobounds_1.real)
             cond = np.sin(phase_adj_1) * d_oobounds_1.imag - np.cos(phase_adj_1) * d_oobounds_1.real
             del d_oobounds_1
@@ -199,10 +199,10 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
 
             del cond
 
-            current_sig_fs_1 = (current_sig_fs_for_phase[alpha_out_bounds] * np.exp(1j * phase_adj_1)).real
-            J_1 = current_sig_fs_1 / np.sqrt(np.squeeze(var_f[np.argwhere(alpha_out_bounds)[:,0]]))
+            current_sig_fs_1 = (current_sig_fs_for_phase[:] * np.exp(1j * phase_adj_1)).real
+            J_1 = current_sig_fs_1 / np.sqrt(var_f)
 
-            current_alpha_all_unique[alpha_out_bounds]=np.argmax(np.concatenate([J_0[:, None], J_1[:, None]], axis=-1), axis=-1).astype("float")
+            current_alpha_all_unique[alpha_out_bounds]=np.argmax(np.concatenate([J_0[alpha_out_bounds, None], J_1[alpha_out_bounds, None]], axis=-1), axis=-1).astype("float")
 
 
             d = (
@@ -337,6 +337,21 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
 
             end = datetime.now()
 
+            all_J = np.stack([J_all, J_0, J_1], axis=0)
+
+            ind_max_J = np.argmax(all_J, axis=0)
+
+            del all_J
+
+
+            J_all = (ind_max_J == 0) * J_all + (ind_max_J == 1) * J_0 + (ind_max_J == 2) * J_1
+            del J_0
+            del J_1
+
+            current_alpha_all_unique = (ind_max_J == 0) * current_alpha_all_unique + (ind_max_J == 1) * 0 + (
+                        ind_max_J == 2) * 1
+            phase_adj = (ind_max_J == 0) * phase_adj + (ind_max_J == 1) * phase_adj_0 + (ind_max_J == 2) * phase_adj_1
+
         else:
             if verbose:
                 print("Calculating alpha optim and flooring")
@@ -388,19 +403,60 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
             if verbose:
                 start = datetime.now()
 
-            current_alpha_all_unique = cp.minimum(cp.maximum(current_alpha_all_unique, 0.0), 1.0)
+            apha_more_0 = (current_alpha_all_unique >= 0)
+            alpha_less_1 = (current_alpha_all_unique <= 1)
+            alpha_out_bounds = (1 * (apha_more_0)) * (1 * (alpha_less_1)) == 0
 
+            # phase_adj=np.angle((1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase)
+
+            d_oobounds_0 = current_sig_ws_for_phase[:]
+            phase_adj_0 = -cp.arctan(d_oobounds_0.imag / d_oobounds_0.real)
+            cond = cp.sin(phase_adj_0) * d_oobounds_0.imag - cp.cos(phase_adj_0) * d_oobounds_0.real
+            del d_oobounds_0
+
+            phase_adj_0 = (phase_adj_0) * (
+                    1 * (cond) <= 0) + (phase_adj_0 + np.pi) * (
+                                  1 * (cond) > 0)
+
+            del cond
+
+            current_sig_ws_0 = (current_sig_ws_for_phase[:] * cp.exp(1j * phase_adj_0)).real
+            J_0 = current_sig_ws_0 / cp.sqrt(var_w)
+
+            d_oobounds_1 = current_sig_fs_for_phase[:]
+            phase_adj_1 = -cp.arctan(d_oobounds_1.imag / d_oobounds_1.real)
+            cond = cp.sin(phase_adj_1) * d_oobounds_1.imag - cp.cos(phase_adj_1) * d_oobounds_1.real
+            del d_oobounds_1
+
+            phase_adj_1 = (phase_adj_1) * (
+                    1 * (cond) <= 0) + (phase_adj_1 + np.pi) * (
+                                  1 * (cond) > 0)
+
+            del cond
+
+            current_sig_fs_1 = (current_sig_fs_for_phase[:] * cp.exp(1j * phase_adj_1)).real
+            J_1 = current_sig_fs_1 / cp.sqrt(var_f)
+
+            # print(current_alpha_all_unique.shape)
+            # print(J_1.shape)
+            # print(J_0.shape)
+            # print(alpha_out_bounds.shape)
+
+            current_alpha_all_unique[alpha_out_bounds] = cp.argmax(
+                cp.reshape(cp.concatenate([J_0[alpha_out_bounds], J_1[alpha_out_bounds]], axis=-1), (-1, 2)), axis=-1)
             # phase_adj = np.angle((
             #                                 1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase)
 
             d = (
                         1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase
             phase_adj = -cp.arctan(d.imag / d.real)
-            cond = cp.sin(phase_adj) * d.imag - cp.cos(phase_adj) * d.real <= 0
+            cond = cp.sin(phase_adj) * d.imag - cp.cos(phase_adj) * d.real
 
             del d
 
-            phase_adj = phase_adj * (1 * (cond)) + (phase_adj + np.pi) * (1 * (1 - cond))
+            phase_adj = (phase_adj) * (
+                    1 * (cond) <= 0) + (phase_adj + np.pi) * (
+                                1 * (cond) > 0)
 
             del cond
 
@@ -413,8 +469,8 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
                 print("Calculating cost for all signals")
                 start = datetime.now()
 
-            current_sig_ws = (current_sig_ws_for_phase * np.exp(1j * phase_adj)).real
-            current_sig_fs = (current_sig_fs_for_phase * np.exp(1j * phase_adj)).real
+            current_sig_ws = (current_sig_ws_for_phase * cp.exp(1j * phase_adj)).real
+            current_sig_fs = (current_sig_fs_for_phase * cp.exp(1j * phase_adj)).real
 
             # del phase_adj
             del current_sig_ws_for_phase
@@ -426,8 +482,25 @@ def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fa
                         1 - current_alpha_all_unique) ** 2 * var_w + current_alpha_all_unique ** 2 * var_f + 2 * current_alpha_all_unique * (
                         1 - current_alpha_all_unique) * sig_wf)
 
+
+            all_J = cp.stack([J_all, J_0, J_1], axis=0)
+
+            ind_max_J = cp.argmax(all_J, axis=0)
+
+            del all_J
+
+
+            J_all = (ind_max_J == 0) * J_all + (ind_max_J == 1) * J_0 + (ind_max_J == 2) * J_1
+            del J_0
+            del J_1
+
+            current_alpha_all_unique = (ind_max_J == 0) * current_alpha_all_unique + (ind_max_J == 1) * 0 + (
+                    ind_max_J == 2) * 1
+            phase_adj = (ind_max_J == 0) * phase_adj + (ind_max_J == 1) * phase_adj_0 + (ind_max_J == 2) * phase_adj_1
+
             J_all = J_all.get()
             current_alpha_all_unique = current_alpha_all_unique.get()
+            phase_adj = phase_adj.get()
 
             if niter > 0 or log_phase:
                 phase_adj=phase_adj.get()
@@ -1845,17 +1918,26 @@ class SimpleDictSearch(Optimizer):
                     transformed_all_signals = cp.asarray(all_signals[:, j_signal:j_signal_next])  # .get()
 
                 cov=cp.einsum('ijk,jl->ilk', array_dict.conj(), transformed_all_signals)[...,None]
+
                 phi = cp.angle(cp.matmul(cov.transpose((0, 1, 3, 2)),cp.matmul(M_inv,cov)))
                 cov_adjusted = cp.real(
                     cp.einsum('ijk,jl->ilk', array_dict.conj(), transformed_all_signals)[..., None] * cp.exp(
                         -1j * phi))
+                del cov
                 lambd = cp.squeeze(cp.matmul(M_inv,cov_adjusted))
+
+                del cov_adjusted
                 J_all = cp.linalg.norm(
                     cp.einsum('ijk,ilk->ijl', array_dict, lambd) - cp.expand_dims(transformed_all_signals, axis=0),
                     axis=1)
                 current_alpha_all_unique = lambd[:, :, -1] / cp.sum(lambd, axis=-1)
+
                 if not(self.paramDict["return_matched_signals"]):
                     del lambd
+                    del phi
+                else:
+                    lambd=lambd.get()
+                    phi=phi.get()
 
                 J_all = J_all.get()
                 current_alpha_all_unique=current_alpha_all_unique.get()
@@ -2521,21 +2603,21 @@ class BruteDictSearch(Optimizer):
                 if pca:
 
                     transformed_all_signals = cp.transpose(
-                        pca.transform(cp.transpose(cp.asarray(all_signals[:, j_signal:j_signal_next])))).get()
+                        pca.transform(cp.transpose(cp.asarray(all_signals[:, j_signal:j_signal_next]))))
 
                     sig = (cp.matmul(cp.asarray(transformed_values).conj(),
-                                                   cp.asarray(transformed_all_signals))).get()
+                                                   cp.asarray(transformed_all_signals)))
 
-                    phi = 0.5 * cp.angle(sig ** 2 / np.expand_dims(cp.real(var), axis=-1))
-                    sig = cp.real(cp.matmul(transformed_values.conj(), transformed_all_signals) * cp.exp(
+                    phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(cp.real(cp.asarray(var)), axis=-1))
+                    sig = cp.real(cp.matmul(cp.asarray(transformed_values).conj(), transformed_all_signals) * cp.exp(
                         -1j * phi))
 
                 else:
 
                     sig = (cp.matmul(cp.asarray(values).conj(),
-                                                   cp.asarray(all_signals)[:, j_signal:j_signal_next])).get()
+                                                   cp.asarray(all_signals)[:, j_signal:j_signal_next]))
 
-                    phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(np.real(var), axis=-1))
+                    phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(cp.real(var), axis=-1))
                     sig = cp.real(cp.matmul(values.conj(), all_signals[:, j_signal:j_signal_next] )* cp.exp(
                         -1j * phi))
 
@@ -2566,13 +2648,24 @@ class BruteDictSearch(Optimizer):
 
                 J_all=lambd**2*np.expand_dims(var,axis=-1) - 2*lambd*sig
 
+                if not(self.paramDict["return_matched_signals"]):
+                    del lambd
+                    del phi
+
                 end = datetime.now()
 
             else:
 
-                J_all=lambd**2*np.expand_dims(var,axis=-1) - 2*lambd*sig
+                J_all=lambd**2*cp.expand_dims(var,axis=-1) - 2*lambd*sig
 
                 J_all = J_all.get()
+
+                if not(self.paramDict["return_matched_signals"]):
+                    del lambd
+                    del phi
+                else:
+                    lambd=lambd.get()
+                    phi=phi.get()
 
 
                 if verbose:
@@ -2646,7 +2739,13 @@ class BruteDictSearch(Optimizer):
             gc.collect()
 
         if self.paramDict["return_matched_signals"]:
+            print(nb_signals)
+            print(lambd.shape)
+            print(transformed_values.shape)
+            print(phi.shape)
             matched_signals=np.expand_dims(lambd,axis=1)*np.expand_dims(transformed_values,axis=-1)*np.expand_dims(np.exp(1j*phi),axis=1)
+            print(matched_signals.shape)
+            print(np.array(idx_max_all_unique).shape)
             matched_signals = matched_signals[idx_max_all_unique, :, np.arange(nb_signals)].T
             if pca:
                 matched_signals = pca.components_ @ matched_signals

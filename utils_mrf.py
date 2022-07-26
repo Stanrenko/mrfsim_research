@@ -3448,6 +3448,7 @@ def build_data(filename,folder, nb_segments, nb_gating_spokes):
 
 
     if str.split(filename_save, "/")[-1] not in os.listdir(folder):
+        print("Building data")
         if 'twix' not in locals():
             print("Re-loading raw data")
             twix = twixtools.read_twix(filename)
@@ -3536,8 +3537,11 @@ def build_data(filename,folder, nb_segments, nb_gating_spokes):
 
 
     else:
+        print("Loading previously built data")
         data = np.load(filename_save)
         if nb_gating_spokes > 0:
             data_for_nav = np.load(filename_nav_save)
+        else:
+            data_for_nav=None
 
     return data, data_for_nav
