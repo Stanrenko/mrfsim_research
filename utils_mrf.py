@@ -10,7 +10,7 @@ from mrfsim import makevol,parse_options,groupby,load_data
 import numpy as np
 import finufft
 from scipy import ndimage
-from sklearn.decomposition import PCA
+#from sklearn.decomposition import PCA
 from tqdm import tqdm
 from scipy.spatial import Voronoi,ConvexHull
 from Transformers import PCAComplex

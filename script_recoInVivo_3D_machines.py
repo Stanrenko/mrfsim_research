@@ -1039,7 +1039,7 @@ def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
         all_maps = optimizer.search_patterns_matrix(dictfile, volumes_all)
 
     elif opt_type=="Brute":
-        optimizer=BruteDictSearch(FF_list=np.arange(0,1.01,0.01),mask=mask,split=split, pca=True,
+        optimizer=BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=split, pca=True,
                                  threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU
                                  )
         all_maps = optimizer.search_patterns(dictfile, volumes_all)

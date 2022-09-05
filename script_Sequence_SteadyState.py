@@ -50,7 +50,7 @@ class T1MRFSS:
             seq.extend(curr_seq)
         self._seq = seq
 
-    def __call__(self, T1, T2, g, att, calc_deriv=False,**kwargs):
+    def __call__(self, T1, T2, g, att, calc_deriv=False,rep=None,**kwargs):
         """ simulate sequence """
         seq=[]
         for r in range(self.nrep):
@@ -59,7 +59,13 @@ class T1MRFSS:
             seq.extend(curr_seq)
         #seq = [self.inversion, epg.modify(self._seq, T1=T1, T2=T2, att=att, g=g,calc_deriv=calc_deriv)]
         if not(calc_deriv):
-            return np.asarray(epg.simulate(seq, **kwargs))
+            result=np.asarray(epg.simulate(seq, **kwargs))
+            if rep is None:#returning all repetitions
+                return result
+            else:#returning only the rep
+                result = result.reshape((self.nrep, -1) + result.shape[1:])[rep]
+                return result
+
         else:
             return epg.simulate(seq,calc_deriv=calc_deriv, **kwargs)
 
@@ -71,8 +77,11 @@ dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
 
 
-with open("./mrf_sequence.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_filter_DFFFTR_test.json") as f:
     sequence_config = json.load(f)
+
+#with open("./mrf_sequence_adjusted.json") as f:
+#    sequence_config = json.load(f)
 
 with open("./mrf_dictconf_SimReco2.json") as f:
     dict_config = json.load(f)
@@ -88,8 +97,8 @@ df = dict_config["delta_freqs"]
 df = [- value / 1000 for value in df] # temp
 # df = np.linspace(-0.1, 0.1, 101)
 
-rep=2
-TR_total = 7000
+rep=4
+TR_total = np.sum(sequence_config["TR"])
 
 Treco = TR_total-np.sum(sequence_config["TR"])
 # other options
@@ -111,8 +120,8 @@ for i in range(1,water.ndim):
     indices.append(np.random.choice(water.shape[i]))
 
 plt.figure()
-plt.title("Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(wT1[-1], att[indices[2]], df[indices[3]]))
-plt.plot(np.real(water[::1400,-1,indices[1],indices[2],indices[3]]),label=k)
+plt.title("Worst T1 Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(wT1[-1], att[indices[2]], df[indices[3]]))
+plt.plot(np.real(water[::1400,-1,indices[1],indices[2],indices[3]]))
 
 fig,ax=plt.subplots(2,1)
 fig.suptitle("T1 {} B1 {} Df {}".format(wT1[-1],att[indices[2]],df[indices[3]]))
@@ -130,7 +139,7 @@ for j in range(num_sig):
 
     plt.figure()
     plt.title("Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(wT1[indices[0]], att[indices[2]], df[indices[3]]))
-    plt.plot(np.real(water[::1400,indices[0],indices[1],indices[2],indices[3]]),label=k)
+    plt.plot(np.real(water[::1400,indices[0],indices[1],indices[2],indices[3]]))
 
     fig,ax=plt.subplots(2,1)
     fig.suptitle("T1 {} B1 {} Df {}".format(wT1[indices[0]],att[indices[2]],df[indices[3]]))
@@ -139,24 +148,80 @@ for j in range(num_sig):
     ax[1].plot(np.imag(water[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,1400)).T)
     ax[1].set_title("Imag Part")
 
+plt.close("all")
+num_sig=5
+fixed_indices = []
+for i in range(2, water.ndim):
+    fixed_indices.append(np.random.choice(water.shape[i]))
+
+plt.figure()
+for j in range(num_sig):
+    indices=[np.random.choice(water.shape[1])]
+    indices=indices+fixed_indices
+
+    plt.title("Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(wT1[indices[0]], att[indices[2]], df[indices[3]]))
+    plt.plot(np.real(water[::1400,indices[0],indices[1],indices[2],indices[3]]),label=wT1[indices[0]])
+plt.legend()
+
+fig,ax=plt.subplots(2,1)
+for j in range(num_sig):
+    indices = [np.random.choice(water.shape[1])]
+    indices = indices + fixed_indices
+    fig.suptitle("T1 {} B1 {} Df {}".format(wT1[indices[0]],att[indices[2]],df[indices[3]]))
+    ax[0].plot(np.real(water[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,1400)).T,label=wT1[indices[0]])
+    ax[0].set_title("Real Part")
+    ax[1].plot(np.imag(water[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,1400)).T,label=wT1[indices[0]])
+    ax[1].set_title("Imag Part")
+plt.legend()
+
 # fat_amp = dict_config["fat_amp"]
 # fat_cs = dict_config["fat_cshift"]
 # fat_cs = [- value / 1000 for value in fat_cs] # temp
 
+water_reshaped=water.reshape((rep,1400)+water.shape[1:])
+diff_rep = np.linalg.norm(water_reshaped[-1]-water_reshaped[-2],axis=0)
+diff_rep_rel=diff_rep/np.linalg.norm(water_reshaped[1],axis=0)
 
 
+print(np.max(diff_rep))
+print(np.unravel_index(np.argmax(diff_rep),diff_rep.shape))
+plt.figure()
+plt.hist(diff_rep.flatten())
+
+print(np.max(diff_rep_rel))
+print(np.unravel_index(np.argmax(diff_rep_rel),diff_rep_rel.shape))
+plt.figure()
+plt.hist(diff_rep_rel.flatten())
+
+max_error_index=np.unravel_index(np.argmax(diff_rep),diff_rep.shape)
+error=np.abs(water_reshaped[-1,:,max_error_index[0],max_error_index[1],max_error_index[2],max_error_index[3]]-water_reshaped[-2,:,max_error_index[0],max_error_index[1],max_error_index[2],max_error_index[3]])
+plt.figure()
+plt.title("Max error : T1 {} B1 {} Df {}".format(wT1[max_error_index[0]], att[max_error_index[2]], df[max_error_index[3]]))
+plt.plot(error)
 
 
+ind_error_on_pattern=np.argmax(error)
 
+ind_start=0
+num_ts=10
 
+rep1=1
+rep2=2
 
+plt.figure()
+plt.plot(np.arange(num_ts),np.real(water_reshaped[rep1,ind_start:ind_start+num_ts,max_error_index[0],max_error_index[1],max_error_index[2],max_error_index[3]]),label="Real rep {}".format(rep1))
+plt.plot(np.arange(num_ts),np.real(water_reshaped[rep2,ind_start:ind_start+num_ts,max_error_index[0],max_error_index[1],max_error_index[2],max_error_index[3]]),"ro",label="Real rep {}".format(rep2))
+plt.legend()
 
+plt.figure()
+plt.plot(np.arange(num_ts),np.imag(water_reshaped[rep1,ind_start:ind_start+num_ts,max_error_index[0],max_error_index[1],max_error_index[2],max_error_index[3]]),label="Imag rep {}".format(rep1))
+plt.plot(np.arange(num_ts),np.imag(water_reshaped[rep2,ind_start:ind_start+num_ts,max_error_index[0],max_error_index[1],max_error_index[2],max_error_index[3]]),"ro",label="Imag rep {}".format(rep2))
+plt.legend()
 
-
-
-
-
-
+plt.figure()
+plt.plot(np.arange(num_ts),np.abs(water_reshaped[rep1,ind_start:ind_start+num_ts,max_error_index[0],max_error_index[1],max_error_index[2],max_error_index[3]]),label="Mag rep {}".format(rep1))
+plt.plot(np.arange(num_ts),np.abs(water_reshaped[rep2,ind_start:ind_start+num_ts,max_error_index[0],max_error_index[1],max_error_index[2],max_error_index[3]]),"ro",label="Mag rep {}".format(rep2))
+plt.legend()
 
 
 
@@ -181,12 +246,14 @@ from scipy.io import savemat
 
 
 
-with open("./mrf_sequence_adjusted.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_filter_DFFFTR_test.json") as f:
     sequence_config = json.load(f)
 
 with open("./mrf_dictconf_Dico2_Invivo.json") as f:
     dict_config = json.load(f)
 
+with open("./mrf_dictconf_SimReco2_light_df0.json") as f:
+    dict_config = json.load(f)
 
 # generate signals
 wT1 = dict_config["water_T1"]
@@ -199,7 +266,7 @@ df = [- value / 1000 for value in df] # temp
 # df = np.linspace(-0.1, 0.1, 101)
 
 rep=2
-TR_total = 7000
+TR_total = np.sum(sequence_config["TR"])
 
 Treco = TR_total-np.sum(sequence_config["TR"])
 # other options
@@ -208,8 +275,6 @@ sequence_config["nrep"]=rep
 
 
 seq=T1MRFSS(**sequence_config)
-
-water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
 
 
 
@@ -220,6 +285,8 @@ dictfile = "mrf175_SimReco2_mid_point.dict"
 dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
 dictfile = "mrf175_Dico2_Invivo_adjusted_TR7000.dict"
+dictfile = "mrf175_SimReco2_light_adjusted_M0_T1_filter_DFFFTR_test_df0.dict"
+
 
 
 

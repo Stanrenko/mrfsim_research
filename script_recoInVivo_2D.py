@@ -49,6 +49,8 @@ localfile ="/Phantom20220310/meas_MID00198_FID57299_JAMBES_raFin_CLI.dat"
 localfile ="/Phantom20220310/meas_MID00203_FID57304_JAMBES_raFin_CLI.dat"
 localfile ="/Phantom20220310/meas_MID00241_FID57342_JAMBES_raFin_CLI.dat"
 localfile ="/Phantom20220310/meas_MID00254_FID57355_JAMBES_raFin_CLI.dat"
+localfile="/KB/meas_MID02754_FID765278_JAMBES_raFin_CLI_BILAT.dat"
+localfile="/KB/MRF#SSkyra145100#F737243#M2960#D170322#T195218#JAMBES_raFin_CLIBILAT.dat"
 
 filename = base_folder+localfile
 
@@ -146,10 +148,12 @@ if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
 else:
     b1_all_slices=np.load(filename_b1)
 sl=2
+list_images = list(np.abs(b1_all_slices[sl]))
+plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
 
+dico=build_dico_seqParams(filename, folder)
 
-
-
+sl=0
 for sl in tqdm(range(nb_slices)):
     print("Processing slice {} out of {}".format(sl, nb_slices))
     kdata_all_channels = kdata_all_channels_all_slices[sl, :, :, :]
@@ -175,14 +179,17 @@ for sl in tqdm(range(nb_slices)):
     else:
         mask = np.load(filename_mask)
 
-
+    #animate_images(volumes_all)
     #volume_rebuilt = build_single_image_multichannel(kdata_all_channels, radial_traj,
-    #                                                 image_size, b1=b1, density_adj=False)
+                                                     image_size, b1=b1, density_adj=False)
+
+    #plt.figure()
+    #plt.imshow(np.abs(volume_rebuilt))
 
     ## Dict mapping
 
-    dictfile = "mrf175_SimReco2.dict"
-    #dictfile = "mrf175_Dico2_Invivo.dict"
+    #dictfile = "mrf175_SimReco2_.dict"
+    dictfile = "mrf175_Dico2_Invivo.dict"
 
     with open("mrf_sequence.json") as f:
         sequence_config = json.load(f)
@@ -193,10 +200,10 @@ for sl in tqdm(range(nb_slices)):
     if str.split(file_map,"/")[-1] not in os.listdir(folder):
         niter = 0
         start_time = time.time()
-        optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,
-                                     threshold_pca=15, log=False, useGPU_dictsearch=True, useGPU_simulation=False,
+        optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=10, pca=True,
+                                     threshold_pca=15, log=False, useGPU_dictsearch=False, useGPU_simulation=False,
                                      gen_mode="other")
-        all_maps = optimizer.search_patterns(dictfile, volumes_all)
+        all_maps = optimizer.search_patterns_test(dictfile, volumes_all)
         end_time = time.time()
         print("Time taken for slice {} : {}".format(sl, end_time - start_time))
         if (save_maps):
