@@ -5,7 +5,7 @@ import numpy as np
 from scipy import ndimage
 import sys
 path = r"/home/cslioussarenko/PythonRepositories"
-#path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
+path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
 sys.path.append(path+"/epgpy")
 sys.path.append(path+"/machines")
 sys.path.append(path+"/mutools")
@@ -346,6 +346,87 @@ class T1MRF:
 
 #
 # utils
+
+
+class T1MRF:
+    def __init__(self, FA, TI, TE, TR, B1):
+        """ build sequence """
+        seqlen = len(TE)
+        self.TR=TR
+        self.inversion = epg.T(180, 0) # perfect inversion
+        seq = [epg.Offset(TI)]
+        for i in range(seqlen):
+            echo = [
+                epg.T(FA * B1[i], 90),
+                epg.Wait(TE[i]),
+                epg.ADC,
+                epg.Wait(TR[i] - TE[i]),
+                epg.SPOILER,
+            ]
+            seq.extend(echo)
+        self._seq = seq
+
+    def __call__(self, T1, T2, g, att, calc_deriv=False,**kwargs):
+        """ simulate sequence """
+        seq = [self.inversion, epg.modify(self._seq, T1=T1, T2=T2, att=att, g=g,calc_deriv=calc_deriv)]
+        if not(calc_deriv):
+            return np.asarray(epg.simulate(seq, **kwargs))
+        else:
+            return epg.simulate(seq,calc_deriv=calc_deriv, **kwargs)
+
+#
+# utils
+
+
+class T1MRFSS:
+    def __init__(self, FA, TI, TE, TR, B1,T_recovery,nrep,rep=None):
+        print(T_recovery)
+        print(nrep)
+        """ build sequence """
+        seqlen = len(TE)
+        self.TR=TR
+        self.inversion = epg.T(180, 0) # perfect inversion
+        self.T_recovery=T_recovery
+        self.nrep=nrep
+        self.rep=rep
+        seq=[]
+        for r in range(nrep):
+            curr_seq = [epg.Offset(TI)]
+            for i in range(seqlen):
+                echo = [
+                    epg.T(FA * B1[i], 90),
+                    epg.Wait(TE[i]),
+                    epg.ADC,
+                    epg.Wait(TR[i] - TE[i]),
+                    epg.SPOILER,
+                ]
+                curr_seq.extend(echo)
+            recovery=[epg.Wait(T_recovery)]
+            curr_seq.extend(recovery)
+            self.len_rep = len(curr_seq)
+            seq.extend(curr_seq)
+        self._seq = seq
+
+    def __call__(self, T1, T2, g, att, calc_deriv=False,**kwargs):
+        """ simulate sequence """
+        seq=[]
+        rep=self.rep
+        for r in range(self.nrep):
+            curr_seq=self._seq[r*self.len_rep:(r+1)*(self.len_rep)]
+            curr_seq=[self.inversion, epg.modify(curr_seq, T1=T1, T2=T2, att=att, g=g,calc_deriv=calc_deriv)]
+            seq.extend(curr_seq)
+        #seq = [self.inversion, epg.modify(self._seq, T1=T1, T2=T2, att=att, g=g,calc_deriv=calc_deriv)]
+        if not(calc_deriv):
+            result=np.asarray(epg.simulate(seq, **kwargs))
+            if rep is None:#returning all repetitions
+                return result
+            else:#returning only the rep
+                result = result.reshape((self.nrep, -1) + result.shape[1:])[rep]
+                return result
+
+        else:
+            return epg.simulate(seq,calc_deriv=calc_deriv, **kwargs)
+
 
 # load kspace data
 def load_data(filename):

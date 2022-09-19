@@ -6,7 +6,7 @@ except:
 import matplotlib.animation as animation
 from mutools.optim.dictsearch import dictsearch,groupmatch
 from functools import reduce
-from mrfsim import makevol,parse_options,groupby,load_data
+from mrfsim import *
 import numpy as np
 import finufft
 from scipy import ndimage
@@ -881,7 +881,7 @@ def metrics_ROI_values(all_results,units=None,name="Results"):
 
     return df
 
-def get_ROI_values(map1, map2, mask1=None, mask2=None, maskROI=None, adj_wT1=False, fat_threshold=0.8,proj_on_mask1=True,plt_std=False,
+def get_ROI_values(map1, map2, mask1=None, mask2=None, maskROI=None, adj_wT1=False, fat_threshold=0.8,proj_on_mask1=True,return_std=False,
                              kept_keys=None,min_ROI_count=15):
 
     keys_1 = set(map1.keys())
@@ -942,12 +942,21 @@ def get_ROI_values(map1, map2, mask1=None, mask2=None, maskROI=None, adj_wT1=Fal
                               data=np.stack([obs.flatten(), maskROI_current.flatten()], axis=-1))
         df_pred = pd.DataFrame(columns=["Data", "Groups"],
                                data=np.stack([pred.flatten(), maskROI_current.flatten()], axis=-1))
+
         obs = np.array(df_obs.groupby("Groups").mean())[1:]
         pred = np.array(df_pred.groupby("Groups").mean())[1:]
-        # obs_std = np.array(df_obs.groupby("Groups").std())[1:]
 
-        # print(list(pred_std.reshape(1,-1)))
-        results[k]=np.concatenate([obs,pred],axis=1)
+        if return_std:
+            obs_std = np.array(df_obs.groupby("Groups").std())[1:]
+            pred_std=np.array(df_pred.groupby("Groups").std())[1:]
+
+            results[k] = pd.DataFrame(data=np.concatenate([obs,obs_std, pred,pred_std], axis=1),columns=["Obs Mean","Obs Std","Pred Mean","Pred Std"])
+
+
+        else:
+            # print(list(pred_std.reshape(1,-1)))
+            results[k]=pd.DataFrame(data=np.concatenate([obs,obs_std, pred,pred_std], axis=1),columns=["Obs Mean","Pred Mean"])
+
     return results
 
 def metrics_paramMaps_ROI(map_ref, map2, mask_ref=None, mask2=None, maskROI=None,
@@ -1486,15 +1495,15 @@ def buildROImask(map,max_clusters=40):
     #print(groups.shape)
     return groups
 
-def buildROImask_unique(map):
-    # ROI using regions with same value of T1
-    if "wT1" not in map:
-        raise ValueError("wT1 should be in the param Map to build the ROI")
+def buildROImask_unique(map,key="wT1"):
+    # ROI using regions with same value of key
+    if key not in map:
+        raise ValueError("{} should be in the param Map to build the ROI".format(key))
 
-    unique_wT1 = np.unique(map["wT1"])
-    maskROI = np.zeros(map["wT1"].shape)
+    unique_wT1 = np.unique(map[key])
+    maskROI = np.zeros(map[key].shape)
     for i, value in enumerate(unique_wT1):
-        maskROI[map["wT1"] == value] = i + 1
+        maskROI[map[key] == value] = i + 1
 
     return maskROI
 
@@ -3545,3 +3554,5 @@ def build_data(filename,folder, nb_segments, nb_gating_spokes):
             data_for_nav=None
 
     return data, data_for_nav
+
+

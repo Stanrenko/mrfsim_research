@@ -60,7 +60,13 @@ ntimesteps=int(nb_segments/nspoke)
 #with open("./mrf_sequence_adjusted.json") as f:
 #    sequence_config = json.load(f)
 
-with open("./mrf_sequence_adjusted_optimized_M0_T1_filter_DFFFTR_test.json") as f:
+
+#name = "SquareSimu3D_SS_FF0_1"
+name = "SquareSimu3D_SS"
+
+dictfile="mrf175_SimReco2_light_adjusted_M0_local_optim_correl_crlb_filter.dict"
+suffix="_T1_local_optim_correl_crlb_filter"
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter.json") as f:
     sequence_config = json.load(f)
 
 
@@ -83,55 +89,6 @@ with open("./mrf_sequence_adjusted_optimized_M0_T1_filter_DFFFTR_test.json") as 
 # params_0=[FA]+params_0
 
 
-class T1MRFSS:
-    def __init__(self, FA, TI, TE, TR, B1,T_recovery,nrep,rep=None):
-        print(T_recovery)
-        print(nrep)
-        """ build sequence """
-        seqlen = len(TE)
-        self.TR=TR
-        self.inversion = epg.T(180, 0) # perfect inversion
-        self.T_recovery=T_recovery
-        self.nrep=nrep
-        self.rep=rep
-        seq=[]
-        for r in range(nrep):
-            curr_seq = [epg.Offset(TI)]
-            for i in range(seqlen):
-                echo = [
-                    epg.T(FA * B1[i], 90),
-                    epg.Wait(TE[i]),
-                    epg.ADC,
-                    epg.Wait(TR[i] - TE[i]),
-                    epg.SPOILER,
-                ]
-                curr_seq.extend(echo)
-            recovery=[epg.Wait(T_recovery)]
-            curr_seq.extend(recovery)
-            self.len_rep = len(curr_seq)
-            seq.extend(curr_seq)
-        self._seq = seq
-
-    def __call__(self, T1, T2, g, att, calc_deriv=False,**kwargs):
-        """ simulate sequence """
-        seq=[]
-        rep=self.rep
-        for r in range(self.nrep):
-            curr_seq=self._seq[r*self.len_rep:(r+1)*(self.len_rep)]
-            curr_seq=[self.inversion, epg.modify(curr_seq, T1=T1, T2=T2, att=att, g=g,calc_deriv=calc_deriv)]
-            seq.extend(curr_seq)
-        #seq = [self.inversion, epg.modify(self._seq, T1=T1, T2=T2, att=att, g=g,calc_deriv=calc_deriv)]
-        if not(calc_deriv):
-            result=np.asarray(epg.simulate(seq, **kwargs))
-            if rep is None:#returning all repetitions
-                return result
-            else:#returning only the rep
-                result = result.reshape((self.nrep, -1) + result.shape[1:])[rep]
-                return result
-
-        else:
-            return epg.simulate(seq,calc_deriv=calc_deriv, **kwargs)
-
 #seq = FFMRF(**sequence_config)
 
 nrep=2
@@ -139,6 +96,7 @@ rep=nrep-1
 TR_total = np.sum(sequence_config["TR"])
 
 Treco = TR_total-np.sum(sequence_config["TR"])
+Treco=0
 ##other options
 sequence_config["T_recovery"]=Treco
 sequence_config["nrep"]=nrep
@@ -161,7 +119,6 @@ undersampling_factor=1
 is_random=False
 frac_center=1.0
 
-name = "SquareSimu3D_SS"
 
 
 use_GPU = False
@@ -178,7 +135,7 @@ filename = base_folder+localfile
 
 folder = "/".join(str.split(filename,"/")[:-1])
 
-suffix="_T1_filterFFDFTR_test"
+
 
 filename_paramMap=filename+"_paramMap_sl{}_rp{}{}.pkl".format(nb_slices,repeat_slice,"")
 
@@ -208,6 +165,8 @@ size = image_size[1:]
 with open(dictjson) as f:
     dict_config = json.load(f)
 dict_config["ff"]=np.arange(0.,1.05,0.05)
+#dict_config["ff"]=np.array([0.1])
+#dict_config["delta_freqs"]=[0.0]
 
 if "SquareSimu3D" in name:
     region_size=4 #size of the regions with uniform values for params in pixel number (square regions)
@@ -319,7 +278,6 @@ seq = None
 load_map=False
 save_map=True
 
-dictfile="mrf175_SimReco2_light_adjusted_M0_T1_filter_DFFFTR_test.dict"
 #dictfile="mrf175_SimReco2_light_adjusted_NoReco.dict"
 #dictfile="mrf175_SimReco2_light.dict"
 
@@ -421,17 +379,48 @@ for iter in list(all_maps.keys()):
         io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
 
 
+plt.close("all")
+
+name="SquareSimu3D_SS"
+#name="SquareSimu3D_SS_FF0_1"
+dic_maps={}
+
+for suffix in ["fullReco_T1MRF_adjusted","noReco","T1_local_optim","T1_local_optim_correl","T1_local_optim_correl_smooth","T1_local_optim_correl_crlb_filter"]:
+    file_map="/{}_sl{}_rp{}_us{}{}w{}_{}_MRF_map.pkl".format(name,nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
+    with open( base_folder + file_map, "rb") as file:
+        dic_maps[file_map] = pickle.load(file)
+
+k="wT1"
+maskROI=buildROImask_unique(m.paramMap,key=k)
+fig,ax=plt.subplots(1,2)
+plt.title(k)
+for key in dic_maps.keys():
+    roi_values=get_ROI_values(m.paramMap,dic_maps[key][0][0],m.mask>0,dic_maps[key][0][1]>0,return_std=True,adj_wT1=False,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+    roi_values.sort_values(by=["Obs Mean"],inplace=True)
+    #dic_roi_values[key]=roi_values
+    ax[0].plot(roi_values["Obs Mean"],roi_values["Pred Mean"].values,label=key)
+    ax[1].plot(roi_values["Obs Mean"],roi_values["Pred Std"].values,label=key)
+
+ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="--")
+plt.legend()
+
+k="ff"
+maskROI=buildROImask_unique(m.paramMap,key=k)
+fig,ax=plt.subplots(1,2)
+plt.title(k)
+for key in dic_maps.keys():
+    roi_values=get_ROI_values(m.paramMap,dic_maps[key][0][0],m.mask>0,dic_maps[key][0][1]>0,return_std=True,adj_wT1=False,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+    roi_values.sort_values(by=["Obs Mean"],inplace=True)
+    #dic_roi_values[key]=roi_values
+    ax[0].plot(roi_values["Obs Mean"],roi_values["Pred Mean"].values,label=key)
+    ax[1].plot(roi_values["Obs Mean"],roi_values["Pred Std"].values,label=key)
 
 
+ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="--")
 
+plt.legend()
 
-
-
-
-
-
-
-
+plt.close("all")
 
 
 

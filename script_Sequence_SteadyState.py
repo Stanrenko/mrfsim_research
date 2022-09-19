@@ -22,54 +22,6 @@ from scipy.io import savemat
 
 
 
-class T1MRFSS:
-    def __init__(self, FA, TI, TE, TR, B1,T_recovery,nrep):
-        print(T_recovery)
-        print(nrep)
-        """ build sequence """
-        seqlen = len(TE)
-        self.TR=TR
-        self.inversion = epg.T(180, 0) # perfect inversion
-        self.T_recovery=T_recovery
-        self.nrep=nrep
-        seq=[]
-        for r in range(nrep):
-            curr_seq = [epg.Offset(TI)]
-            for i in range(seqlen):
-                echo = [
-                    epg.T(FA * B1[i], 90),
-                    epg.Wait(TE[i]),
-                    epg.ADC,
-                    epg.Wait(TR[i] - TE[i]),
-                    epg.SPOILER,
-                ]
-                curr_seq.extend(echo)
-            recovery=[epg.Wait(T_recovery)]
-            curr_seq.extend(recovery)
-            self.len_rep = len(curr_seq)
-            seq.extend(curr_seq)
-        self._seq = seq
-
-    def __call__(self, T1, T2, g, att, calc_deriv=False,rep=None,**kwargs):
-        """ simulate sequence """
-        seq=[]
-        for r in range(self.nrep):
-            curr_seq=self._seq[r*self.len_rep:(r+1)*(self.len_rep)]
-            curr_seq=[self.inversion, epg.modify(curr_seq, T1=T1, T2=T2, att=att, g=g,calc_deriv=calc_deriv)]
-            seq.extend(curr_seq)
-        #seq = [self.inversion, epg.modify(self._seq, T1=T1, T2=T2, att=att, g=g,calc_deriv=calc_deriv)]
-        if not(calc_deriv):
-            result=np.asarray(epg.simulate(seq, **kwargs))
-            if rep is None:#returning all repetitions
-                return result
-            else:#returning only the rep
-                result = result.reshape((self.nrep, -1) + result.shape[1:])[rep]
-                return result
-
-        else:
-            return epg.simulate(seq,calc_deriv=calc_deriv, **kwargs)
-
-#
 
 
 dictfile = "mrf175_SimReco2_mid_point.dict"
@@ -77,7 +29,7 @@ dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
 
 
-with open("./mrf_sequence_adjusted_optimized_M0_T1_filter_DFFFTR_test.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter.json") as f:
     sequence_config = json.load(f)
 
 #with open("./mrf_sequence_adjusted.json") as f:
@@ -246,13 +198,13 @@ from scipy.io import savemat
 
 
 
-with open("./mrf_sequence_adjusted_optimized_M0_T1_filter_DFFFTR_test.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_fullReco.json") as f:
     sequence_config = json.load(f)
 
 with open("./mrf_dictconf_Dico2_Invivo.json") as f:
     dict_config = json.load(f)
 
-with open("./mrf_dictconf_SimReco2_light_df0.json") as f:
+with open("./mrf_dictconf_SimReco2_light.json") as f:
     dict_config = json.load(f)
 
 # generate signals
@@ -276,7 +228,7 @@ sequence_config["nrep"]=rep
 
 seq=T1MRFSS(**sequence_config)
 
-
+#seq=T1MRF(**sequence_config)
 
 
 
@@ -285,13 +237,13 @@ dictfile = "mrf175_SimReco2_mid_point.dict"
 dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
 dictfile = "mrf175_Dico2_Invivo_adjusted_TR7000.dict"
-dictfile = "mrf175_SimReco2_light_adjusted_M0_T1_filter_DFFFTR_test_df0.dict"
+dictfile = "mrf175_SimReco2_light_adjusted_M0_local_optim_correl_crlb_filter_fullReco.dict"
 
-
+#dictfile = "mrf175_SimReco2_light_adjusted.dict"
 
 
 sim_mode="mean"
-overwrite=False
+overwrite=True
 
 fat_amp = dict_config["fat_amp"]
 fat_cs = dict_config["fat_cshift"]
