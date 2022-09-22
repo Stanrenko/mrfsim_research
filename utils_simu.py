@@ -265,7 +265,7 @@ def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f, T_2w=4
 
         if "wT1" in list_deriv:
             dT1 = 10 ** -3
-            s_iw_dT1 = simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1w + dT1, T_2w)
+            s_iw_dT1 = simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1w + dT1, T_2w)[1:]
             s_iw_dT1 = np.expand_dims(s_iw_dT1, axis=(2, -1))
             ds_T1 = (1 - FF) * (s_iw_dT1 - s_iw) / dT1
             ds_T1 = ds_T1[1:]
@@ -321,17 +321,18 @@ def get_correl_all(TR_, FA_, TE_, DFs, FFs, Ts, sigma=None, T_1f=300 / 1000, T_2
     return corr_signal
 
 
-def load_sequence_file(fileseq,recovery):
+def load_sequence_file(fileseq,recovery,min_TR_delay):
     with open(fileseq, "r") as file:
         seq_config = json.load(file)
 
     TI = seq_config["TI"] * 10 ** -3
     TE = list(np.array(seq_config["TE"]) * 10 ** -3)
-    TR = list(np.array(seq_config["TR"]) * 10 ** -3)
+    TR = list(np.array(TE)+min_TR_delay)
     FA = seq_config["FA"]
     B1 = seq_config["B1"]
     # B1[:600]=[1.5]*600
     B1 = list(1 * np.array(B1))
+
 
     TR[-1] = TR[-1] + recovery
 
@@ -341,14 +342,15 @@ def load_sequence_file(fileseq,recovery):
     return TR_list,FA_list,TE_list
 
 
-def write_seq_file(fileseq,TR_list,FA_list,TE_list,fileseq_basis="./mrf_sequence_adjusted.json"):
+def write_seq_file(fileseq,TR_list,FA_list,TE_list,min_TR_delay,fileseq_basis="./mrf_sequence_adjusted.json"):
     with open(fileseq_basis,"r") as file:
         seq_config = json.load(file)
 
     seq_config_new = seq_config
     seq_config_new["B1"] = list(np.array(FA_list[1:]) * 180 / np.pi / 5)
-    seq_config_new["TR"] = list(np.array(TR_list[1:]) * 10 ** 3)
+    seq_config_new["TR"] = list(np.array(TE_list[1:]+min_TR_delay) * 10 ** 3)
     seq_config_new["TE"] = list(np.array(TE_list[1:]) * 10 ** 3)
+
 
     with open(fileseq, "w") as file:
         json.dump(seq_config_new, file)
@@ -388,8 +390,8 @@ def generate_FA(T, H=10):
     return FA_traj
 
 
-def generate_epg_dico_T1MRFSS(fileseq,filedictconf,TR_list,FA_list,TE_list,recovery,rep=2,overwrite=True,sim_mode="mean",fileseq_basis="./mrf_sequence_adjusted.json"):
-    write_seq_file(fileseq,TR_list,FA_list,TE_list,fileseq_basis=fileseq_basis)
+def generate_epg_dico_T1MRFSS(fileseq,filedictconf,TR_list,FA_list,TE_list,recovery,min_TR_delay,rep=2,overwrite=True,sim_mode="mean",fileseq_basis="./mrf_sequence_adjusted.json"):
+    write_seq_file(fileseq,TR_list,FA_list,TE_list,min_TR_delay,fileseq_basis=fileseq_basis)
     prefix_dico=str.split(filedictconf,".json")[0]
     suffix_seq=str.split(fileseq,"_sequence")[1]
     suffix_seq=str.split(suffix_seq,".json")[0]

@@ -15,10 +15,13 @@ T1_w=1
 dTs=np.arange(-500,1000,100)*10**-3
 #dTs=np.array([500,500,1000])
 DFs=[-30,0,30]
+#DFs=[-60,-30,0,30,60]
 FFs=[0.,0.1,0.2,0.3,0.4,0.5]
+#DFs=[-60,-30,0,30,60]
+#FFs=[0.,0.1,0.2,0.3,0.4,0.5,0.6,0.7]
 recovery=0
 sigma=0.03
-noise_size=1000
+noise_size=100
 group_size=8
 
 recovery=0
@@ -29,6 +32,7 @@ fileseq_1=r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filt
 recovery=0
 wT1_errors=[]
 ff_errors=[]
+
 
 fileseq_list=[
     r"./mrf_sequence_adjusted.json",
@@ -42,21 +46,28 @@ fileseq_list=[
 
 fileseq_list=[
     r"./mrf_sequence_adjusted.json",
-    r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760.json",
+    r"./mrf_sequence_adjusted.json",
+    #r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760.json",
     r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized.json",
-    r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp840.json",
-    r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1000.json",
-    r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400.json"
+
+    #r"./mrf_sequence_adjusted_sp760_CRLB_Optim_v2.json",
+    r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_CRLB_optim.json",
+    #r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_CRLB_optim_v2.json",
+    r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_optim.json",
+    r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_optim_FF.json",
+    r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_optim_FF_v2.json"
 ]
 
-recoveries=[3]+[3]*(len(fileseq_list)-1)
+
+recoveries=[4]+[3]*(len(fileseq_list)-1)
 df_results=pd.DataFrame(index=[f+"_"+str(recoveries[j]) for j,f in enumerate(fileseq_list)],columns=["Error rel wT1","Error abs FF"])
+min_TR_delay=1.24/1000
 
 for j,fileseq_1 in enumerate(fileseq_list):
     recovery=recoveries[j]
     ind = fileseq_1 + "_" + str(recovery)
 
-    TR_list_1,FA_list_1,TE_list_1=load_sequence_file(fileseq_1,recovery)
+    TR_list_1,FA_list_1,TE_list_1=load_sequence_file(fileseq_1,recovery,min_TR_delay)
 
     s,s_w,s_f,keys=simulate_gen_eq_signal(TR_list_1,FA_list_1,TE_list_1,FFs,DFs,T1_w+dTs,300/1000,T_2w=40/1000,T_2f=80/1000,amp=fat_amp,shift=fat_shift,sigma=sigma,noise_size=noise_size,group_size=group_size,return_fat_water=True)#,amp=np.array([1]),shift=np.array([-418]),sigma=None):
 
@@ -110,8 +121,6 @@ for j,fileseq_1 in enumerate(fileseq_list):
     df_results.loc[ind]=[error_wT1,error_ff]
 
 df_results
-
-
 
 ###Optimize FA schedule###############
 

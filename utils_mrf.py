@@ -3556,3 +3556,114 @@ def build_data(filename,folder, nb_segments, nb_gating_spokes):
     return data, data_for_nav
 
 
+
+def select_patch(k,volume,window=(2,5,5)):
+    shape=volume.shape[-3:]
+    d_z=window[0]
+    d_x = window[1]
+    d_y = window[2]
+    #print(k)
+    k_min_z=np.maximum(0,k[0]-d_z)
+    k_max_z = np.minimum(shape[0], k[0] + d_z)
+    pad_z_left = k_min_z - (k[0] - d_z)
+    pad_z_right=k[0] + d_z-k_max_z
+
+    k_min_x = np.maximum(0, k[1] - d_x)
+    k_max_x = np.minimum(shape[1], k[1] + d_x)
+    pad_x_left = k_min_x - (k[1] - d_x)
+    pad_x_right = k[1] + d_x - k_max_x
+
+    k_min_y = np.maximum(0, k[2] - d_y)
+    k_max_y = np.minimum(shape[2], k[2] + d_y)
+    pad_y_left = k_min_y - (k[2] - d_y)
+    pad_y_right = k[2] + d_y - k_max_y
+
+    patch=volume[...,k_min_z:k_max_z,k_min_x:k_max_x,k_min_y:k_max_y]
+    print(patch.shape)
+    non_padded_dims=[(0,0)]*(patch.ndim-3)
+    patch=np.pad(patch,tuple(non_padded_dims+[(pad_z_left,pad_z_right),(pad_x_left,pad_x_right),(pad_y_left,pad_y_right)]),mode="edge")
+
+    pixels=np.mgrid[k_min_z:k_max_z,k_min_x:k_max_x,k_min_y:k_max_y].reshape(3,-1)
+    return patch,pixels
+
+def select_similar_patches(k,volume,volume_ref,window=(2,5,5),L=10,sliding_window=(3,3,3),quantile=None):
+    original_patch,_=select_patch(k,volume_ref,window)
+    array_k=np.array(k).reshape(-1,1)
+    zxy = np.mgrid[-sliding_window[0]:(sliding_window[0]+1):1, -sliding_window[1]:(sliding_window[1]+1):1, -sliding_window[2]:(sliding_window[2]+1):1].reshape(3, -1)
+    k_s = array_k + zxy
+    k_s=k_s.T
+    all_patches=[]
+    for curr_k in k_s:
+        #print(curr_k)
+        curr_patch,_=select_patch(curr_k,volume_ref,window)
+        all_patches.append(curr_patch)
+
+    all_patches=np.array(all_patches)
+    original_patch=np.expand_dims(original_patch,axis=0)
+    #print(all_patches.shape)
+    distances=original_patch-all_patches
+    distances=distances.reshape(distances.shape[0],-1)
+    distances=np.linalg.norm(distances,axis=-1)
+    if quantile is None:
+        retained_k_indices=np.argsort(distances)[:L]
+    else:
+        retained_k_indices=np.argwhere(distances<(np.percentile(distances,quantile))).flatten()
+    #print(retained_k_indices)
+    #print(distances.shape)
+    #print(k_s.shape)
+    retained_k_s = k_s[retained_k_indices]
+
+    all_patches_retained = []
+    pixels=[]
+    for curr_k in retained_k_s:
+        curr_patch,curr_pixels = select_patch(curr_k, volume, window)
+        all_patches_retained.append(curr_patch)
+        pixels.append(curr_pixels)
+
+    return np.array(all_patches_retained),np.array(pixels)
+
+
+def compute_low_rank_tensor(Sk_cur,variance_explained):
+    Sk_1 = Sk_cur.reshape(Sk_cur.shape[0],-1)
+    u_1, s_1, vh_1 = np.linalg.svd(Sk_1, full_matrices=False)
+
+    Sk_2 = np.moveaxis(Sk_cur,1,0).reshape(Sk_cur.shape[1],-1)
+    u_2, s_2, vh_2 = np.linalg.svd(Sk_2, full_matrices=False)
+
+    Sk_3 = np.moveaxis(Sk_cur, 2, 0).reshape(Sk_cur.shape[2], -1)
+    u_3, s_3, vh_3 = np.linalg.svd(Sk_3, full_matrices=False)
+
+
+
+    cum_1=np.cumsum(s_1)/np.sum(s_1)
+    ind_1 = (cum_1<variance_explained).sum()
+    u_1 = u_1[:,:ind_1]
+
+    cum_2=np.cumsum(s_2)/np.sum(s_2)
+    ind_2 = (cum_2<variance_explained).sum()
+    u_2 = u_2[:, :ind_2]
+
+    cum_3 = np.cumsum(s_3) / np.sum(s_3)
+    ind_3 = (cum_3 < variance_explained).sum()
+    u_3 = u_3[:, :ind_3]
+
+    res = tensor_product(Sk_cur, u_1.T.conj(), mode=1)
+    res = tensor_product(res, u_2.T.conj(), mode=2)
+    res = tensor_product(res, u_3.T.conj(), mode=3)
+    res = tensor_product(res, u_1, mode=1)
+    res = tensor_product(res, u_2, mode=2)
+    res = tensor_product(res, u_3, mode=3)
+
+    return res
+
+
+
+
+def tensor_product(T,U,mode):
+    T_indexing="ijk"
+    index_summed=T_indexing[mode-1]
+    T_new_indexing=T_indexing.replace(index_summed,"l")
+    U_indexing="l"+index_summed
+
+    result=np.einsum("{},{}->{}".format(T_indexing,U_indexing,T_new_indexing),T,U)
+    return result
