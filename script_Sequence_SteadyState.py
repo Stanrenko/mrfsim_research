@@ -1,4 +1,4 @@
-
+import pandas as pd
 #import matplotlib
 #matplotlib.use("TkAgg")
 from mrfsim import *
@@ -177,6 +177,10 @@ plt.legend()
 
 
 
+
+
+###########MRF Steady State Dico Gen##################
+
 #import matplotlib
 #matplotlib.use("TkAgg")
 from mrfsim import *
@@ -198,8 +202,12 @@ from scipy.io import savemat
 
 
 
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_fullReco.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400.json") as f:
     sequence_config = json.load(f)
+
+#with open("./mrf_sequence_adjusted_BW_540.json") as f:
+#    sequence_config = json.load(f)
+
 
 with open("./mrf_dictconf_Dico2_Invivo.json") as f:
     dict_config = json.load(f)
@@ -221,6 +229,10 @@ rep=2
 TR_total = np.sum(sequence_config["TR"])
 
 Treco = TR_total-np.sum(sequence_config["TR"])
+Treco=4000
+#Treco=3130
+#Treco=4000
+
 # other options
 sequence_config["T_recovery"]=Treco
 sequence_config["nrep"]=rep
@@ -228,7 +240,7 @@ sequence_config["nrep"]=rep
 
 seq=T1MRFSS(**sequence_config)
 
-#seq=T1MRF(**sequence_config)
+
 
 
 
@@ -237,9 +249,9 @@ dictfile = "mrf175_SimReco2_mid_point.dict"
 dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
 dictfile = "mrf175_Dico2_Invivo_adjusted_TR7000.dict"
-dictfile = "mrf175_SimReco2_light_adjusted_M0_local_optim_correl_crlb_filter_fullReco.dict"
+dictfile = "mrf_dictconf_SimReco2_light_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_reco4.dict"
 
-#dictfile = "mrf175_SimReco2_light_adjusted.dict"
+
 
 
 sim_mode="mean"
@@ -292,6 +304,227 @@ values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
 printer("Save dictionary.")
 mrfdict = dictsearch.Dictionary(keys, values)
 mrfdict.save(dictfile, overwrite=overwrite)
+
+
+
+
+
+#### MRF Dico Gen##########
+
+#import matplotlib
+#matplotlib.use("TkAgg")
+from mrfsim import *
+from image_series import *
+from utils_mrf import *
+import json
+from finufft import nufft1d1,nufft1d2
+from scipy import signal,interpolate
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
+import matplotlib.pyplot as plt
+import numpy as np
+from movements import *
+from dictoptimizers import *
+import glob
+from tqdm import tqdm
+import pickle
+from scipy.io import savemat
+
+
+
+with open("./mrf_sequence_adjusted_delay_1_94.json") as f:
+    sequence_config = json.load(f)
+
+
+with open("./mrf_dictconf_Dico2_Invivo.json") as f:
+    dict_config = json.load(f)
+
+with open("./mrf_dictconf_SimReco2_light.json") as f:
+    dict_config = json.load(f)
+
+# generate signals
+wT1 = dict_config["water_T1"]
+fT1 = dict_config["fat_T1"]
+wT2 = dict_config["water_T2"]
+fT2 = dict_config["fat_T2"]
+att = dict_config["B1_att"]
+df = dict_config["delta_freqs"]
+df = [- value / 1000 for value in df] # temp
+# df = np.linspace(-0.1, 0.1, 101)
+
+seq=T1MRF(**sequence_config)
+
+
+
+
+
+dictfile = "mrf175_SimReco2_light_delay_1_94.dict"
+
+sim_mode="mean"
+overwrite=True
+
+fat_amp = dict_config["fat_amp"]
+fat_cs = dict_config["fat_cshift"]
+fat_cs = [- value / 1000 for value in fat_cs] # temp
+
+# other options
+
+window = dict_config["window_size"]
+
+# water
+printer("Generate water signals.")
+water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
+
+if sim_mode == "mean":
+    water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
+elif sim_mode == "mid_point":
+    water = water[(int(window / 2) - 1):-1:window]
+else:
+    raise ValueError("Unknow sim_mode")
+
+# fat
+printer("Generate fat signals.")
+eval = "dot(signal, amps)"
+args = {"amps": fat_amp}
+# merge df and fat_cs df to dict
+fatdf = [[cs + f for cs in fat_cs] for f in df]
+fat = seq(T1=[fT1], T2=fT2, att=[[att]], g=[[[fatdf]]], eval=eval, args=args)
+
+if sim_mode == "mean":
+    fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
+elif sim_mode == "mid_point":
+    fat = fat[(int(window / 2) - 1):-1:window]
+else:
+    raise ValueError("Unknow sim_mode")
+
+water=np.array(water)
+fat=np.array(fat)
+# join water and fat
+printer("Build dictionary.")
+keys = list(itertools.product(wT1, fT1, att, df))
+values = np.stack(np.broadcast_arrays(water, fat), axis=-1)
+values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
+
+printer("Save dictionary.")
+mrfdict = dictsearch.Dictionary(keys, values)
+mrfdict.save(dictfile, overwrite=overwrite)
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+import json
+with open("./mrf_sequence_adjusted_optimized_DE_Simu_FF.json") as f:
+    sequence_config = json.load(f)
+
+TE=sequence_config["TE"]
+TE=np.array(TE)
+
+TE=np.maximum(TE,2.2)
+TE=np.round(TE,2)
+#TE=np.maximum(np.round(TE,2),2.2)
+
+TE_file="TE_temp.text"
+
+with open(TE_file,"w") as file:
+    for te in TE:
+        file.write(str(te)+"\n")
+
+#pd.DataFrame(np.maximum(np.round(TE,2),2.2)).to_clipboard()
+
+FA=sequence_config["B1"]
+FA=np.array(FA)
+FA=np.round(FA,3)
+#pd.DataFrame(np.round(FA,3)).to_clipboard(excel=False,index=False)
+
+FA_file="FA_temp.text"
+
+with open(FA_file,"w") as file:
+    for fa in FA:
+        file.write(str(fa)+"\n")
+print(np.min(np.array(TE)))
+print(np.max(np.array(TE)))
+print(np.min(np.array(FA)))
+print(np.max(np.array(FA)))
+
+
+
+
+import numpy as np
+import pandas as pd
+import json
+with open("./mrf_sequence_adjusted_optimized_DE_Simu_FF.json") as f:
+    sequence_config = json.load(f)
+
+TE=sequence_config["TE"]
+TE=np.array(TE)
+
+TE=np.maximum(TE,2.2)
+
+TR=sequence_config["TR"]
+
+TR=TE+1.94
+TR-TE
+
+sequence_config["TE"]=list(TE)
+sequence_config["TR"]=list(TR)
+
+with open("./mrf_sequence_adjusted_delay_1_94.json","w") as f:
+    json.dump(sequence_config,f)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

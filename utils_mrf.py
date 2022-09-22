@@ -1394,7 +1394,7 @@ def build_mask_single_image_multichannel(kdata,trajectory,size,density_adj=True,
 
         unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
         mask = mask | (np.abs(volume_rebuilt) > unique[int(len(unique) *threshold_factor)])
-        #mask = ndimage.binary_closing(mask, iterations=3)
+        mask = ndimage.binary_closing(mask, iterations=3)
 
     return mask
 
@@ -1481,7 +1481,7 @@ def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):
                 plan.__del__()
     return kdata
 
-def buildROImask(map,max_clusters=40):
+def buildROImask(map,max_clusters=5):
     # ROI using KNN clustering
     if "wT1" not in map:
         raise ValueError("wT1 should be in the param Map to build the ROI")
@@ -3554,8 +3554,6 @@ def build_data(filename,folder, nb_segments, nb_gating_spokes):
             data_for_nav=None
 
     return data, data_for_nav
-
-
 
 def select_patch(k,volume,window=(2,5,5)):
     shape=volume.shape[-3:]

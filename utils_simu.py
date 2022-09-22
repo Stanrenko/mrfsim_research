@@ -391,13 +391,18 @@ def generate_FA(T, H=10):
 
 
 def generate_epg_dico_T1MRFSS(fileseq,filedictconf,FA_list,TE_list,recovery,min_TR_delay,rep=2,overwrite=True,sim_mode="mean",fileseq_basis="./mrf_sequence_adjusted.json"):
+    print("Generating sequence file {}".format(fileseq))
     write_seq_file(fileseq,FA_list,TE_list,min_TR_delay,fileseq_basis=fileseq_basis)
+    generate_epg_dico_T1MRFSS_from_sequence_file(fileseq,filedictconf,recovery,rep,overwrite,sim_mode)
+
+
+def generate_epg_dico_T1MRFSS_from_sequence_file(fileseq,filedictconf,recovery,rep=2,overwrite=True,sim_mode="mean"):
     prefix_dico=str.split(filedictconf,".json")[0]
     suffix_seq=str.split(fileseq,"_sequence")[1]
     suffix_seq=str.split(suffix_seq,".json")[0]
     dictfile=prefix_dico+suffix_seq+"_reco{}.dict".format(str(recovery))
 
-    print("Generating sequence file {} and dictionary {}".format(fileseq,dictfile))
+    print("Generating dictionary {} from {}".format(dictfile,fileseq))
 
     with open(fileseq) as f:
         sequence_config = json.load(f)
@@ -472,3 +477,35 @@ def generate_epg_dico_T1MRFSS(fileseq,filedictconf,FA_list,TE_list,recovery,min_
     printer("Save dictionary.")
     mrfdict = dictsearch.Dictionary(keys, values)
     mrfdict.save(dictfile, overwrite=overwrite)
+
+def convert_sequence_to_params(FA_, TE_):
+    FA_breaks_ = list(np.argwhere(np.diff(np.array(FA_[1:])) != 0).flatten()) + [-1]
+    TE_breaks_ = list(np.argwhere(np.diff(np.array(TE_[1:])) != 0).flatten()) + [-1]
+    # print(FA_breaks)
+    # print(TE_breaks)
+    FA_values = [FA_[1:][i] for i in FA_breaks_]
+    TE_values = [TE_[1:][i] for i in TE_breaks_]
+    params_ = list(TE_values) + list(FA_values)
+
+    return params_
+
+
+def convert_params_to_sequence(params, recovery, min_TR_delay, TE_breaks, FA_breaks, spokes_count):
+    num_breaks_TE = len(TE_breaks)
+    TE_ = np.zeros(spokes_count + 1)
+    for j in range(num_breaks_TE - 1):
+        TE_[(TE_breaks[j] + 1):(TE_breaks[j + 1] + 1)] = params[j]
+
+    num_breaks_FA = len(FA_breaks)
+    FA_ = np.zeros(spokes_count + 1)
+    for j in range(num_breaks_FA - 1):
+        FA_[(FA_breaks[j] + 1):(FA_breaks[j + 1] + 1)] = params[j + num_breaks_TE - 1]
+
+    FA_[0] = np.pi
+
+    TR_ = np.zeros(spokes_count + 1)
+    TR_[0] = 8.32 / 1000
+    TR_[1:] = np.array(TE_[1:]) + min_TR_delay
+    TR_[-1] = TR_[-1] + recovery
+    TR_ = list(TR_)
+    return TR_, FA_, TE_

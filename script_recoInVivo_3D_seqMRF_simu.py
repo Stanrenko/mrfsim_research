@@ -51,6 +51,11 @@ nspoke=8
 nb_segments=nb_allspokes
 ntimesteps=int(nb_segments/nspoke)
 
+
+use_GPU = True
+light_memory_usage=True
+gen_mode="other"
+
 #suffix="_plateau600"
 #suffix="_constantTE_last"
 #suffix=""
@@ -292,34 +297,6 @@ save_map=True
 
 mask=np.load(filename_mask)
 volumes_all = np.load(filename_volume)
-#volumes_corrected_final=np.load(filename_volume_corrected_final)
-
-#gr=0
-#L0=8
-#filename_volume_rebuilt_multitasking=str.split(filename,".dat") [0]+"_volumes_mt_L0{}_gr{}.npy".format(L0,gr)
-#volumes_corrected_final=np.load(filename_volume_rebuilt_multitasking)
-#
-# if not(load_map):
-#     niter = 0
-#     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,log_phase=True)
-#     all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
-#
-#     if(save_map):
-#         import pickle
-#
-#         #file_map = filename.split(".dat")[0] + "_corrected_dens_adj{}_MRF_map.pkl".format(suffix)
-#         #file_map = filename.split(".dat")[0] + "_5iter_MRF_map.pkl".format("")
-#         file = open(file_map, "wb")
-#         # dump information to that file
-#         pickle.dump(all_maps, file)
-#         # close the file
-#         file.close()
-#
-# else:
-#     import pickle
-#     file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
-#     file = open(file_map, "rb")
-#     all_maps = pickle.load(file)
 
 
 

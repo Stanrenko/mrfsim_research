@@ -99,6 +99,8 @@ localfile="/phantom.006.v1/meas_MID00027_FID02798_raFin_3D_tra_1x1x5mm_FULL_FF.d
 localfile="/phantom.006.v1/meas_MID00028_FID02799_raFin_3D_tra_1x1x5mm_FULL_new.dat"#Box at the top border with more outside
 localfile="/phantom.006.v1/meas_MID00029_FID02800_raFin_3D_tra_1x1x5mm_FULL_FF_TR4000.dat"#Box at the top border with more outside
 localfile="/phantom.006.v1/meas_MID00023_FID02830_raFin_3D_tra_1x1x5mm_FULL_FF_TR5000.dat"#Box at the top border with more outside
+localfile="/phantom.006.v2/"
+
 
 filename = base_folder+localfile
 
@@ -876,7 +878,7 @@ save_map=True
 dictfile = "mrf175_SimReco2_light.dict"
 dictfile="mrf144w8_SeqFF_PWCR_SimRecoFFDf_light.dict"
 dictfile="mrf144w8_SeqFF_PWCR_SimRecoFFDf_adjusted_light.dict"
-
+dictfile="mrf144w8_SeqFF__SimRecoFFDf_light.dict"
 
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"

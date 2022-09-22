@@ -126,7 +126,7 @@ for p in patient_names:
         kdata_all_channels_all_slices = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in data]
         kdata_all_channels_all_slices=np.array(kdata_all_channels_all_slices).reshape(data.shape)
 
-        radial_traj=Radial(ntimesteps=ntimesteps,nspoke=nspoke,npoint=npoint)
+        radial_traj=Radial(total_nspokes=nb_allspokes,npoint=npoint)
 
         #Coil sensi estimation for all slices
         res=16
@@ -243,7 +243,7 @@ for p in patient_names:
             if not(str.split(filename,"/")[-1].split(".dat")[0] + "_MRF_map_sl_{}.pkl".format(sl) in glob.glob("*")):
                 niter = 0
                 start_time=time.time()
-                optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=False,useGPU_simulation=False,gen_mode="other")
+                optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other")
                 all_maps=optimizer.search_patterns(dictfile,volumes_all)
                 end_time=time.time()
                 print("Time taken for slice {} : {}".format(sl,end_time-start_time))
@@ -256,6 +256,8 @@ for p in patient_names:
                     pickle.dump(all_maps, file)
                     # close the file
                     file.close()
+
+
 
             else:
                 import pickle
