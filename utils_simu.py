@@ -342,7 +342,7 @@ def load_sequence_file(fileseq,recovery,min_TR_delay):
     return TR_list,FA_list,TE_list
 
 
-def write_seq_file(fileseq,TR_list,FA_list,TE_list,min_TR_delay,fileseq_basis="./mrf_sequence_adjusted.json"):
+def write_seq_file(fileseq,FA_list,TE_list,min_TR_delay,fileseq_basis="./mrf_sequence_adjusted.json"):
     with open(fileseq_basis,"r") as file:
         seq_config = json.load(file)
 
@@ -390,8 +390,8 @@ def generate_FA(T, H=10):
     return FA_traj
 
 
-def generate_epg_dico_T1MRFSS(fileseq,filedictconf,TR_list,FA_list,TE_list,recovery,min_TR_delay,rep=2,overwrite=True,sim_mode="mean",fileseq_basis="./mrf_sequence_adjusted.json"):
-    write_seq_file(fileseq,TR_list,FA_list,TE_list,min_TR_delay,fileseq_basis=fileseq_basis)
+def generate_epg_dico_T1MRFSS(fileseq,filedictconf,FA_list,TE_list,recovery,min_TR_delay,rep=2,overwrite=True,sim_mode="mean",fileseq_basis="./mrf_sequence_adjusted.json"):
+    write_seq_file(fileseq,FA_list,TE_list,min_TR_delay,fileseq_basis=fileseq_basis)
     prefix_dico=str.split(filedictconf,".json")[0]
     suffix_seq=str.split(fileseq,"_sequence")[1]
     suffix_seq=str.split(suffix_seq,".json")[0]

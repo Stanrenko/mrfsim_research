@@ -700,21 +700,47 @@ all_pixels=np.argwhere(mask>0)
 pixels_group=[]
 patches_group=[]
 
+dico_pixel_group={}
 
-for pixel in tqdm(all_pixels):
-    print(pixel)
+for j,pixel in tqdm(enumerate(all_pixels[:])):
+    #print(pixel)
     all_patches_retained, pixels = select_similar_patches(tuple(pixel), volumes_all, volume_oop, window=(1, 2, 2),
-                                                          quantile=2)
+                                                          quantile=10)
     shape=all_patches_retained.shape
     all_patches_retained = all_patches_retained.reshape(shape[0], shape[1],
                                                         -1)
     all_patches_retained = np.moveaxis(all_patches_retained, 0, -1)
     res=compute_low_rank_tensor(all_patches_retained,variance_explained)
     res=np.moveaxis(all_patches_retained,-1,0)
-    res=res.reshape(shape)
-    patches_group.append(res)
-    pixels_group.append(pixels)
+    res=res.reshape(res.shape[0],res.shape[1],-1)
+    res = np.moveaxis(res, 1, -1)
+    res=res.reshape(-1,res.shape[-1])
 
+    #print(res.shape)
+    #res=res.reshape(shape)
+
+    patches_group.append(res)
+
+    pixels=np.moveaxis(pixels,1,-1)
+    pixels = pixels.reshape(-1, pixels.shape[-1])
+    #print(pixels.shape)
+
+
+
+    for i,pixel_patches in enumerate(pixels):
+        if tuple(pixel_patches) not in dico_pixel_group.keys():
+            dico_pixel_group[tuple(pixel_patches)]=np.zeros(len(all_pixels))
+
+        dico_pixel_group[tuple(pixel_patches)][j]=i+1
+
+
+
+
+patches_group=np.array(patches_group)
+pixels_group=np.array(pixels_group)
+
+pixel=all_pixels[0]
+dico_pixel_group[tuple(pixel)]
 
 
 plt.figure()

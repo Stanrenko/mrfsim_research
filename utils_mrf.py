@@ -26,7 +26,7 @@ try:
 
     import seaborn as sns
 except:
-    pass 
+    pass
 from sklearn.cluster import KMeans
 from sklearn.model_selection import GridSearchCV
 import pandas as pd
@@ -3563,27 +3563,38 @@ def select_patch(k,volume,window=(2,5,5)):
     d_x = window[1]
     d_y = window[2]
     #print(k)
-    k_min_z=np.maximum(0,k[0]-d_z)
-    k_max_z = np.minimum(shape[0], k[0] + d_z)
-    pad_z_left = k_min_z - (k[0] - d_z)
-    pad_z_right=k[0] + d_z-k_max_z
 
-    k_min_x = np.maximum(0, k[1] - d_x)
-    k_max_x = np.minimum(shape[1], k[1] + d_x)
-    pad_x_left = k_min_x - (k[1] - d_x)
-    pad_x_right = k[1] + d_x - k_max_x
+    k_min_z_pixel=k[0]-d_z
+    k_max_z_pixel = k[0] + d_z
+    k_min_x_pixel = k[1] - d_x
+    k_max_x_pixel = k[1] + d_x
+    k_min_y_pixel = k[2] - d_y
+    k_max_y_pixel = k[2] + d_y
 
-    k_min_y = np.maximum(0, k[2] - d_y)
-    k_max_y = np.minimum(shape[2], k[2] + d_y)
-    pad_y_left = k_min_y - (k[2] - d_y)
-    pad_y_right = k[2] + d_y - k_max_y
+    k_min_z=np.maximum(0,k_min_z_pixel)
+    k_max_z = np.minimum(shape[0], k_max_z_pixel)
+    pad_z_left = k_min_z - k_min_z_pixel
+    pad_z_right=k_max_z_pixel-k_max_z
+
+    k_min_x = np.maximum(0, k_min_x_pixel)
+    k_max_x = np.minimum(shape[1], k_max_x_pixel)
+    pad_x_left = k_min_x - k_min_x_pixel
+    pad_x_right = k_max_x_pixel - k_max_x
+
+    k_min_y = np.maximum(0, k_min_y_pixel)
+    k_max_y = np.minimum(shape[2], k_max_y_pixel)
+    pad_y_left = k_min_y - k_min_y_pixel
+    pad_y_right = k_max_y_pixel - k_max_y
 
     patch=volume[...,k_min_z:k_max_z,k_min_x:k_max_x,k_min_y:k_max_y]
-    print(patch.shape)
+    #print(patch.shape)
     non_padded_dims=[(0,0)]*(patch.ndim-3)
-    patch=np.pad(patch,tuple(non_padded_dims+[(pad_z_left,pad_z_right),(pad_x_left,pad_x_right),(pad_y_left,pad_y_right)]),mode="edge")
+    padding=tuple(non_padded_dims+[(pad_z_left,pad_z_right),(pad_x_left,pad_x_right),(pad_y_left,pad_y_right)])
+    #print(padding)
+    patch=np.pad(patch,padding,mode="edge")
 
-    pixels=np.mgrid[k_min_z:k_max_z,k_min_x:k_max_x,k_min_y:k_max_y].reshape(3,-1)
+    pixels=np.mgrid[k_min_z_pixel:k_max_z_pixel,k_min_x_pixel:k_max_x_pixel,k_min_y_pixel:k_max_y_pixel].reshape(3,-1)
+    #print(pixels)
     return patch,pixels
 
 def select_similar_patches(k,volume,volume_ref,window=(2,5,5),L=10,sliding_window=(3,3,3),quantile=None):
@@ -3591,7 +3602,19 @@ def select_similar_patches(k,volume,volume_ref,window=(2,5,5),L=10,sliding_windo
     array_k=np.array(k).reshape(-1,1)
     zxy = np.mgrid[-sliding_window[0]:(sliding_window[0]+1):1, -sliding_window[1]:(sliding_window[1]+1):1, -sliding_window[2]:(sliding_window[2]+1):1].reshape(3, -1)
     k_s = array_k + zxy
+    shape=volume.shape[-3:]
+    k_s[0, :] = np.maximum(0, k_s[0, :])
+    k_s[0,:]=np.minimum(shape[0]-1,k_s[0, :])
+    k_s[1, :] = np.maximum(0, k_s[1, :])
+    k_s[1, :] = np.minimum(shape[1] - 1, k_s[1, :])
+    k_s[2, :] = np.maximum(0, k_s[2, :])
+    k_s[2, :] = np.minimum(shape[0] - 1, k_s[2, :])
+
+    #print(k_s)
     k_s=k_s.T
+    #print(k_s.shape)
+    k_s=np.unique(k_s,axis=0)
+    #print(k_s.shape)
     all_patches=[]
     for curr_k in k_s:
         #print(curr_k)
@@ -3615,8 +3638,10 @@ def select_similar_patches(k,volume,volume_ref,window=(2,5,5),L=10,sliding_windo
 
     all_patches_retained = []
     pixels=[]
+    #print(retained_k_s)
     for curr_k in retained_k_s:
         curr_patch,curr_pixels = select_patch(curr_k, volume, window)
+        #print(curr_patch.shape)
         all_patches_retained.append(curr_patch)
         pixels.append(curr_pixels)
 
