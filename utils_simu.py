@@ -179,7 +179,7 @@ def simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1, T_2, amp=np.a
 
 
 def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f, T_2w=40 / 1000, T_2f=80 / 1000,
-                           amp=np.array([1]), shift=np.array([-418]), sigma=None, list_deriv=None,noise_size=None,group_size=None,return_fat_water=False):
+                           amp=np.array([1]), shift=np.array([-418]), sigma=None, list_deriv=None,noise_size=None,noise_type="Absolute",group_size=None,return_fat_water=False):
     T_1w = np.array(T_1w)
     T_1f = np.array(T_1f)
     df = np.array(df)
@@ -236,13 +236,24 @@ def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f, T_2w=4
             # print(e_i.shape)
             # e_i*=np.abs(np.mean(s_i))/np.abs(e_i)/snr
             # e_i*=np.abs(s_i)/np.abs(e_i)/sigma
-            e_i *= sigma / np.abs(e_i)
+            if noise_type=="Absolute":
+                e_i *= sigma
+            elif noise_type=="Relative":
+                e_i*=sigma*np.abs(s_i)
+            else:
+                raise ValueError("Unknown noise_type")
 
             s_i += e_i
         else:
             e_i = np.random.normal(size=s_i.shape+(noise_size,)) + 1j * np.random.normal(size=s_i.shape+(noise_size,))
-            e_i *= sigma / np.abs(e_i)
-            s_i=np.expand_dims(s_i,axis=-1)
+            s_i = np.expand_dims(s_i, axis=-1)
+            if noise_type == "Absolute":
+                e_i *= sigma
+            elif noise_type == "Relative":
+                e_i *= sigma * np.abs(s_i)
+            else:
+                raise ValueError("Unknown noise_type")
+
             s_i=s_i+e_i
 
     if list_deriv is None:
@@ -348,7 +359,7 @@ def write_seq_file(fileseq,FA_list,TE_list,min_TR_delay,fileseq_basis="./mrf_seq
 
     seq_config_new = seq_config
     seq_config_new["B1"] = list(np.array(FA_list[1:]) * 180 / np.pi / 5)
-    seq_config_new["TR"] = list(np.array(TE_list[1:]+min_TR_delay) * 10 ** 3)
+    seq_config_new["TR"] = list((np.array(TE_list[1:])+min_TR_delay) * 10 ** 3)
     seq_config_new["TE"] = list(np.array(TE_list[1:]) * 10 ** 3)
 
 
