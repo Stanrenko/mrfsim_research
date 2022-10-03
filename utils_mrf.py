@@ -9,7 +9,7 @@ from functools import reduce
 from mrfsim import *
 import numpy as np
 import finufft
-from scipy import ndimage
+from scipy import ndimage,signal
 #from sklearn.decomposition import PCA
 from tqdm import tqdm
 from scipy.spatial import Voronoi,ConvexHull
@@ -955,7 +955,7 @@ def get_ROI_values(map1, map2, mask1=None, mask2=None, maskROI=None, adj_wT1=Fal
 
         else:
             # print(list(pred_std.reshape(1,-1)))
-            results[k]=pd.DataFrame(data=np.concatenate([obs,obs_std, pred,pred_std], axis=1),columns=["Obs Mean","Pred Mean"])
+            results[k]=pd.DataFrame(data=np.concatenate([obs, pred], axis=1),columns=["Obs Mean","Pred Mean"])
 
     return results
 
@@ -2030,10 +2030,11 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
     #    print("Warning : light memory usage is not used without GPU")
 
     traj = trajectory.get_traj_for_reconstruction(ntimesteps)
-    print(traj[0].shape)
+    #print(traj[0].shape)
     npoint = trajectory.paramDict["npoint"]
     nb_allspokes = trajectory.paramDict["total_nspokes"]
     nb_channels = len(kdata)
+    #print(kdata.shape)
     nspoke = int(nb_allspokes / ntimesteps)
 
 
@@ -2120,11 +2121,16 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
     if traj[0].shape[-1] == 2:  # 2D
 
         for i, t in tqdm(enumerate(traj)):
-            fk = finufft.nufft2d1(t[:, 0], t[:, 1], kdata[:, i, :], size)
+            fk = finufft.nufft2d1(t[:, 0], t[:, 1], np.squeeze(kdata[:, i, :]), size)
 
             # images_series_rebuilt = np.moveaxis(images_series_rebuilt, 0, 1)
             if b1 is None:
-                images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+                print(fk.shape)
+                if fk.ndim>2:
+                    images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+                else:
+                    print('Taking abs of image')
+                    images_series_rebuilt[i]=np.abs(fk)
             else:
                 images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
 
@@ -2729,7 +2735,7 @@ def plot_image_grid(list_images,nb_row_col,figsize=(10,10),title="",cmap=None,sa
     else:
         plt.show()
 
-def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256)):
+def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256),hanning_filter=False):
     traj_all = trajectory.get_traj()
     traj_all=traj_all.reshape(-1,traj_all.shape[-1])
     npoint = kdata.shape[-1]
@@ -2738,16 +2744,29 @@ def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256)):
 
     kdata_for_sensi = np.zeros(kdata.shape, dtype=np.complex128)
 
-    if kdata.ndim==3:#Tried :: syntax but somehow it introduces errors in the allocation
-        kdata_for_sensi[:,:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:,:,
-                                                                                   (center_res - int(res / 2)):(
-                                                                                               center_res + int(
-                                                                                           res / 2))]
+    if hanning_filter:
+        if kdata.ndim==3:#Tried :: syntax but somehow it introduces errors in the allocation
+            kdata_for_sensi[:,:, (center_res - int(res / 2)):(center_res + int(res / 2))]=kdata[:,:,
+                                                                                       (center_res - int(res / 2)):(
+                                                                                                   center_res + int(
+                                                                                               res / 2))]*np.expand_dims(np.hanning(2*int(res/2)),axis=(0,1))
+        else:
+            kdata_for_sensi[:, :,:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:, :,:,
+                                                                                             (center_res - int(res / 2)):(
+                                                                                                     center_res + int(
+                                                                                                 res / 2))]*np.expand_dims(np.hanning(2*int(res/2)),axis=(0,1,2))
+
     else:
-        kdata_for_sensi[:, :,:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:, :,:,
-                                                                                         (center_res - int(res / 2)):(
-                                                                                                 center_res + int(
-                                                                                             res / 2))]
+        if kdata.ndim==3:#Tried :: syntax but somehow it introduces errors in the allocation
+            kdata_for_sensi[:,:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:,:,
+                                                                                       (center_res - int(res / 2)):(
+                                                                                                   center_res + int(
+                                                                                               res / 2))]
+        else:
+            kdata_for_sensi[:, :,:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:, :,:,
+                                                                                             (center_res - int(res / 2)):(
+                                                                                                     center_res + int(
+                                                                                                 res / 2))]
 
     kdata_all = kdata_for_sensi.reshape(np.prod(kdata.shape[:-2]), -1)
     print(traj_all.shape)

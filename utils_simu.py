@@ -81,6 +81,58 @@ class T1MRFSS:
             return epg.simulate(seq,calc_deriv=calc_deriv, **kwargs)
 
 
+class T1MRFSS_NoInv:
+    def __init__(self, FA, TI, TE, TR, B1,T_recovery,nrep,rep=None):
+        print(T_recovery)
+        print(nrep)
+        """ build sequence """
+        seqlen = len(TE)
+        self.TR=TR
+        #self.inversion = epg.T(180, 0) # perfect inversion
+        self.T_recovery=T_recovery
+        self.nrep=nrep
+        self.rep=rep
+        seq=[]
+        for r in range(nrep):
+            curr_seq = [epg.Offset(0.000001)]
+            for i in range(seqlen):
+                echo = [
+                    epg.T(FA * B1[i], 90),
+                    epg.Wait(TE[i]),
+                    epg.ADC,
+                    epg.Wait(TR[i] - TE[i]),
+                    epg.SPOILER,
+                ]
+                curr_seq.extend(echo)
+            recovery=[epg.Wait(T_recovery)]
+            curr_seq.extend(recovery)
+            self.len_rep = len(curr_seq)
+            seq.extend(curr_seq)
+        self._seq = seq
+
+    def __call__(self, T1, T2, g, att, calc_deriv=False,**kwargs):
+        """ simulate sequence """
+        seq=[]
+        rep=self.rep
+        #print(self._seq)
+        for r in range(self.nrep):
+            curr_seq=self._seq[r*self.len_rep:(r+1)*(self.len_rep)]
+            curr_seq=[epg.modify(curr_seq, T1=T1, T2=T2, att=att, g=g,calc_deriv=calc_deriv)]
+            seq.extend(curr_seq)
+        #seq = [self.inversion, epg.modify(self._seq, T1=T1, T2=T2, att=att, g=g,calc_deriv=calc_deriv)]
+        if not(calc_deriv):
+            result=np.asarray(epg.simulate(seq, **kwargs))
+            if rep is None:#returning all repetitions
+                return result
+            else:#returning only the rep
+                result = result.reshape((self.nrep, -1) + result.shape[1:])[rep]
+                return result
+
+        else:
+            return epg.simulate(seq,calc_deriv=calc_deriv, **kwargs)
+
+
+
 def crlb(J, H=None, W=None, sigma2=1, log=False):
     """ Cramer-Rao lower bound cost function """
     xp = np
@@ -407,6 +459,14 @@ def generate_epg_dico_T1MRFSS(fileseq,filedictconf,FA_list,TE_list,recovery,min_
     generate_epg_dico_T1MRFSS_from_sequence_file(fileseq,filedictconf,recovery,rep,overwrite,sim_mode)
 
 
+def generate_epg_dico_T1MRFSS_NoInv(fileseq,filedictconf,FA_list,TE_list,recovery,min_TR_delay,rep=2,overwrite=True,sim_mode="mean",fileseq_basis="./mrf_sequence_adjusted.json"):
+    print("Generating sequence file {}".format(fileseq))
+    write_seq_file(fileseq,FA_list,TE_list,min_TR_delay,fileseq_basis=fileseq_basis)
+    generate_epg_dico_T1MRFSS_NoInv_from_sequence_file(fileseq,filedictconf,recovery,rep,overwrite,sim_mode)
+
+
+
+
 def generate_epg_dico_T1MRFSS_from_sequence_file(fileseq,filedictconf,recovery,rep=2,overwrite=True,sim_mode="mean"):
     prefix_dico=str.split(filedictconf,".json")[0]
     suffix_seq=str.split(fileseq,"_sequence")[1]
@@ -489,6 +549,91 @@ def generate_epg_dico_T1MRFSS_from_sequence_file(fileseq,filedictconf,recovery,r
     mrfdict = dictsearch.Dictionary(keys, values)
     mrfdict.save(dictfile, overwrite=overwrite)
 
+
+
+def generate_epg_dico_T1MRFSS_NoInv_from_sequence_file(fileseq,filedictconf,recovery,rep=2,overwrite=True,sim_mode="mean"):
+    prefix_dico=str.split(filedictconf,".json")[0]
+    suffix_seq=str.split(fileseq,"_sequence")[1]
+    suffix_seq=str.split(suffix_seq,".json")[0]
+    dictfile=prefix_dico+suffix_seq+"_reco{}.dict".format(str(recovery))
+
+    print("Generating dictionary {} from {}".format(dictfile,fileseq))
+
+    with open(fileseq) as f:
+        sequence_config = json.load(f)
+
+    with open(filedictconf) as f:
+        dict_config = json.load(f)
+
+
+    # generate signals
+    wT1 = dict_config["water_T1"]
+    fT1 = dict_config["fat_T1"]
+    wT2 = dict_config["water_T2"]
+    fT2 = dict_config["fat_T2"]
+    att = dict_config["B1_att"]
+    df = dict_config["delta_freqs"]
+    df = [- value / 1000 for value in df]  # temp
+    # df = np.linspace(-0.1, 0.1, 101)
+
+    TR_total = np.sum(sequence_config["TR"])
+    print(TR_total)
+
+    sequence_config["T_recovery"] = recovery*1000
+    sequence_config["nrep"] = rep
+
+    seq = T1MRFSS_NoInv(**sequence_config)
+
+
+    fat_amp = dict_config["fat_amp"]
+    fat_cs = dict_config["fat_cshift"]
+    fat_cs = [- value / 1000 for value in fat_cs]  # temp
+
+    # other options
+
+    window = dict_config["window_size"]
+
+    # water
+    printer("Generate water signals.")
+    water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
+    water = water.reshape((rep, -1) + water.shape[1:])[-1]
+
+    if sim_mode == "mean":
+        water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
+    elif sim_mode == "mid_point":
+        water = water[(int(window / 2) - 1):-1:window]
+    else:
+        raise ValueError("Unknow sim_mode")
+
+    # fat
+    printer("Generate fat signals.")
+    eval = "dot(signal, amps)"
+    args = {"amps": fat_amp}
+    # merge df and fat_cs df to dict
+    fatdf = [[cs + f for cs in fat_cs] for f in df]
+    fat = seq(T1=[fT1], T2=fT2, att=[[att]], g=[[[fatdf]]], eval=eval, args=args)
+    fat = fat.reshape((rep, -1) + fat.shape[1:])[-1]
+
+    if sim_mode == "mean":
+        fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
+    elif sim_mode == "mid_point":
+        fat = fat[(int(window / 2) - 1):-1:window]
+    else:
+        raise ValueError("Unknow sim_mode")
+
+    water = np.array(water)
+    fat = np.array(fat)
+    # join water and fat
+    printer("Build dictionary.")
+    keys = list(itertools.product(wT1, fT1, att, df))
+    values = np.stack(np.broadcast_arrays(water, fat), axis=-1)
+    values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
+
+    printer("Save dictionary.")
+    mrfdict = dictsearch.Dictionary(keys, values)
+    mrfdict.save(dictfile, overwrite=overwrite)
+
+
 def convert_sequence_to_params(FA_, TE_):
     FA_breaks_ = list(np.argwhere(np.diff(np.array(FA_[1:])) != 0).flatten()) + [-1]
     TE_breaks_ = list(np.argwhere(np.diff(np.array(TE_[1:])) != 0).flatten()) + [-1]
@@ -518,5 +663,50 @@ def convert_params_to_sequence(params, recovery, min_TR_delay, TE_breaks, FA_bre
     TR_[0] = 8.32 / 1000
     TR_[1:] = np.array(TE_[1:]) + min_TR_delay
     TR_[-1] = TR_[-1] + recovery
+    TR_ = list(TR_)
+    return TR_, FA_, TE_
+
+
+def convert_sequence_to_params_breaks(FA_, TE_, recovery):
+    FA_breaks_ = list(np.argwhere(np.diff(np.array(FA_[1:])) != 0).flatten()) + [-1]
+    TE_breaks_ = list(np.argwhere(np.diff(np.array(TE_[1:])) != 0).flatten()) + [-1]
+    # print(FA_breaks)
+    # print(TE_breaks)
+
+    FA_values = [FA_[1:][i] for i in FA_breaks_]
+    TE_values = [TE_[1:][i] for i in TE_breaks_]
+    TE_breaks_ = [0] + TE_breaks_
+    FA_breaks_ = [0] + FA_breaks_
+    params_ = list(np.diff(TE_breaks_[:-1])) + list(np.diff(FA_breaks_[:-1])) + list(TE_values) + list(FA_values) + [
+        recovery]
+
+    return params_, TE_breaks_, FA_breaks_
+
+
+def convert_params_to_sequence_breaks(params, min_TR_delay, num_breaks_TE, num_breaks_FA, spokes_count, inversion=True):
+    TE_ = np.zeros(spokes_count + 1)
+    # print(num_breaks_TE)
+    # print(num_breaks_FA)
+    TE_breaks = params[:num_breaks_TE].astype(int)
+    FA_breaks = params[num_breaks_TE:(num_breaks_FA + num_breaks_TE)].astype(int)
+    TE_breaks = [0] + list(np.cumsum(TE_breaks)) + [spokes_count]
+    FA_breaks = [0] + list(np.cumsum(FA_breaks)) + [spokes_count]
+    # print(TE_breaks)
+    # print(FA_breaks)
+    for j in range(num_breaks_TE + 1):
+        TE_[(TE_breaks[j] + 1):(TE_breaks[j + 1] + 1)] = params[num_breaks_TE + num_breaks_FA + j]
+    FA_ = np.zeros(spokes_count + 1)
+    for j in range(num_breaks_FA + 1):
+        FA_[(FA_breaks[j] + 1):(FA_breaks[j + 1] + 1)] = params[j + num_breaks_TE + 1 + num_breaks_TE + num_breaks_FA]
+
+    FA_[0] = np.pi
+
+    TR_ = np.zeros(spokes_count + 1)
+    TR_[0] = 8.32 / 1000
+    if not (inversion):
+        FA_[0] = 0
+        TR_[0] = 0
+    TR_[1:] = np.array(TE_[1:]) + min_TR_delay
+    TR_[-1] = TR_[-1] + params[-1]
     TR_ = list(TR_)
     return TR_, FA_, TE_

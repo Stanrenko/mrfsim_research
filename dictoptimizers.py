@@ -209,6 +209,31 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
 
             current_alpha_all_unique = (ind_max_J == 0) * current_alpha_all_unique + (ind_max_J == 1) * 0 + (
                         ind_max_J == 2) * 1
+
+            idx_max_all_current = np.argmax(J_all, axis=0)
+            current_alpha_all_unique_optim=current_alpha_all_unique[idx_max_all_current, np.arange(J_all.shape[1])]
+
+            if niter>0 or log_phase or return_matched_signals:
+                d = (
+                            1 - current_alpha_all_unique_optim) * current_sig_ws_for_phase[idx_max_all_current, np.arange(J_all.shape[1])] + current_alpha_all_unique_optim * current_sig_fs_for_phase[idx_max_all_current, np.arange(J_all.shape[1])]
+                phase_adj = -np.arctan(d.imag / d.real)
+                cond = np.sin(phase_adj) * d.imag - np.cos(phase_adj) * d.real
+
+                del d
+
+                phase_adj = (phase_adj) * (
+                        1 * (cond) <= 0) + (phase_adj + np.pi) * (
+                                    1 * (cond) > 0)
+
+                del cond
+
+            if niter>0 or return_matched_signals:
+                J_all_optim=J_all[idx_max_all_current, np.arange(J_all.shape[1])]
+
+
+            del J_all
+
+
         else:
             if verbose:
                 print("Calculating alpha optim and flooring")
@@ -374,7 +399,7 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
             print("Extracting index of pattern with max correl")
             start = datetime.now()
 
-        idx_max_all_current = np.argmax(J_all, axis=0)
+
         # check_max_correl=np.max(J_all,axis=0)
 
         if verbose:
@@ -386,14 +411,14 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
             start = datetime.now()
 
         idx_max_all_unique.extend(idx_max_all_current)
-        alpha_optim.extend(current_alpha_all_unique[idx_max_all_current, np.arange(J_all.shape[1])])
+        alpha_optim.extend(current_alpha_all_unique_optim)
 
-        if niter > 0:
-            phase_optim.extend(phase_adj[idx_max_all_current, np.arange(J_all.shape[1])])
-            J_optim.extend(J_all[idx_max_all_current, np.arange(J_all.shape[1])])
+        if niter > 0 or return_matched_signal:
+            phase_optim.extend(phase_adj)
+            J_optim.extend(J_all_optim)
 
         elif log_phase:
-            phase_optim.extend(phase_adj[idx_max_all_current, np.arange(J_all.shape[1])])
+            phase_optim.extend(phase_adj)
 
         #if not (return_matched_signals):
             #del phase_adj
@@ -404,8 +429,6 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
             print(end - start)
 
     # idx_max_all_unique = np.argmax(J_all, axis=0)
-    if not(return_matched_signals):
-        del J_all
     del current_alpha_all_unique
 
     if niter > 0:
@@ -448,30 +471,25 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
 
 
 
-    if niter==0:
 
+    if not(log_phase):
+        if return_matched_signals:
+            print(phase_optim.shape)
+            print(J_optim.shape)
 
-        if not(log_phase):
-            if return_matched_signals:
-                J_optim=J_all[idx_max_all_current, np.arange(J_all.shape[1])]
-                phase_optim=phase_adj[idx_max_all_current, np.arange(J_all.shape[1])]
-                print(phase_optim.shape)
-                print(J_optim.shape)
-
-                matched_signals=array_water_unique[index_water_unique, :][idx_max_all_current, :].T * (
+            matched_signals=array_water_unique[index_water_unique, :][idx_max_all_unique, :].T * (
                         1 - np.array(alpha_optim)).reshape(1, -1) + array_fat_unique[index_fat_unique, :][
-                                                                    idx_max_all_current, :].T * np.array(
+                                                                    idx_max_all_unique, :].T * np.array(
                     alpha_optim).reshape(1, -1)
-                print(matched_signals.shape)
-                matched_signals/=np.linalg.norm(matched_signals,axis=0)
-                matched_signals *= J_optim*np.exp(1j*phase_optim)
-                return map_rebuilt,None,None,matched_signals.squeeze()
-            else:
-                return map_rebuilt, None, None
+            print(matched_signals.shape)
+            matched_signals/=np.linalg.norm(matched_signals,axis=0)
+            matched_signals *= J_optim*np.exp(1j*phase_optim)
+            return map_rebuilt,None,None,matched_signals.squeeze()
         else:
-            return map_rebuilt, None, phase_optim
+            return map_rebuilt, None, None
     else:
-        return map_rebuilt,J_optim,phase_optim
+        return map_rebuilt, None, phase_optim
+
 
 def match_signals(all_signals,keys,pca_water,pca_fat,array_water_unique,array_fat_unique,transformed_array_water_unique,transformed_array_fat_unique,var_w,var_f,sig_wf,pca,index_water_unique,index_fat_unique,remove_duplicates,verbose,niter,split,useGPU_dictsearch,mask,tv_denoising_weight,log_phase=False,return_matched_signals=False):
 
@@ -2285,9 +2303,26 @@ class SimpleDictSearch(Optimizer):
         M=np.expand_dims(M,axis=1)
         M_inv = np.expand_dims(M_inv, axis=1)
 
+        M_w = np.real(np.einsum('ijk,ijl->ikl', np.expand_dims(array_dict[:,:,0],axis=-1).conj(), np.expand_dims(array_dict[:,:,0],axis=-1)))
+        M_inv_w = np.linalg.pinv(M_w)
+
+        M_w = np.expand_dims(M_w, axis=1)
+        M_inv_w = np.expand_dims(M_inv_w, axis=1)
+
+        M_f = np.real(np.einsum('ijk,ijl->ikl', np.expand_dims(array_dict[:, :, 1], axis=-1).conj(),
+                                np.expand_dims(array_dict[:, :, 1], axis=-1)))
+        M_inv_f = np.linalg.pinv(M_f)
+
+        M_f = np.expand_dims(M_f, axis=1)
+        M_inv_f = np.expand_dims(M_inv_f, axis=1)
+
         if useGPU_dictsearch:
             M = cp.asarray(M)
             M_inv=cp.asarray(M_inv)
+            M_w = cp.asarray(M_w)
+            M_inv_w = cp.asarray(M_inv_w)
+            M_f = cp.asarray(M_f)
+            M_inv_f = cp.asarray(M_inv_f)
 
 
         values_results = []
@@ -2336,11 +2371,82 @@ class SimpleDictSearch(Optimizer):
 
                 del cov
                 lambd = np.squeeze(M_inv@cov_adjusted)
+
                 del cov_adjusted
-                J_all = np.linalg.norm(np.einsum('ijk,ilk->ijl',array_dict,lambd)*np.expand_dims(np.exp(1j*phi.squeeze()),axis=1)-np.expand_dims(transformed_all_signals,axis=0),axis=1)
+                J_all = np.linalg.norm(
+                    np.einsum('ijk,ilk->ijl', array_dict, lambd) * np.expand_dims(np.exp(1j * phi.squeeze()),
+                                                                                  axis=1) - np.expand_dims(
+                        transformed_all_signals, axis=0), axis=1)
+
+                #
+                select =np.argwhere(lambd[:,:,0]*lambd[:,:,1]<0)
+
+                cov_w=np.einsum('ijk,jl->ilk', np.expand_dims(array_dict[:,:,0].conj(),axis=-1), transformed_all_signals)[..., None]
+                phi_w = 0.5 * np.angle(cov_w.transpose((0, 1, 3, 2)) @ M_inv_w @ cov_w)
+                cov_adjusted_w = np.real(
+                    np.einsum('ijk,jl->ilk', np.expand_dims(array_dict[:,:,0].conj(),axis=-1), transformed_all_signals)[..., None] * np.exp(-1j * phi_w))
+                del cov_w
+                lambd_w = (M_inv_w @ cov_adjusted_w)[:,:,:,0]
+                del cov_adjusted_w
+
+                cov_f =np.einsum('ijk,jl->ilk', np.expand_dims(array_dict[:, :, 1].conj(), axis=-1), transformed_all_signals)[..., None]
+                phi_f = 0.5 * np.angle(cov_f.transpose((0, 1, 3, 2)) @ M_inv_f @ cov_f)
+                cov_adjusted_f = np.real(
+                    np.einsum('ijk,jl->ilk', np.expand_dims(array_dict[:, :, 1].conj(), axis=-1),transformed_all_signals)[..., None] * np.exp(-1j * phi_f))
+                del cov_f
+                lambd_f = (M_inv_f @ cov_adjusted_f)[:,:,:,0]
+                del cov_adjusted_f
+
+                J_all_w = np.linalg.norm(
+                    np.einsum('ijk,ilk->ijl', np.expand_dims(array_dict[:, :, 0],axis=-1).conj(), lambd_w) * np.expand_dims(np.exp(1j * phi_w.squeeze()),
+                                                                                  axis=1) - np.expand_dims(
+                        transformed_all_signals, axis=0), axis=1)
+
+                J_all_f = np.linalg.norm(
+                    np.einsum('ijk,ilk->ijl', np.expand_dims(array_dict[:, :, 1], axis=-1).conj(),
+                              lambd_f) * np.expand_dims(np.exp(1j * phi_f.squeeze()),
+                                                        axis=1) - np.expand_dims(
+                        transformed_all_signals, axis=0), axis=1)
+
+                all_J_select = np.stack([J_all_w[select[:,0],select[:,1]], J_all_f[select[:,0],select[:,1]]], axis=0)
+
+                ind_min_J = np.argmin(all_J_select, axis=0)
+
+                del all_J_select
+
+                J_all[select[:,0],select[:,1]]=J_all_w[select[:,0],select[:,1]]*(ind_min_J==0)+J_all_f[select[:,0],select[:,1]]*(ind_min_J==1)
+                del J_all_w
+                del J_all_f
+
+                lambd[select[:,0],select[:,1],:] = np.expand_dims((ind_min_J == 0),axis=-1) * np.stack([lambd_w[select[:,0],select[:,1],0],np.zeros(lambd_w[select[:,0],select[:,1],0].shape)],axis=-1) + \
+                        np.expand_dims((ind_min_J == 1),axis=-1) * np.stack([np.zeros(lambd_f[select[:,0],select[:,1],0].shape),lambd_f[select[:,0],select[:,1],0]],axis=-1)
+                # lambd[np.all(lambd < -epsilon, axis=-1)] = 0
+                # epsilon = 1e-8
+                #
+                # while True:
+                #
+                #
+                #     ispos = lambd > -epsilon
+                #     numpos = np.count_nonzero(ispos, axis=-1)
+                #     minpos = np.min(numpos)
+                #     if minpos == lambd.shape[-1]:
+                #         break
+                #
+                #     select = np.nonzero(numpos == minpos)
+                #     active = np.nonzero(ispos[select])[1].reshape(-1, minpos)
+                #     lambd[select]=0
+                #     lambd[select[0],select[1],np.squeeze(active.T)]=np.squeeze((np.squeeze(M_inv[select[0]]) @ cov_adjusted[select]))[np.arange(len(select[0])), np.squeeze(active.T)]
+                #
+
+
+
+
                 if not self.paramDict["return_matched_signals"]:
                     del phi
-                current_alpha_all_unique=np.minimum(np.maximum(lambd[:,:,-1]/np.sum(lambd,axis=-1),0),1)
+
+
+                #print("Number of zero lambda {} : ".format(np.sum(np.sum(lambd,axis=-1)==0)))
+                current_alpha_all_unique=lambd[:,:,-1]/np.sum(lambd,axis=-1)
                 if not self.paramDict["return_matched_signals"]:
                     del lambd
 
@@ -2356,7 +2462,7 @@ class SimpleDictSearch(Optimizer):
 
                 cov=cp.einsum('ijk,jl->ilk', array_dict.conj(), transformed_all_signals)[...,None]
 
-                phi = cp.angle(cp.matmul(cov.transpose((0, 1, 3, 2)),cp.matmul(M_inv,cov)))
+                phi = 0.5*cp.angle(cp.matmul(cov.transpose((0, 1, 3, 2)),cp.matmul(M_inv,cov)))
                 cov_adjusted = cp.real(
                     cp.einsum('ijk,jl->ilk', array_dict.conj(), transformed_all_signals)[..., None] * cp.exp(
                         -1j * phi))
@@ -2367,6 +2473,61 @@ class SimpleDictSearch(Optimizer):
                 J_all = cp.linalg.norm(
                     cp.einsum('ijk,ilk->ijl', array_dict, lambd) - cp.expand_dims(transformed_all_signals, axis=0),
                     axis=1)
+
+
+                select = cp.argwhere(lambd[:, :, 0] * lambd[:, :, 1] < 0)
+
+                cov_w = cp.einsum('ijk,jl->ilk', cp.expand_dims(array_dict[:, :, 0].conj(), axis=-1), transformed_all_signals)[..., None]
+                phi_w = 0.5 * cp.angle(cp.matmul(cov_w.transpose((0, 1, 3, 2)),cp.matmul(M_inv_w,cov_w)))
+                cov_adjusted_w = cp.real(
+                    cp.einsum('ijk,jl->ilk', cp.expand_dims(array_dict[:, :, 0].conj(), axis=-1),
+                              transformed_all_signals)[..., None] * cp.exp(-1j * phi_w))
+                del cov_w
+
+                lambd_w = (cp.matmul(M_inv_w,cov_adjusted_w))[:, :, :, 0]
+                del cov_adjusted_w
+
+                cov_f = cp.einsum('ijk,jl->ilk', cp.expand_dims(array_dict[:, :, 1].conj(), axis=-1), transformed_all_signals)[..., None]
+                phi_f = 0.5 * cp.angle(cp.matmul(cov_f.transpose((0, 1, 3, 2)), cp.matmul(M_inv_f, cov_f)))
+                cov_adjusted_f = cp.real(
+                    cp.einsum('ijk,jl->ilk', cp.expand_dims(array_dict[:, :, 1].conj(), axis=-1),
+                              transformed_all_signals)[..., None] * cp.exp(-1j * phi_1))
+                del cov_f
+
+                lambd_f = (cp.matmul(M_inv_f, cov_adjusted_f))[:, :, :, 0]
+                del cov_adjusted_f
+
+                J_all_w = cp.linalg.norm(
+                    cp.einsum('ijk,ilk->ijl', cp.expand_dims(array_dict[:, :, 0], axis=-1).conj(),
+                              lambd_w) * cp.expand_dims(cp.exp(1j * phi_w.squeeze()),
+                                                        axis=1) - cp.expand_dims(
+                        transformed_all_signals, axis=0), axis=1)
+
+                J_all_f = cp.linalg.norm(
+                    cp.einsum('ijk,ilk->ijl', cp.expand_dims(array_dict[:, :, 1], axis=-1).conj(),
+                              lambd_f) * cp.expand_dims(cp.exp(1j * phi_f.squeeze()),
+                                                        axis=1) - cp.expand_dims(
+                        transformed_all_signals, axis=0), axis=1)
+
+                all_J_select = cp.stack([J_all_w[select[:, 0], select[:, 1]], J_all_f[select[:, 0], select[:, 1]]],
+                                        axis=0)
+
+                ind_min_J = cp.argmin(all_J_select, axis=0)
+
+                del all_J_select
+
+                J_all[select[:, 0], select[:, 1]] = J_all_w[select[:, 0], select[:, 1]] * (ind_min_J == 0) + J_all_f[
+                    select[:, 0], select[:, 1]] * (ind_min_J == 1)
+                del J_all_w
+                del J_all_f
+
+                lambd[select[:, 0], select[:, 1], :] = cp.expand_dims((ind_min_J == 0), axis=-1) * cp.stack(
+                    [lambd_w[select[:, 0], select[:, 1], 0], cp.zeros(lambd_w[select[:, 0], select[:, 1], 0].shape)],
+                    axis=-1) + \
+                                                       cp.expand_dims((ind_min_J == 1), axis=-1) * cp.stack(
+                    [cp.zeros(lambd_f[select[:, 0], select[:, 1], 0].shape), lambd_f[select[:, 0], select[:, 1], 0]],
+                    axis=-1)
+
                 current_alpha_all_unique = lambd[:, :, -1] / cp.sum(lambd, axis=-1)
 
                 if not(self.paramDict["return_matched_signals"]):
@@ -2502,7 +2663,7 @@ class SimpleDictSearch(Optimizer):
 
         # norm_volumes = np.linalg.norm(volumes, 2, axis=0)
 
-        norm_signals = np.linalg.norm(signals, 2, axis=0)
+        #norm_signals = np.linalg.norm(signals, 2, axis=0)
         #Normalize
         #all_signals = signals / norm_signals
         all_signals=signals
@@ -2575,12 +2736,12 @@ class SimpleDictSearch(Optimizer):
         for i in range(niter + 1):
             print("################# ITERATION : Number {} out of {} ####################".format(i, niter))
             print("Calculating optimal fat fraction and best pattern per signal for iteration {}".format(i))
-            if not(self.paramDict["return_matched_signals"]):
+            if not(self.paramDict["return_matched_signals"])and(niter==0) :
                 map_rebuilt,J_optim,phase_optim=match_signals_v2(all_signals,keys, pca_water, pca_fat, array_water_unique, array_fat_unique,
                           transformed_array_water_unique, transformed_array_fat_unique, var_w,var_f,sig_wf,pca,index_water_unique,index_fat_unique,remove_duplicates, verbose,
                           niter, split, useGPU_dictsearch,mask,tv_denoising_weight,log_phase)
             else:
-                map_rebuilt, J_optim, phase_optim,matched_signals = match_signals(all_signals, keys, pca_water, pca_fat,
+                map_rebuilt, J_optim, phase_optim,matched_signals = match_signals_v2(all_signals, keys, pca_water, pca_fat,
                                                                   array_water_unique, array_fat_unique,
                                                                   transformed_array_water_unique,
                                                                   transformed_array_fat_unique, var_w, var_f, sig_wf,
@@ -2590,6 +2751,8 @@ class SimpleDictSearch(Optimizer):
                                                                   tv_denoising_weight, log_phase,return_matched_signals=True)
 
             print("Maps build for iteration {}".format(i))
+
+            #import matplotlib.pyplot as plt;j=np.random.choice(all_signals.shape[1]);plt.plot(all_signals[:,j]);plt.plot(matched_signals[:,j]);
 
             if not(log_phase):
                 values_results.append((map_rebuilt, mask))
@@ -2637,11 +2800,11 @@ class SimpleDictSearch(Optimizer):
 
             nspoke = int(trajectory.paramDict["total_nspokes"] / self.paramDict["ntimesteps"])
 
-            images_pred.build_ref_images(seq, norm=J_optim * norm_signals, phase=phase_optim)
+            #images_pred.build_ref_images(seq, norm=J_optim * norm_signals, phase=phase_optim)
+            matched_signals_extended =np.repeat(matched_signals,8,axis=0)
+            images_pred.images_series=np.array([makevol(im,mask>0) for im in matched_signals_extended])
 
-            print("Normalizing image series")
 
-            print("Filling images series with renormalized signals")
 
             kdatai = images_pred.generate_kdata(trajectory, useGPU=useGPU_simulation)
 
@@ -2669,13 +2832,15 @@ class SimpleDictSearch(Optimizer):
 
             if not (movement_correction):
                 volumesi = simulate_radial_undersampled_images(kdatai, trajectory, mask.shape, useGPU=useGPU_simulation,
-                                                               density_adj=True)
+                                                               density_adj=True,ntimesteps=self.paramDict["ntimesteps"])
 
             else:
                 trajectory.traj_for_reconstruction = traj_retained_final
                 volumesi = simulate_radial_undersampled_images(kdatai, trajectory, mask.shape,
                                                                useGPU=useGPU_simulation, density_adj=True,
                                                                is_theta_z_adjusted=True)
+
+                #error_matching=
 
             # volumesi/=(2*np.pi)
 
@@ -2702,11 +2867,12 @@ class SimpleDictSearch(Optimizer):
             # signalsi *= norm_signals/normi
 
             del volumesi
-
+            #j=np.random.choice(signals0.shape[1]);import matplotlib.pyplot as plt;plt.figure();plt.plot(signals0[:,j]);plt.plot(signalsi[:,j]);
+            #j=np.random.choice(signals0.shape[1]);import matplotlib.pyplot as plt;plt.figure();plt.plot(signals[:,j]);plt.plot(signals[:,j]+signals0[:,j] - signalsi[:,j]);
             signals += signals0 - signalsi
 
-            norm_signals = np.linalg.norm(signals, axis=0)
-            all_signals_unthresholded = signals / norm_signals
+            #norm_signals = np.linalg.norm(signals, axis=0)
+            #all_signals_unthresholded = signals / norm_signals
 
             if threshold is not None:
 
@@ -2715,7 +2881,7 @@ class SimpleDictSearch(Optimizer):
 
             else:
 
-                all_signals=all_signals_unthresholded
+                all_signals=signals
 
         if log:
             print(date_time)

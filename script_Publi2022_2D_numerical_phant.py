@@ -1,5 +1,4 @@
 
-### Movements simulation
 
 #import matplotlib
 #matplotlib.u<se("TkAgg")
@@ -192,32 +191,42 @@ for num in range(nb_phantom):
     volumes_all = np.load(filename_volume)
 
     ntimesteps=175
+    niter = 0
 
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,
+                                 threshold_pca=20, log=False, useGPU_dictsearch=False, useGPU_simulation=False,
+                                 gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
+
+    optimizer_brute = BruteDictSearch(FF_list=np.arange(0, 1.05, 0.05), mask=mask, split=100, pca=True, threshold_pca=20,
+                                log=False, useGPU_dictsearch=False, ntimesteps=ntimesteps, log_phase=True)
 
     if str.split(file_map_cf,"/")[-1] not in os.listdir(folder):
-        niter = 0
-        optimizer = BruteDictSearch(FF_list=np.arange(0,1.05,0.05),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
-        all_maps_brute = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
-
-
-        optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,
-                                     threshold_pca=20, log=False, useGPU_dictsearch=False, useGPU_simulation=False,
-                                     gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
         all_maps_cf = optimizer.search_patterns_test(dictfile, volumes_all, retained_timesteps=None)
-        all_maps_matrix = optimizer.search_patterns_matrix(dictfile, volumes_all, retained_timesteps=None)
+        with open(file_map_cf,"wb") as file:
+            pickle.dump(all_maps_cf, file)
+
+    else:
+        with open(file_map_cf,"rb") as file:
+            all_maps_cf=pickle.load(file)
+
+    if str.split(file_map_brute, "/")[-1] not in os.listdir(folder):
+        all_maps_brute = optimizer_brute.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
         with open(file_map_brute,"wb") as file:
             pickle.dump(all_maps_brute, file)
-        with open(file_map_cf,"wb") as file:
-            pickle.dump(all_maps_cf, file)
-        with open(file_map_matrix,"wb") as file:
-            pickle.dump(all_maps_matrix, file)
 
     else:
         with open(file_map_brute,"rb") as file:
             all_maps_brute=pickle.load(file)
-        with open(file_map_cf,"rb") as file:
-            all_maps_cf=pickle.load(file)
+
+    if str.split(file_map_matrix, "/")[-1] not in os.listdir(folder):
+        all_maps_matrix = optimizer.search_patterns_matrix(dictfile, volumes_all, retained_timesteps=None)
+
+        with open(file_map_matrix,"wb") as file:
+            pickle.dump(all_maps_matrix, file)
+
+    else:
+
         with open(file_map_matrix,"rb") as file:
             all_maps_matrix=pickle.load(file)
 
@@ -253,14 +262,38 @@ for num in range(nb_phantom):
         for k in all_results_matrix.keys():
             all_results_matrix[k] = np.concatenate([results[k], all_results_matrix[k]], axis=0)
 
-
 df_comp=pd.DataFrame(columns=["FF Ground Truth","FF reference","FF matrix","FF proposed"])
-df_comp["FF Ground Truth"]=all_results_brute["ff"][all_results_brute["ff"][:,0]<0.7,0]
-df_comp["FF reference"]=all_results_brute["ff"][all_results_brute["ff"][:,0]<0.7,1]
-df_comp["FF matrix"]=all_results_matrix["ff"][all_results_matrix["ff"][:,0]<0.7,1]
-df_comp["FF proposed"]=all_results_cf["ff"][all_results_cf["ff"][:,0]<0.7,1]
+df_comp["FF Ground Truth"]=all_results_brute["ff"][:,0]
+df_comp["FF reference"]=all_results_brute["ff"][:,1]
+df_comp["FF matrix"]=all_results_matrix["ff"][:,1]
+df_comp["FF proposed"]=all_results_cf["ff"][:,1]
 
+import statsmodels.api as sm
+plt.close("all")
+plt.figure()
+sm.graphics.mean_diff_plot(df_comp["FF reference"], df_comp["FF matrix"])
+plt.title("FF : Comparison reference vs matrix method",fontsize=13)
 
+plt.figure()
+sm.graphics.mean_diff_plot(df_comp["FF reference"], df_comp["FF proposed"])
+plt.title("FF : Comparison reference vs proposed method",fontsize=13)
+
+plt.figure()
+sm.graphics.mean_diff_plot(df_comp["FF proposed"], df_comp["FF matrix"])
+plt.title("FF : Comparison proposed vs matrix method",fontsize=13)
+
+plt.close("all")
+plt.figure()
+sm.graphics.mean_diff_plot(df_comp["FF Ground Truth"], df_comp["FF matrix"])
+plt.title("FF : Comparison ground truth vs matrix method",fontsize=13)
+
+plt.figure()
+sm.graphics.mean_diff_plot(df_comp["FF Ground Truth"], df_comp["FF proposed"])
+plt.title("FF : Comparison ground truth vs proposed method",fontsize=13)
+
+plt.figure()
+sm.graphics.mean_diff_plot(df_comp["FF Ground Truth"], df_comp["FF reference"])
+plt.title("FF : Comparison ground truth vs reference method",fontsize=13)
 
 import seaborn as sns
 g=sns.pairplot(df_comp,diag_kind="kde",kind="reg",plot_kws={'line_kws':{'color':'red',"alpha":0.5},"scatter_kws":{"s":3}},corner=True)
@@ -274,6 +307,33 @@ df_comp["$T1_{H2O}$ matrix"]=all_results_matrix["wT1"][all_results_matrix["ff"][
 df_comp["$T1_{H2O}$ proposed"]=all_results_cf["wT1"][all_results_cf["ff"][:,0]<0.7,1]
 
 
+import statsmodels.api as sm
+plt.close("all")
+sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ reference"], df_comp["$T1_{H2O}$ matrix"])
+plt.title("$T1_{H2O}$ : Comparison reference vs matrix method",fontsize=13)
+
+sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ reference"], df_comp["$T1_{H2O}$ proposed"])
+plt.title("$T1_{H2O}$ : Comparison reference vs proposed method",fontsize=13)
+
+sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ proposed"], df_comp["$T1_{H2O}$ matrix"])
+plt.title("$T1_{H2O}$ : Comparison proposed vs matrix method",fontsize=13)
+
+
+plt.close("all")
+plt.figure()
+sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ Ground Truth"], df_comp["$T1_{H2O}$ matrix"])
+plt.title("$T1_{H2O}$ : Comparison ground truth vs matrix method",fontsize=13)
+plt.show()
+
+plt.figure()
+sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ Ground Truth"], df_comp["$T1_{H2O}$ proposed"])
+plt.title("$T1_{H2O}$ : Comparison ground truth vs proposed method",fontsize=13)
+plt.show()
+
+plt.figure()
+sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ Ground Truth"], df_comp["$T1_{H2O}$ reference"])
+plt.title("$T1_{H2O}$ : Comparison ground truth vs reference method",fontsize=13)
+plt.show()
 
 import seaborn as sns
 g=sns.pairplot(df_comp,diag_kind="kde",kind="reg",plot_kws={'line_kws':{'color':'red',"alpha":0.5},"scatter_kws":{"s":3}},corner=True)

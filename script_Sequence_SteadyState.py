@@ -250,7 +250,7 @@ dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
 dictfile = "mrf175_Dico2_Invivo_adjusted_TR7000.dict"
 dictfile = "mrf_dictconf_SimReco2_light_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_reco4.dict"
-
+dictfile = "mrf175_SimReco2_light.dict"
 
 
 
@@ -332,14 +332,14 @@ from scipy.io import savemat
 
 
 
-with open("./mrf_sequence_adjusted_delay_1_94.json") as f:
+with open("./mrf_sequence_adjusted.json") as f:
     sequence_config = json.load(f)
 
 
 with open("./mrf_dictconf_Dico2_Invivo.json") as f:
     dict_config = json.load(f)
 
-with open("./mrf_dictconf_SimReco2_light.json") as f:
+with open("./mrf_dictconf_SimReco2.json") as f:
     dict_config = json.load(f)
 
 # generate signals
@@ -358,7 +358,7 @@ seq=T1MRF(**sequence_config)
 
 
 
-dictfile = "mrf175_SimReco2_light_delay_1_94.dict"
+dictfile = "mrf175_SimReco2_adjusted.dict"
 
 sim_mode="mean"
 overwrite=True
@@ -482,17 +482,62 @@ with open("./mrf_sequence_adjusted_delay_1_94.json","w") as f:
 
 
 
+#############PCA##############@
+
+import pandas as pd
+#import matplotlib
+#matplotlib.use("TkAgg")
+from mrfsim import *
+from image_series import *
+from utils_mrf import *
+import json
+from finufft import nufft1d1,nufft1d2
+from scipy import signal,interpolate
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
+import matplotlib.pyplot as plt
+import numpy as np
+from movements import *
+from dictoptimizers import *
+import glob
+from tqdm import tqdm
+import pickle
+from scipy.io import savemat
+from Transformers import *
+
+dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
+
+mrfdict = dictsearch.Dictionary()
+mrfdict.load(dictfile, force=True)
+keys = mrfdict.keys
+array_water = mrfdict.values[:, :, 0]
+array_fat = mrfdict.values[:, :, 1]
+
+array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
+array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
+
+del pca_water
+pca_water = PCAComplex(n_components_=10)
+
+pca_water.fit(array_water_unique)
+#pca_fat.fit(array_fat_unique)
 
 
+plt.figure()
+plt.plot(pca_water.explained_variance_ratio_)
+
+pca_water.plot_retrieved_signal(array_water_unique,i=np.random.choice(array_water_unique.shape[0]))
+
+pca_fat = PCAComplex(n_components_=5)
+
+pca_fat.fit(array_fat_unique)
+#pca_fat.fit(array_fat_unique)
 
 
+plt.figure()
+plt.plot(pca_fat.explained_variance_ratio_)
 
-
-
-
-
-
-
+pca_fat.plot_retrieved_signal(array_fat_unique,i=np.random.choice(array_fat_unique.shape[0]))
 
 
 

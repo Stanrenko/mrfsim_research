@@ -1,6 +1,7 @@
 
 #import matplotlib
 #matplotlib.use("TkAgg")
+import numpy as np
 from mrfsim import T1MRF
 from image_series import *
 from dictoptimizers import SimpleDictSearch
@@ -143,7 +144,7 @@ print("Calculating Coil Sensitivity....")
 
 if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     res = 16
-    b1_all_slices=calculate_sensitivity_map(kdata_all_channels_all_slices,radial_traj,res,image_size)
+    b1_all_slices=calculate_sensitivity_map(kdata_all_channels_all_slices,radial_traj,res,image_size,hanning_filter=True)
     np.save(filename_b1,b1_all_slices)
 else:
     b1_all_slices=np.load(filename_b1)
@@ -153,7 +154,12 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 
 dico=build_dico_seqParams(filename, folder)
 
-sl=0
+sl=2
+
+
+
+
+
 for sl in tqdm(range(nb_slices)):
     print("Processing slice {} out of {}".format(sl, nb_slices))
     kdata_all_channels = kdata_all_channels_all_slices[sl, :, :, :]
@@ -181,7 +187,7 @@ for sl in tqdm(range(nb_slices)):
 
     #animate_images(volumes_all)
     #volume_rebuilt = build_single_image_multichannel(kdata_all_channels, radial_traj,
-                                                     image_size, b1=b1, density_adj=False)
+   #                                                  image_size, b1=b1, density_adj=False)
 
     #plt.figure()
     #plt.imshow(np.abs(volume_rebuilt))

@@ -305,6 +305,8 @@ class ImageSeries(object):
         traj = trajectory.get_traj()
 
         #traj = traj.reshape((self.images_series.shape[0], -1, traj.shape[-1]))
+        if self.images_series.dtype=="complex64":
+            traj = traj.astype("float32")
 
         if not (traj.shape[-1] == len(self.image_size)):
             raise ValueError("Trajectory dimension does not match Image Space dimension")

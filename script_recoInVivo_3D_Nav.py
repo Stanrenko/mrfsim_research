@@ -95,11 +95,12 @@ localfile="/phantom.005.v1/meas_MID00458_FID62850_raFin_3D_tra_1x1x5mm_FULL_P0_S
 localfile="/phantom.005.v1/meas_MID00459_FID62851_raFin_3D_tra_1x1x5mm_FULL_P0_Sl27_RO50_FOV220.dat"#Box at the top border with more outside
 
 localfile="/phantom.001.v1/phantom.001.v1.dat"
-localfile="/phantom.006.v1/meas_MID00027_FID02798_raFin_3D_tra_1x1x5mm_FULL_FF.dat"#Box at the top border with more outside
-localfile="/phantom.006.v1/meas_MID00028_FID02799_raFin_3D_tra_1x1x5mm_FULL_new.dat"#Box at the top border with more outside
-localfile="/phantom.006.v1/meas_MID00029_FID02800_raFin_3D_tra_1x1x5mm_FULL_FF_TR4000.dat"#Box at the top border with more outside
-localfile="/phantom.006.v1/meas_MID00023_FID02830_raFin_3D_tra_1x1x5mm_FULL_FF_TR5000.dat"#Box at the top border with more outside
-localfile="/phantom.006.v2/"
+localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
+#localfile="/phantom.006.v1/meas_MID00027_FID02798_raFin_3D_tra_1x1x5mm_FULL_FF.dat"#Box at the top border with more outside
+#localfile="/phantom.006.v1/meas_MID00028_FID02799_raFin_3D_tra_1x1x5mm_FULL_new.dat"#Box at the top border with more outside
+#localfile="/phantom.006.v1/meas_MID00029_FID02800_raFin_3D_tra_1x1x5mm_FULL_FF_TR4000.dat"#Box at the top border with more outside
+#localfile="/phantom.006.v1/meas_MID00023_FID02830_raFin_3D_tra_1x1x5mm_FULL_FF_TR5000.dat"#Box at the top border with more outside
+#localfile="/phantom.006.v2/"
 
 
 filename = base_folder+localfile
@@ -135,7 +136,7 @@ filename_oop_corrected=str.split(filename,".dat") [0]+"_volumes_oop_corrected{}.
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 density_adj_radial=True
-use_GPU = True
+use_GPU = False
 light_memory_usage=True
 #Parsed_File = rT.map_VBVD(filename)
 #idx_ok = rT.detect_TwixImg(Parsed_File)

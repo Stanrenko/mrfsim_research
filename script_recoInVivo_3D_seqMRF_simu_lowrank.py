@@ -65,9 +65,11 @@ medfilter=False
 
 
 #name = "SquareSimu3D_SS_FF0_1"
-name = "SquareSimu3D_SS_SimReco2"
+name = "Knee3D_SimReco2"
 
 dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
+dictfile_for_proj="mrf_dictconf_SimReco2_light_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
+
 suffix="_DE_Simu_FF_reco3"
 with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json") as f:
     sequence_config = json.load(f)
@@ -135,9 +137,9 @@ sequence_config["T_recovery"]=Treco
 sequence_config["nrep"]=nrep
 sequence_config["rep"]=rep
 
-#seq=T1MRFSS(**sequence_config)
+seq=T1MRFSS(**sequence_config)
 
-seq=T1MRFSS_NoInv(**sequence_config)
+#seq=T1MRFSS_NoInv(**sequence_config)
 #seq=T1MRF(**sequence_config)
 
 
@@ -185,7 +187,7 @@ file_map = filename + "_sl{}_rp{}_us{}{}w{}{}_MRF_map.pkl".format(nb_slices,repe
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 nb_channels=1
-npoint = 128
+npoint = 512
 
 
 
@@ -209,16 +211,14 @@ if "SquareSimu3D" in name:
 
     m = RandomMap3D(name,dict_config,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,undersampling_factor=undersampling_factor,repeat_slice=repeat_slice,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor,gen_mode=gen_mode)
 
-# elif name=="KneePhantom":
-#     num =1
-#     file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(name,num)
-#
-#     m = MapFromFile(name,image_size=image_size,file=file_matlab_paramMap,rounding=True,gen_mode="other")
+elif "Knee" in name:
+     num =1
+     file_matlab_paramMap = "./data/KneePhantom/Phantom{}/paramMap.mat".format(num)
+
+     m = MapFromFile3D(name,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,image_size=image_size,file=file_matlab_paramMap,rounding=True,gen_mode="other",undersampling_factor=undersampling_factor,resting_time=4000)
 
 else:
     raise ValueError("Unknown Name")
-
-
 
 if str.split(filename_paramMap,"/")[-1] not in os.listdir(folder):
     m.buildParamMap()
@@ -247,12 +247,13 @@ else:
 
 
 
-m.build_ref_images(seq)
+if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
+    m.build_ref_images(seq)
 
 if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
     np.save(filename_groundtruth,m.images_series[::nspoke])
 
-animate_images(m.images_series[::nspoke,int(nb_slices/2)])
+#animate_images(m.images_series[::nspoke,int(nb_slices/2)])
 # i=0
 # image=m.images_series[i]
 
@@ -323,7 +324,64 @@ if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
     np.save(filename_mask,m.mask)
 
 volumes_all=np.load(filename_volume)
-ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
+#ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
+
+volumes_all=volumes_all.reshape(ntimesteps,-1)
+
+
+import dask.array as da
+#
+A_r=volumes_all.real
+A_i=volumes_all.imag
+#
+X_1 = np.concatenate([A_r,-A_i],axis=-1)
+X_2 = np.concatenate([A_i,A_r],axis=-1)
+X=np.concatenate([X_1,X_2],axis=0)
+#
+u, s, vh = da.linalg.svd(da.from_array(X))
+#
+vh=np.array(vh[::2,:])
+s=np.array(s[::2])
+
+keys,values=read_mrf_dict(dictfile_for_proj,np.arange(0.,1.01,0.1))
+
+volumes_all_proj=(values.T@values.conj())@volumes_all
+
+#
+A_r=volumes_all_proj.real
+A_i=volumes_all_proj.imag
+#
+X_1 = np.concatenate([A_r,-A_i],axis=-1)
+X_2 = np.concatenate([A_i,A_r],axis=-1)
+X=np.concatenate([X_1,X_2],axis=0)
+#
+u, s, vh = da.linalg.svd(da.from_array(X))
+#
+vh=np.array(vh[::2,:])
+s=np.array(s[::2])
+
+
+volumes_truth=np.load(filename_groundtruth)
+
+volumes_truth=volumes_truth.reshape(ntimesteps,-1)
+
+
+import dask.array as da
+#
+A_r=volumes_truth.real
+A_i=volumes_truth.imag
+#
+X_1 = np.concatenate([A_r,-A_i],axis=-1)
+X_2 = np.concatenate([A_i,A_r],axis=-1)
+X=np.concatenate([X_1,X_2],axis=0)
+#
+u, s, vh = da.linalg.svd(da.from_array(X))
+#
+vh=np.array(vh[::2,:])
+s=np.array(s[::2])
+
+plt.figure()
+plt.plot(np.cumsum(s)/np.sum(s))
 
 
 ########################## Dict mapping ########################################
@@ -332,7 +390,7 @@ ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
 #      sequence_config = json.load(f)
 
 
-#seq = None
+seq = None
 
 
 load_map=False
@@ -357,12 +415,12 @@ volumes_all = np.load(filename_volume)
 
 
 if not(load_map):
-    niter = 3
+    niter = 0
     #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=True, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
@@ -386,13 +444,6 @@ else:
 maskROI=buildROImask_unique(m.paramMap)
 regression_paramMaps_ROI(m.paramMap,all_maps[0][0],m.mask>0,all_maps[0][1]>0,maskROI,adj_wT1=True,title="regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
 
-plt.close("all")
-maskROI = buildROImask_unique(m.paramMap)
-for it in range(niter):
-
-    regression_paramMaps_ROI(m.paramMap, all_maps[it][0], m.mask > 0, all_maps[it][1] > 0, maskROI, adj_wT1=True,
-                             title="it{}_regROI_".format(it) + str.split(str.split(filename_volume, "/")[-1], ".npy")[0], save=True)
-
 #regression_paramMaps(m.paramMap,all_maps[0][0],mode="Boxplot")
 
 
@@ -400,7 +451,7 @@ curr_file=file_map
 file = open(curr_file, "rb")
 all_maps = pickle.load(file)
 file.close()
-for iter in list(range(np.minimum(len(all_maps.keys()),2))):
+for iter in list(all_maps.keys()):
 
     map_rebuilt=all_maps[iter][0]
     mask=all_maps[iter][1]
@@ -424,7 +475,7 @@ name="SquareSimu3D_SS_SimReco2"
 #name="SquareSimu3D_SS_FF0_1"
 dic_maps={}
 list_suffix=["fullReco_T1MRF_adjusted","fullReco_Brute","DE_Simu_FF_reco3","DE_Simu_FF_v2_reco3"]
-list_suffix=["fullReco","DE_Simu_FF_reco3"]
+list_suffix=["fullReco","DE_Simu_FF_reco3","DE_Simu_FF_reco3_medfilter_3","DE_Simu_FF_v2_reco3","DE_Simu_FF_NoInv"]
 
 for suffix in list_suffix:
     if "NoInv" in suffix:
@@ -444,12 +495,11 @@ maskROI=buildROImask_unique(m.paramMap,key=k)
 fig,ax=plt.subplots(1,2)
 plt.title(k)
 for key in dic_maps.keys():
-    for it in (range(np.minimum(len(dic_maps[key].keys()),2))):
-        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
-        roi_values.sort_values(by=["Obs Mean"],inplace=True)
-        #dic_roi_values[key]=roi_values
-        ax[0].plot(roi_values["Obs Mean"],roi_values["Pred Mean"].values,label=key+"_it{}".format(it))
-        ax[1].plot(roi_values["Obs Mean"],roi_values["Pred Std"].values,label=key+"_it{}".format(it))
+    roi_values=get_ROI_values(m.paramMap,dic_maps[key][0][0],m.mask>0,dic_maps[key][0][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+    roi_values.sort_values(by=["Obs Mean"],inplace=True)
+    #dic_roi_values[key]=roi_values
+    ax[0].plot(roi_values["Obs Mean"],roi_values["Pred Mean"].values,label=key)
+    ax[1].plot(roi_values["Obs Mean"],roi_values["Pred Std"].values,label=key)
 
 ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="--")
 plt.legend()
@@ -459,12 +509,11 @@ maskROI=buildROImask_unique(m.paramMap,key=k)
 fig,ax=plt.subplots(1,2)
 plt.title(k)
 for key in dic_maps.keys():
-    for it in (range(np.minimum(len(dic_maps[key].keys()), 2))):
-        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=False,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
-        roi_values.sort_values(by=["Obs Mean"],inplace=True)
-        #dic_roi_values[key]=roi_values
-        ax[0].plot(roi_values["Obs Mean"],roi_values["Pred Mean"].values,label=key+"_it{}".format(it))
-        ax[1].plot(roi_values["Obs Mean"],roi_values["Pred Std"].values,label=key+"_it{}".format(it))
+    roi_values=get_ROI_values(m.paramMap,dic_maps[key][0][0],m.mask>0,dic_maps[key][0][1]>0,return_std=True,adj_wT1=False,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+    roi_values.sort_values(by=["Obs Mean"],inplace=True)
+    #dic_roi_values[key]=roi_values
+    ax[0].plot(roi_values["Obs Mean"],roi_values["Pred Mean"].values,label=key)
+    ax[1].plot(roi_values["Obs Mean"],roi_values["Pred Std"].values,label=key)
 
 
 ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="--")

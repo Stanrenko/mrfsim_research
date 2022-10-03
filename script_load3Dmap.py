@@ -52,7 +52,9 @@ filename='./data/InVivo/3D/patient.001.v1/meas_MID00215_FID60605_raFin_3D_tra_FU
 #meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes_corrected_final_MRF_map.pkl
 filename='./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes_corrected_final.dat'
 filename='./data/InVivo/3D/patient.002.v2/meas_MID00038_FID01901_raFin_3D_tra_1x1x5mm_FULL_FOV90_Sl160_volumes_modif.dat'
-filename='./data/InVivo/3D/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_volumes_modif_sl17.dat'
+filename='./data/InVivo/3D/patient.003.v1/aggregated_volumes_sl_16_17_18.dat'
+#filename='./data/InVivo/3D/patient.003.v1/meas_MID00125_FID02111_raFin_3D_tra_1x1x5mm_FULL_1_volumes_s16_17_18.dat'
+filename='./data/InVivo/KB/meas_MID02754_FID765278_JAMBES_raFin_CLI_BILAT_volumes_0.dat'
 #filename="./3D/SquareSimu3D_sl8_rp2fullysampled.dat"
 #filename="./3D/SquareSimu3D_sl8_rp2_fullysampled.dat"
 
@@ -106,12 +108,58 @@ animate_images(mask_base)
 
 
 
+
 #compare_maps
 
 import pickle
 from utils_mrf import *
 from mutools import io
 
+
+
+folder ="./data/InVivo/3D/patient.001.v1/"
+
+file_maps=[
+            "meas_MID00215_FID60605_raFin_3D_tra_FULl_volumes_cf_MRF_map.pkl",
+            "meas_MID00215_FID60605_raFin_3D_tra_FULl_volumes_Matrix_MRF_map.pkl"
+           #"meas_MID00028_FID07406_raFin_3D_tra_1x1x5mm_FULL_optimCorrelShorten_allspokes8_MRF_map.pkl",
+           #"meas_MID00028_FID07406_raFin_3D_tra_1x1x5mm_FULL_optimCorrelShorten_allspokes8_DicoInvivo_MRF_map.pkl"
+           ]
+
+dico_maps={}
+
+for map_file in file_maps:
+    with open(folder+map_file, "rb") as file:
+        all_maps = pickle.load(file)
+    dico_maps[map_file]=all_maps
+
+
+all_maps_1=dico_maps[file_maps[0]]
+all_maps_2 = dico_maps[file_maps[1]]
+#maskROI=np.array(ROI_data)[all_maps_1[0][1]>0]
+#maskROI = buildROImask(all_maps_1[0][0],max_clusters=10)
+
+
+for key in list(dico_maps.keys())[1:]:
+    all_maps_2 = dico_maps[key]
+    regression_paramMaps(all_maps_1[0][0],all_maps_2[0][0],all_maps_1[0][1]>0,all_maps_2[0][1]>0,proj_on_mask1=True,fontsize=5,mode="Standard",adj_wT1=True,save=True)
+
+m1=all_maps_1[0][0]
+m2=all_maps_2[0][0]
+
+
+import statsmodels.api as sm
+sm.graphics.mean_diff_plot(m1["wT1"][m1["ff"]<0.7], m2["wT1"][m1["ff"]<0.7])
+
+sm.graphics.mean_diff_plot(m1["ff"], m2["ff"])
+
+sm.graphics.mean_diff_plot(m2["ff"], m1["ff"])
+
+#compare_maps ROI
+
+import pickle
+from utils_mrf import *
+from mutools import io
 
 
 folder ="./data/InVivo/3D/phantom.009.v6/"
