@@ -251,7 +251,10 @@ if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
     m.build_ref_images(seq)
 
 if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
-    np.save(filename_groundtruth,m.images_series[::nspoke])
+    volumes_ideal=m.images_series[:,mask>0]
+    volumes_ideal=[makevol(np.mean(arr,axis=0),mask>0) for arr in groupby(volumes_ideal,nspoke)]
+    volumes_ideal=np.array(volumes_ideal)
+    np.save(filename_groundtruth,volumes_ideal)
 
 volumes_ideal = np.load(filename_groundtruth)
 
@@ -754,14 +757,40 @@ X_final=X_list[-1][:,mask>0]
 X_target=volumes_ideal[:,mask>0]
 X_rebuilt=volumes_all[:,mask>0]
 
-metric=np.abs
+metric=np.imag
 plt.figure()
 j=np.random.choice(range(X_final.shape[1]))
 plt.plot(metric(X_final[:,j]),label="MFLOR")
 plt.plot(metric(X_target[:,j]),label="Target")
 plt.plot(metric(X_rebuilt[:,j]),label="NUFFT")
+plt.axvline(x=62)
+plt.plot(metric(D[0,:]),label="Projection Dico")
 plt.title("Fingerprints {}".format(j))
 plt.legend()
+
+error_fingerprints=np.linalg.norm(X_final-X_target,axis=0)
+ind_max_error_fingerprint = np.argsort(error_fingerprints)[-10]
+mask_error = np.zeros(mask.shape)
+mask_error=mask_error[mask>0]
+mask_error[ind_max_error_fingerprint]=1
+mask_error=makevol(mask_error,mask>0)
+sl_max,pt1_max,pt2_max=np.unravel_index(np.argmax(mask_error),mask.shape)
+
+plt.close("all")
+metric=np.abs
+plt.figure()
+plt.plot(metric(X_final[:,ind_max_error_fingerprint]),label="MFLOR")
+plt.plot(metric(X_target[:,ind_max_error_fingerprint]),label="Target")
+plt.plot(metric(X_rebuilt[:,ind_max_error_fingerprint]),label="NUFFT")
+plt.title("Fingerprint with max MFLOR error {}".format((sl_max,pt1_max,pt2_max)))
+plt.legend()
+
+
+
+plt.figure()
+plt.plot(np.sort(error_fingerprints))
+
+
 
 error_ts=np.linalg.norm(X_final-X_target,axis=1)
 plt.figure()
@@ -788,6 +817,7 @@ plt.legend()
 
 animate_images(X_list[-1][62,:,:,:])
 animate_images(volumes_ideal[62,:,:,:])
+animate_images(volumes_all[62,:,:,:])
 
 delta_m = delta(X_list[-1], axis)
 
@@ -863,7 +893,7 @@ if not(load_map):
 
 
     optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=False, useGPU_dictsearch=True, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
-    all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
+    all_maps=optimizer.search_patterns_test(dictfile,volumes_ideal,retained_timesteps=None)
 
     if(save_map):
         import pickle
