@@ -145,7 +145,7 @@ seq=T1MRFSS(**sequence_config)
 
 
 
-nb_filled_slices = 16
+nb_filled_slices = 8
 nb_empty_slices=2
 repeat_slice=1
 nb_slices = nb_filled_slices+2*nb_empty_slices
@@ -253,6 +253,8 @@ if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
 if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
     np.save(filename_groundtruth,m.images_series[::nspoke])
 
+volumes_ideal = np.load(filename_groundtruth)
+
 #animate_images(m.images_series[::nspoke,int(nb_slices/2)])
 # i=0
 # image=m.images_series[i]
@@ -282,36 +284,12 @@ else:
     data = np.load(filename_kdata)
 
 
-#plt.plot(np.unique(radial_traj.get_traj()[:,:,2],axis=-1),"s")
-if medfilter:
-    data=data.reshape(nb_segments,-1,npoint)
-    density = np.abs(np.linspace(-1, 1, npoint))
-    density = np.expand_dims(density, tuple(range(data.ndim - 1)))
-    # kdata_all_channels_all_slices = data.reshape(-1, npoint)
-    # del data
-    print("Performing Density Adjustment....")
-    data *= density
-    data=data.reshape(-1,npoint)
-    data_filtered_real=np.apply_along_axis(lambda x:medfilt(x,3),-1,np.real(data))
-    data_filtered_imag=np.apply_along_axis(lambda x:medfilt(x,3),-1,np.imag(data))
-    data_filtered=data_filtered_real+1j*data_filtered_imag
-    j=np.random.choice(range(data.shape[0]))
-    plt.figure()
-    plt.plot(data[j])
-    plt.plot(data_filtered[j])
-    data_filtered=data_filtered.reshape(nb_segments,-1)
-    data=data_filtered
-
-
-
 
 ##volumes for slice taking into account coil sensi
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    if medfilter:
-        density_adj=False
-    else:
-        density_adj=True
+
+    density_adj=True
     volumes_all=simulate_radial_undersampled_images(data,radial_traj,image_size,density_adj=density_adj,useGPU=use_GPU,ntimesteps=ntimesteps)
     np.save(filename_volume,volumes_all)
     # sl=20
@@ -326,62 +304,526 @@ if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
 volumes_all=np.load(filename_volume)
 #ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
 
-volumes_all=volumes_all.reshape(ntimesteps,-1)
+
+def J(m):
+    global traj
+    global data
+    global ntimesteps
+    global curr_ntimesteps
+    global npoint
+    global density_adj
+    global useGPU
+
+    FU=[]
+    if m.dtype=="complex64":
+        traj_kdata=traj.astype("float32")
+    else:
+        traj_kdata = copy(traj)
+
+    if not(useGPU):
+        for j in tqdm(range(curr_ntimesteps)):
+            FU.append(finufft.nufft3d2(traj_kdata[j,:, 2],traj_kdata[j,:, 0], traj_kdata[j,:, 1],m[j]))
+
+    else:
+        dtype = np.float32  # Datatype (real)
+        complex_dtype = np.complex64
+        N1, N2, N3 = m.shape[1], m.shape[2], m.shape[3]
+        #M = traj.shape[0]
+        #c_gpu = GPUArray((M), dtype=complex_dtype)
+        FU = []
+        for i in tqdm(range(curr_ntimesteps)):
+            fk = m[i, :, :, :]
+            kx = traj[i,:, 0]
+            ky = traj[i,:, 1]
+            kz = traj[i,:, 2]
+
+            kx = kx.astype(dtype)
+            ky = ky.astype(dtype)
+            kz = kz.astype(dtype)
+            fk = fk.astype(complex_dtype)
+            c_gpu = GPUArray((kx.shape[0]), dtype=complex_dtype)
+
+            plan = cufinufft(2, (N1, N2, N3), 1, eps=1e-6, dtype=dtype)
+            plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+            plan.execute(c_gpu, to_gpu(fk))
+            c = np.squeeze(c_gpu.get())
+            c_gpu.gpudata.free()
+            FU.append(c)
+            plan.__del__()
+
+    FU=np.array(FU)
+
+    kdata_error = FU - data.reshape(ntimesteps,-1)[:curr_ntimesteps]
+    #kdata_ratio = FU/data.reshape(ntimesteps,-1)[:curr_ntimesteps]
+
+    # return np.linalg.norm(kdata_error)**2
+    kdata_error/=np.prod(m.shape[1:])
+    if density_adj:
+        kdata_error = kdata_error.reshape(-1, npoint)
+        density = np.abs(np.linspace(-1, 1, npoint))
+        density = np.expand_dims(density, tuple(range(kdata_error.ndim - 1)))
+        kdata_error *= np.sqrt(density)
+
+
+    return np.linalg.norm(kdata_error) ** 2
+
+
+def grad_J(m):
+    global traj
+    global data
+    global ntimesteps
+    global npoint
+    global curr_ntimesteps
+    global nspoke
+    global nb_slices
+    global density_adj
+    global useGPU
+
+    image_size=m.shape[1:]
+    FU = []
+    if m.dtype == "complex64":
+        traj_kdata = traj.astype("float32")
+    else:
+        traj_kdata=copy(traj)
+
+    if not (useGPU):
+        for j in tqdm(range(curr_ntimesteps)):
+            FU.append(finufft.nufft3d2(traj_kdata[j, :, 2], traj_kdata[j, :, 0], traj_kdata[j, :, 1], m[j]))
+    else:
+        dtype = np.float32  # Datatype (real)
+        complex_dtype = np.complex64
+        N1, N2, N3 = m.shape[1], m.shape[2], m.shape[3]
+        #M = traj[0].shape[0]
+        #c_gpu = GPUArray((M), dtype=complex_dtype)
+        FU = []
+        for i in tqdm(range(curr_ntimesteps)):
+            fk = m[i, :, :, :]
+            kx = traj_kdata[i,:, 0]
+            ky = traj_kdata[i,:, 1]
+            kz = traj_kdata[i,:, 2]
+
+            kx = kx.astype(dtype)
+            ky = ky.astype(dtype)
+            kz = kz.astype(dtype)
+            fk = fk.astype(complex_dtype)
+
+            c_gpu = GPUArray((kx.shape[0]), dtype=complex_dtype)
+
+            plan = cufinufft(2, (N1, N2, N3), 1, eps=1e-6, dtype=dtype)
+            plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+            plan.execute(c_gpu, to_gpu(fk))
+            c = np.squeeze(c_gpu.get())
+            c_gpu.gpudata.free()
+            FU.append(c)
+            plan.__del__()
+
+    FU = np.array(FU)
+
+    kdata_error = FU - data.reshape(ntimesteps,-1)[:curr_ntimesteps]
+
+    kdata_error/=np.prod(m.shape[1:])**2
+    # return np.linalg.norm(kdata_error)**2
+    if density_adj:
+        kdata_error = kdata_error.reshape(-1, npoint)
+        density = np.abs(np.linspace(-1, 1, npoint))
+        density = np.expand_dims(density, tuple(range(kdata_error.ndim - 1)))
+        kdata_error*=density
+        kdata_error=kdata_error.reshape(curr_ntimesteps,-1)
+
+
+    dm=[]
+
+    if not(useGPU):
+        for j in tqdm(range(curr_ntimesteps)):
+            dm.append(finufft.nufft3d1(traj[j,:, 2], traj[j,:, 0], traj[j,:, 1], kdata_error[j], image_size))
+
+    else:
+        N1, N2, N3 = image_size[0], image_size[1], image_size[2]
+        dtype = np.float32  # Datatype (real)
+        complex_dtype = np.complex64
+
+        for i in tqdm(range(curr_ntimesteps)):
+            fk_gpu = GPUArray(( N1, N2, N3), dtype=complex_dtype)
+            c_retrieved = kdata_error[i]
+            kx = traj[i,:, 0]
+            ky = traj[i,:, 1]
+            kz = traj[i,:, 2]
+            #
+            # print(fk_gpu.shape)
+            # print(kx.shape)
+            # print(c_retrieved.shape)
+
+            # Cast to desired datatype.
+            kx = kx.astype(dtype)
+            ky = ky.astype(dtype)
+            kz = kz.astype(dtype)
+            c_retrieved = c_retrieved.astype(complex_dtype)
+
+            # Allocate memory for the uniform grid on the GPU.
+            c_retrieved_gpu = to_gpu(c_retrieved)
+
+            # Initialize the plan and set the points.
+            plan = cufinufft(1, (N1, N2, N3),1, eps=1e-6, dtype=dtype)
+            plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+
+            # Execute the plan, reading from the strengths array c and storing the
+            # result in fk_gpu.
+            plan.execute(c_retrieved_gpu, fk_gpu)
+
+            dm.append(np.squeeze(fk_gpu.get()))
+
+            fk_gpu.gpudata.free()
+            c_retrieved_gpu.gpudata.free()
+
+            plan.__del__()
+
+
+    return 2*np.array(dm)
+
+def psi(t,alpha=1e-8):
+    return np.sqrt(t+alpha**2)
+
+def delta(m,axis):
+    return np.diff(m,axis=1+axis,append=0)
+
+def delta_adjoint(m,axis):
+    return -np.diff(m, axis=1 + axis, prepend=0)
+
+def J_TV(m):
+    global axis
+    global alpha
+    global mask
+    global is_weighted
+    global weights
+    #global delta_m
+    delta_m = delta(m, axis)
+
+
+
+    if is_weighted:
+        bound_inf = np.min(np.argwhere(mask>0)[:,axis])
+        bound_sup = np.max(np.argwhere(mask > 0)[:, axis])
+        weights=np.ones(delta_m.shape,dtype=delta_m.dtype)
+        idx=[np.s_[:], np.s_[:],np.s_[:],np.s_[:]]
+        idx[axis+1]=np.s_[:bound_inf]
+        weights[tuple(idx)]=0
+
+        idx = [np.s_[:], np.s_[:], np.s_[:], np.s_[:]]
+        idx[axis + 1] = np.s_[bound_sup:]
+        weights[tuple(idx)] = 0
+
+    else:
+        weights=1
+
+
+    return np.sum(weights*psi(np.abs(delta_m)**2,alpha))
+
+def grad_J_TV(m):
+    global axis
+    global alpha
+    global is_weighted
+    #global W
+    #global delta_m
+
+    delta_m = delta(m,axis)
+
+    if is_weighted:
+        bound_inf = np.min(np.argwhere(mask > 0)[:, axis])
+        bound_sup = np.max(np.argwhere(mask > 0)[:, axis])
+        weights = np.ones(delta_m.shape, dtype=delta_m.dtype)
+        idx = [np.s_[:], np.s_[:], np.s_[:], np.s_[:]]
+        idx[axis + 1] = np.s_[:bound_inf]
+        weights[tuple(idx)] = 0
+
+        idx = [np.s_[:], np.s_[:], np.s_[:], np.s_[:]]
+        idx[axis + 1] = np.s_[bound_sup:]
+        weights[tuple(idx)] = 0
+
+    else:
+        weights = 1
+
+    W = psi(np.abs(delta_m)**2,alpha)
+
+    return delta_adjoint(weights*delta_m/W,axis)
+
+
+mask=m.mask
+curr_ntimesteps=ntimesteps
+traj=radial_traj.get_traj_for_reconstruction(ntimesteps)
+X0=np.zeros(volumes_all.shape,dtype=volumes_all.dtype)
+density_adj=True
+
+useGPU=False
+J(volumes_all)
+
+useGPU=True
+J(volumes_all)
+
+useGPU=True
+grad_gpu = grad_J(volumes_all)
+
+useGPU=False
+grad = grad_J(volumes_all)
+
+is_weighted=True
+eps=np.zeros(volumes_all.shape,dtype=volumes_all.dtype)
+sl=np.random.choice(range(image_size[0]))
+
+point1=np.random.choice(range(image_size[-1]))
+point2=np.random.choice(range(image_size[-1]))
+
+eps_value=0.0001*1j
+eps[10,sl,point1,point2]=eps_value
+alpha=1e-13
+
+print(volumes_all[10,sl,point1,point2]-volumes_all[10,sl-1,point1,point2])
+print(volumes_all[10,sl+1,point1,point2]-volumes_all[10,sl,point1,point2])
+
+dJ=(J_TV(volumes_all+eps)-J_TV(volumes_all))
+grad_TV = np.real(np.dot(grad_J_TV(volumes_all).flatten().conj(),eps.flatten()))
+print(dJ)
+print(grad_TV)
+
+grad_TV = grad_J_TV(np.abs(volumes_all))*
+
+animate_images((delta_m/W)[10,:,:,:])
+
+np.dot(grad_TV.flatten(),eps.flatten())
+(delta_m/W)[10,:,:,:][(delta_m/W)[10,:,:,:]<0]
+
+animate_images(grad_TV[10,:,:,:])
+J_TV(volumes_ideal)
+
+
 
 
 import dask.array as da
-#
-A_r=volumes_all.real
-A_i=volumes_all.imag
-#
-X_1 = np.concatenate([A_r,-A_i],axis=-1)
-X_2 = np.concatenate([A_i,A_r],axis=-1)
-X=np.concatenate([X_1,X_2],axis=0)
-#
-u, s, vh = da.linalg.svd(da.from_array(X))
-#
-vh=np.array(vh[::2,:])
-s=np.array(s[::2])
 
-keys,values=read_mrf_dict(dictfile_for_proj,np.arange(0.,1.01,0.1))
+mask=m.mask
 
-volumes_all_proj=(values.T@values.conj())@volumes_all
+traj=radial_traj.get_traj_for_reconstruction(ntimesteps)
+X0=np.zeros(volumes_all.shape,dtype=volumes_all.dtype)
 
-#
-A_r=volumes_all_proj.real
-A_i=volumes_all_proj.imag
-#
-X_1 = np.concatenate([A_r,-A_i],axis=-1)
-X_2 = np.concatenate([A_i,A_r],axis=-1)
-X=np.concatenate([X_1,X_2],axis=0)
-#
-u, s, vh = da.linalg.svd(da.from_array(X))
-#
-vh=np.array(vh[::2,:])
-s=np.array(s[::2])
+mu=1
+lambd=1
+curr_ntimesteps=ntimesteps
+keys,values=read_mrf_dict(dictfile,np.arange(0.0,1.01,0.1))
+t0=1
+
+X=X0
+M_prev=X0[:,mask>0]
+t=t0
+Z =X[:,m.mask>0]- lambd*grad_J(X)[:,m.mask>0]
+
+Z_proj=(values.T@values.conj())@Z
 
 
-volumes_truth=np.load(filename_groundtruth)
+u, s, vh =da.linalg.svd(da.from_array(Z_proj))
+u=np.array(u)
+s=np.array(s)
+vh=np.array(vh)
 
-volumes_truth=volumes_truth.reshape(ntimesteps,-1)
+s[s<lambd*mu]=0
+s[s>lambd*mu]=s[s>lambd*mu]-lambd*mu
+
+M = u@np.diag(s)@vh
+
+t_prev=t
+t=(1+np.sqrt(1+4*t**2))/2
+
+X = M + (t_prev-1)/(t+1) * (M - M_prev)
+X = np.array([makevol(im,mask>0) for im in X ])
+M_prev=M
+
+
+
+
+
+
 
 
 import dask.array as da
-#
-A_r=volumes_truth.real
-A_i=volumes_truth.imag
-#
-X_1 = np.concatenate([A_r,-A_i],axis=-1)
-X_2 = np.concatenate([A_i,A_r],axis=-1)
-X=np.concatenate([X_1,X_2],axis=0)
-#
-u, s, vh = da.linalg.svd(da.from_array(X))
-#
-vh=np.array(vh[::2,:])
-s=np.array(s[::2])
+
+
+mask=m.mask
+
+traj=radial_traj.get_traj_for_reconstruction(ntimesteps)
+X0=np.zeros(volumes_all.shape,dtype=volumes_all.dtype)
+useGPU=True
+
+
+mu=1
+lambd=0.05
+mu_TV=1
+curr_ntimesteps=ntimesteps
+keys,values=read_mrf_dict(dictfile_for_proj,FF_list=np.arange(0.,1.01,0.1),aggregate_components=True)
+t0=1
+
+is_weighted=True
+alpha=1e-13
+axis=0
+
+D = values
+
+X=X0
+M_prev=X0[:,mask>0]
+t=t0
+D_plus=np.linalg.pinv(D.T)
+i=0
+density_adj=True
+
+Z_costs = []
+X_grads = []
+X_grads_TV=[]
+X_list=[]
+niter_lowrank = 100
+
+
+for i in tqdm(range(niter_lowrank)):
+    print("############### ITER {} ################".format(i))
+    grad=grad_J(X)
+    grad_reg = grad_J_TV(X)
+    norm_grad=np.linalg.norm(grad)
+    norm_grad_reg = np.linalg.norm(grad_reg)
+    if norm_grad_reg==0:
+        Z = X - mu * grad / norm_grad
+    else:
+        Z = X - mu * grad/norm_grad-mu_TV*grad_reg/norm_grad_reg
+
+    J_current=J(Z)
+
+    Z_costs.append(J_current)
+    X_grads.append(norm_grad)
+    X_grads_TV.append(norm_grad_reg)
+
+    #animate_images(Z[:,int(nb_slices/2),:,:])
+    print("COST : {}".format(J_current))
+    Z = Z[:,mask>0]
+
+    Z_proj = (D.T@ D_plus) @ Z
+
+    #j=np.random.choice(Z.shape[1]);plt.figure();plt.plot(Z[:,j]);plt.plot(Z_proj[:,j])
+    #
+
+    u, s, vh = da.linalg.svd(da.from_array(Z_proj))
+    u = np.array(u)
+    s = np.array(s)
+    vh = np.array(vh)
+
+    s[s < lambd * mu] = 0
+    s[s > lambd * mu] = s[s > lambd * mu] - lambd * mu
+
+    M = u @ np.diag(s) @ vh
+
+    #j = np.random.choice(Z.shape[1]);plt.figure();plt.plot(Z[:, j]);plt.plot(Z_proj[:, j]);plt.plot(M[:, j])
+
+    t_prev = t
+    t = (1 + np.sqrt(1 + 4 * t ** 2)) / 2
+
+    X = M + (t_prev - 1) / (t + 1) * (M - M_prev)
+    X = np.array([makevol(im, mask > 0) for im in X])
+    M_prev = M
+
+    if i%10==0:
+        X_list.append(X)
+
+
 
 plt.figure()
-plt.plot(np.cumsum(s)/np.sum(s))
+plt.plot(Z_costs)
+
+plt.figure()
+plt.plot(X_grads)
+
+plt.figure()
+plt.plot(X_grads_TV)
+
+plt.figure();plt.plot(np.abs(grad_reg[15,:,128,128]))
+
+plt.figure();plt.plot([J_TV(x) for x in X_list])
+
+
+X_list=np.array(X_list)
+animate_images(X_list[:,10,6,:,:])
+
+plt.figure()
+plt.imshow(np.abs(X_list[4,10,1,:,:]))
+
+
+X_final=X_list[-1][:,mask>0]
+X_target=volumes_ideal[:,mask>0]
+X_rebuilt=volumes_all[:,mask>0]
+
+metric=np.abs
+plt.figure()
+j=np.random.choice(range(X_final.shape[1]))
+plt.plot(metric(X_final[:,j]),label="MFLOR")
+plt.plot(metric(X_target[:,j]),label="Target")
+plt.plot(metric(X_rebuilt[:,j]),label="NUFFT")
+plt.title("Fingerprints {}".format(j))
+plt.legend()
+
+error_ts=np.linalg.norm(X_final-X_target,axis=1)
+plt.figure()
+j=np.random.choice(range(X_final.shape[1]))
+plt.plot(error_ts/np.linalg.norm(error_ts))
+plt.plot(X_target[:,j]/np.linalg.norm(X_target[:,j]))
+plt.plot(np.array(sequence_config["TE"])[::nspoke]/np.linalg.norm(np.array(sequence_config["TE"])[::nspoke]))
+plt.plot(np.array(sequence_config["B1"])[::nspoke]/np.linalg.norm(np.array(sequence_config["B1"])[::nspoke]))
+
+ts = np.random.choice(range(ntimesteps))
+ts=62
+metric=np.abs
+point1 = int(image_size[1]/2)+np.random.choice(range(-60,60))
+point2 = int(image_size[2]/2)+np.random.choice(range(-60,60))
+point1=71
+point2=150
+plt.figure()
+j=np.random.choice(range(X_final.shape[1]))
+plt.plot(metric(X_list[-1][ts,:,point1,point2]/np.linalg.norm(X_list[-1][ts,:,point1,point2])),label="MFLOR")
+plt.plot(metric(volumes_ideal[ts,:,point1,point2]/np.linalg.norm(volumes_ideal[ts,:,point1,point2])),label="Target")
+plt.plot(metric(volumes_all[ts,:,point1,point2]/np.linalg.norm(volumes_all[ts,:,point1,point2])),label="NUFFT")
+plt.title("Slice profile ts {} point {}".format(ts,(point1,point2)))
+plt.legend()
+
+animate_images(X_list[-1][62,:,:,:])
+animate_images(volumes_ideal[62,:,:,:])
+
+delta_m = delta(X_list[-1], axis)
+
+
+
+if is_weighted:
+    bound_inf = np.min(np.argwhere(mask>0)[:,axis])
+    bound_sup = np.max(np.argwhere(mask > 0)[:, axis])
+    weights=np.ones(delta_m.shape,dtype=delta_m.dtype)
+    idx=[np.s_[:], np.s_[:],np.s_[:],np.s_[:]]
+    idx[axis+1]=np.s_[:bound_inf]
+    weights[tuple(idx)]=0
+
+    idx = [np.s_[:], np.s_[:], np.s_[:], np.s_[:]]
+    idx[axis + 1] = np.s_[bound_sup:]
+    weights[tuple(idx)] = 0
+
+else:
+    weights=1
+
+
+test_J_TV=weights*psi(np.abs(delta_m)**2,alpha)
+ind_max=np.unravel_index(np.argmax(test_J_TV),test_J_TV.shape)
+
+mask[ind_max[1],ind_max[2],ind_max[3]]
+
+J(X_list[-1])
+J_TV(X_list[-1])
+
+J(X_list[0])
+J_TV(X_list[0])
+
+
+animate_multiple_images(X_list[-1][:,6,:,:],volumes_ideal[:,6,:,:])
+
+
 
 
 ########################## Dict mapping ########################################
@@ -420,7 +862,7 @@ if not(load_map):
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=False, useGPU_dictsearch=True, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):

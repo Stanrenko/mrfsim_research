@@ -135,9 +135,8 @@ sequence_config["T_recovery"]=Treco
 sequence_config["nrep"]=nrep
 sequence_config["rep"]=rep
 
-#seq=T1MRFSS(**sequence_config)
+seq=T1MRFSS(**sequence_config)
 
-seq=T1MRFSS_NoInv(**sequence_config)
 #seq=T1MRF(**sequence_config)
 
 
@@ -245,14 +244,13 @@ else:
         m.paramMap=pickle.load(file)
     m.mask=np.load(filename_paramMask)
 
-
-
-m.build_ref_images(seq)
+if str.split(filename_kdata, "/")[-1] not in os.listdir(folder):
+    m.build_ref_images(seq)
 
 if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
     np.save(filename_groundtruth,m.images_series[::nspoke])
 
-animate_images(m.images_series[::nspoke,int(nb_slices/2)])
+#animate_images(m.images_series[::nspoke,int(nb_slices/2)])
 # i=0
 # image=m.images_series[i]
 
@@ -322,8 +320,8 @@ print("Building Mask....")
 if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
     np.save(filename_mask,m.mask)
 
-volumes_all=np.load(filename_volume)
-ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
+#volumes_all=np.load(filename_volume)
+#ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
 
 
 ########################## Dict mapping ########################################
@@ -357,12 +355,12 @@ volumes_all = np.load(filename_volume)
 
 
 if not(load_map):
-    niter = 3
+    niter = 1
     #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=True, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=True, useGPU_dictsearch=True, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
@@ -388,7 +386,7 @@ regression_paramMaps_ROI(m.paramMap,all_maps[0][0],m.mask>0,all_maps[0][1]>0,mas
 
 plt.close("all")
 maskROI = buildROImask_unique(m.paramMap)
-for it in range(niter):
+for it in range(niter+1):
 
     regression_paramMaps_ROI(m.paramMap, all_maps[it][0], m.mask > 0, all_maps[it][1] > 0, maskROI, adj_wT1=True,
                              title="it{}_regROI_".format(it) + str.split(str.split(filename_volume, "/")[-1], ".npy")[0], save=True)
@@ -857,9 +855,6 @@ plt.plot(p_s)
 
 print(np.sum(p_s[:,0]>0.05))
 print(np.sum(p_s[:,1]>0.05))
-
-
-
 
 
 #import matplotlib

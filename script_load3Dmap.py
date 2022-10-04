@@ -162,14 +162,12 @@ from utils_mrf import *
 from mutools import io
 
 
-folder ="./data/InVivo/3D/phantom.009.v6/"
+folder ="./data/InVivo/3D/patient.003.v2/"
 
 #meas_MID00360_FID09597_raFin_3D_tra_1x1x5mm_FULL_1400_DE_FF_reco4_allspokes8_MRF_map
 file_maps=[
-            "meas_MID00356_FID09594_raFin_3D_tra_1x1x5mm_FULL_new_allspokes8_MRF_map.pkl",
-            "meas_MID00360_FID09597_raFin_3D_tra_1x1x5mm_FULL_1400_DE_FF_reco4_allspokes8_MRF_map.pkl",
-            "meas_MID00357_FID09595_raFin_3D_tra_1x1x5mm_FULL_760_DE_FF_reco3_allspokes8_MRF_map.pkl",
-            "meas_MID00359_FID09596_raFin_3D_tra_1x1x5mm_FULL_760_DE_FF_reco3_8_allspokes8_MRF_map.pkl"
+            "meas_MID00033_FID09694_raFin_3D_tra_1x1x5mm_FULL_new_volumes_MRF_map.pkl",
+            "meas_MID00034_FID09695_raFin_3D_tra_1x1x5mm_FULL_DE_reco3_volumes_MRF_map.pkl"
            #"meas_MID00028_FID07406_raFin_3D_tra_1x1x5mm_FULL_optimCorrelShorten_allspokes8_MRF_map.pkl",
            #"meas_MID00028_FID07406_raFin_3D_tra_1x1x5mm_FULL_optimCorrelShorten_allspokes8_DicoInvivo_MRF_map.pkl"
            ]
@@ -206,13 +204,31 @@ for k in dico_maps.keys():
 
 plt.close("all")
 
+
+import statsmodels.api as sm
+
+
+k = "wT1"
+for key in list(dico_values.keys())[1:]:
+    values=dico_values[key][k].sort_values(by=["Obs Mean"])
+    sm.graphics.mean_diff_plot(np.array(values[["Obs Mean"]]).flatten(), np.array(values[["Pred Mean"]]).flatten());
+    plt.title("{} : {} vs Reference Sequence".format(k,key))
+
+k = "ff"
+for key in list(dico_values.keys())[1:]:
+    values=dico_values[key][k].sort_values(by=["Obs Mean"])
+    sm.graphics.mean_diff_plot(np.array(values[["Obs Mean"]]).flatten(), np.array(values[["Pred Mean"]]).flatten());
+    plt.title("{} : {} vs Reference Sequence".format(k,key))
+
 plt.figure()
 k="wT1"
 plt.title(k +" roi mean")
 for key in dico_values.keys():
     values=dico_values[key][k].sort_values(by=["Obs Mean"])
-    plt.plot(values[["Obs Mean"]],values[["Pred Mean"]],label=key,marker="x")
+    plt.plot(values[["Pred Mean"]],label=key,marker="x")
 plt.legend()
+
+
 
 plt.figure()
 plt.title(k + " roi std")
@@ -262,3 +278,33 @@ plt.plot(values_optim_ROI[k][:,2],label='mean per ROI no reco optimized')
 plt.legend()
 
 plt.close("all")
+
+
+
+#compare_maps
+
+import pickle
+from utils_mrf import *
+from mutools import io
+
+
+
+folder ="./data/InVivo/3D/patient.001.v1/"
+
+#meas_MID00360_FID09597_raFin_3D_tra_1x1x5mm_FULL_1400_DE_FF_reco4_allspokes8_MRF_map
+file_maps=[
+            "meas_MID00215_FID60605_raFin_3D_tra_FULl_volumes_cf_MRF_map.pkl",
+            "meas_MID00215_FID60605_raFin_3D_tra_FULl_volumes_Matrix_MRF_map.pkl"
+           ]
+
+
+
+list_maps=[]
+
+for map_file in file_maps:
+    with open(folder+map_file, "rb") as file:
+        all_maps = pickle.load(file)
+    list_maps.append(all_maps)
+
+
+regression_paramMaps(list_maps[0][0][0],list_maps[1][0][0],list_maps[0][0][1]>0,list_maps[1][0][1]>0,proj_on_mask1=True, adj_wT1=True, fat_threshold=0.7,save=True)

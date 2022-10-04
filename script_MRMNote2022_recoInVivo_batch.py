@@ -56,9 +56,12 @@ split=10
 useGPU=True
 
 
+times_brute=list(np.load( target_folder + "/" + "times_brute.npy"))
+times_cf=list(np.load( target_folder + "/" + "times_cf.npy"))
+times_matrix=list(np.load( target_folder + "/" + "times_matrix.npy"))
 
 
-for p in patient_names:
+for p in patient_names[:3]:
     for exam_type in exam_types:
 
         print("##########################################################################################")
@@ -342,7 +345,7 @@ for p in patient_names:
 
             np.save( target_folder + "/" + "times_cf.npy",np.array(times_cf))
             np.save( target_folder + "/" + "times_matrix.npy",np.array(times_matrix))
-            np.save( target_folder + "/" + "times_cf.npy",np.array(times_brute))
+            np.save( target_folder + "/" + "times_brute.npy",np.array(times_brute))
 
             proj_mask = mask
 
@@ -414,7 +417,7 @@ for p in patient_names:
 
 np.save( target_folder + "/" + "times_cf.npy",np.array(times_cf))
 np.save( target_folder + "/" + "times_matrix.npy",np.array(times_matrix))
-np.save( target_folder + "/" + "times_cf.npy",np.array(times_brute))
+np.save( target_folder + "/" + "times_brute.npy",np.array(times_brute))
 
 
 import pickle

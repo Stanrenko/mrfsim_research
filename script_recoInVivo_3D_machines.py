@@ -997,11 +997,13 @@ def build_mask(filename_kdata,filename_traj,sampling_mode,undersampling_factor,d
 @set_parameter("optimizer_config",type=Config,default=DEFAULT_OPT_CONFIG,description="Optimizer parameters")
 @set_parameter("slices",type=Config,default=None,description="Slices to consider for pattern matching")
 def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
-    file_map = filename_volume.split(".npy")[0] + "_MRF_map.pkl"
+    opt_type = optimizer_config["type"]
+
+    file_map = filename_volume.split(".npy")[0] + "_{}_MRF_map.pkl".format(opt_type)
     volumes_all = np.load(filename_volume)
     mask=np.load(filename_mask)
 
-    opt_type = optimizer_config["type"]
+
 
     if slices is not None:
         sl = slices["slices"]
@@ -1026,8 +1028,13 @@ def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
     split=optimizer_config["split"]
     useGPU = optimizer_config["useGPU"]
 
+    if "niter" in optimizer_config.keys():
+        niter=optimizer_config["niter"]
+    else:
+        niter=0
+
     if opt_type=="CF":
-        optimizer = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=None, split=split, pca=True,
+        optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=None, split=split, pca=True,
                                      threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
                                      useGPU_simulation=False, gen_mode="other")
         all_maps = optimizer.search_patterns_test(dictfile, volumes_all)

@@ -103,6 +103,15 @@ dictfile="mrf_dictconf_SimReco2_light_adjusted_optimized_M0_T1_local_optim_corre
 #dictfile="mrf_dictconf_SimReco2_light_adjusted_optimized_DE_Simu_FF_reco4.dict"
 
 
+#localfile="/patient.003.v2/meas_MID00033_FID09694_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/patient.003.v2/meas_MID00034_FID09695_raFin_3D_tra_1x1x5mm_FULL_DE_reco3.dat"
+#localfile="/patient.003.v2/meas_MID00035_FID09696_raFin_3D_tra_1x1x5mm_FULL_DE_reco4.dat"
+
+
+#dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_87_reco4.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_1_87_reco3.dict"
+#dictfile="mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_1_87_reco4.dict"
+
 filename = base_folder+localfile
 
 filename_save=str.split(filename,".dat") [0]+".npy"
@@ -170,8 +179,10 @@ try:
 except:
     pass
 
-
-use_navigator_dll=dico_seqParams["use_navigator_dll"]
+try:
+    use_navigator_dll=dico_seqParams["use_navigator_dll"]
+except:
+    use_navigator_dll=False
 
 if use_navigator_dll:
     meas_sampling_mode=dico_seqParams["alFree"][14]
@@ -342,6 +353,7 @@ else:
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
 
+
 print("Calculating Coil Sensitivity....")
 
 radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
@@ -365,17 +377,17 @@ list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
 plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
 
 
-
-#del kdata_all_channels_all_slices
-#kdata_all_channels_all_slices=np.load(filename_kdata)
 #
-#radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-#radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
-#volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True)[0]
-
-#from mutools import io
-#file_mha = filename.split(".dat")[0] + "_volume_oop_allspokes.mha"
-#io.write(file_mha,np.abs(volume_outofphase),tags={"spacing":[dz,dx,dy]})
+del kdata_all_channels_all_slices
+kdata_all_channels_all_slices=np.load(filename_kdata)
+# #
+radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
+volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True)[0]
+#
+from mutools import io
+file_mha = filename.split(".dat")[0] + "_volume_oop_allspokes.mha"
+io.write(file_mha,np.abs(volume_outofphase),tags={"spacing":[dz,dx,dy]})
 
 
 
@@ -433,8 +445,8 @@ volumes_all = np.load(filename_volume)
 #animate_images(mask)
 
 if not(load_map):
-    niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=10,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=None)
+    niter = 1
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=10,pca=True,threshold_pca=10,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):

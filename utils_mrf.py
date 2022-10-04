@@ -2976,13 +2976,14 @@ def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,t0=1,log=F
             t_array = np.arange(0.,t0,t0/100)
             axs[1].plot(t_array,J_m+t_array*slope)
             axs[1].scatter(0,J_m,c="b",marker="x")
-            plt.draw()
+            plt.savefig('./figures/conjgrad_plot_{}.png'.format(date_time))
 
         while(J_m_next>J_m+alpha*t*slope):
             print(t)
             t = beta*t
             if plot:
                 axs[1].scatter(t,J_m_next,c="b",marker="x")
+                plt.savefig('./figures/conjgrad_plot_{}.png'.format(date_time))
             J_m_next=J(m+t*d_m)
 
 
