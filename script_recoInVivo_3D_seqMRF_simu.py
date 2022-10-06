@@ -360,7 +360,7 @@ if not(load_map):
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=True, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=True, useGPU_dictsearch=True, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
@@ -422,7 +422,7 @@ name="SquareSimu3D_SS_SimReco2"
 #name="SquareSimu3D_SS_FF0_1"
 dic_maps={}
 list_suffix=["fullReco_T1MRF_adjusted","fullReco_Brute","DE_Simu_FF_reco3","DE_Simu_FF_v2_reco3"]
-list_suffix=["fullReco","DE_Simu_FF_reco3"]
+list_suffix=["DE_Simu_FF_reco3"]
 
 for suffix in list_suffix:
     if "NoInv" in suffix:

@@ -378,16 +378,16 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 
 
 #
-del kdata_all_channels_all_slices
-kdata_all_channels_all_slices=np.load(filename_kdata)
+# del kdata_all_channels_all_slices
+# kdata_all_channels_all_slices=np.load(filename_kdata)
+# # #
+# radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+# radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
+# volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True)[0]
 # #
-radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
-volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True)[0]
-#
-from mutools import io
-file_mha = filename.split(".dat")[0] + "_volume_oop_allspokes.mha"
-io.write(file_mha,np.abs(volume_outofphase),tags={"spacing":[dz,dx,dy]})
+# from mutools import io
+# file_mha = filename.split(".dat")[0] + "_volume_oop_allspokes.mha"
+# io.write(file_mha,np.abs(volume_outofphase),tags={"spacing":[dz,dx,dy]})
 
 
 
@@ -445,7 +445,7 @@ volumes_all = np.load(filename_volume)
 #animate_images(mask)
 
 if not(load_map):
-    niter = 1
+    niter = 5
     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=10,pca=True,threshold_pca=10,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
 
