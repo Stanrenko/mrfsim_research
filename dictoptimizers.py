@@ -413,7 +413,7 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
         idx_max_all_unique.extend(idx_max_all_current)
         alpha_optim.extend(current_alpha_all_unique_optim)
 
-        if niter > 0 or return_matched_signal:
+        if niter > 0 or return_matched_signals:
             phase_optim.extend(phase_adj)
             J_optim.extend(J_all_optim)
 
@@ -2869,7 +2869,7 @@ class SimpleDictSearch(Optimizer):
             del volumesi
             #j=np.random.choice(signals0.shape[1]);import matplotlib.pyplot as plt;plt.figure();plt.plot(signals0[:,j]);plt.plot(signalsi[:,j]);
             #j=np.random.choice(signals0.shape[1]);import matplotlib.pyplot as plt;plt.figure();plt.plot(signals[:,j]);plt.plot(signals[:,j]+signals0[:,j] - signalsi[:,j]);
-            signals += signals0 - signalsi
+            signals = matched_signals + signals0 - signalsi
 
             #norm_signals = np.linalg.norm(signals, axis=0)
             #all_signals_unthresholded = signals / norm_signals

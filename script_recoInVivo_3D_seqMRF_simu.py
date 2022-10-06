@@ -355,12 +355,12 @@ volumes_all = np.load(filename_volume)
 
 
 if not(load_map):
-    niter = 1
+    niter = 5
     #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=True, useGPU_dictsearch=True, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=True, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
     all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
@@ -442,7 +442,7 @@ maskROI=buildROImask_unique(m.paramMap,key=k)
 fig,ax=plt.subplots(1,2)
 plt.title(k)
 for key in dic_maps.keys():
-    for it in (range(np.minimum(len(dic_maps[key].keys()),2))):
+    for it in (range(len(dic_maps[key].keys()))):
         roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
         roi_values.sort_values(by=["Obs Mean"],inplace=True)
         #dic_roi_values[key]=roi_values
@@ -457,7 +457,7 @@ maskROI=buildROImask_unique(m.paramMap,key=k)
 fig,ax=plt.subplots(1,2)
 plt.title(k)
 for key in dic_maps.keys():
-    for it in (range(np.minimum(len(dic_maps[key].keys()), 2))):
+    for it in (range(len(dic_maps[key].keys()))):
         roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=False,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
         roi_values.sort_values(by=["Obs Mean"],inplace=True)
         #dic_roi_values[key]=roi_values

@@ -2,6 +2,7 @@
 
 #import matplotlib
 #matplotlib.u<se("TkAgg")
+import matplotlib.pyplot as plt
 import numpy as np
 from mrfsim import T1MRF
 from image_series import *
@@ -145,8 +146,8 @@ seq=T1MRFSS(**sequence_config)
 
 
 
-nb_filled_slices = 8
-nb_empty_slices=2
+nb_filled_slices = 4
+nb_empty_slices=1
 repeat_slice=1
 nb_slices = nb_filled_slices+2*nb_empty_slices
 
@@ -179,6 +180,8 @@ filename_paramMask=filename+"_paramMask_sl{}_rp{}.npy".format(nb_slices,repeat_s
 
 filename_volume = filename+"_volumes_sl{}_rp{}_us{}_{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
 filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}_{}w{}{}.npy".format(nb_slices,repeat_slice,nb_allspokes,nspoke,suffix)
+filename_volume_optim = filename+"_volumes_optim_sl{}_rp{}_us{}_{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
+
 
 filename_kdata = filename+"_kdata_sl{}_rp{}_us{}{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
 filename_mask= filename+"_mask_sl{}_rp{}_us{}{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
@@ -361,6 +364,7 @@ def J(m):
 
     # return np.linalg.norm(kdata_error)**2
     kdata_error/=np.prod(m.shape[1:])
+    #kdata_error /= np.sqrt(np.prod(data.shape[1:]))
     if density_adj:
         kdata_error = kdata_error.reshape(-1, npoint)
         density = np.abs(np.linspace(-1, 1, npoint))
@@ -425,6 +429,7 @@ def grad_J(m):
     kdata_error = FU - data.reshape(ntimesteps,-1)[:curr_ntimesteps]
 
     kdata_error/=np.prod(m.shape[1:])**2
+    #kdata_error /= data.shape[1:]
     # return np.linalg.norm(kdata_error)**2
     if density_adj:
         kdata_error = kdata_error.reshape(-1, npoint)
@@ -652,14 +657,14 @@ mask=m.mask
 
 traj=radial_traj.get_traj_for_reconstruction(ntimesteps)
 X0=np.zeros(volumes_all.shape,dtype=volumes_all.dtype)
-useGPU=True
+useGPU=False
 
 
 mu=1
 lambd=0.05
-mu_TV=1
+mu_TV=0
 curr_ntimesteps=ntimesteps
-keys,values=read_mrf_dict(dictfile_for_proj,FF_list=np.arange(0.,1.01,0.1),aggregate_components=True)
+keys,values=read_mrf_dict(dictfile_for_proj,FF_list=np.arange(0.,1.01,0.05),aggregate_components=True)
 t0=1
 
 is_weighted=True
@@ -688,10 +693,16 @@ for i in tqdm(range(niter_lowrank)):
     grad_reg = grad_J_TV(X)
     norm_grad=np.linalg.norm(grad)
     norm_grad_reg = np.linalg.norm(grad_reg)
+    #if norm_grad_reg==0:
+    #    Z = X - mu * grad / norm_grad
+    #else:
+    #    Z = X - mu * grad/norm_grad-mu_TV*grad_reg/norm_grad_reg
+
     if norm_grad_reg==0:
-        Z = X - mu * grad / norm_grad
+        Z = X - mu * grad/norm_grad
     else:
         Z = X - mu * grad/norm_grad-mu_TV*grad_reg/norm_grad_reg
+    #print(np.max(np.abs(grad)/norm_grad));print(np.max(np.abs(grad_reg)/norm_grad_reg));
 
     J_current=J(Z)
 
@@ -705,6 +716,8 @@ for i in tqdm(range(niter_lowrank)):
 
     Z_proj = (D.T@ D_plus) @ Z
 
+    #Z_proj_ridge=D.T@(+0.5*np.eye(D.shape))
+
     #j=np.random.choice(Z.shape[1]);plt.figure();plt.plot(Z[:,j]);plt.plot(Z_proj[:,j])
     #
 
@@ -713,12 +726,16 @@ for i in tqdm(range(niter_lowrank)):
     s = np.array(s)
     vh = np.array(vh)
 
+    lambd=s[10]/mu
+    print("Lambd: {}".format(lambd))
     s[s < lambd * mu] = 0
     s[s > lambd * mu] = s[s > lambd * mu] - lambd * mu
 
     M = u @ np.diag(s) @ vh
 
-    #j = np.random.choice(Z.shape[1]);plt.figure();plt.plot(Z[:, j]);plt.plot(Z_proj[:, j]);plt.plot(M[:, j])
+    #j = np.random.choice(Z.shape[1]);plt.figure();plt.plot(Z[:, j]/np.linalg.norm(Z[:, j]));plt.plot(Z_proj[:, j]/np.linalg.norm(Z_proj[:, j]));plt.plot(M[:, j]/np.linalg.norm(M[:, j]));plt.plot(X_target[:,j]/np.linalg.norm(X_target[:,j]));
+    #j = 9814;plt.figure();plt.plot(Z[:, j]/np.linalg.norm(Z[:, j]));plt.plot(Z_proj[:, j]/np.linalg.norm(Z_proj[:, j]));plt.plot(M[:, j]/np.linalg.norm(M[:, j]));plt.plot(X_target[:,j]/np.linalg.norm(X_target[:,j]));
+    # j = 31325;plt.figure();plt.plot(Z[:, j]/np.linalg.norm(Z[:, j]));plt.plot(Z_proj[:, j]/np.linalg.norm(Z_proj[:, j]));plt.plot(M[:, j]/np.linalg.norm(M[:, j]));plt.plot(X_target[:,j]/np.linalg.norm(X_target[:,j]));
 
     t_prev = t
     t = (1 + np.sqrt(1 + 4 * t ** 2)) / 2
@@ -730,7 +747,9 @@ for i in tqdm(range(niter_lowrank)):
     if i%10==0:
         X_list.append(X)
 
+X_list.append(X)
 
+np.save(filename_volume_optim,X_list[-1])
 
 plt.figure()
 plt.plot(Z_costs)
@@ -747,15 +766,28 @@ plt.figure();plt.plot([J_TV(x) for x in X_list])
 
 
 X_list=np.array(X_list)
-animate_images(X_list[:,10,6,:,:])
+animate_images(X_list[:,10,3,:,:])
 
 plt.figure()
 plt.imshow(np.abs(X_list[4,10,1,:,:]))
 
 
-X_final=X_list[-1][:,mask>0]
-X_target=volumes_ideal[:,mask>0]
 X_rebuilt=volumes_all[:,mask>0]
+X_rebuilt -= np.mean(X_rebuilt,axis=0)
+
+X_final=X_list[5][:,mask>0]
+X_final-= np.mean(X_final,axis=0)
+cov_final=np.real(np.sum(X_final.conj()*X_rebuilt,axis=0))
+corr_final=cov_final/np.linalg.norm(X_final,axis=0)**2
+X_final*=corr_final.reshape(1,-1)
+#X_final/=np.linalg.norm(X_final,axis=0)
+X_target=volumes_ideal[:,mask>0]
+X_target-= np.mean(X_target,axis=0)
+cov_target=np.real(np.sum(X_target.conj()*X_rebuilt,axis=0))
+corr_target=cov_target/np.linalg.norm(X_target,axis=0)**2
+X_target*=corr_target.reshape(1,-1)
+#X_target/=np.linalg.norm(X_target,axis=0)
+
 
 metric=np.imag
 plt.figure()
@@ -764,20 +796,20 @@ plt.plot(metric(X_final[:,j]),label="MFLOR")
 plt.plot(metric(X_target[:,j]),label="Target")
 plt.plot(metric(X_rebuilt[:,j]),label="NUFFT")
 plt.axvline(x=62)
-plt.plot(metric(D[0,:]),label="Projection Dico")
+#plt.plot(metric(D[0,:]),label="Projection Dico")
 plt.title("Fingerprints {}".format(j))
 plt.legend()
 
 error_fingerprints=np.linalg.norm(X_final-X_target,axis=0)
-ind_max_error_fingerprint = np.argsort(error_fingerprints)[-10]
+ind_max_error_fingerprint = np.argsort(error_fingerprints)[-1]
 mask_error = np.zeros(mask.shape)
 mask_error=mask_error[mask>0]
 mask_error[ind_max_error_fingerprint]=1
 mask_error=makevol(mask_error,mask>0)
 sl_max,pt1_max,pt2_max=np.unravel_index(np.argmax(mask_error),mask.shape)
 
-plt.close("all")
-metric=np.abs
+#plt.close("all")
+metric=np.imag
 plt.figure()
 plt.plot(metric(X_final[:,ind_max_error_fingerprint]),label="MFLOR")
 plt.plot(metric(X_target[:,ind_max_error_fingerprint]),label="Target")
@@ -790,6 +822,72 @@ plt.legend()
 plt.figure()
 plt.plot(np.sort(error_fingerprints))
 
+ind_max_errors_fingerprint=np.argwhere(error_fingerprints>0.015)
+mask_max_errors_fingerprint=np.zeros(mask.shape)
+mask_max_errors_fingerprint=mask_max_errors_fingerprint[mask>0]
+mask_max_errors_fingerprint[ind_max_errors_fingerprint]=1
+mask_max_errors_fingerprint=makevol(mask_max_errors_fingerprint,mask>0)
+
+animate_images(mask_max_errors_fingerprint)
+
+wT1_on_errors=m.paramMap["wT1"][ind_max_errors_fingerprint]
+print(np.unique(wT1_on_errors))
+pd.DataFrame(wT1_on_errors).describe()
+
+
+ff_on_errors=m.paramMap["ff"][ind_max_errors_fingerprint]
+print(np.unique(ff_on_errors))
+pd.DataFrame(ff_on_errors).describe()
+
+
+
+ind_min_errors_fingerprint=np.argwhere(error_fingerprints<0.02)
+mask_min_errors_fingerprint=np.zeros(mask.shape)
+mask_min_errors_fingerprint=mask_min_errors_fingerprint[mask>0]
+mask_min_errors_fingerprint[ind_min_errors_fingerprint]=1
+mask_min_errors_fingerprint=makevol(mask_min_errors_fingerprint,mask>0)
+
+animate_images(mask_min_errors_fingerprint)
+
+animate_multiple_images(mask_min_errors_fingerprint,mask_max_errors_fingerprint)
+plt.figure()
+plt.imshow(makevol(m.paramMap["ff"],mask>0)[int(nb_slices/2)])
+plt.colorbar()
+plt.figure()
+plt.imshow(makevol(m.paramMap["wT1"],mask>0)[int(nb_slices/2)])
+plt.colorbar()
+
+wT1_on_errors_min=m.paramMap["wT1"][ind_min_errors_fingerprint]
+print(np.unique(wT1_on_errors_min))
+pd.DataFrame(wT1_on_errors_min).describe()
+
+ff_on_errors_min=m.paramMap["ff"][ind_min_errors_fingerprint]
+print(np.unique(ff_on_errors_min))
+pd.DataFrame(ff_on_errors_min).describe()
+
+np.unique(np.array(keys)[:,0])
+
+plt.close("all")
+plt.figure()
+n,bins,patches=plt.hist(m.paramMap["wT1"],stacked=True)
+plt.hist(wT1_on_errors,stacked=True,alpha=0.5,bins=bins)
+plt.hist(wT1_on_errors_min,alpha=0.5,stacked=True,bins=bins)
+
+
+plt.figure()
+n,bins,patches=plt.hist(m.paramMap["ff"],stacked=True)
+plt.hist(ff_on_errors,stacked=True,alpha=0.5,bins=bins)
+plt.hist(ff_on_errors_min,alpha=0.5,stacked=True,bins=bins)
+
+
+wT1_ff_on_errors=np.squeeze(np.stack([wT1_on_errors,ff_on_errors],axis=-1))
+print(pd.DataFrame(wT1_ff_on_errors,columns=["wT1","ff"]).groupby(["wT1","ff"]).size())
+
+wT1_ff_on_errors_min=np.squeeze(np.stack([wT1_on_errors_min,ff_on_errors_min],axis=-1))
+print(pd.DataFrame(wT1_ff_on_errors_min,columns=["wT1 min","ff min"]).groupby(["wT1 min","ff min"]).size())
+
+wT1_ff=np.squeeze(np.stack([m.paramMap["wT1"],m.paramMap["ff"]],axis=-1))
+print(pd.DataFrame(wT1_ff,columns=["wT1 map","ff map"]).groupby(["wT1 map","ff map"]).size())
 
 
 error_ts=np.linalg.norm(X_final-X_target,axis=1)
@@ -800,13 +898,16 @@ plt.plot(X_target[:,j]/np.linalg.norm(X_target[:,j]))
 plt.plot(np.array(sequence_config["TE"])[::nspoke]/np.linalg.norm(np.array(sequence_config["TE"])[::nspoke]))
 plt.plot(np.array(sequence_config["B1"])[::nspoke]/np.linalg.norm(np.array(sequence_config["B1"])[::nspoke]))
 
+ind_max_error_ts=np.argmax(error_ts)
+
 ts = np.random.choice(range(ntimesteps))
-ts=62
+#ts=62
+ts=ind_max_error_ts
 metric=np.abs
-point1 = int(image_size[1]/2)+np.random.choice(range(-60,60))
-point2 = int(image_size[2]/2)+np.random.choice(range(-60,60))
-point1=71
-point2=150
+point1 = int(image_size[1]/2)+np.random.choice(range(-30,30))
+point2 = int(image_size[2]/2)+np.random.choice(range(-30,30))
+#point1=71
+#point2=150
 plt.figure()
 j=np.random.choice(range(X_final.shape[1]))
 plt.plot(metric(X_list[-1][ts,:,point1,point2]/np.linalg.norm(X_list[-1][ts,:,point1,point2])),label="MFLOR")
@@ -815,9 +916,9 @@ plt.plot(metric(volumes_all[ts,:,point1,point2]/np.linalg.norm(volumes_all[ts,:,
 plt.title("Slice profile ts {} point {}".format(ts,(point1,point2)))
 plt.legend()
 
-animate_images(X_list[-1][62,:,:,:])
-animate_images(volumes_ideal[62,:,:,:])
-animate_images(volumes_all[62,:,:,:])
+animate_images(X_list[-1][ind_max_error_ts,:,:,:])
+animate_images(volumes_ideal[ind_max_error_ts,:,:,:])
+animate_images(volumes_all[ind_max_error_ts,:,:,:])
 
 delta_m = delta(X_list[-1], axis)
 
@@ -892,8 +993,8 @@ if not(load_map):
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=False, useGPU_dictsearch=True, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
-    all_maps=optimizer.search_patterns_test(dictfile,volumes_ideal,retained_timesteps=None)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
+    all_maps=optimizer.search_patterns_test(dictfile,X_list[5],retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -914,7 +1015,7 @@ else:
 
 
 maskROI=buildROImask_unique(m.paramMap)
-regression_paramMaps_ROI(m.paramMap,all_maps[0][0],m.mask>0,all_maps[0][1]>0,maskROI,adj_wT1=True,title="regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
+regression_paramMaps_ROI(m.paramMap,all_maps[0][0],m.mask>0,all_maps[0][1]>0,maskROI,adj_wT1=False,title="optim_regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
 
 #regression_paramMaps(m.paramMap,all_maps[0][0],mode="Boxplot")
 

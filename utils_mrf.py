@@ -3710,3 +3710,246 @@ def tensor_product(T,U,mode):
 
     result=np.einsum("{},{}->{}".format(T_indexing,U_indexing,T_new_indexing),T,U)
     return result
+
+
+
+def J(m,traj,data,npoint,density_adj=True,useGPU=True,scaling=None):
+
+
+    ntimesteps=traj.shape[0]
+    if scaling is None:
+        scaling=np.prod(m.shape[1:])
+
+
+    FU=[]
+    if m.dtype=="complex64":
+        traj_kdata=traj.astype("float32")
+    else:
+        traj_kdata = copy(traj)
+
+    if not(useGPU):
+        for j in tqdm(range(ntimesteps)):
+            FU.append(finufft.nufft3d2(traj_kdata[j,:, 2],traj_kdata[j,:, 0], traj_kdata[j,:, 1],m[j]))
+
+    else:
+        dtype = np.float32  # Datatype (real)
+        complex_dtype = np.complex64
+        N1, N2, N3 = m.shape[1], m.shape[2], m.shape[3]
+        #M = traj.shape[0]
+        #c_gpu = GPUArray((M), dtype=complex_dtype)
+        FU = []
+        for i in tqdm(range(ntimesteps)):
+            fk = m[i, :, :, :]
+            kx = traj[i,:, 0]
+            ky = traj[i,:, 1]
+            kz = traj[i,:, 2]
+
+            kx = kx.astype(dtype)
+            ky = ky.astype(dtype)
+            kz = kz.astype(dtype)
+            fk = fk.astype(complex_dtype)
+            c_gpu = GPUArray((kx.shape[0]), dtype=complex_dtype)
+
+            plan = cufinufft(2, (N1, N2, N3), 1, eps=1e-6, dtype=dtype)
+            plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+            plan.execute(c_gpu, to_gpu(fk))
+            c = np.squeeze(c_gpu.get())
+            c_gpu.gpudata.free()
+            FU.append(c)
+            plan.__del__()
+
+    FU=np.array(FU)
+
+    kdata_error = FU - data.reshape(ntimesteps,-1)
+    #kdata_ratio = FU/data.reshape(ntimesteps,-1)[:curr_ntimesteps]
+
+    # return np.linalg.norm(kdata_error)**2
+    kdata_error/=np.prod(m.shape[1:])
+    #kdata_error /= np.sqrt(np.prod(data.shape[1:]))
+    if density_adj:
+        kdata_error = kdata_error.reshape(-1, npoint)
+        density = np.abs(np.linspace(-1, 1, npoint))
+        density = np.expand_dims(density, tuple(range(kdata_error.ndim - 1)))
+        kdata_error *= np.sqrt(density)
+
+
+    return np.linalg.norm(kdata_error) ** 2
+
+
+def grad_J(m,traj,data,npoint,nspoke,nb_slices,density_adj=True,useGPU=False):
+    ntimesteps = traj.shape[0]
+    if scaling is None:
+        scaling = np.prod(m.shape[1:])
+
+
+
+    image_size=m.shape[1:]
+    FU = []
+    if m.dtype == "complex64":
+        traj_kdata = traj.astype("float32")
+    else:
+        traj_kdata=copy(traj)
+
+    if not (useGPU):
+        for j in tqdm(range(ntimesteps)):
+            FU.append(finufft.nufft3d2(traj_kdata[j, :, 2], traj_kdata[j, :, 0], traj_kdata[j, :, 1], m[j]))
+    else:
+        dtype = np.float32  # Datatype (real)
+        complex_dtype = np.complex64
+        N1, N2, N3 = m.shape[1], m.shape[2], m.shape[3]
+        #M = traj[0].shape[0]
+        #c_gpu = GPUArray((M), dtype=complex_dtype)
+        FU = []
+        for i in tqdm(range(ntimesteps)):
+            fk = m[i, :, :, :]
+            kx = traj_kdata[i,:, 0]
+            ky = traj_kdata[i,:, 1]
+            kz = traj_kdata[i,:, 2]
+
+            kx = kx.astype(dtype)
+            ky = ky.astype(dtype)
+            kz = kz.astype(dtype)
+            fk = fk.astype(complex_dtype)
+
+            c_gpu = GPUArray((kx.shape[0]), dtype=complex_dtype)
+
+            plan = cufinufft(2, (N1, N2, N3), 1, eps=1e-6, dtype=dtype)
+            plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+            plan.execute(c_gpu, to_gpu(fk))
+            c = np.squeeze(c_gpu.get())
+            c_gpu.gpudata.free()
+            FU.append(c)
+            plan.__del__()
+
+    FU = np.array(FU)
+
+    kdata_error = FU - data.reshape(ntimesteps,-1)
+
+    kdata_error/=scaling**2
+    #kdata_error /= data.shape[1:]
+    # return np.linalg.norm(kdata_error)**2
+    if density_adj:
+        kdata_error = kdata_error.reshape(-1, npoint)
+        density = np.abs(np.linspace(-1, 1, npoint))
+        density = np.expand_dims(density, tuple(range(kdata_error.ndim - 1)))
+        kdata_error*=density
+        kdata_error=kdata_error.reshape(ntimesteps,-1)
+
+
+    dm=[]
+
+    if not(useGPU):
+        for j in tqdm(range(ntimesteps)):
+            dm.append(finufft.nufft3d1(traj[j,:, 2], traj[j,:, 0], traj[j,:, 1], kdata_error[j], image_size))
+
+    else:
+        N1, N2, N3 = image_size[0], image_size[1], image_size[2]
+        dtype = np.float32  # Datatype (real)
+        complex_dtype = np.complex64
+
+        for i in tqdm(range(ntimesteps)):
+            fk_gpu = GPUArray(( N1, N2, N3), dtype=complex_dtype)
+            c_retrieved = kdata_error[i]
+            kx = traj[i,:, 0]
+            ky = traj[i,:, 1]
+            kz = traj[i,:, 2]
+            #
+            # print(fk_gpu.shape)
+            # print(kx.shape)
+            # print(c_retrieved.shape)
+
+            # Cast to desired datatype.
+            kx = kx.astype(dtype)
+            ky = ky.astype(dtype)
+            kz = kz.astype(dtype)
+            c_retrieved = c_retrieved.astype(complex_dtype)
+
+            # Allocate memory for the uniform grid on the GPU.
+            c_retrieved_gpu = to_gpu(c_retrieved)
+
+            # Initialize the plan and set the points.
+            plan = cufinufft(1, (N1, N2, N3),1, eps=1e-6, dtype=dtype)
+            plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+
+            # Execute the plan, reading from the strengths array c and storing the
+            # result in fk_gpu.
+            plan.execute(c_retrieved_gpu, fk_gpu)
+
+            dm.append(np.squeeze(fk_gpu.get()))
+
+            fk_gpu.gpudata.free()
+            c_retrieved_gpu.gpudata.free()
+
+            plan.__del__()
+
+
+    return 2*np.array(dm)
+
+
+
+def psi(t,alpha=1e-13):
+    return np.sqrt(t+alpha**2)
+
+def delta(m,axis):
+    return np.diff(m,axis=1+axis,append=0)
+
+def delta_adjoint(m,axis):
+    return -np.diff(m, axis=1 + axis, prepend=0)
+
+def J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None):
+
+    #global delta_m
+    delta_m = delta(m, axis)
+
+
+
+    if is_weighted:
+        if (mask is None)and(weights is None):
+            raise ValueError("should provide mask or weights for calculating weighing mask")
+
+        if mask is not None:
+            bound_inf = np.min(np.argwhere(mask>0)[:,axis])
+            bound_sup = np.max(np.argwhere(mask > 0)[:, axis])
+            weights=np.ones(delta_m.shape,dtype=delta_m.dtype)
+            idx=[np.s_[:], np.s_[:],np.s_[:],np.s_[:]]
+            idx[axis+1]=np.s_[:bound_inf]
+            weights[tuple(idx)]=0
+
+            idx = [np.s_[:], np.s_[:], np.s_[:], np.s_[:]]
+            idx[axis + 1] = np.s_[bound_sup:]
+            weights[tuple(idx)] = 0
+
+    else:
+        weights=1
+
+
+    return np.sum(weights*psi(np.abs(delta_m)**2,alpha))
+
+def grad_J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None):
+
+
+
+    delta_m = delta(m,axis)
+
+    if is_weighted:
+        if (mask is None)and(weights is None):
+            raise ValueError("should provide mask or weights for calculating weighing mask")
+
+        if mask is not None:
+            bound_inf = np.min(np.argwhere(mask > 0)[:, axis])
+            bound_sup = np.max(np.argwhere(mask > 0)[:, axis])
+            weights = np.ones(delta_m.shape, dtype=delta_m.dtype)
+            idx = [np.s_[:], np.s_[:], np.s_[:], np.s_[:]]
+            idx[axis + 1] = np.s_[:bound_inf]
+            weights[tuple(idx)] = 0
+
+            idx = [np.s_[:], np.s_[:], np.s_[:], np.s_[:]]
+            idx[axis + 1] = np.s_[bound_sup:]
+            weights[tuple(idx)] = 0
+
+    else:
+        weights = 1
+
+    W = psi(np.abs(delta_m)**2,alpha)
+
+    return delta_adjoint(weights*delta_m/W,axis)
