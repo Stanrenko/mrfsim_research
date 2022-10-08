@@ -181,10 +181,72 @@ def crlb_split(J, W=None, sigma2=1):
         crb *= xp.asarray(W)
     return crb
 
+#
+# def simulate_gen(u_0, TR_list, FA_list, nb_rep, T_1):
+#     b_s = np.exp(-np.array(TR_list * nb_rep).reshape(-1, 1) / T_1)
+#     a_s = np.cos(np.array(FA_list * nb_rep).reshape(-1, 1))
+#     N = len(a_s)
+#     u_s = [u_0]
+#     u = u_0
+#
+#     for j in range(N):
+#         u = b_s[j] * a_s[j] * u + (1 - b_s[j])
+#         u_s.append(u)
+#     u_s = np.array(u_s)
+#     return u_s
+#
+#
+# def calc_A_B_gen(FA_, TR_, T_1):
+#     b_s = np.exp(-np.array(TR_).reshape(-1, 1) / T_1)
+#     a_s = np.cos(np.array(FA_).reshape(-1, 1))
+#     k_s = (a_s * b_s)[:len(TR_)]
+#     b_s_one_rep = b_s[:len(TR_)]
+#     A = np.prod(k_s, axis=0)
+#     cumprod_ks = np.cumprod(k_s[::-1], axis=0)[:-1]
+#     ones = np.ones((1,) + cumprod_ks.shape[1:])
+#     # B = np.sum(np.cumprod(np.array([1]+list(k_s))[:-1][::-1])[::-1]*(1-b_s_one_rep))
+#     B = np.sum(np.concatenate([ones, cumprod_ks])[::-1] * (1 - b_s_one_rep), axis=0)
+#     l = B / (1 - A)
+#     return A, l
+#
+#
+# def simulate_gen_eq(TR_list, FA_list, T_1):
+#     A, l = calc_A_B_gen(FA_list, TR_list, T_1)
+#     u_i = simulate_gen(l, TR_list, FA_list, 1, T_1)
+#
+#     return u_i
 
-def simulate_gen(u_0, TR_list, FA_list, nb_rep, T_1):
+
+
+
+def calc_A_B_gen(FA_, TR_, T_1,B1):
+    b_s = np.exp(-np.array(TR_).reshape(-1, 1) / T_1)
+    b_s = np.expand_dims(b_s,axis=tuple(range(2,B1.ndim)))
+    FA_init=FA_[0]
+    FA_=np.array(FA_)
+    FA_=np.expand_dims(FA_,axis=tuple(range(1,B1.ndim)))
+    FA_=FA_*B1
+    FA_[0]=FA_init
+    a_s = np.cos(FA_)
+    k_s = (a_s * b_s)[:len(TR_)]
+    b_s_one_rep = b_s[:len(TR_)]
+    A = np.prod(k_s, axis=0)
+    cumprod_ks = np.cumprod(k_s[::-1], axis=0)[:-1]
+    ones = np.ones((1,) + cumprod_ks.shape[1:])
+    # B = np.sum(np.cumprod(np.array([1]+list(k_s))[:-1][::-1])[::-1]*(1-b_s_one_rep))
+    B = np.sum(np.concatenate([ones, cumprod_ks])[::-1] * (1 - b_s_one_rep), axis=0)
+    l = B / (1 - A)
+    return A, l
+
+def simulate_gen(u_0, TR_list, FA_list, nb_rep, T_1,B1):
     b_s = np.exp(-np.array(TR_list * nb_rep).reshape(-1, 1) / T_1)
-    a_s = np.cos(np.array(FA_list * nb_rep).reshape(-1, 1))
+    b_s = np.expand_dims(b_s, axis=tuple(range(2, B1.ndim)))
+    FA_list=np.array(FA_list * nb_rep)
+    FA_init = FA_list[0]
+    FA_list = np.expand_dims(FA_list, axis=tuple(range(1, B1.ndim)))
+    FA_list = FA_list * B1
+    FA_list[0] = FA_init
+    a_s = np.cos(FA_list)
     N = len(a_s)
     u_s = [u_0]
     u = u_0
@@ -196,32 +258,37 @@ def simulate_gen(u_0, TR_list, FA_list, nb_rep, T_1):
     return u_s
 
 
-def calc_A_B_gen(FA_, TR_, T_1):
-    b_s = np.exp(-np.array(TR_).reshape(-1, 1) / T_1)
-    a_s = np.cos(np.array(FA_).reshape(-1, 1))
-    k_s = (a_s * b_s)[:len(TR_)]
-    b_s_one_rep = b_s[:len(TR_)]
-    A = np.prod(k_s, axis=0)
-    cumprod_ks = np.cumprod(k_s[::-1], axis=0)[:-1]
-    ones = np.ones((1,) + cumprod_ks.shape[1:])
-    # B = np.sum(np.cumprod(np.array([1]+list(k_s))[:-1][::-1])[::-1]*(1-b_s_one_rep))
-    B = np.sum(np.concatenate([ones, cumprod_ks])[::-1] * (1 - b_s_one_rep), axis=0)
-    l = B / (1 - A)
-    return A, l
-
-
-def simulate_gen_eq(TR_list, FA_list, T_1):
-    A, l = calc_A_B_gen(FA_list, TR_list, T_1)
-    u_i = simulate_gen(l, TR_list, FA_list, 1, T_1)
+def simulate_gen_eq(TR_list, FA_list, T_1,B1):
+    A, l = calc_A_B_gen(FA_list, TR_list, T_1,B1)
+    u_i = simulate_gen(l, TR_list, FA_list, 1, T_1,B1)
 
     return u_i
 
+# def simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1, T_2, amp=np.array([1]), shift=np.array([0])):
+#     u_i = simulate_gen_eq(TR_list, FA_list, T_1)
+#     ax_expand = tuple(range(1, df.ndim))
+#     TEs = np.expand_dims(np.array(TE_list), axis=ax_expand)
+#     FAs = np.expand_dims(np.array(FA_list), axis=ax_expand)
+#     chemical_shift = (np.exp(np.array(TE_list).reshape(-1, 1) * 2j * np.pi * shift.reshape(1, -1))) @ amp
+#     chemical_shift = np.expand_dims(chemical_shift, axis=ax_expand)
+#     E_2 = np.exp(TEs * (2j * np.pi * df - 1 / T_2)) * (chemical_shift)
+#     u = np.expand_dims(u_i[:-1], axis=-1)
+#     s_i = u * np.sin(np.array(FAs)) * E_2
+#     return s_i
 
-def simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1, T_2, amp=np.array([1]), shift=np.array([0])):
-    u_i = simulate_gen_eq(TR_list, FA_list, T_1)
+
+def simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1, T_2,B1, amp=np.array([1]), shift=np.array([0])):
+    u_i = simulate_gen_eq(TR_list, FA_list, T_1,B1)
     ax_expand = tuple(range(1, df.ndim))
+    FA_init = FA_list[0]
     TEs = np.expand_dims(np.array(TE_list), axis=ax_expand)
     FAs = np.expand_dims(np.array(FA_list), axis=ax_expand)
+    ax_expand_B1=tuple(range(B1.ndim, df.ndim))
+    B1=np.expand_dims(B1,axis=ax_expand_B1)
+
+    FAs = FAs * B1
+    FAs[0] = FA_init
+
     chemical_shift = (np.exp(np.array(TE_list).reshape(-1, 1) * 2j * np.pi * shift.reshape(1, -1))) @ amp
     chemical_shift = np.expand_dims(chemical_shift, axis=ax_expand)
     E_2 = np.exp(TEs * (2j * np.pi * df - 1 / T_2)) * (chemical_shift)
@@ -229,13 +296,13 @@ def simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1, T_2, amp=np.a
     s_i = u * np.sin(np.array(FAs)) * E_2
     return s_i
 
-
-def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f, T_2w=40 / 1000, T_2f=80 / 1000,
+def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f,B1, T_2w=40 / 1000, T_2f=80 / 1000,
                            amp=np.array([1]), shift=np.array([-418]), sigma=None, list_deriv=None,noise_size=None,noise_type="Absolute",group_size=None,return_fat_water=False):
     T_1w = np.array(T_1w)
     T_1f = np.array(T_1f)
     df = np.array(df)
     FF = np.array(FF)
+    B1 = np.array(B1)
 
     if (np.array(T_1w).shape == ()):
         T_1w = np.array([T_1w])
@@ -245,6 +312,8 @@ def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f, T_2w=4
         df = np.array([df])
     if (np.array(FF).shape == ()):
         FF = np.array([FF])
+    if (np.array(B1).shape == ()):
+        FF = np.array([B1])
 
     if not (T_1w.shape == (1,)):
         T_1w = np.squeeze(T_1w)
@@ -255,19 +324,23 @@ def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f, T_2w=4
     if not (FF.shape == (1,)):
         FF = np.squeeze(FF)
 
-    keys = list(product(list(T_1w), list(T_1f), [1], list(df)))
+    if not (B1.shape == (1,)):
+        FF = np.squeeze(B1)
+
+    keys = list(product(list(T_1w), list(T_1f), list(B1), list(df)))
 
     #keys=np.array(keys).reshape(len(T_1w),len(T_1f),1,len(df),4)
 
     T_1w = np.expand_dims(T_1w, axis=0)
     T_1f = np.expand_dims(T_1f, axis=0)
-    df = np.expand_dims(df, axis=(0, 1))
-    FF = np.expand_dims(FF, axis=(0, 1, 2))
+    B1=np.expand_dims(B1, axis=(0, 1))
+    df = np.expand_dims(df, axis=(0, 1,2))
+    FF = np.expand_dims(FF, axis=(0, 1, 2,3))
 
 
-    s_iw = simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1w, T_2w)[1:]
+    s_iw = simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1w, T_2w,B1)[1:]
     s_iw = np.expand_dims(s_iw, axis=(2, -1))
-    s_if = simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1f, T_2f, amp, shift)[1:]
+    s_if = simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1f, T_2f,B1, amp, shift)[1:]
     s_if = np.expand_dims(s_if, axis=(1, -1))
     s_iw, s_if = np.broadcast_arrays(s_iw, s_if)
 
@@ -328,7 +401,7 @@ def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f, T_2w=4
 
         if "wT1" in list_deriv:
             dT1 = 10 ** -3
-            s_iw_dT1 = simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1w + dT1, T_2w)[1:]
+            s_iw_dT1 = simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1w + dT1, T_2w,B1)[1:]
             s_iw_dT1 = np.expand_dims(s_iw_dT1, axis=(2, -1))
             ds_T1 = (1 - FF) * (s_iw_dT1 - s_iw) / dT1
             ds_T1 = ds_T1[1:]

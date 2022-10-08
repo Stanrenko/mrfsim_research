@@ -627,7 +627,24 @@ class ImageSeries(object):
 
         return kdata
 
+    def generate_kdata_multi(self,trajectory,b1_all_slices,useGPU=False,eps=1e-4):
+        b1_prev = np.ones(b1_all_slices[0].shape, dtype=b1_all_slices[0].dtype)
+        b1_all = np.concatenate([np.expand_dims(b1_prev, axis=0), b1_all_slices], axis=0)
 
+        kdata = []
+
+        # images = copy(m.images_series)
+
+        for i in tqdm(range(1, b1_all.shape[0])):
+            self.images_series *= np.expand_dims(b1_all[i] / b1_all[i - 1], axis=0)
+            kdata.append(np.array(self.generate_kdata(trajectory, useGPU=useGPU,eps=eps)))
+
+        self.images_series /= np.expand_dims(b1_all[-1], axis=0)
+        # del images
+
+        kdata = np.array(kdata)
+
+        return kdata
 
     # def generate_kdata(self,trajectory,useGPU=False,eps=1e-6):
     #     size = self.image_size

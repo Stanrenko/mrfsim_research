@@ -1,12 +1,12 @@
 from utils_simu import *
 from dictoptimizers import SimpleDictSearch
 
-generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json","mrf_dictconf_SimReco2.json",3)
-
-TR_list,FA_list,TE_list=load_sequence_file("mrf_sequence_adjusted.json",3,1.87/1000)
-
-generate_epg_dico_T1MRFSS("mrf_sequence_adjusted_1_87.json","mrf_dictconf_Dico2_Invivo.json",FA_list,TE_list,4,1.87/1000)
-
+# generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json","mrf_dictconf_SimReco2.json",3)
+#
+# TR_list,FA_list,TE_list=load_sequence_file("mrf_sequence_adjusted.json",3,1.87/1000)
+#
+# generate_epg_dico_T1MRFSS("mrf_sequence_adjusted_1_87.json","mrf_dictconf_Dico2_Invivo.json",FA_list,TE_list,4,1.87/1000)
+#
 
 
 
@@ -25,11 +25,12 @@ dTs=np.arange(-500,1000,100)*10**-3
 DFs=[-30,0,30]
 #DFs=[-60,-30,0,30,60]
 FFs=[0.,0.1,0.2,0.3,0.4,0.5]
+B1=[0.7]
 #DFs=[-60,-30,0,30,60]
 #FFs=[0.,0.1,0.2,0.3,0.4,0.5,0.6,0.7]
 recovery=0
 sigma=0.04
-noise_size=100
+noise_size=1000
 group_size=8
 noise_type="Absolute"
 
@@ -84,7 +85,7 @@ for j,fileseq_1 in enumerate(fileseq_list):
 
     TR_list_1,FA_list_1,TE_list_1=load_sequence_file(fileseq_1,recovery,min_TR_delay)
 
-    s,s_w,s_f,keys=simulate_gen_eq_signal(TR_list_1,FA_list_1,TE_list_1,FFs,DFs,T1_w+dTs,300/1000,T_2w=40/1000,T_2f=80/1000,amp=fat_amp,shift=fat_shift,sigma=sigma,noise_size=noise_size,group_size=group_size,return_fat_water=True,noise_type=noise_type)#,amp=np.array([1]),shift=np.array([-418]),sigma=None):
+    s,s_w,s_f,keys=simulate_gen_eq_signal(TR_list_1,FA_list_1,TE_list_1,FFs,DFs,T1_w+dTs,300/1000,B1,T_2w=40/1000,T_2f=80/1000,amp=fat_amp,shift=fat_shift,sigma=sigma,noise_size=noise_size,group_size=group_size,return_fat_water=True,noise_type=noise_type)#,amp=np.array([1]),shift=np.array([-418]),sigma=None):
 
     s_w=s_w.reshape(s_w.shape[0],-1).T
     s_f=s_f.reshape(s_f.shape[0],-1).T
@@ -697,7 +698,6 @@ def cost_function_simul_breaks(params):
 
     # print(params)
 
-    list_deriv = ["ff", "wT1"]
 
     # print(params)
     # print(num_breaks_TE)

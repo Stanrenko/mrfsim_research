@@ -4,6 +4,8 @@ import pandas as pd
 from mrfsim import *
 from image_series import *
 from utils_mrf import *
+from utils_simu import *
+
 import json
 from finufft import nufft1d1,nufft1d2
 from scipy import signal,interpolate
@@ -29,13 +31,13 @@ dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
 
 
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_optim_FF.json") as f:
     sequence_config = json.load(f)
 
 #with open("./mrf_sequence_adjusted.json") as f:
 #    sequence_config = json.load(f)
 
-with open("./mrf_dictconf_SimReco2.json") as f:
+with open("./mrf_dictconf_SimReco2_light.json") as f:
     dict_config = json.load(f)
 
 
@@ -52,7 +54,7 @@ df = [- value / 1000 for value in df] # temp
 rep=4
 TR_total = np.sum(sequence_config["TR"])
 
-Treco = TR_total-np.sum(sequence_config["TR"])
+Treco = 3000
 # other options
 sequence_config["T_recovery"]=Treco
 sequence_config["nrep"]=rep
@@ -64,7 +66,7 @@ seq=T1MRFSS(**sequence_config)
 
 water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
 
-
+nb_segments=int(water.shape[0]/rep)
 
 
 indices=[]
@@ -73,7 +75,7 @@ for i in range(1,water.ndim):
 
 plt.figure()
 plt.title("Worst T1 Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(wT1[-1], att[indices[2]], df[indices[3]]))
-plt.plot(np.real(water[::1400,-1,indices[1],indices[2],indices[3]]))
+plt.plot(np.real(water[::nb_segments,-1,indices[1],indices[2],indices[3]]))
 
 fig,ax=plt.subplots(2,1)
 fig.suptitle("T1 {} B1 {} Df {}".format(wT1[-1],att[indices[2]],df[indices[3]]))
@@ -91,7 +93,7 @@ for j in range(num_sig):
 
     plt.figure()
     plt.title("Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(wT1[indices[0]], att[indices[2]], df[indices[3]]))
-    plt.plot(np.real(water[::1400,indices[0],indices[1],indices[2],indices[3]]))
+    plt.plot(np.real(water[::nb_segments,indices[0],indices[1],indices[2],indices[3]]))
 
     fig,ax=plt.subplots(2,1)
     fig.suptitle("T1 {} B1 {} Df {}".format(wT1[indices[0]],att[indices[2]],df[indices[3]]))
@@ -112,7 +114,7 @@ for j in range(num_sig):
     indices=indices+fixed_indices
 
     plt.title("Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(wT1[indices[0]], att[indices[2]], df[indices[3]]))
-    plt.plot(np.real(water[::1400,indices[0],indices[1],indices[2],indices[3]]),label=wT1[indices[0]])
+    plt.plot(np.real(water[::nb_segments,indices[0],indices[1],indices[2],indices[3]]),label=wT1[indices[0]])
 plt.legend()
 
 fig,ax=plt.subplots(2,1)

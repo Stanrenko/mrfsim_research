@@ -65,7 +65,7 @@ medfilter=False
 
 
 #name = "SquareSimu3D_SS_FF0_1"
-name = "SquareSimu3D_SS_SimReco2_attB1_70"
+name = "SquareSimu3D_SS_SimReco2_MultiCoil"
 
 dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
 suffix="_DE_Simu_FF_reco3"
@@ -168,22 +168,24 @@ filename = base_folder+localfile
 
 folder = "/".join(str.split(filename,"/")[:-1])
 
-
+nb_channels=8
 
 filename_paramMap=filename+"_paramMap_sl{}_rp{}{}.pkl".format(nb_slices,repeat_slice,"")
 
 filename_paramMask=filename+"_paramMask_sl{}_rp{}.npy".format(nb_slices,repeat_slice)
 
-filename_volume = filename+"_volumes_sl{}_rp{}_us{}_{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
+filename_volume = filename+"_volumes_sl{}_rp{}_us{}_{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
 filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}_{}w{}{}.npy".format(nb_slices,repeat_slice,nb_allspokes,nspoke,suffix)
 
-filename_kdata = filename+"_kdata_sl{}_rp{}_us{}{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
-filename_mask= filename+"_mask_sl{}_rp{}_us{}{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
-file_map = filename + "_sl{}_rp{}_us{}{}w{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
+filename_kdata = filename+"_kdata_sl{}_rp{}_us{}{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
+filename_b1 = filename+"_b1_sl{}_rp{}_us{}{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
+
+filename_mask= filename+"_mask_sl{}_rp{}_us{}{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
+file_map = filename + "_sl{}_rp{}_us{}{}w{}_ch{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
-nb_channels=1
+nb_channels=8
 npoint = 128
 
 
@@ -263,53 +265,100 @@ if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
 
 radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,is_random=is_random,frac_center=frac_center,nspoke_per_z_encoding=nspoke)
 
-nb_channels=1
+
+nb_means=int(nb_channels**(1/3))
+
+
+means_z=np.arange(1,nb_means+1)*(1/(nb_means+1))*image_size[0]
+means_x=np.arange(1,nb_means+1)*(1/(nb_means+1))*image_size[1]
+means_y=np.arange(1,nb_means+1)*(1/(nb_means+1))*image_size[2]
+
+
+sig_z=(image_size[0]/(2*(nb_means+1)))**2
+sig_x=(image_size[1]/(2*(nb_means+1)))**2
+sig_y=(image_size[2]/(2*(nb_means+1)))**2
+
+z = np.arange(image_size[0])
+x = np.arange(image_size[1])
+y = np.arange(image_size[2])
+
+
+X,Y,Z = np.meshgrid(x,y,z)
+pixels=np.stack([Z,X,Y], axis=-1)
+pixels=np.moveaxis(pixels,-2,0)
+
+pixels=pixels.reshape(-1,3)
+
+from scipy.stats import multivariate_normal
+b1_maps=[]
+
+for mu_z in means_z:
+    for mu_x in means_x:
+        for mu_y in means_y:
+            b1_maps.append(multivariate_normal.pdf(pixels, mean=[mu_z,mu_x,mu_y], cov=np.diag([sig_z,sig_x,sig_y])))
+
+b1_maps = np.array(b1_maps)
+b1_maps=b1_maps/np.expand_dims(np.max(b1_maps,axis=-1),axis=-1)
+b1_maps=b1_maps.reshape((nb_channels,)+image_size)
+
+#animate_images(b1_maps[0,:,:,:])
+
+b1_prev = np.ones(b1_maps[0].shape,dtype=b1_maps[0].dtype)
+b1_all = np.concatenate([np.expand_dims(b1_prev, axis=0), b1_maps], axis=0)
 
 
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
 
+    data=[]
+
     #images = copy(m.images_series)
-    data=m.generate_kdata(radial_traj,useGPU=use_GPU)
+
+    for i in tqdm(range(1,b1_all.shape[0])):
+        m.images_series*=np.expand_dims(b1_all[i]/b1_all[i-1],axis=0)
+        data.append(np.array(m.generate_kdata(radial_traj,useGPU=False)))
+
+    m.images_series/=np.expand_dims(b1_all[-1],axis=0)
+    #del images
 
     data=np.array(data)
+
+
+    #density = np.abs(np.linspace(-1, 1, npoint))
+    #density = np.expand_dims(density, tuple(range(data.ndim - 1)))
+
+    #kdata_all_channels_all_slices = data.reshape(-1, npoint)
+    #del data
+    #print("Performing Density Adjustment....")
+
+    data = data.reshape(nb_channels, nb_allspokes, -1, npoint)
+    #data *= density
+
     np.save(filename_kdata, data)
+    del data
+    kdata_all_channels_all_slices = np.load(filename_kdata)
 
 else:
     #kdata_all_channels_all_slices = open_memmap(filename_kdata)
-    data = np.load(filename_kdata)
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+
+if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
+    res = 16
+    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage,density_adj=True)
+    np.save(filename_b1,b1_all_slices)
+else:
+    b1_all_slices=np.load(filename_b1)
+
+sl=int(b1_all_slices.shape[1]/2)
+list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
+plot_image_grid(list_images,(3,3),title="Sensitivity map for slice {}".format(sl))
 
 
-#plt.plot(np.unique(radial_traj.get_traj()[:,:,2],axis=-1),"s")
-if medfilter:
-    data=data.reshape(nb_segments,-1,npoint)
-    density = np.abs(np.linspace(-1, 1, npoint))
-    density = np.expand_dims(density, tuple(range(data.ndim - 1)))
-    # kdata_all_channels_all_slices = data.reshape(-1, npoint)
-    # del data
-    print("Performing Density Adjustment....")
-    data *= density
-    data=data.reshape(-1,npoint)
-    data_filtered_real=np.apply_along_axis(lambda x:medfilt(x,3),-1,np.real(data))
-    data_filtered_imag=np.apply_along_axis(lambda x:medfilt(x,3),-1,np.imag(data))
-    data_filtered=data_filtered_real+1j*data_filtered_imag
-    j=np.random.choice(range(data.shape[0]))
-    plt.figure()
-    plt.plot(data[j])
-    plt.plot(data_filtered[j])
-    data_filtered=data_filtered.reshape(nb_segments,-1)
-    data=data_filtered
-
-
-
-
-##volumes for slice taking into account coil sensi
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    if medfilter:
-        density_adj=False
-    else:
-        density_adj=True
-    volumes_all=simulate_radial_undersampled_images(data,radial_traj,image_size,density_adj=density_adj,useGPU=use_GPU,ntimesteps=ntimesteps)
+    del kdata_all_channels_all_slices
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
     np.save(filename_volume,volumes_all)
     # sl=20
     # ani = animate_images(volumes_all[:,sl,:,:])
@@ -360,8 +409,8 @@ if not(load_map):
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=True, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
-    all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=True, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,b1=b1_all_slices)
+    all_maps=optimizer.search_patterns_test_multi(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -418,22 +467,20 @@ for iter in list(range(np.minimum(len(all_maps.keys()),2))):
 
 plt.close("all")
 
-name="SquareSimu3D_SS_SimReco2"
+name="SquareSimu3D_SS_SimReco2_MultiCoil"
 #name="SquareSimu3D_SS_FF0_1"
 dic_maps={}
 list_suffix=["fullReco_T1MRF_adjusted","fullReco_Brute","DE_Simu_FF_reco3","DE_Simu_FF_v2_reco3"]
-list_suffix=["fullReco","DE_Simu_FF_reco3"]
+list_suffix=["DE_Simu_FF_reco3"]
 
 for suffix in list_suffix:
-    if "NoInv" in suffix:
-        file_map = "/{}_sl{}_rp{}_us{}{}w{}_{}_MRF_map.pkl".format(name, nb_slices, repeat_slice, undersampling_factor,
-                                                                   680, nspoke, suffix)
-    elif "DE_Simu" in suffix:
-        file_map = "/{}_sl{}_rp{}_us{}{}w{}_{}_MRF_map.pkl".format(name, nb_slices, repeat_slice, undersampling_factor,
-                                                                   760, nspoke, suffix)
+
+    if "DE_Simu" in suffix:
+        file_map = "/{}_sl{}_rp{}_us{}{}w{}_ch{}_{}_MRF_map.pkl".format(name, nb_slices, repeat_slice, undersampling_factor,
+                                                                   760, nspoke,nb_channels, suffix)
 
     else:
-        file_map="/{}_sl{}_rp{}_us{}{}w{}_{}_MRF_map.pkl".format(name,nb_slices,repeat_slice,undersampling_factor,1400,nspoke,suffix)
+        file_map="/{}_sl{}_rp{}_us{}{}w{}_ch{}_{}_MRF_map.pkl".format(name,nb_slices,repeat_slice,undersampling_factor,1400,nspoke,nb_channels,suffix)
     with open( base_folder + file_map, "rb") as file:
         dic_maps[file_map] = pickle.load(file)
 
