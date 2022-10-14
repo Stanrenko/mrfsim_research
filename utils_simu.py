@@ -313,7 +313,7 @@ def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f,B1, T_2
     if (np.array(FF).shape == ()):
         FF = np.array([FF])
     if (np.array(B1).shape == ()):
-        FF = np.array([B1])
+        B1 = np.array([B1])
 
     if not (T_1w.shape == (1,)):
         T_1w = np.squeeze(T_1w)
@@ -325,7 +325,7 @@ def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f,B1, T_2
         FF = np.squeeze(FF)
 
     if not (B1.shape == (1,)):
-        FF = np.squeeze(B1)
+        B1 = np.squeeze(B1)
 
     keys = list(product(list(T_1w), list(T_1f), list(B1), list(df)))
 
@@ -347,8 +347,6 @@ def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f,B1, T_2
     if group_size is not None:
         s_iw=np.array([np.mean(gp, axis=0) for gp in groupby(s_iw, group_size)])
         s_if = np.array([np.mean(gp, axis=0) for gp in groupby(s_if, group_size)])
-        print(s_iw.shape)
-        print(s_if.shape)
 
 
     s_i = FF * s_if + (1 - FF) * s_iw

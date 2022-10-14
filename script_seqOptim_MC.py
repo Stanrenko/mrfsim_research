@@ -1,8 +1,8 @@
 from utils_simu import *
 from dictoptimizers import SimpleDictSearch
 
-# generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json","mrf_dictconf_SimReco2.json",3)
-#
+generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json","mrf_dictconf_SimReco2_lightDFB1.json",3)
+
 # TR_list,FA_list,TE_list=load_sequence_file("mrf_sequence_adjusted.json",3,1.87/1000)
 #
 # generate_epg_dico_T1MRFSS("mrf_sequence_adjusted_1_87.json","mrf_dictconf_Dico2_Invivo.json",FA_list,TE_list,4,1.87/1000)
@@ -663,7 +663,9 @@ fat_shift = -np.array(dict_config["fat_cshift"])
 
 
 TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized.json",3,1.94/1000)
-spokes_count=680
+TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted.json",3,1.94/1000)
+
+spokes_count=1400
 
 TE_new = np.zeros(spokes_count + 1)
 TR_new = np.zeros(spokes_count + 1)
@@ -685,16 +687,17 @@ def cost_function_simul_breaks(params):
     global DFs
     global FFs
     global T1s
+    global B1s
     global lambda_FA
     global lambda_T1
     global lambda_time
     global lambda_FF
     global inversion
 
-    sigma = 0.6
+    sigma = 0.04
     noise_size = 100
     group_size = 8
-    noise_type = "Relative"
+    noise_type = "Absolute"
 
     # print(params)
 
@@ -707,7 +710,7 @@ def cost_function_simul_breaks(params):
     # print(FA_[:10])
     # print(params)
 
-    s, s_w, s_f, keys = simulate_gen_eq_signal(TR_, FA_, TE_, FFs, DFs, T1s, 300 / 1000, T_2w=40 / 1000, T_2f=80 / 1000,
+    s, s_w, s_f, keys = simulate_gen_eq_signal(TR_, FA_, TE_, FFs, DFs, T1s, 300 / 1000,B1s, T_2w=40 / 1000, T_2f=80 / 1000,
                                                amp=fat_amp, shift=fat_shift, sigma=sigma, noise_size=noise_size,
                                                noise_type=noise_type, group_size=group_size,
                                                return_fat_water=True)  # ,amp=np.array([1]),shift=np.array([-418]),sigma=None):
@@ -744,8 +747,10 @@ def cost_function_simul_breaks(params):
     # plt.plot(s[:,j])
 
     keys_all = list(product(keys, FFs))
+    #print(keys_all.shape)
     keys_all = [(*rest, a) for rest, a in keys_all]
     keys_all = np.array(keys_all)
+
 
     key = "wT1"
     map = all_maps[0][0][key].reshape(-1, noise_size)
@@ -782,15 +787,16 @@ DFs=[-60,-30,0,30,60]
 FFs=[0.,0.1,0.2,0.3,0.4,0.5,0.6,0.7]
 DFs=[-30,0,30]
 FFs=[0.,0.1,0.2,0.3,0.4,0.5]
+B1s=[0.7,1]
 T1s=T1_w+dTs
 
 recovery=3
 
-params_0,TE_breaks_,FA_breaks_=convert_sequence_to_params_breaks(FA_new,TE_new,3)
+params_0,TE_breaks_,FA_breaks_=convert_sequence_to_params_breaks(FA_new,TE_new,4)
 num_breaks_TE=len(TE_breaks_)-2
 num_breaks_FA=len(FA_breaks_)-2
 
-bounds=[(50,300)]*(num_breaks_TE)+[(50,300)]*(num_breaks_FA)+[(0.0022,0.006)]*(num_breaks_TE+1)+[(5*np.pi/180,70*np.pi/180)]*(num_breaks_FA+1)+[(0,4)]
+bounds=[(50,400)]*(num_breaks_TE)+[(50,400)]*(num_breaks_FA)+[(0.0022,0.006)]*(num_breaks_TE+1)+[(5*np.pi/180,70*np.pi/180)]*(num_breaks_FA+1)+[(0,4)]
 
 from scipy.optimize import LinearConstraint
 A_TEbreaks=np.zeros((1,len(params_0)))
@@ -805,11 +811,11 @@ constraints=(con1,con2)
 
 from scipy.optimize import differential_evolution
 lambda_FA=0.
-lambda_time=0.025
+lambda_time=0.
 lambda_FF=2
 inversion=False
-lambda_T1=0
-inversion=False
+lambda_T1=1
+inversion=True
 res=differential_evolution(cost_function_simul_breaks,bounds=bounds,constraints=constraints)
 
 import pickle

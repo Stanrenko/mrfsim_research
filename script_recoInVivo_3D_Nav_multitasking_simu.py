@@ -205,17 +205,12 @@ if str.split(filename_dico_comp,"/")[-1]  not in os.listdir():
 
     import dask.array as da
 
-    A_r=signal.real
-    A_i=signal.imag
 
-    X_1 = np.concatenate([A_r,-A_i],axis=-1)
-    X_2 = np.concatenate([A_i,A_r],axis=-1)
-    X=np.concatenate([X_1,X_2],axis=0)
 
-    u_dico, s_dico, vh_dico = da.linalg.svd(da.from_array(X))
+    u_dico, s_dico, vh_dico = da.linalg.svd(da.from_array(signal))
 
-    vh_dico=np.array(vh_dico[::2,:])
-    s_dico=np.array(s_dico[::2])
+    vh_dico=np.array(vh_dico[:,:])
+    s_dico=np.array(s_dico[:])
 
     # plt.figure()
     # plt.plot(np.cumsum(s_dico)/np.sum(s_dico))
@@ -223,17 +218,12 @@ if str.split(filename_dico_comp,"/")[-1]  not in os.listdir():
     #ind_dico = ((np.cumsum(s_dico)/np.sum(s_dico))<0.99).sum()
     #ind_dico=20
 
-    vh_dico_retained = vh_dico[:ind_dico,:]
-    phi_dico = vh_dico_retained[:,:ntimesteps] - 1j * vh_dico_retained[:,ntimesteps:]
+    phi_dico = vh_dico[:ind_dico,:]
 
     del u_dico
     del s_dico
     del vh_dico
 
-    del vh_dico_retained
-    del X_1
-    del X_2
-    del X
     #del signal
 
 
@@ -697,7 +687,7 @@ undersampling_factor=1
 name = "SquareSimu3DMTRandom"
 
 
-use_GPU = True
+use_GPU = False
 light_memory_usage=True
 gen_mode="other"
 
@@ -907,7 +897,7 @@ shifts = list(range(-10, 10))
 bottom = 20
 top = 50
 
-displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
+displacements = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
 displacement_for_binning = displacements
 bin_width = 2
@@ -922,25 +912,6 @@ df_groups = df_cat.groupby("cat").count()
 
 data_reshaped = data.reshape(data.shape[0],-1,npoint)
 data_gt_reshaped = data_gt.reshape(data.shape[0],-1,npoint)
-
-metric=np.angle
-
-kpoint = 64
-sl=int(nb_slices/2)
-kpoint=np.random.choice(npoint)
-sl = np.random.choice(nb_slices)
-plt.figure()
-plt.plot(metric(data_reshaped[:,sl,kpoint]),label="Movement")
-plt.plot(metric(data_gt_reshaped[:,sl,kpoint]),label="No Movement",linestyle="dashed")
-plt.title("Comparison Mvt vs No Mvt Slice {} Point {}".format(sl,kpoint))
-plt.legend()
-
-metric=np.abs
-plt.figure()
-plt.plot(metric(data_gt_reshaped[:,sl,kpoint]-data_reshaped[:,sl,kpoint]),label="Movement")
-plt.title("Error Mvt vs No Mvt Slice {} Point {}".format(sl,kpoint))
-plt.legend()
-
 
 
 
@@ -982,7 +953,35 @@ niter=100
 diffs = []
 tol_diff = 1e-2
 variance_explained=0.99
-proj_on_fingerprints=False
+proj_on_fingerprints=True
+
+ind_dico=8
+
+FF_list = list(np.arange(0., 1.05, 0.05))
+keys, signal = read_mrf_dict(dictfile, FF_list)
+
+import dask.array as da
+
+
+
+u_dico, s_dico, vh_dico = da.linalg.svd(da.from_array(signal))
+
+vh_dico=np.array(vh_dico[:,:])
+s_dico=np.array(s_dico[:])
+
+# plt.figure()
+# plt.plot(np.cumsum(s_dico)/np.sum(s_dico))
+
+#ind_dico = ((np.cumsum(s_dico)/np.sum(s_dico))<0.99).sum()
+#ind_dico=20
+
+D = vh_dico[:ind_dico,:]
+
+del u_dico
+del s_dico
+del vh_dico
+
+D_plus=np.linalg.pinv(D.T)
 
 for i in tqdm(range(niter)):
     Sk_1 = Sk_cur.reshape(Sk_cur.shape[0],-1)
@@ -993,7 +992,7 @@ for i in tqdm(range(niter)):
 
     Sk_3 = np.moveaxis(Sk_cur, 2, 0).reshape(Sk_cur.shape[2], -1)
     if proj_on_fingerprints:
-        Sk_3 = phi_dico.T @ phi_dico.conj() @ Sk_final_3
+        Sk_3 = D.T @ D_plus @ Sk_3
     else:
         u_3, s_3, vh_3 = np.linalg.svd(Sk_3, full_matrices=False)
         cum_3 = np.cumsum(s_3) / np.sum(s_3)

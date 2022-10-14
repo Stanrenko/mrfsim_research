@@ -1413,9 +1413,12 @@ def build_single_image_multichannel(kdata,trajectory,size,density_adj=True,eps=1
     volume_rebuilt=simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj,eps,is_theta_z_adjusted,b1,1,useGPU,None,normalize_kdata,light_memory_usage,True)[0]
     return volume_rebuilt
 
-def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):
-    traj=trajectory.get_traj()
-
+def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6,ntimesteps=None):
+    if ntimesteps is None:
+        traj=trajectory.get_traj()
+    else:
+        traj = trajectory.get_traj_for_reconstruction(ntimesteps)
+    ntimesteps=volumes.shape[0]
     if traj.shape[-1]==2:# For slices
         if not(useGPU):
             kdata = [
@@ -1449,10 +1452,15 @@ def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):
 
     elif traj.shape[-1]==3:# For volumes
         if not (useGPU):
+
             kdata = [
                 finufft.nufft3d2(t[:, 2],t[:, 0], t[:, 1], p)
                 for t, p in zip(traj, volumes)
             ]
+
+            # traj=traj.reshape(-1,3)
+            # kdata = finufft.nufft3d2(traj[:, 2],traj[:, 0], traj[:, 1], volumes)
+            # kdata=kdata.reshape(ntimesteps,-1)
         else:
             # Allocate memory for the nonuniform coefficients on the GPU.
             dtype = np.float32  # Datatype (real)
@@ -1481,6 +1489,69 @@ def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6):
                 plan.__del__()
     return kdata
 
+
+def generate_kdata_singular(volumes, trajectory, useGPU=False, eps=1e-6):
+    """
+    generate L0 singular kdata for all the spokes in the trajectory
+    """
+
+    traj = trajectory.get_traj()
+    ntimesteps = volumes.shape[0]
+    if traj.shape[-1] == 2:  # For slices
+        raise ValueError("kdata singular not implemented in 2D")
+
+    elif traj.shape[-1] == 3:  # For volumes
+        if not (useGPU):
+
+            traj=traj.reshape(-1,3)
+            kdata = finufft.nufft3d2(traj[:, 2],traj[:, 0], traj[:, 1], volumes)
+        else:
+            raise ValueError("kdata singular not implemented for GPU")
+            # # Allocate memory for the nonuniform coefficients on the GPU.
+            # dtype = np.float32  # Datatype (real)
+            # complex_dtype = np.complex64
+            # N1, N2, N3 = volumes.shape[1], volumes.shape[2], volumes.shape[3]
+            # M = traj.shape[1]
+            # c_gpu = GPUArray((M), dtype=complex_dtype)
+            # # Initialize the plan and set the points.
+            # kdata = []
+            # for i in list(range(volumes.shape[0])):
+            #     fk = volumes[i, :, :]
+            #     kx = traj[i, :, 0]
+            #     ky = traj[i, :, 1]
+            #     kz = traj[i, :, 2]
+            #
+            #     kx = kx.astype(dtype)
+            #     ky = ky.astype(dtype)
+            #     kz = kz.astype(dtype)
+            #     fk = fk.astype(complex_dtype)
+            #
+            #     plan = cufinufft(2, (N1, N2, N3), 1, eps=eps, dtype=dtype)
+            #     plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+            #     plan.execute(c_gpu, to_gpu(fk))
+            #     c = np.squeeze(c_gpu.get())
+            #     kdata.append(c)
+            #     plan.__del__()
+    return kdata
+
+def generate_kdata_singular_multi(volumes,trajectory,b1_all_slices,useGPU=False,eps=1e-6):
+    kdata=[]
+    for i in tqdm(range(b1_all_slices.shape[0])):
+        kdata.append(generate_kdata_singular(volumes*np.expand_dims(b1_all_slices[i],axis=0),trajectory, useGPU=useGPU, eps=eps))
+
+    kdata = np.array(kdata)
+
+    return kdata
+
+def generate_kdata_multi(volumes,trajectory,b1_all_slices,useGPU=False,eps=1e-6,ntimesteps=None):
+    kdata=[]
+    for i in tqdm(range(b1_all_slices.shape[0])):
+        kdata.append(generate_kdata(volumes*np.expand_dims(b1_all_slices[i],axis=0),trajectory, useGPU=useGPU, eps=eps,ntimesteps=ntimesteps))
+
+    kdata = np.array(kdata)
+
+    return kdata
+
 def buildROImask(map,max_clusters=5):
     # ROI using KNN clustering
     if "wT1" not in map:
@@ -1506,6 +1577,134 @@ def buildROImask_unique(map,key="wT1"):
         maskROI[map[key] == value] = i + 1
 
     return maskROI
+
+def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6,is_theta_z_adjusted=False,ntimesteps=175):
+#Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
+    traj=trajectory.get_traj_for_reconstruction(ntimesteps)
+    npoint = trajectory.paramDict["npoint"]
+    nb_allspokes = trajectory.paramDict["total_nspokes"]
+    nspoke = int(nb_allspokes / ntimesteps)
+
+    if not(is_theta_z_adjusted):
+        dtheta = np.pi / nspoke
+        dz = 1/trajectory.paramDict["nb_rep"]
+
+    else:
+        dtheta=1
+        dz = 1/(2*np.pi)
+
+
+    if not(len(kdata)==len(traj)):
+        kdata=np.array(kdata).reshape(len(traj),-1)
+
+    if not(kdata[0].shape[0]==traj[0].shape[0]):
+        raise ValueError("Incompatible Kdata and Trajectory shapes")
+
+    kdata = [k / (2*npoint)*dz * dtheta for k in kdata]
+
+
+
+    if density_adj:
+        density = np.abs(np.linspace(-1, 1, npoint))
+        kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
+
+    #kdata = (normalize_image_series(np.array(kdata)))
+
+    if traj[0].shape[-1] == 2:  # 2D
+        if not(useGPU):
+            images_series_rebuilt = [
+                finufft.nufft2d1(t[:,0], t[:,1], s, size)
+                for t, s in zip(traj, kdata)
+            ]
+        else:
+            N1, N2 = size[0], size[1]
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+            fk_gpu = GPUArray((N1, N2), dtype=complex_dtype)
+            images_GPU = []
+            for i in list(range(len(kdata))):
+
+                c_retrieved = kdata[i]
+                kx = traj[i][:, 0]
+                ky = traj[i][:, 1]
+
+                # Cast to desired datatype.
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                c_retrieved = c_retrieved.astype(complex_dtype)
+
+                # Allocate memory for the uniform grid on the GPU.
+
+
+                # Initialize the plan and set the points.
+                plan = cufinufft(1, (N1, N2), 1, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kx), to_gpu(ky))
+
+                # Execute the plan, reading from the strengths array c and storing the
+                # result in fk_gpu.
+                plan.execute(to_gpu(c_retrieved), fk_gpu)
+
+                fk = np.squeeze(fk_gpu.get())
+                images_GPU.append(fk)
+                plan.__del__()
+            images_series_rebuilt=np.array(images_GPU)
+    elif traj[0].shape[-1] == 3:  # 3D
+        if not(useGPU):
+            #images_series_rebuilt = [
+            #    finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size)
+            #    for t, s in zip(traj, kdata)
+            #]
+
+            images_series_rebuilt=[]
+            for t,s in tqdm(zip(traj,kdata)):
+                s=s.astype(np.complex64)
+                t=t.astype(np.float32)
+                images_series_rebuilt.append(finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size))
+
+        else:
+            N1, N2, N3 = size[0], size[1], size[2]
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+
+            images_GPU=[]
+            for i in list(range(len(kdata))):
+                fk_gpu = GPUArray((N1, N2, N3), dtype=complex_dtype)
+                c_retrieved = kdata[i]
+                kx = traj[i][ :, 0]
+                ky = traj[i][ :, 1]
+                kz = traj[i][ :, 2]
+
+
+                # Cast to desired datatype.
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                kz = kz.astype(dtype)
+                c_retrieved = c_retrieved.astype(complex_dtype)
+
+                # Allocate memory for the uniform grid on the GPU.
+                c_retrieved_gpu = to_gpu(c_retrieved)
+
+                # Initialize the plan and set the points.
+                plan = cufinufft(1, (N1, N2,N3), 1, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kz),to_gpu(kx), to_gpu(ky))
+
+                # Execute the plan, reading from the strengths array c and storing the
+                # result in fk_gpu.
+                plan.execute(c_retrieved_gpu, fk_gpu)
+
+                fk = np.squeeze(fk_gpu.get())
+
+                fk_gpu.gpudata.free()
+                c_retrieved_gpu.gpudata.free()
+
+                images_GPU.append(fk)
+                plan.__del__()
+            images_series_rebuilt = np.array(images_GPU)
+
+    #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+
+    return np.array(images_series_rebuilt)
+
 
 def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6,is_theta_z_adjusted=False,ntimesteps=175):
 #Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
@@ -1765,235 +1964,6 @@ def simulate_radial_undersampled_images_density_optim(kdata,trajectory,size,dens
 
     return np.array(images_series_rebuilt)
 
-# def simulate_radial_undersampled_images_multi(kdata,trajectory,size,density_adj=True,eps=1e-6,is_theta_z_adjusted=False,b1=None,ntimesteps=175,useGPU=False,memmap_file=None,normalize_kdata=False,light_memory_usage=False,normalize_volumes=True):
-# #Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
-#
-#     #if light_memory_usage and not(useGPU):
-#     #    print("Warning : light memory usage is not used without GPU")
-#
-#     traj=trajectory.get_traj_for_reconstruction(ntimesteps)
-#     npoint = trajectory.paramDict["npoint"]
-#     nb_allspokes=trajectory.paramDict["total_nspokes"]
-#     nb_channels=kdata.shape[0]
-#     nspoke=int(nb_allspokes/ntimesteps)
-#
-#
-#     if kdata.dtype=="complex64":
-#         traj=traj.astype(np.float32)
-#
-#
-#     if not(is_theta_z_adjusted):
-#         dtheta = np.pi / nspoke
-#         dz = 1/trajectory.paramDict["nb_rep"]
-#
-#     else:
-#         dtheta=np.pi
-#         dz = 1
-#
-#
-#     if not(kdata.shape[1]==len(traj)):
-#         kdata=kdata.reshape(kdata.shape[0],len(traj),-1)
-#
-#
-#
-#
-#     if density_adj:
-#         density = np.abs(np.linspace(-1, 1, npoint))
-#         kdata = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata]
-#
-#
-#     if normalize_kdata:
-#         print("Normalizing Kdata")
-#         if not(light_memory_usage):
-#             C = np.mean(np.linalg.norm(kdata,axis=1),axis=-1)
-#             kdata /= np.expand_dims(C,axis=(1,2))
-#         else:
-#             for i in tqdm(range(nb_channels)):
-#                 kdata[i]/=np.mean(np.linalg.norm(kdata[i],axis=0))
-#     else:
-#         kdata *= dz * dtheta / npoint
-#
-#     #kdata = (normalize_image_series(np.array(kdata)))
-#
-#
-#     output_shape = (ntimesteps,)+size
-#
-#     flushed=False
-#
-#     if memmap_file is not None :
-#         from tempfile import mkdtemp
-#         import os.path as path
-#         file_memmap=path.join(mkdtemp(),"memmap_volumes.dat")
-#         images_series_rebuilt = np.memmap(file_memmap,dtype="complex64",mode="w+",shape=output_shape)
-#
-#     else:
-#         images_series_rebuilt = np.zeros(output_shape,dtype=np.complex64)
-#
-#     print("Performing NUFFT")
-#     if traj[0].shape[-1] == 2:  # 2D
-#
-#         for i,t in tqdm(enumerate(traj)):
-#             fk = finufft.nufft2d1(t[:,0], t[:,1], kdata[:,i,:], size)
-#
-#             #images_series_rebuilt = np.moveaxis(images_series_rebuilt, 0, 1)
-#             if b1 is None:
-#                 images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
-#             else:
-#                 images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
-#
-#     elif traj[0].shape[-1] == 3:  # 3D
-#         if not (useGPU):
-#             for i, t in tqdm(enumerate(traj)):
-#                 if not(light_memory_usage):
-#                     fk = finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], kdata[:, i, :], size)
-#                     if b1 is None:
-#                         images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
-#                     else:
-#                         images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
-#
-#                 else:
-#                     flush_condition=(memmap_file is not None)and((psutil.virtual_memory().cached+psutil.virtual_memory().free)/1e9<2)and(not(flushed))
-#                     if flush_condition:
-#                         print("Flushed Memory")
-#                         offset=i*images_series_rebuilt.itemsize*i*np.prod(images_series_rebuilt.shape[1:])
-#                         i0 = i
-#                         new_shape=(output_shape[0]-i,)+output_shape[1:]
-#                         images_series_rebuilt.flush()
-#                         del images_series_rebuilt
-#                         flushed=True
-#                         normalize_volumes = False
-#                         images_series_rebuilt = np.memmap(memmap_file,dtype="complex64",mode="r+",shape=new_shape,offset=offset)
-#
-#                     if flushed :
-#                         for j in tqdm(range(nb_channels)):
-#                             fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j, i, :], size)
-#                             if b1 is None:
-#                                 images_series_rebuilt[i-i0] += np.abs(fk) ** 2
-#                             else:
-#                                 images_series_rebuilt[i-i0] += b1[j].conj() * fk
-#
-#                         if b1 is None:
-#                             images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
-#
-#                     else:
-#                         for j in tqdm(range(nb_channels)):
-#                             fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j, i, :], size)
-#                             if b1 is None:
-#                                 images_series_rebuilt[i] += np.abs(fk) ** 2
-#                             else:
-#                                 images_series_rebuilt[i] += b1[j].conj() * fk
-#
-#                         if b1 is None:
-#                             images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
-#         else:
-#             N1, N2, N3 = size[0], size[1], size[2]
-#             dtype = np.float32  # Datatype (real)
-#             complex_dtype = np.complex64
-#
-#             for i in tqdm(list(range(kdata.shape[1]))):
-#                 if not(light_memory_usage):
-#                     fk_gpu = GPUArray((nb_channels,N1, N2, N3), dtype=complex_dtype)
-#                     c_retrieved = kdata[:,i,:]
-#                     kx = traj[i][:, 0]
-#                     ky = traj[i][:, 1]
-#                     kz = traj[i][:, 2]
-#
-#                     # Cast to desired datatype.
-#                     kx = kx.astype(dtype)
-#                     ky = ky.astype(dtype)
-#                     kz = kz.astype(dtype)
-#                     c_retrieved = c_retrieved.astype(complex_dtype)
-#
-#                     # Allocate memory for the uniform grid on the GPU.
-#                     c_retrieved_gpu = to_gpu(c_retrieved)
-#
-#                     # Initialize the plan and set the points.
-#                     plan = cufinufft(1, (N1, N2, N3), nb_channels, eps=eps, dtype=dtype)
-#                     plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
-#
-#                     # Execute the plan, reading from the strengths array c and storing the
-#                     # result in fk_gpu.
-#                     plan.execute(c_retrieved_gpu, fk_gpu)
-#
-#                     fk = np.squeeze(fk_gpu.get())
-#
-#                     fk_gpu.gpudata.free()
-#                     c_retrieved_gpu.gpudata.free()
-#
-#                     if b1 is None:
-#                         images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
-#                     else:
-#                         images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
-#
-#                     plan.__del__()
-#                 else:
-#                     #fk = np.zeros(output_shape,dtype=complex_dtype)
-#                     for j in tqdm(range(nb_channels)):
-#                         fk_gpu = GPUArray((N1, N2, N3), dtype=complex_dtype)
-#                         c_retrieved = kdata[j, i, :]
-#                         kx = traj[i][:, 0]
-#                         ky = traj[i][:, 1]
-#                         kz = traj[i][:, 2]
-#
-#                         # Cast to desired datatype.
-#                         kx = kx.astype(dtype)
-#                         ky = ky.astype(dtype)
-#                         kz = kz.astype(dtype)
-#                         c_retrieved = c_retrieved.astype(complex_dtype)
-#
-#                         # Allocate memory for the uniform grid on the GPU.
-#                         c_retrieved_gpu = to_gpu(c_retrieved)
-#
-#                         # Initialize the plan and set the points.
-#                         plan = cufinufft(1, (N1, N2, N3), 1, eps=eps, dtype=dtype)
-#                         plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
-#
-#                         # Execute the plan, reading from the strengths array c and storing the
-#                         # result in fk_gpu.
-#                         plan.execute(c_retrieved_gpu, fk_gpu)
-#
-#                         fk = np.squeeze(fk_gpu.get())
-#
-#                         fk_gpu.gpudata.free()
-#                         c_retrieved_gpu.gpudata.free()
-#
-#                         if b1 is None:
-#                             images_series_rebuilt[i] += np.abs(fk) ** 2
-#                         else:
-#                             images_series_rebuilt[i] += b1[j].conj() * fk
-#                         plan.__del__()
-#
-#                     if b1 is None:
-#                         images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
-#
-#
-#
-#
-#         del kdata
-#         gc.collect()
-#
-#         if flushed:
-#             images_series_rebuilt.flush()
-#             del images_series_rebuilt
-#             images_series_rebuilt=np.memmap(memmap_file,dtype="complex64",mode="r",shape=output_shape)
-#
-#         if (normalize_volumes)and(b1 is not None):
-#             print("Normalizing by Coil Sensi")
-#             if light_memory_usage:
-#                 b1_norm = np.sum(np.abs(b1) ** 2)
-#                 for i in tqdm(range(images_series_rebuilt.shape[0])):
-#                     images_series_rebuilt[i] = images_series_rebuilt[i] / b1_norm
-#             else:
-#                 images_series_rebuilt /= np.sum(np.abs(b1) ** 2)
-#
-#
-#
-#     #images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
-#
-#
-#
-#     return images_series_rebuilt
-
 
 def convolution_kernel_radial_single_channel(traj,dk,npoint,size,density_adj=False):
     dtheta = 1
@@ -2023,7 +1993,7 @@ def convolution_kernel_radial_single_channel(traj,dk,npoint,size,density_adj=Fal
 def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_adj=True, eps=1e-6,
                                               is_theta_z_adjusted=False, b1=None, ntimesteps=175, useGPU=False,
                                               memmap_file=None, normalize_kdata=False, light_memory_usage=False,
-                                              normalize_volumes=True):
+                                              normalize_volumes=True,normalize_iterative=False):
     # Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
 
     # if light_memory_usage and not(useGPU):
@@ -2037,7 +2007,7 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
     #print(kdata.shape)
     nspoke = int(nb_allspokes / ntimesteps)
 
-
+    num_samples=traj.shape[1]
 
     if not (is_theta_z_adjusted):
         dtheta = np.pi / nspoke
@@ -2087,20 +2057,12 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
                 traj[i] = traj[i].astype("float32")
         print(traj[0].dtype)
 
-    if normalize_kdata:
-        print("Normalizing Kdata")
-        if not (light_memory_usage):
-            C = np.mean(np.linalg.norm(kdata, axis=1), axis=-1)
-            kdata /= np.expand_dims(C, axis=(1, 2))
-        else:
-            for i in tqdm(range(nb_channels)):
-                #try:
-                #    kdata[i]/=np.mean(np.linalg.norm(kdata[i],axis=0))
-                #except:
-                kdata[i] /= np.sum(np.abs(np.array(list((itertools.chain(*kdata[i]))))))
-    else:
+    if not(normalize_iterative):
         for i in tqdm(range(nb_channels)):
             kdata[i] *= dz * dtheta / (2*npoint)
+    else:
+        for i in tqdm(range(nb_channels)):
+            kdata[i]/=num_samples
 
     # kdata = (normalize_image_series(np.array(kdata)))
 
@@ -2281,7 +2243,7 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
             del images_series_rebuilt
             images_series_rebuilt = np.memmap(memmap_file, dtype="complex64", mode="r", shape=output_shape)
 
-        if (normalize_volumes) and (b1 is not None):
+        if (normalize_volumes) and (b1 is not None) and not(normalize_iterative):
             print("Normalizing by Coil Sensi")
             if light_memory_usage:
                 b1_norm = np.sum(np.abs(b1) ** 2,axis=0)
@@ -2294,6 +2256,213 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
     # images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
 
     return images_series_rebuilt
+
+
+
+def simulate_radial_undersampled_singular_images_multi(kdata, trajectory, size, density_adj=True, eps=1e-6,
+                                              is_theta_z_adjusted=False, b1=None, useGPU=False,
+                                              memmap_file=None, light_memory_usage=False,
+                                              normalize_volumes=True):
+    """
+    simulate radial undersampled singular images from singular kdata
+    Input : nb_channels x L0 x size total_nb_spokes
+    Output : L0 x image_size
+
+    """
+    L0=kdata.shape[1]
+    traj = trajectory.get_traj_for_reconstruction(1)
+    #print(traj[0].shape)
+    npoint = trajectory.paramDict["npoint"]
+    nb_allspokes = trajectory.paramDict["total_nspokes"]
+    nb_channels = len(kdata)
+    #print(kdata.shape)
+
+
+
+
+
+
+    if type(density_adj) is bool:
+        if density_adj:
+            density_adj="Radial"
+
+    if density_adj=="Radial":
+        kdata=kdata.reshape(nb_channels,L0,-1,npoint)
+        density = np.abs(np.linspace(-1, 1, npoint))
+        density = np.expand_dims(density, tuple(range(kdata.ndim - 2)))
+
+        #density=np.expand_dims(axis=0)
+        for j in tqdm(range(nb_channels)):
+            kdata[j]*=density
+
+
+    if kdata[0][0].dtype == "complex64":
+        try:
+            traj=traj.astype("float32")
+        except:
+            for i in range(traj.shape[0]):
+                traj[i] = traj[i].astype("float32")
+        print(traj[0].dtype)
+
+
+    #for i in tqdm(range(nb_channels)):
+    #    kdata[i] *= dz * dtheta / (2*npoint)
+
+    # kdata = (normalize_image_series(np.array(kdata)))
+
+    output_shape = (L0,) + size
+
+    traj=traj.reshape(-1,3)
+    kdata=kdata.reshape(nb_channels,L0,-1)
+
+    num_k_samples = traj.shape[0]
+
+    kdata /= num_k_samples
+
+    flushed = False
+
+    if memmap_file is not None:
+        from tempfile import mkdtemp
+        import os.path as path
+        file_memmap = path.join(mkdtemp(), "memmap_volumes.dat")
+        images_series_rebuilt = np.memmap(file_memmap, dtype="complex64", mode="w+", shape=output_shape)
+
+    else:
+        images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
+
+    print("Performing NUFFT")
+    if traj[0].shape[-1] == 2:  # 2D
+
+        raise ValueError("simulate singular images not implemented for 2D")
+
+    elif traj[0].shape[-1] == 3:  # 3D
+        if not (useGPU):
+
+            if not (light_memory_usage):
+                print(kdata.shape)
+                print(traj.shape)
+                fk = finufft.nufft3d1(traj[:, 2], traj[:, 0], traj[:, 1], kdata, size)
+                if b1 is None:
+                    images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+                else:
+                    images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
+
+            else:
+
+                for j in tqdm(range(nb_channels)):
+
+                    kdata_current=kdata[j]
+                    fk = finufft.nufft3d1(traj[:, 2], traj[:, 0], traj[:, 1], kdata_current, size)
+                    if b1 is None:
+                        images_series_rebuilt += np.abs(fk) ** 2
+                    else:
+                        images_series_rebuilt += np.expand_dims(b1[j].conj(),axis=0) * fk
+
+                if b1 is None:
+                    images_series_rebuilt = np.sqrt(images_series_rebuilt[i])
+        else:
+            raise ValueError("simulate singular images not implemented for GPU")
+
+        del kdata
+        gc.collect()
+
+        if flushed:
+            images_series_rebuilt.flush()
+            del images_series_rebuilt
+            images_series_rebuilt = np.memmap(memmap_file, dtype="complex64", mode="r", shape=output_shape)
+
+
+
+
+    # images_series_rebuilt =normalize_image_series(np.array(images_series_rebuilt))
+
+    return images_series_rebuilt
+
+def undersampling_operator_singular(volumes,trajectory,b1_all_slices,density_adj=True):
+    """
+    returns A.H @ W @ A @ volumes where A=F Fourier + sampling operator and W correspond to radial density adjustment
+    """
+
+    L0=volumes.shape[0]
+    size=volumes.shape[1:]
+    nb_channels=b1_all_slices.shape[0]
+
+    nb_allspokes = trajectory.paramDict["total_nspokes"]
+    traj = trajectory.get_traj()
+    traj = traj.reshape(-1, 3)
+    npoint = trajectory.paramDict["npoint"]
+
+    num_k_samples = traj.shape[0]
+
+    output_shape = (L0,) + size
+    images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
+
+    for k in tqdm(range(nb_channels)):
+
+        curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
+        print(curr_volumes.shape)
+        curr_kdata = finufft.nufft3d2(traj[:, 2], traj[:, 0], traj[:, 1], curr_volumes)
+        print(curr_kdata.shape)
+        if density_adj:
+            curr_kdata=curr_kdata.reshape(L0,-1,npoint)
+            density = np.abs(np.linspace(-1, 1, npoint))
+            density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+            curr_kdata*=density
+
+
+        curr_kdata = curr_kdata.reshape(L0, -1)
+
+        fk = finufft.nufft3d1(traj[:, 2], traj[:, 0], traj[:, 1], curr_kdata, size)
+        print(fk.shape)
+        images_series_rebuilt += b1_all_slices[k].conj()* fk
+
+    images_series_rebuilt /= num_k_samples
+    return images_series_rebuilt
+
+
+def undersampling_operator(volumes,trajectory,b1_all_slices,density_adj=True):
+    """
+    returns A.H @ W @ A @ volumes where A=F Fourier + sampling operator and W correspond to radial density adjustment
+    """
+
+    ntimesteps=volumes.shape[0]
+    size=volumes.shape[1:]
+    nb_channels=b1_all_slices.shape[0]
+
+    traj = trajectory.get_traj()
+    traj = traj.reshape(ntimesteps,-1, 3)
+    npoint = trajectory.paramDict["npoint"]
+
+    num_k_samples = traj.shape[1]
+
+    output_shape = (ntimesteps,) + size
+    images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
+
+    for k in tqdm(range(nb_channels)):
+
+        curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
+        print(curr_volumes.shape)
+        curr_kdata = [finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], v) for (t,v) in zip (traj,curr_volumes)]
+        curr_kdata=np.array(curr_kdata)
+        print(curr_kdata.shape)
+        if density_adj:
+            curr_kdata=curr_kdata.reshape(ntimesteps,-1,npoint)
+            density = np.abs(np.linspace(-1, 1, npoint))
+            density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+            curr_kdata*=density
+
+
+        curr_kdata = curr_kdata.reshape(ntimesteps, -1)
+
+        fk = [finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kd, size) for (t,kd) in zip(traj,curr_kdata)]
+        fk=np.array(fk)
+        print(fk.shape)
+        images_series_rebuilt += b1_all_slices[k].conj()* fk
+
+    images_series_rebuilt /= num_k_samples
+    return images_series_rebuilt
+
+
 
 def simulate_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6):
     # Strong Assumption : from one time step to the other, the sampling is just rotated, hence voronoi volumes can be calculated only once
@@ -3776,7 +3945,7 @@ def J(m,traj,data,npoint,density_adj=True,useGPU=True,scaling=None):
     return np.linalg.norm(kdata_error) ** 2
 
 
-def grad_J(m,traj,data,npoint,nspoke,nb_slices,density_adj=True,useGPU=False):
+def grad_J(m,traj,data,npoint,nspoke,nb_slices,density_adj=True,useGPU=False,scaling=None):
     ntimesteps = traj.shape[0]
     if scaling is None:
         scaling = np.prod(m.shape[1:])
