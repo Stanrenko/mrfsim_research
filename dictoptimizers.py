@@ -1,7 +1,7 @@
 import numpy as np
 from scipy import ndimage
 from scipy.ndimage import affine_transform
-from utils_mrf import translation_breathing,build_mask_single_image,build_mask,simulate_radial_undersampled_images,read_mrf_dict,create_cuda_context,correct_mvt_kdata,simulate_radial_undersampled_images_multi,simulate_radial_undersampled_singular_images_multi,generate_kdata_multi,generate_kdata_singular_multi,undersampling_operator_singular,undersampling_operator
+from utils_mrf import translation_breathing,build_mask_single_image,build_mask,simulate_radial_undersampled_images,read_mrf_dict,create_cuda_context,correct_mvt_kdata,simulate_radial_undersampled_images_multi,simulate_radial_undersampled_singular_images_multi,generate_kdata_multi,generate_kdata_singular_multi,undersampling_operator_singular,undersampling_operator,grad_J_TV,J_TV
 from Transformers import PCAComplex
 from mutools.optim.dictsearch import dictsearch
 from tqdm import tqdm
@@ -9,6 +9,7 @@ from mrfsim import makevol
 from image_series import MapFromDict
 from datetime import datetime
 from skimage.restoration import denoise_tv_chambolle
+from copy import copy
 #import cupy as cp
 try:
     #from pycuda.autoinit import _finish_up
@@ -2997,6 +2998,11 @@ class SimpleDictSearch(Optimizer):
             if "mu" not in self.paramDict:
                 self.paramDict["mu"]="Adaptative"
 
+            if "dens_adj" in self.paramDict:
+                dens_adj=self.paramDict["dens_adj"]
+            else:
+                dens_adj=True
+
             num_samples=trajectory.get_traj().reshape(ntimesteps,-1,3).shape[1]
 
         log = self.paramDict["log"]
@@ -3064,7 +3070,10 @@ class SimpleDictSearch(Optimizer):
                 for ts in tqdm(range(kdata_all_signals.shape[1])):
                     curr_grad = signals[ts]
                     curr_volumes_grad = kdata_all_signals[:, ts].flatten()
-                    density = np.abs(np.linspace(-1, 1, trajectory.paramDict["npoint"]))
+                    if dens_adj:
+                        density = np.abs(np.linspace(-1, 1, trajectory.paramDict["npoint"]))
+                    else:
+                        density=1
                     mu_denom += np.real(
                         np.dot(
                             (density * curr_volumes_grad.reshape(-1, trajectory.paramDict["npoint"])).flatten().conj(),
@@ -3082,11 +3091,34 @@ class SimpleDictSearch(Optimizer):
                 J_list=np.array(J_list)
                 mu0=-mu_list[np.argmin(J_list)]
 
+
+
+
+
             else:
                 mu0 = self.paramDict["mu"]
 
             signals*=mu0
             print("Mu0 : {}".format(mu0))
+            if "mu_TV" in self.paramDict:
+                mu_TV=self.paramDict["mu_TV"]
+                grad_TV = grad_J_TV(volumes, 1, mask=mask) + grad_J_TV(volumes, 2, mask=mask)
+                grad_TV=grad_TV[:,mask>0]
+                grad_norm=np.linalg.norm(signals/mu0,axis=0)
+                grad_TV_norm=np.linalg.norm(grad_TV,axis=0)
+                signals -= mu0*mu_TV*grad_norm/grad_TV_norm*grad_TV
+
+
+                #signals_corrected=signals-0.5*grad_norm/grad_TV_norm*grad_TV
+
+                #ts=0
+                #vol_no_TV=makevol(signals[ts],mask>0)
+                #vol_TV = makevol(signals_corrected[ts],mask>0)
+                #from utils_mrf import animate_multiple_images
+                #animate_multiple_images(vol_no_TV,vol_TV)
+
+
+                #del grad_TV
             signals0 = signals
 
         del volumes
@@ -3244,7 +3276,7 @@ class SimpleDictSearch(Optimizer):
             matched_volumes = np.array([makevol(im, mask > 0) for im in matched_signals])
 
             volumesi = undersampling_operator(matched_volumes, trajectory, self.paramDict["b1"],
-                                                       density_adj=True)
+                                                       density_adj=dens_adj)
 
 
             #del images_pred
@@ -3283,6 +3315,7 @@ class SimpleDictSearch(Optimizer):
             #j=np.random.choice(signals0.shape[1]);import matplotlib.pyplot as plt;plt.figure();plt.plot(signals0[:,j]/np.linalg.norm(signals0[:,j]));plt.plot(matched_signals[:,j]/np.linalg.norm(matched_signals[:,j]));plt.plot(signals[:,j]/np.linalg.norm(signals[:,j]));
             grad = signalsi - signals0/mu0
 
+
             #if "kdata_init" in self.paramDict:
             #    print("Debugging cost function")
             #    #volumes = np.array([makevol(im, mask > 0) for im in signals0])
@@ -3303,7 +3336,10 @@ class SimpleDictSearch(Optimizer):
                 for ts in tqdm(range(kdata_grad.shape[1])):
                     curr_grad = grad[ts]
                     curr_kdata_grad = kdata_grad[:, ts].flatten()
-                    density = np.abs(np.linspace(-1, 1, trajectory.paramDict["npoint"]))
+                    if dens_adj:
+                        density = np.abs(np.linspace(-1, 1, trajectory.paramDict["npoint"]))
+                    else:
+                        density=1
 
                     mu_denom += np.real(
                         np.dot((density * curr_kdata_grad.reshape(-1, trajectory.paramDict["npoint"])).flatten().conj(),
@@ -3322,8 +3358,40 @@ class SimpleDictSearch(Optimizer):
                 mu=-self.paramDict["mu"]
             print("Mu for iter {} : {}".format(i,mu))
 
-            signals = matched_signals +mu* grad
-
+            # if "mu_TV" in self.paramDict:
+            #    grad_TV = grad_J_TV(matched_volumes, 1, mask=mask) + grad_J_TV(matched_volumes, 2, mask=mask)
+            #    grad_TV = grad_TV[:,mask>0]
+            #    grad_norm = np.linalg.norm(grad, axis=0)
+            #    grad_TV_norm = np.linalg.norm(grad_TV, axis=0)
+            #    signals = matched_signals + mu * grad
+            #
+            #    signals += mu*mu_TV * grad_norm / grad_TV_norm * grad_TV
+            #
+            #     # mu_TV_list = np.linspace(0.22,0.45,4)
+            #     # J_list=[]
+            #     # for mu_TV in tqdm(mu_TV_list):
+            #     #     signals_corrected = signals + mu_TV * mu * grad_norm / grad_TV_norm * grad_TV
+            #     #     volumes_corrected=np.array([makevol(im, mask > 0) for im in signals_corrected])
+            #     #     J_list.append(J(volumes_corrected, kdata_init, True, trajectory))
+            #     # J_list = np.array(J_list)
+            #     # import matplotlib.pyplot as plt
+            #     # plt.figure();plt.plot(mu_TV_list,J_list)
+            #
+            #    # signals_corrected=signals+0.2*mu*grad_norm/grad_TV_norm*grad_TV
+            #    #  #
+            #    # ts=0
+            #    # vol_no_TV=makevol(signals[ts],mask>0)
+            #    # vol_TV = makevol(signals_corrected[ts],mask>0)
+            #    # from utils_mrf import animate_multiple_images
+            #    # animate_multiple_images(vol_no_TV,vol_TV)
+            #    # import matplotlib.pyplot as plt
+            #    # plt.figure()
+            #    # plt.plot(vol_no_TV[6,128, :])
+            #    # plt.plot(vol_TV[6,128,:])
+            #
+            # else:
+            #     signals = matched_signals +mu* grad
+            signals = matched_signals + mu * grad
             del grad
             #norm_signals = np.linalg.norm(signals, axis=0)
             #all_signals_unthresholded = signals / norm_signals
@@ -3684,6 +3752,303 @@ class SimpleDictSearch(Optimizer):
         else:
             return dict(zip(keys_results, values_results))
 
+    def search_patterns_test_multi_CS(self, dictfile, volumes, retained_timesteps=None):
+
+        if self.mask is None:
+            mask = build_mask(volumes)
+        else:
+            mask = self.mask
+
+        verbose = self.verbose
+        niter = self.paramDict["niter"]
+        split = self.paramDict["split"]
+        pca = self.paramDict["pca"]
+        threshold_pca = self.paramDict["threshold_pca"]
+        ntimesteps = self.paramDict["ntimesteps"]
+        # useAdjPred=self.paramDict["useAdjPred"]
+        if niter > 0:
+            #            seq = self.paramDict["sequence"]
+            trajectory = self.paramDict["trajectory"]
+            gen_mode = self.paramDict["gen_mode"]
+            if "mu" not in self.paramDict:
+                self.paramDict["mu"] = "Adaptative"
+
+            num_samples = trajectory.get_traj().reshape(ntimesteps, -1, 3).shape[1]
+
+        log = self.paramDict["log"]
+        useGPU_dictsearch = self.paramDict["useGPU_dictsearch"]
+        useGPU_simulation = self.paramDict["useGPU_simulation"]
+
+        movement_correction = self.paramDict["movement_correction"]
+        cond_mvt = self.paramDict["cond"]
+        remove_duplicates = self.paramDict["remove_duplicate_signals"]
+        threshold = self.paramDict["threshold"]
+        tv_denoising_weight = self.paramDict["tv_denoising_weight"]
+        log_phase = self.paramDict["log_phase"]
+        # adj_phase=self.paramDict["adj_phase"]
+
+        if movement_correction:
+            if cond_mvt is None:
+                raise ValueError("indices of retained kdata should be given in cond for movement correction")
+
+        if volumes.ndim > 2:
+            signals = volumes[:, mask > 0]
+        else:  # already masked
+            signals = volumes
+
+        if log:
+            now = datetime.now()
+            date_time = now.strftime("%Y%m%d_%H%M%S")
+            with open('./log/signals0_{}.npy'.format(date_time), 'wb') as f:
+                np.save(f, signals)
+
+        if "kdata_init" in self.paramDict:
+            kdata_init = self.paramDict["kdata_init"]
+            nb_channels = kdata_init.shape[0]
+            kdata_init = kdata_init.reshape(nb_channels, ntimesteps, -1)
+
+            def J(m, kdata_init, dens_adj, trajectory):
+                kdata = generate_kdata_multi(m, trajectory, self.paramDict["b1"],
+                                             ntimesteps=self.paramDict["ntimesteps"])
+                kdata_error = kdata - kdata_init
+                if dens_adj:
+                    density = np.abs(np.linspace(-1, 1, trajectory.paramDict["npoint"]))
+                    kdata_error = kdata_error.reshape(-1, trajectory.paramDict["npoint"])
+                    density = np.expand_dims(density, axis=0)
+                    kdata_error *= np.sqrt(density)
+
+                return np.linalg.norm(kdata_error) ** 2
+
+        if niter > 0:
+            if "b1" not in self.paramDict:
+                raise ValueError("b1 should be furnished for multi iteration multi channel MRF reconstruction")
+
+            nspoke = int(trajectory.paramDict["total_nspokes"] / self.paramDict["ntimesteps"])
+
+            mu=-self.paramDict["mu"]
+            if "mu_TV" in self.paramDict:
+                mu_TV = self.paramDict["mu_TV"]
+                grad_TV = grad_J_TV(volumes, 1, mask=mask) + grad_J_TV(volumes, 2, mask=mask)
+                grad_TV = grad_TV[:, mask > 0]
+                grad_norm = np.linalg.norm(signals / mu0, axis=0)
+                grad_TV_norm = np.linalg.norm(grad_TV, axis=0)
+                signals -= mu0 * mu_TV * grad_norm / grad_TV_norm * grad_TV
+
+                # signals_corrected=signals-0.5*grad_norm/grad_TV_norm*grad_TV
+
+                # ts=0
+                # vol_no_TV=makevol(signals[ts],mask>0)
+                # vol_TV = makevol(signals_corrected[ts],mask>0)
+                # from utils_mrf import animate_multiple_images
+                # animate_multiple_images(vol_no_TV,vol_TV)
+
+                # del grad_TV
+            signals0 = copy(signals)
+
+        del volumes
+
+        matched_signals_prev=np.zeros(signals0.shape,dtype=signals0.dtype)
+        signalsi=copy(matched_signals_prev)
+        # norm_volumes = np.linalg.norm(volumes, 2, axis=0)
+
+        # norm_signals = np.linalg.norm(signals, 2, axis=0)
+        # Normalize
+        # all_signals = signals / norm_signals
+        all_signals = signals
+        if type(dictfile) == str:
+            mrfdict = dictsearch.Dictionary()
+            mrfdict.load(dictfile, force=True)
+
+            keys = mrfdict.keys
+            array_water = mrfdict.values[:, :, 0]
+            array_fat = mrfdict.values[:, :, 1]
+
+            del mrfdict
+        else:  # otherwise dictfile contains (s_w,s_f,keys)
+            array_water = dictfile[0]
+            array_fat = dictfile[1]
+            keys = dictfile[2]
+
+        if retained_timesteps is not None:
+            array_water = array_water[:, retained_timesteps]
+            array_fat = array_fat[:, retained_timesteps]
+
+        array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
+        array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
+
+        nb_water_timesteps = array_water_unique.shape[1]
+        nb_fat_timesteps = array_fat_unique.shape[1]
+
+        del array_water
+        del array_fat
+
+        if pca:
+            pca_water = PCAComplex(n_components_=threshold_pca)
+            pca_fat = PCAComplex(n_components_=threshold_pca)
+
+            pca_water.fit(array_water_unique)
+            pca_fat.fit(array_fat_unique)
+
+            print(
+                "Water Components Retained {} out of {} timesteps".format(pca_water.n_components_, nb_water_timesteps))
+            print("Fat Components Retained {} out of {} timesteps".format(pca_fat.n_components_, nb_fat_timesteps))
+
+            transformed_array_water_unique = pca_water.transform(array_water_unique)
+            transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
+
+        else:
+            pca_water = None
+            pca_fat = None
+            transformed_array_water_unique = None
+            transformed_array_fat_unique = None
+
+        var_w = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
+        var_f = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
+        sig_wf = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(), axis=1).real
+
+        var_w = var_w[index_water_unique]
+        var_f = var_f[index_fat_unique]
+
+        var_w = np.reshape(var_w, (-1, 1))
+        var_f = np.reshape(var_f, (-1, 1))
+        sig_wf = np.reshape(sig_wf, (-1, 1))
+
+        if useGPU_dictsearch:
+            var_w = cp.asarray(var_w)
+            var_f = cp.asarray(var_f)
+            sig_wf = cp.asarray(sig_wf)
+
+        values_results = []
+        keys_results = list(range(niter + 1))
+
+        i=0
+        while(i<=niter):
+
+            grad=(signalsi-signals0)
+            all_signals=matched_signals_prev+mu*grad
+
+            if log:
+                print("Saving signals for iteration {}".format(i))
+                with open('./log/signals_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+                    np.save(f, np.array(all_signals))
+
+            print("################# ITERATION : Number {} out of {} ####################".format(i, niter))
+            print("Calculating optimal fat fraction and best pattern per signal for iteration {}".format(i))
+            if not (self.paramDict["return_matched_signals"]) and (niter == 0):
+                map_rebuilt, J_optim, phase_optim = match_signals_v2(all_signals, keys, pca_water, pca_fat,
+                                                                     array_water_unique, array_fat_unique,
+                                                                     transformed_array_water_unique,
+                                                                     transformed_array_fat_unique, var_w, var_f, sig_wf,
+                                                                     pca, index_water_unique, index_fat_unique,
+                                                                     remove_duplicates, verbose,
+                                                                     niter, split, useGPU_dictsearch, mask,
+                                                                     tv_denoising_weight, log_phase)
+            else:
+                map_rebuilt, J_optim, phase_optim, matched_signals = match_signals_v2(all_signals, keys, pca_water,
+                                                                                      pca_fat,
+                                                                                      array_water_unique,
+                                                                                      array_fat_unique,
+                                                                                      transformed_array_water_unique,
+                                                                                      transformed_array_fat_unique,
+                                                                                      var_w, var_f, sig_wf,
+                                                                                      pca, index_water_unique,
+                                                                                      index_fat_unique,
+                                                                                      remove_duplicates, verbose,
+                                                                                      niter, split, useGPU_dictsearch,
+                                                                                      mask,
+                                                                                      tv_denoising_weight, log_phase,
+                                                                                      return_matched_signals=True)
+
+                if log:
+                    print("Saving matched signals for iteration {}".format(i))
+                    with open('./log/matched_signals_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+                        np.save(f, matched_signals.astype(np.complex64))
+
+            # import matplotlib.pyplot as plt;j=np.random.choice(all_signals.shape[1]);plt.plot(all_signals[:,j]);plt.plot(matched_signals[:,j]);
+            print("Maps build for iteration {}".format(i))
+
+
+
+            if i == niter:
+                break
+
+            if useGPU_dictsearch:  # Forcing to free the memory
+                mempool = cp.get_default_memory_pool()
+                print("Cupy memory usage {}:".format(mempool.used_bytes()))
+                mempool.free_all_blocks()
+                print("Cupy memory usage {}:".format(mempool.used_bytes()))
+
+
+
+            print("Generating prediction volumes and undersampled images for iteration {}".format(i))
+
+            matched_volumes_prev=np.array([makevol(im, mask > 0) for im in matched_signals_prev])
+            matched_volumes = np.array([makevol(im, mask > 0) for im in matched_signals])
+            diff_matched = matched_volumes-matched_volumes_prev
+            density = np.abs(np.linspace(-1, 1, trajectory.paramDict["npoint"]))
+            density = np.expand_dims(density, axis=(0))
+
+            kappa=0.9
+            omega=kappa*np.sqrt(num_samples)*np.linalg.norm(diff_matched)/np.linalg.norm(np.sqrt(density)*generate_kdata_multi(diff_matched,trajectory,self.paramDict["b1"],ntimesteps=self.paramDict["ntimesteps"]).reshape(-1,trajectory.paramDict["npoint"]))
+
+            print("Mu {} vs Omega {}".format(np.abs(mu),omega))
+
+            if np.abs(mu)>omega:
+                mu=mu/2
+                print("Reducing mu : {}".format(mu))
+                continue
+            i = i + 1
+
+            if not (log_phase):
+                values_results.append((map_rebuilt, mask))
+
+            else:
+                values_results.append((map_rebuilt, mask, phase_optim))
+
+            if log:
+                with open('./log/maps_it_{}_{}.pkl'.format(int(i), date_time), 'wb') as f:
+                    pickle.dump({int(i): (map_rebuilt, mask)}, f)
+
+            volumesi = undersampling_operator(matched_volumes, trajectory, self.paramDict["b1"],
+                                              density_adj=True)
+
+            print("Correcting volumes for iteration {}".format(i))
+
+            signalsi = volumesi[:, mask > 0]
+            matched_signals_prev=copy(matched_signals)
+            # normi= np.linalg.norm(signalsi, axis=0)
+            # signalsi *= norm_signals/normi
+
+            if log:
+                print("Saving signalsi for iteration {}".format(i))
+                with open('./log/signalsi_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+                    np.save(f, np.array(signalsi))
+
+            del volumesi
+
+
+            # norm_signals = np.linalg.norm(signals, axis=0)
+            # all_signals_unthresholded = signals / norm_signals
+
+            if threshold is not None:
+
+                signals_for_map = signals * (1 - (np.abs(signals) > threshold))
+                all_signals = signals_for_map / np.linalg.norm(signals_for_map, axis=0)
+
+            else:
+
+                all_signals = signals
+
+        if log:
+            print(date_time)
+
+        if self.paramDict["return_matched_signals"]:
+
+            return dict(zip(keys_results, values_results)), matched_signals
+        else:
+            return dict(zip(keys_results, values_results))
+
+
 class ToyNN(Optimizer):
 
     def __init__(self,model,fitting_opt,model_opt={},input_scaler=StandardScaler(),output_scaler=MinMaxScaler(),niter=0,log=True,fitted=False,**kwargs):
@@ -3698,6 +4063,8 @@ class ToyNN(Optimizer):
         self.paramDict["fitting_opt"]=fitting_opt
         self.paramDict["is_fitted"] = fitted
         self.paramDict["model_opt"]=model_opt
+
+
 
 
 

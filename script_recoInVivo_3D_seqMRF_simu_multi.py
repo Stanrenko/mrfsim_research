@@ -65,29 +65,41 @@ medfilter=False
 
 
 #name = "SquareSimu3D_SS_FF0_1"
-name = "SquareSimu3D_SS_SimReco2_MultiCoil"
-snr=50
+name = "SquareSimu3D_SS_Multicoil"
+#name = "Knee3D_SS_SimReco2_MultiCoil"
+snr=None
 gauss_filter=False
 
 dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
 dictfile="mrf_dictconf_SimReco2_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
-suffix="_DE_Simu_FF_reco3_SNR_{}".format(snr)
-if gauss_filter:
-    suffix += "_gaussfilter"
-
+suffix="_DE_Simu_FF_reco3"
 with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json") as f:
     sequence_config = json.load(f)
+
+
+# dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v3_reco3.6.dict"
+# dictfile="mrf_dictconf_SimReco2_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v3_reco3.6.dict"
+# suffix="_DE_Simu_FF_v3_reco3.6"
+# with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v3.json") as f:
+#    sequence_config = json.load(f)
 
 
 # dictfile="mrf_SimReco2_light_adjusted.dict"
 # suffix=""
 # with open("./mrf_sequence_adjusted.json") as f:
 #     sequence_config = json.load(f)
-
-#dictfile="mrf175_SimReco2_adjusted.dict"
-#suffix="_fullReco_SNR_{}".format(snr)
-#with open("./mrf_sequence_adjusted.json") as f:
+#
+# dictfile="mrf175_SimReco2_adjusted.dict"
+# suffix="_fullReco"
+# with open("./mrf_sequence_adjusted.json") as f:
 #    sequence_config = json.load(f)
+
+
+if gauss_filter:
+    suffix += "_gaussfilter"
+
+if snr is not None:
+    suffix+="_SNR_{}".format(snr)
 
 nb_allspokes = len(sequence_config["TE"])
 nspoke=8
@@ -152,7 +164,10 @@ seq=T1MRFSS(**sequence_config)
 
 nb_filled_slices = 16
 nb_empty_slices=2
-repeat_slice=16
+repeat_slice=1
+
+if "Knee3D" in name:
+    repeat_slice=1
 nb_slices = nb_filled_slices+2*nb_empty_slices
 
 undersampling_factor=1
@@ -161,7 +176,7 @@ is_random=False
 frac_center=1.0
 
 
-
+dens_adj=False
 use_GPU = False
 light_memory_usage=True
 gen_mode="other"
@@ -183,6 +198,8 @@ filename_paramMap=filename+"_paramMap_sl{}_rp{}{}.pkl".format(nb_slices,repeat_s
 filename_paramMask=filename+"_paramMask_sl{}_rp{}.npy".format(nb_slices,repeat_slice)
 
 filename_volume = filename+"_volumes_sl{}_rp{}_us{}_{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
+filename_volume_no_dens_adj = filename+"_volumes_no_dens_adj_sl{}_rp{}_us{}_{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
+
 filename_volume_singular = filename+"_volumes_singular_sl{}_rp{}_us{}_{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
 
 filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}_{}w{}{}.npy".format(nb_slices,repeat_slice,nb_allspokes,nspoke,suffix)
@@ -274,7 +291,6 @@ if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
 
 
 
-
 #animate_images(m.images_series[::nspoke,int(nb_slices/2)])
 # i=0
 # image=m.images_series[i]
@@ -356,25 +372,27 @@ if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
     data = data.reshape(nb_channels, nb_allspokes, -1, npoint)
     #data *= density
 
-    center_point=int(npoint/2)
-    center_sl = int(nb_slices/2)
-    res=int(npoint/8)
-    res_sl=int(nb_slices/8)
-    mean_data=np.mean(np.abs(data[:,:,(center_sl-res_sl):(center_sl+res_sl),(center_point-res):(center_point+res)]))
-    noise = mean_data/snr*(np.random.normal(size=data.shape)+1j*np.random.normal(size=data.shape))
-    #noise=0
-    data_no_noise=copy(data)
-    np.save(filename_kdata_no_noise,data_no_noise)
-    data+=noise
+    if snr is not None:
+        center_point=int(npoint/2)
+        center_sl = int(nb_slices/2)
+        res=int(npoint/8)
+        res_sl=int(nb_slices/8)
+        mean_data=np.mean(np.abs(data[:,:,(center_sl-res_sl):(center_sl+res_sl),(center_point-res):(center_point+res)]))
+        noise = mean_data/snr*(np.random.normal(size=data.shape)+1j*np.random.normal(size=data.shape))
+        #noise=0
+        data_no_noise=copy(data)
+        np.save(filename_kdata_no_noise,data_no_noise)
+        data+=noise
     np.save(filename_kdata, data)
-    #del data
+#del data
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
 
 else:
     #kdata_all_channels_all_slices = open_memmap(filename_kdata)
     kdata_all_channels_all_slices = np.load(filename_kdata)
-    data_no_noise = np.load(filename_kdata_no_noise)
+    if snr is not None:
+        data_no_noise = np.load(filename_kdata_no_noise)
 
 # traj=radial_traj.get_traj()
 #
@@ -597,6 +615,12 @@ sl=int(b1_all_slices.shape[1]/2)
 list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
 plot_image_grid(list_images,(3,3),title="Sensitivity map for slice {}".format(sl))
 
+#del kdata_all_channels_all_slices
+#kdata_all_channels_all_slices=np.load(filename_kdata)
+#volume_full=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
+
+#animate_images(volume_full[0])
+
 
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
@@ -606,7 +630,18 @@ if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
     volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
     np.save(filename_volume,volumes_all)
     # sl=10
-    # ani = animate_images(volumes_all[:,sl,:,:])
+    # ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
+    del volumes_all
+
+print("Building Volumes....")
+if str.split(filename_volume_no_dens_adj,"/")[-1] not in os.listdir(folder):
+    del kdata_all_channels_all_slices
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
+    np.save(filename_volume_no_dens_adj,volumes_all)
+    # sl=10
+    # ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
     del volumes_all
 
 ##volumes for slice taking into account coil sensi
@@ -643,19 +678,20 @@ save_map=True
 #mask = m.mask
 
 mask=np.load(filename_mask)
-volumes_all = np.load(filename_volume)
-
-
+if dens_adj:
+    volumes_all = np.load(filename_volume)
+else:
+    volumes_all = np.load(filename_volume_no_dens_adj)
 
 #file_map=str.split(file_map,".pkl")[0]+"_test.pkl"
 
 if not(load_map):
-    niter = 3
+    niter = 30
     #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=True, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative")#,kdata_init=data_no_noise)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative",dens_adj=False)#,mu_TV=0.5)#,kdata_init=data_no_noise)
     all_maps=optimizer.search_patterns_test_multi(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
@@ -675,9 +711,6 @@ else:
     file = open(file_map, "rb")
     all_maps = pickle.load(file)
 
-
-maskROI=buildROImask_unique(m.paramMap)
-regression_paramMaps_ROI(m.paramMap,all_maps[0][0],m.mask>0,all_maps[0][1]>0,maskROI,adj_wT1=True,title="regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
 
 plt.close("all")
 maskROI = buildROImask_unique(m.paramMap)
@@ -713,12 +746,21 @@ for iter in list(range(np.minimum(len(all_maps.keys()),2))):
 
 plt.close("all")
 
-name="SquareSimu3D_SS_SimReco2_MultiCoil"
+name="SquareSimu3D_SS_Multicoil"
 #name="Knee3D_SS_SimReco2_MultiCoil"
 #name="SquareSimu3D_SS_FF0_1"
 dic_maps={}
 list_suffix=["fullReco_T1MRF_adjusted","fullReco_Brute","DE_Simu_FF_reco3","DE_Simu_FF_v2_reco3"]
 list_suffix=["DE_Simu_FF_reco3_SNR_{}".format(snr)]
+list_suffix=["DE_Simu_FF_reco3.9".format(snr)]
+list_suffix=["fullReco_SNR_{}".format(snr),"DE_Simu_FF_reco3.9_SNR_{}".format(snr)]
+list_suffix=["fullReco_SNR_{}".format(snr),"DE_Simu_FF_reco3.9_SNR_{}".format(snr),"DE_Simu_FF_v2_reco1.55_SNR_{}".format(snr)]
+list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3.9".format(snr),"DE_Simu_FF_v2_reco1.55".format(snr),"DE_Simu_FF_v2_reco4".format(snr)]
+list_suffix=["DE_Simu_FF_reco3_SNR_{}".format(snr)]
+list_suffix=["DE_Simu_FF_reco3".format(snr)]
+
+#list_suffix=["fullReco","DE_Simu_FF_v3_reco3.6".format(snr)]
+
 #list_suffix=["fullReco_SNR_{}".format(snr)]
 
 for suffix in list_suffix:
@@ -727,17 +769,23 @@ for suffix in list_suffix:
         file_map = "/{}_sl{}_rp{}_us{}{}w{}_ch{}_{}_MRF_map.pkl".format(name, nb_slices, repeat_slice, undersampling_factor,
                                                                    760, nspoke,nb_channels, suffix)
 
+
     else:
         file_map="/{}_sl{}_rp{}_us{}{}w{}_ch{}_{}_MRF_map.pkl".format(name,nb_slices,repeat_slice,undersampling_factor,1400,nspoke,nb_channels,suffix)
-    with open( base_folder + file_map, "rb") as file:
+
+    with open(base_folder + file_map, "rb") as file:
         dic_maps[file_map] = pickle.load(file)
 
+
+min_iter=0
+max_iter=10
 k="wT1"
 maskROI=buildROImask_unique(m.paramMap,key=k)
 fig,ax=plt.subplots(1,2)
 plt.title(k)
+
 for key in dic_maps.keys():
-    for it in (range(len(dic_maps[key].keys()))):
+    for it in (range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter))):
         roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
         roi_values.sort_values(by=["Obs Mean"],inplace=True)
         #dic_roi_values[key]=roi_values
@@ -752,7 +800,7 @@ maskROI=buildROImask_unique(m.paramMap,key=k)
 fig,ax=plt.subplots(1,2)
 plt.title(k)
 for key in dic_maps.keys():
-    for it in (range(len(dic_maps[key].keys()))):
+    for it in (range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter))):
         roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=False,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
         roi_values.sort_values(by=["Obs Mean"],inplace=True)
         #dic_roi_values[key]=roi_values
@@ -764,6 +812,42 @@ ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="--")
 
 plt.legend()
 
+
+
+min_iter=0
+max_iter=30
+k="wT1"
+maskROI=buildROImask_unique(m.paramMap,key=k)
+fig,ax=plt.subplots(1,2)
+plt.title(k)
+
+for key in dic_maps.keys():
+    for it in np.arange(0,30,5):
+        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+        roi_values.sort_values(by=["Obs Mean"],inplace=True)
+        #dic_roi_values[key]=roi_values
+        ax[0].plot(roi_values["Obs Mean"],roi_values["Pred Mean"].values,label=key+"_it{}".format(it))
+        ax[1].plot(roi_values["Obs Mean"],roi_values["Pred Std"].values,label=key+"_it{}".format(it))
+
+ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="--")
+plt.legend()
+
+k="ff"
+maskROI=buildROImask_unique(m.paramMap,key=k)
+fig,ax=plt.subplots(1,2)
+plt.title(k)
+for key in dic_maps.keys():
+    for it in np.arange(0,30,5):
+        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=False,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+        roi_values.sort_values(by=["Obs Mean"],inplace=True)
+        #dic_roi_values[key]=roi_values
+        ax[0].plot(roi_values["Obs Mean"],roi_values["Pred Mean"].values,label=key+"_it{}".format(it))
+        ax[1].plot(roi_values["Obs Mean"],roi_values["Pred Std"].values,label=key+"_it{}".format(it))
+
+
+ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="--")
+
+plt.legend()
 
 k="attB1"
 maskROI=buildROImask_unique(m.paramMap,key=k)

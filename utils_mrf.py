@@ -2442,7 +2442,10 @@ def undersampling_operator(volumes,trajectory,b1_all_slices,density_adj=True):
 
         curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
         print(curr_volumes.shape)
-        curr_kdata = [finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], v) for (t,v) in zip (traj,curr_volumes)]
+        if len(size)==3:
+            curr_kdata = [finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], v) for (t,v) in zip (traj,curr_volumes)]
+        else:
+            curr_kdata = [finufft.nufft2d2( t[:, 0], t[:, 1], v) for (t, v) in zip(traj, curr_volumes)]
         curr_kdata=np.array(curr_kdata)
         print(curr_kdata.shape)
         if density_adj:
@@ -2454,7 +2457,10 @@ def undersampling_operator(volumes,trajectory,b1_all_slices,density_adj=True):
 
         curr_kdata = curr_kdata.reshape(ntimesteps, -1)
 
-        fk = [finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kd, size) for (t,kd) in zip(traj,curr_kdata)]
+        if len(size) == 3:
+            fk = [finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kd, size) for (t,kd) in zip(traj,curr_kdata)]
+        else:
+            fk = [finufft.nufft2d1(t[:, 0], t[:, 1], kd, size) for (t, kd) in zip(traj, curr_kdata)]
         fk=np.array(fk)
         print(fk.shape)
         images_series_rebuilt += b1_all_slices[k].conj()* fk

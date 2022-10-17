@@ -66,7 +66,7 @@ medfilter=False
 
 #name = "SquareSimu3D_SS_FF0_1"
 name = "SquareSimu3D_SS_SimReco2_MultiCoil"
-snr=50
+snr=10
 gauss_filter=False
 
 dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
@@ -440,12 +440,12 @@ for L0 in L0_list:
     #file_map=str.split(file_map,".pkl")[0]+"_test.pkl"
 
     if not(load_map):
-        niter = 3
+        niter = 1
         #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
         #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-        optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=False,threshold_pca=10, log=True, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative")#,kdata_init=data_no_noise)
+        optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=False,threshold_pca=10, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative")#,kdata_init=data_no_noise)
         all_maps=optimizer.search_patterns_test_multi_singular((array_water_projected,array_fat_projected,keys),volumes_all,retained_timesteps=None)
 
         if(save_map):
@@ -506,10 +506,11 @@ plt.close("all")
 name="SquareSimu3D_SS_SimReco2_MultiCoil"
 #name="SquareSimu3D_SS_FF0_1"
 dic_maps={}
+snr=10
 list_suffix=["fullReco_T1MRF_adjusted","fullReco_Brute","DE_Simu_FF_reco3","DE_Simu_FF_v2_reco3"]
 list_suffix=["DE_Simu_FF_reco3_SNR_{}".format(snr)]
 #list_suffix=["fullReco_SNR_{}".format(snr)]
-
+L0_list=[5,10,20,30]
 for suffix in list_suffix:
     for L0 in L0_list:
         if "DE_Simu" in suffix:
@@ -521,14 +522,14 @@ for suffix in list_suffix:
         with open( base_folder + file_map, "rb") as file:
             dic_maps[file_map] = pickle.load(file)
 
-#min_iter_start=0
+min_iter_start=0
 max_iter_num=1
 k="wT1"
 maskROI=buildROImask_unique(m.paramMap,key=k)
 fig,ax=plt.subplots(1,2)
 plt.title(k)
 for key in dic_maps.keys():
-    for it in (range(np.minimum(len(dic_maps[key].keys()),max_iter_num))):
+    for it in (range(min_iter_start,np.minimum(len(dic_maps[key].keys()),max_iter_num))):
         roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
         roi_values.sort_values(by=["Obs Mean"],inplace=True)
         #dic_roi_values[key]=roi_values
@@ -543,7 +544,7 @@ maskROI=buildROImask_unique(m.paramMap,key=k)
 fig,ax=plt.subplots(1,2)
 plt.title(k)
 for key in dic_maps.keys():
-    for it in (range(np.minimum(len(dic_maps[key].keys()),max_iter_num))):
+    for it in (range(min_iter_start,np.minimum(len(dic_maps[key].keys()),max_iter_num))):
         roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=False,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
         roi_values.sort_values(by=["Obs Mean"],inplace=True)
         #dic_roi_values[key]=roi_values
