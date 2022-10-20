@@ -108,14 +108,14 @@ localfile="/patient.003.v2/meas_MID00034_FID09695_raFin_3D_tra_1x1x5mm_FULL_DE_r
 #localfile="/patient.003.v2/meas_MID00035_FID09696_raFin_3D_tra_1x1x5mm_FULL_DE_reco4.dat"
 
 
-#localfile="/patient.005.v1/meas_MID00189_FID11881_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/patient.005.v1/meas_MID00189_FID11881_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 #localfile="/patient.005.v1/meas_MID00190_FID11882_raFin_3D_tra_1x1x5mm_FULL_DE_reco_3.dat"
 #localfile="/patient.005.v1/meas_MID00191_FID11883_raFin_3D_tra_1x1x5mm_FULL_DE_reco_3_v2.dat"
 
 
-#dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_87_reco4.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_87_reco4.dict"
 #dictfile="mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_1_87_reco3.dict"
-dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_1_87_reco3.dict"
+#dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_1_87_reco3.dict"
 #dictfile="mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v2_1_87_reco3.dict"
 
 #mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v2_1_87_reco3
@@ -144,7 +144,7 @@ filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
 
 
 window=8
-density_adj_radial=True
+density_adj_radial=False
 use_GPU = True
 light_memory_usage=True
 #Parsed_File = rT.map_VBVD(filename)
@@ -220,7 +220,6 @@ x_FOV = dico_seqParams["x_FOV"]
 y_FOV = dico_seqParams["y_FOV"]
 z_FOV = dico_seqParams["z_FOV"]
 nb_part = dico_seqParams["nb_part"]
-undersampling_factor = dico_seqParams["alFree"][9]
 
 del dico_seqParams
 
@@ -327,6 +326,7 @@ nb_allspokes = data_shape[-3]
 npoint = data_shape[-1]
 nb_slices = data_shape[-2]
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
+undersampling_factor=1
 
 
 dx = x_FOV/(npoint/2)
@@ -373,7 +373,7 @@ nb_segments=radial_traj.get_traj().shape[0]
 
 if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     res = 16
-    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage)
+    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage,density_adj=True)
     np.save(filename_b1,b1_all_slices)
     del kdata_all_channels_all_slices
     kdata_all_channels_all_slices = np.load(filename_kdata)
@@ -389,70 +389,128 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 if nb_channels==1:
     b1_all_slices=np.ones(b1_all_slices.shape)
 
-#volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True)[0]
-#animate_images(volume_outofphase)
-
-center_sl=int(nb_slices/2)
-center_point=int(npoint/2)
-res=16
-res_sl=2
-border=16
-border_sl=2
-
-
-mean_signal=np.mean(np.abs(kdata_all_channels_all_slices[0,:,(center_sl-res_sl):(center_sl+res_sl),(center_point-res):(center_point+res)]))
-
-std_signal=np.std(np.abs(kdata_all_channels_all_slices[0,:,:,np.r_[0:border,(npoint-border):npoint]][:,:,np.r_[0:border_sl,(nb_slices-border_sl):nb_slices]]))
-
-mean_signal/std_signal
-
-kdata_reshaped=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,-1,nb_slices,npoint)
-mean_signal_by_ts=np.mean(np.abs(kdata_reshaped[0,:,:,(center_sl-res_sl):(center_sl+res_sl),(center_point-res):(center_point+res)]).reshape(ntimesteps,-1),axis=-1)
-
-std_signal_by_ts=np.std(np.abs(kdata_reshaped[0,:,:,:,np.r_[0:border,(npoint-border):npoint]][:,:,:,np.r_[0:border_sl,(nb_slices-border_sl):nb_slices]]),axis=(0,2,3))
-
-plt.figure();plt.plot(mean_signal_by_ts/std_signal_by_ts),plt.title("SNR by timestep")
-#
-# del kdata_all_channels_all_slices
-# kdata_all_channels_all_slices=np.load(filename_kdata)
-# # #
-# radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
-# radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
-# volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True)[0]
-# #
-# from mutools import io
-# file_mha = filename.split(".dat")[0] + "_volume_oop_allspokes.mha"
-# io.write(file_mha,np.abs(volume_outofphase),tags={"spacing":[dz,dx,dy]})
-
-
-
-print("Building Volumes....")
-if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=True,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True,normalize_iterative=True)
-    np.save(filename_volume,volumes_all)
-    # sl=20
-    # ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
-    del volumes_all
 
 print("Building Mask....")
 if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
     selected_spokes = np.r_[10:648,1099:1400]
     selected_spokes=None
-    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/10, normalize_kdata=False,light_memory_usage=True,selected_spokes=selected_spokes)
+    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,threshold_factor=1/10, normalize_kdata=False,light_memory_usage=True,selected_spokes=selected_spokes)
     np.save(filename_mask,mask)
     animate_images(mask)
     del mask
 
-with open("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400.json","r") as file:
-    sequence_config=json.load(file)
+us=4
+offsets=list(range(us))
+dico_all_maps={}
 
-# TE = np.array(sequence_config["TE"])
-# unique_TE=np.unique(TE)
-# np.argwhere(TE==unique_TE[0])[-1]
-# np.argwhere(TE==unique_TE[-1])[0]
+traj=radial_traj.get_traj_for_reconstruction(ntimesteps).reshape(ntimesteps,int(nb_allspokes/ntimesteps),nb_slices,npoint,3)
+kdata_all_channels_all_slices = kdata_all_channels_all_slices.reshape(nb_channels, ntimesteps, -1, nb_slices,
+                                                                          npoint)
+mask=np.load(filename_mask)
+
+dico_all_maps={}
+offset=0
+for offset in offsets:
+    print("############################## OFFSET {} ##################################".format(offset))
+
+    filename_volume_offset = str.split(filename, ".dat")[0] + "_volumes_offset{}.npy".format(offset)
+    kdata_group=np.zeros((nb_channels,ntimesteps,int(nb_allspokes/ntimesteps),int(nb_slices/us),npoint),dtype=kdata_all_channels_all_slices.dtype)
+    traj_group = np.zeros((ntimesteps, int(nb_allspokes / ntimesteps), int(nb_slices / us), npoint, 3),
+                          dtype=traj.dtype)
+    shift=offset
+
+    for ts in range(ntimesteps):
+        kdata_group[:,ts,:,:,:]=kdata_all_channels_all_slices[:,ts,:,shift::us,:]
+        traj_group[ts,:,:,:,:]=traj[ts,:,shift::us,:,:]
+        shift +=1
+        shift = shift % (us)
 
 
-del kdata_all_channels_all_slices
+    curr_radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=us,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,offset=offset)
+    curr_radial_traj.traj=traj_group.reshape(nb_allspokes,int(nb_slices/us),npoint,3)
+
+
+    kdata_group=kdata_group.reshape(nb_channels,nb_allspokes,int(nb_slices/us),npoint)
+    print("Building Volumes....")
+    if str.split(filename_volume_offset,"/")[-1] not in os.listdir(folder):
+        volumes_all=simulate_radial_undersampled_images_multi(kdata_group,curr_radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=True,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True,normalize_iterative=True)
+        np.save(filename_volume_offset,volumes_all)
+        # sl=20
+        # ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
+    else:
+        volumes_all=np.load(filename_volume_offset)
+
+    file_map = filename.split(".dat")[0] + "_offset{}{}_MRF_map.pkl".format(offset, suffix)
+    if str.split(file_map, "/")[-1] not in os.listdir(folder):
+        niter = 3
+        optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=curr_radial_traj, split=10, pca=True,
+                                         threshold_pca=10, log=False, useGPU_dictsearch=True, useGPU_simulation=False,
+                                         gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
+                                         b1=b1_all_slices, mu="Adaptative")
+        all_maps = optimizer.search_patterns_test_multi(dictfile, volumes_all, retained_timesteps=None)
+
+        import pickle
+
+
+        file = open(file_map, "wb")
+        pickle.dump(all_maps, file)
+        file.close()
+    else:
+        file = open(file_map, "rb")
+        all_maps = pickle.load(file)
+        file.close()
+
+
+
+    dico_all_maps[offset] = all_maps
+    del curr_radial_traj
+    del volumes_all
+    del kdata_group
+    del optimizer
+
+
+
+
+final_map={}
+final_mask=mask
+keys=all_maps[0][0].keys()
+noffsets=len(dico_all_maps.keys())
+for iter in range(niter):
+    final_map[iter]={}
+    inter_map={}
+    for k in keys:
+        map=0
+        for offset in dico_all_maps.keys():
+
+            curr_map=dico_all_maps[offset][iter][0][k]
+            map+=curr_map
+        map/=noffsets
+        inter_map[k]=map
+    final_map[iter]=(inter_map,mask)
+
+
+file_map_final = filename.split(".dat")[0] + "_final{}_MRF_map.pkl".format(offset,suffix)
+curr_file=file_map_final
+for iter in list(range(len(final_map.keys()))):
+
+    map_rebuilt=final_map[iter][0]
+    mask=final_map[iter][1]
+
+    keys_simu = list(map_rebuilt.keys())
+    values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+    map_for_sim = dict(zip(keys_simu, values_simu))
+
+    #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+    #map_Python.buildParamMap()
+
+
+    for key in ["ff","wT1","df","attB1"]:
+        file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
+        io.write(file_mha,map_for_sim[key],tags={"spacing":[dz,dx,dy]})
+
+
+
+#del kdata_all_channels_all_slices
 #del b1_all_slices
 
 
@@ -478,29 +536,8 @@ volumes_all = np.load(filename_volume)
 #mask=new_mask
 
 #animate_images(mask)
-suffix="CS"
-if not(load_map):
-    niter = 10
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=10,pca=True,threshold_pca=10,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,mu=1,kappa=0.9)
-    all_maps=optimizer.search_patterns_test_multi_CS(dictfile,volumes_all,retained_timesteps=None)
 
-    if(save_map):
-        import pickle
 
-        file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format(suffix)
-        #file_map = filename.split(".dat")[0] + "_corrected_dens_adj{}_MRF_map.pkl".format(suffix)
-        #file_map = filename.split(".dat")[0] + "_5iter_MRF_map.pkl".format("")
-        file = open(file_map, "wb")
-        # dump information to that file
-        pickle.dump(all_maps, file)
-        # close the file
-        file.close()
-
-else:
-    import pickle
-    file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
-    file = open(file_map, "rb")
-    all_maps = pickle.load(file)
 
 
 curr_file=file_map

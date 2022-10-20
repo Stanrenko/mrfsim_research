@@ -612,7 +612,7 @@ def build_volumes(filename_kdata,filename_traj,sampling_mode,undersampling_facto
     volumes_all = simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices, radial_traj, image_size,
                                                             b1=b1_all_slices, density_adj=dens_adj, ntimesteps=ntimesteps,
                                                             useGPU=use_GPU, normalize_kdata=False, memmap_file=None,
-                                                            light_memory_usage=light_mem,normalize_volumes=True)
+                                                            light_memory_usage=light_mem,normalize_volumes=True,normalize_iterative=True)
     np.save(filename_volume, volumes_all)
 
 
@@ -1003,6 +1003,23 @@ def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
     volumes_all = np.load(filename_volume)
     mask=np.load(filename_mask)
 
+    filename = filename_volume.split("_volumes.npy")[0] + ".dat"
+    folder = "/".join(str.split(filename, "/")[:-1])
+    dico_seqParams = build_dico_seqParams(filename, folder)
+
+
+    x_FOV = dico_seqParams["x_FOV"]
+    y_FOV = dico_seqParams["y_FOV"]
+    z_FOV = dico_seqParams["z_FOV"]
+    #nb_part = dico_seqParams["nb_part"]
+
+
+    npoint=2*volumes_all.shape[2]
+    nb_slices=volumes_all.shape[1]
+    dx = x_FOV / (npoint / 2)
+    dy = y_FOV / (npoint / 2)
+    dz = z_FOV / nb_slices
+
 
 
     if slices is not None:
@@ -1015,14 +1032,12 @@ def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
             file_map = filename_volume.split(".npy")[0] + "_sl{}_{}_MRF_map.pkl".format("_".join(sl),opt_type)
 
 
-    if (slices is not None) and ("spacing" in slices) and not(len(slices["spacing"])==0):
-        spacing=slices["spacing"]
-    else:
-        spacing = [5, 1, 1]
+    # if (slices is not None) and ("spacing" in slices) and not(len(slices["spacing"])==0):
+    #     spacing=slices["spacing"]
+    # else:
+    #     spacing = [5, 1, 1]
 
-    dz = spacing[0]
-    dx = spacing[1]
-    dy = spacing[2]
+
 
     threshold_pca=optimizer_config["pca"]
     split=optimizer_config["split"]
@@ -1050,6 +1065,44 @@ def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
                                  threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU
                                  )
         all_maps = optimizer.search_patterns(dictfile, volumes_all)
+
+    elif opt_type=="CF_iterative":
+        niter=optimizer_config["niter"]
+        mu=optimizer_config["mu"]
+        undersampling_factor=optimizer_config["US"]
+        nspoke=optimizer_config["nspoke"]
+        use_navigator_dll = dico_seqParams["use_navigator_dll"]
+
+        if use_navigator_dll:
+            meas_sampling_mode = dico_seqParams["alFree"][14]
+        else:
+            meas_sampling_mode = dico_seqParams["alFree"][12]
+
+        if meas_sampling_mode == 1:
+            incoherent = False
+            mode = None
+        elif meas_sampling_mode == 2:
+            incoherent = True
+            mode = "old"
+        elif meas_sampling_mode == 3:
+            incoherent = True
+            mode = "new"
+
+        nb_segments = dico_seqParams["alFree"][4]
+
+
+        radial_traj = Radial3D(total_nspokes=nb_segments, undersampling_factor=undersampling_factor, npoint=npoint,
+                               nb_slices=nb_slices, incoherent=incoherent, mode=mode)
+
+        filename_b1 = filename_volume.split("_volumes.npy")[0] + "_b1.npy"
+        b1_all_slices=np.load(filename_b1)
+
+
+        optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=split, pca=True,
+                                     threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
+                                     useGPU_simulation=False, gen_mode="other",b1=b1_all_slices,mu=mu,ntimesteps=int(nb_segments/nspoke))
+        all_maps = optimizer.search_patterns_test_multi(dictfile, volumes_all)
+
 
     file = open(file_map, "wb")
     pickle.dump(all_maps, file)

@@ -176,7 +176,7 @@ def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersa
     result = np.stack([traj.real,traj.imag, k_z], axis=-1)
     return result.reshape(result.shape[0],-1,result.shape[-1])
 
-def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,mode="old"):
+def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,mode="old",offset=0):
     timesteps = int(total_nspoke / nspoke)
     nb_rep = int(nb_slices / undersampling_factor)
     all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
@@ -192,9 +192,9 @@ def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slic
 
     k_z = np.zeros((timesteps, nb_rep))
     all_slices = np.linspace(-np.pi, np.pi, nb_slices)
-    k_z[0, :] = all_slices[::undersampling_factor]
+    k_z[0, :] = all_slices[offset::undersampling_factor]
     for j in range(1, k_z.shape[0]):
-        k_z[j, :] = np.sort(np.roll(all_slices, -j)[::undersampling_factor])
+        k_z[j, :] = np.sort(np.roll(all_slices, -j)[offset::undersampling_factor])
 
     k_z=np.repeat(k_z, nspoke, axis=0)
     k_z = np.expand_dims(k_z, axis=-1)

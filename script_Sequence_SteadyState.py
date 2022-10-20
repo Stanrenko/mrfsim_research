@@ -421,7 +421,7 @@ mrfdict.save(dictfile, overwrite=overwrite)
 import numpy as np
 import pandas as pd
 import json
-with open("./mrf_sequence_adjusted_optimized_DE_Simu_FF.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v2_1_87.json") as f:
     sequence_config = json.load(f)
 
 TE=sequence_config["TE"]
@@ -456,28 +456,6 @@ print(np.max(np.array(FA)))
 
 
 
-
-import numpy as np
-import pandas as pd
-import json
-with open("./mrf_sequence_adjusted_optimized_DE_Simu_FF.json") as f:
-    sequence_config = json.load(f)
-
-TE=sequence_config["TE"]
-TE=np.array(TE)
-
-TE=np.maximum(TE,2.2)
-
-TR=sequence_config["TR"]
-
-TR=TE+1.94
-TR-TE
-
-sequence_config["TE"]=list(TE)
-sequence_config["TR"]=list(TR)
-
-with open("./mrf_sequence_adjusted_delay_1_94.json","w") as f:
-    json.dump(sequence_config,f)
 
 
 

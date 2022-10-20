@@ -5,8 +5,8 @@ import numpy as np
 from scipy import ndimage
 import sys
 path = r"/home/cslioussarenko/PythonRepositories"
-path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
-sys.path.append(path+"/epgpy")
+#path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
+sys.path.append(path+"/epgpy_v3/epgpy")
 sys.path.append(path+"/machines")
 sys.path.append(path+"/mutools")
 sys.path.append(path+"/dicomstack")

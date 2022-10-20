@@ -1,4 +1,4 @@
-
+import numpy as np
 #import matplotlib
 #matplotlib.u<se("TkAgg")
 from mrfsim import T1MRF
@@ -99,7 +99,7 @@ localfile="/phantom.009.v6/meas_MID00359_FID09596_raFin_3D_tra_1x1x5mm_FULL_760_
 
 dictfile="mrf175_SimReco2_light_delay_1_94.dict"
 #dictfile="mrf_dictconf_SimReco2_light_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
-dictfile="mrf_dictconf_SimReco2_light_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.8.dict"
+#dictfile="mrf_dictconf_SimReco2_light_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.8.dict"
 #dictfile="mrf_dictconf_SimReco2_light_adjusted_optimized_DE_Simu_FF_reco4.dict"
 
 
@@ -109,7 +109,7 @@ localfile="/patient.003.v2/meas_MID00034_FID09695_raFin_3D_tra_1x1x5mm_FULL_DE_r
 
 
 #localfile="/patient.005.v1/meas_MID00189_FID11881_raFin_3D_tra_1x1x5mm_FULL_new.dat"
-#localfile="/patient.005.v1/meas_MID00190_FID11882_raFin_3D_tra_1x1x5mm_FULL_DE_reco_3.dat"
+localfile="/patient.005.v1/meas_MID00190_FID11882_raFin_3D_tra_1x1x5mm_FULL_DE_reco_3.dat"
 #localfile="/patient.005.v1/meas_MID00191_FID11883_raFin_3D_tra_1x1x5mm_FULL_DE_reco_3_v2.dat"
 
 
@@ -121,6 +121,8 @@ dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_opt
 #mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v2_1_87_reco3
 #mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v2_1_87_reco3
 
+
+L0=10
 
 filename = base_folder+localfile
 
@@ -135,16 +137,16 @@ suffix="_allspokes8"
 filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 
-filename_volume = str.split(filename,".dat") [0]+"_volumes{}.npy".format("")
+filename_volume_singular = str.split(filename,".dat") [0]+"_volumes_singular{}.npy".format("")
 filename_kdata = str.split(filename,".dat") [0]+"_kdata{}.npy".format("")
-filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
-
+filename_mask_singular= str.split(filename,".dat") [0]+"_mask_singular{}.npy".format("")
+filename_phi=str.split(dictfile,".dict") [0]+"_phi_L0_{}.npy".format(L0)
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 
 window=8
-density_adj_radial=True
+density_adj_radial=False
 use_GPU = True
 light_memory_usage=True
 #Parsed_File = rT.map_VBVD(filename)
@@ -220,7 +222,6 @@ x_FOV = dico_seqParams["x_FOV"]
 y_FOV = dico_seqParams["y_FOV"]
 z_FOV = dico_seqParams["z_FOV"]
 nb_part = dico_seqParams["nb_part"]
-undersampling_factor = dico_seqParams["alFree"][9]
 
 del dico_seqParams
 
@@ -327,6 +328,7 @@ nb_allspokes = data_shape[-3]
 npoint = data_shape[-1]
 nb_slices = data_shape[-2]
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
+undersampling_factor=1
 
 
 dx = x_FOV/(npoint/2)
@@ -389,29 +391,48 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 if nb_channels==1:
     b1_all_slices=np.ones(b1_all_slices.shape)
 
-#volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True)[0]
-#animate_images(volume_outofphase)
+if filename_phi not in os.listdir():
+    mrfdict = dictsearch.Dictionary()
+    keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.05))
 
-center_sl=int(nb_slices/2)
-center_point=int(npoint/2)
-res=16
-res_sl=2
-border=16
-border_sl=2
+    import dask.array as da
+    u,s,vh = da.linalg.svd(da.asarray(values))
+
+    vh=np.array(vh)
+    s=np.array(s)
+
+    L0=10
+    phi=vh[:L0]
+    np.save(filename_phi,phi)
+else:
+    phi=np.load(filename_phi)
+
+traj=radial_traj.get_traj().reshape(ntimesteps,-1,3)
+kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,-1)
+
+kdata_singular=np.zeros((nb_channels,)+traj.shape[:-1]+(L0,),dtype=kdata_all_channels_all_slices.dtype)
+for ts in tqdm(range(ntimesteps)):
+    kdata_singular[:,ts,:,:]=kdata_all_channels_all_slices[:,ts,:,None]@(phi.conj().T[ts][None,:])
+
+kdata_singular=np.moveaxis(kdata_singular,-1,1)
+
+kdata_singular=kdata_singular.reshape(nb_channels,L0,-1)
+
+if str.split(filename_volume_singular,"/")[-1] not in os.listdir(folder):
+    traj=radial_traj.get_traj().reshape(ntimesteps,-1,3)
+    kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,-1)
+
+    kdata_singular=np.zeros((nb_channels,)+traj.shape[:-1]+(L0,),dtype=kdata_all_channels_all_slices.dtype)
+    for ts in tqdm(range(ntimesteps)):
+        kdata_singular[:,ts,:,:]=kdata_all_channels_all_slices[:,ts,:,None]@(phi.conj().T[ts][None,:])
+
+    kdata_singular=np.moveaxis(kdata_singular,-1,1)
+
+    kdata_singular=kdata_singular.reshape(nb_channels,L0,-1)
 
 
-mean_signal=np.mean(np.abs(kdata_all_channels_all_slices[0,:,(center_sl-res_sl):(center_sl+res_sl),(center_point-res):(center_point+res)]))
 
-std_signal=np.std(np.abs(kdata_all_channels_all_slices[0,:,:,np.r_[0:border,(npoint-border):npoint]][:,:,np.r_[0:border_sl,(nb_slices-border_sl):nb_slices]]))
 
-mean_signal/std_signal
-
-kdata_reshaped=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,-1,nb_slices,npoint)
-mean_signal_by_ts=np.mean(np.abs(kdata_reshaped[0,:,:,(center_sl-res_sl):(center_sl+res_sl),(center_point-res):(center_point+res)]).reshape(ntimesteps,-1),axis=-1)
-
-std_signal_by_ts=np.std(np.abs(kdata_reshaped[0,:,:,:,np.r_[0:border,(npoint-border):npoint]][:,:,:,np.r_[0:border_sl,(nb_slices-border_sl):nb_slices]]),axis=(0,2,3))
-
-plt.figure();plt.plot(mean_signal_by_ts/std_signal_by_ts),plt.title("SNR by timestep")
 #
 # del kdata_all_channels_all_slices
 # kdata_all_channels_all_slices=np.load(filename_kdata)
@@ -427,24 +448,29 @@ plt.figure();plt.plot(mean_signal_by_ts/std_signal_by_ts),plt.title("SNR by time
 
 
 print("Building Volumes....")
-if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=True,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True,normalize_iterative=True)
-    np.save(filename_volume,volumes_all)
+if str.split(filename_volume_singular,"/")[-1] not in os.listdir(folder):
+    start_time = datetime.now()
+    volumes_singular=simulate_radial_undersampled_singular_images_multi(kdata_singular,radial_traj,image_size,density_adj=True,b1=b1_all_slices,ntimesteps=L0,light_memory_usage=True)
+    end_time = datetime.now()
+    print((end_time - start_time))
+    np.save(filename_volume_singular,volumes_singular)
     # sl=20
-    # ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
-    del volumes_all
+    # ani = animate_images(volumes_singular[0,:,:,:])
+    #del volumes_singular
 
 print("Building Mask....")
-if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
-    selected_spokes = np.r_[10:648,1099:1400]
-    selected_spokes=None
-    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/10, normalize_kdata=False,light_memory_usage=True,selected_spokes=selected_spokes)
-    np.save(filename_mask,mask)
-    animate_images(mask)
-    del mask
+if str.split(filename_mask_singular,"/")[-1] not in os.listdir(folder):
 
-with open("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400.json","r") as file:
-    sequence_config=json.load(file)
+    mask_singular=False
+    volume_rebuilt=volumes_singular[0]
+    threshold_factor=1/30
+    unique = np.histogram(np.abs(volume_rebuilt), 100)[1]
+    mask_singular = mask_singular | (np.abs(volume_rebuilt) > unique[int(len(unique) * threshold_factor)])
+    mask_singular = ndimage.binary_closing(mask_singular, iterations=3)
+    animate_images(mask_singular)
+
+    np.save(filename_mask_singular,mask_singular)
+    del mask_singular
 
 # TE = np.array(sequence_config["TE"])
 # unique_TE=np.unique(TE)
@@ -469,8 +495,8 @@ save_map=True
 
 
 
-mask = np.load(filename_mask)
-volumes_all = np.load(filename_volume)
+mask = np.load(filename_mask_singular)
+volumes_singular = np.load(filename_volume_singular)
 
 #sl=int(nb_slices/2)
 #new_mask=np.zeros(mask.shape)
@@ -478,11 +504,24 @@ volumes_all = np.load(filename_volume)
 #mask=new_mask
 
 #animate_images(mask)
-suffix="CS"
+
+mrfdict = dictsearch.Dictionary()
+mrfdict.load(dictfile, force=True)
+
+keys = mrfdict.keys
+array_water = mrfdict.values[:, :, 0]
+array_fat = mrfdict.values[:, :, 1]
+
+array_water_projected=array_water@phi.T.conj()
+array_fat_projected=array_fat@phi.T.conj()
+
+
+
+
 if not(load_map):
     niter = 10
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=10,pca=True,threshold_pca=10,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,mu=1,kappa=0.9)
-    all_maps=optimizer.search_patterns_test_multi_CS(dictfile,volumes_all,retained_timesteps=None)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=10,log=True,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative")
+    all_maps=optimizer.search_patterns_test_multi_singular((array_water_projected,array_fat_projected,keys),volumes_singular,retained_timesteps=None)
 
     if(save_map):
         import pickle

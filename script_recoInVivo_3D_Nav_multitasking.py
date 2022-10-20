@@ -378,7 +378,7 @@ print("Estimating Movement...")
 shifts = list(range(-20, 20))
 bottom = 50
 top = 150
-displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
+displacements = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
 displacement_for_binning = displacements
 bin_width = 5
@@ -394,10 +394,9 @@ df_groups = df_cat.groupby("cat").count()
 group_1=(categories==1)|(categories==2)
 group_2=(categories==3)
 group_3=(categories==4)
-group_4=(categories==5)
-group_5=(categories==6)|(categories==7)|(categories==8)
+group_4=(categories==5)|(categories==6)|(categories==7)
 
-groups=[group_1,group_2,group_3,group_4,group_5]
+groups=[group_1,group_2,group_3,group_4]
 
 nav_spoke_groups=np.argmin(np.abs(np.arange(0, ntimesteps, 1).reshape(-1, 1) - np.arange(0, ntimesteps,ntimesteps / nb_gating_spokes).reshape(1,-1)),axis=-1)
 data_mt_training=copy(data_for_nav)
@@ -421,55 +420,49 @@ for i in tqdm(range(len(groups))):
 
         data_mt_training_on_timesteps[:,ts,:]=data_mt_training[:,gating_spoke_of_ts,:]
 
-#
-# dictfile = "./mrf175_SimReco2.dict"
-# ind_dico = 50
-#
-# filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
-#
-# if str.split(filename_dico_comp,"/")[-1]  not in os.listdir():
-#
-#     FF_list = list(np.arange(0., 1.05, 0.05))
-#     keys, signal = read_mrf_dict(dictfile, FF_list)
-#
-#     import dask.array as da
-#
-#     A_r=signal.real
-#     A_i=signal.imag
-#
-#     X_1 = np.concatenate([A_r,-A_i],axis=-1)
-#     X_2 = np.concatenate([A_i,A_r],axis=-1)
-#     X=np.concatenate([X_1,X_2],axis=0)
-#
-#     u_dico, s_dico, vh_dico = da.linalg.svd(da.from_array(X))
-#
-#     vh_dico=np.array(vh_dico[::2,:])
-#     s_dico=np.array(s_dico[::2])
-#
-#     # plt.figure()
-#     # plt.plot(np.cumsum(s_dico)/np.sum(s_dico))
-#
-#     #ind_dico = ((np.cumsum(s_dico)/np.sum(s_dico))<0.99).sum()
-#     #ind_dico=20
-#
-#     vh_dico_retained = vh_dico[:ind_dico,:]
-#     phi_dico = vh_dico_retained[:,:ntimesteps] - 1j * vh_dico_retained[:,ntimesteps:]
-#
-#     del u_dico
-#     del s_dico
-#     del vh_dico
-#
-#     del vh_dico_retained
-#     del X_1
-#     del X_2
-#     del X
-#     #del signal
-#
-#
-#     np.save(filename_dico_comp,phi_dico)
-# else:
-#     filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
-#     phi_dico=np.load(filename_dico_comp)
+
+dictfile = "./mrf175_SimReco2.dict"
+ind_dico = 20
+
+filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
+
+if str.split(filename_dico_comp,"/")[-1]  not in os.listdir():
+
+    FF_list = list(np.arange(0., 1.05, 0.05))
+    keys, signal = read_mrf_dict(dictfile, FF_list)
+
+    import dask.array as da
+
+
+
+    u_dico, s_dico, vh_dico = da.linalg.svd(da.from_array(signal))
+    s_dico=np.array(s_dico)
+    vh_dico=np.array(vh_dico)
+
+
+
+    # plt.figure()
+    # plt.plot(np.cumsum(s_dico)/np.sum(s_dico))
+
+    #ind_dico = ((np.cumsum(s_dico)/np.sum(s_dico))<0.99).sum()
+    #ind_dico=20
+
+    vh_dico_retained = vh_dico[:ind_dico,:]
+    phi_dico = vh_dico_retained[:,:ntimesteps]
+
+    del u_dico
+    del s_dico
+    del vh_dico
+
+    del vh_dico_retained
+
+    #del signal
+
+
+    np.save(filename_dico_comp,phi_dico)
+else:
+    filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
+    phi_dico=np.load(filename_dico_comp)
 
 
 Sk_cur = copy(Sk)
@@ -488,7 +481,7 @@ for i in tqdm(range(niter)):
 
     Sk_3 = np.moveaxis(Sk_cur, 2, 0).reshape(Sk_cur.shape[2], -1)
     if proj_on_fingerprints:
-        Sk_3 = phi_dico.T @ phi_dico.conj() @ Sk_final_3
+        Sk_3 = phi_dico.T @ phi_dico.conj() @ Sk_3
     else:
         u_3, s_3, vh_3 = np.linalg.svd(Sk_3, full_matrices=False)
         cum_3 = np.cumsum(s_3) / np.sum(s_3)

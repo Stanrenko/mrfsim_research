@@ -216,8 +216,6 @@ nb_allspokes=nb_segments
 
 
 
-
-
 radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 
 
@@ -255,6 +253,18 @@ sl=int(b1_all_slices.shape[1]/2)
 list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
 plot_image_grid(list_images,(5,4),title="Sensitivity map for slice {}".format(sl))
 
+
+#
+del kdata_all_channels_all_slices
+kdata_all_channels_all_slices=np.load(filename_kdata)
+
+radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
+volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True)[0]
+#
+from mutools import io
+file_mha = filename.split(".dat")[0] + "_volume_oop_allspokes.mha"
+io.write(file_mha,np.abs(volume_outofphase),tags={"spacing":[dz,dx,dy]})
 
 ##volumes for slice taking into account coil sensi
 print("Building Volume....")

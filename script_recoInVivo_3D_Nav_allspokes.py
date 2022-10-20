@@ -66,14 +66,14 @@ localfile = "/20220113_CS/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_
 #localfile = "/20220113_CS/meas_MID00164_FID49559_raFin_3D_tra_1x1x5mm_FULL_50GS_slice.dat"
 #localfile = "/20220118_BM/meas_MID00151_FID49924_raFin_3D_tra_1x1x5mm_FULL_read_nav.dat"
 
-#localfile="/phantom.001.v1/phantom.001.v1.dat"
+localfile="/phantom.001.v1/phantom.001.v1.dat"
 #localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
 
-localfile="/patient.002.v1/meas_MID00099_FID01839_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+#localfile="/patient.002.v1/meas_MID00099_FID01839_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 #localfile="/patient.002.v1/meas_MID00103_FID01843_raFin_3D_tra_1x1x5mm_FULL_TR7000.dat"
 
-localfile="/patient.002.v2/meas_MID00037_FID01900_raFin_3D_tra_1x1x5mm_FULL_new.dat"
-localfile="/patient.002.v2/meas_MID00038_FID01901_raFin_3D_tra_1x1x5mm_FULL_FOV90_Sl160.dat"
+#localfile="/patient.002.v2/meas_MID00037_FID01900_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+#localfile="/patient.002.v2/meas_MID00038_FID01901_raFin_3D_tra_1x1x5mm_FULL_FOV90_Sl160.dat"
 
 
 filename = base_folder+localfile

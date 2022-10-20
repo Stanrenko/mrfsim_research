@@ -67,7 +67,7 @@ medfilter=False
 #name = "SquareSimu3D_SS_FF0_1"
 name = "SquareSimu3D_SS_Multicoil"
 #name = "Knee3D_SS_SimReco2_MultiCoil"
-snr=30
+snr=5
 gauss_filter=False
 
 #dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
@@ -163,7 +163,7 @@ seq=T1MRFSS(**sequence_config)
 
 nb_filled_slices = 16
 nb_empty_slices=2
-repeat_slice=1
+repeat_slice=16
 
 if "Knee3D" in name:
     repeat_slice=1
@@ -198,6 +198,7 @@ filename_paramMask=filename+"_paramMask_sl{}_rp{}.npy".format(nb_slices,repeat_s
 
 filename_volume = filename+"_volumes_sl{}_rp{}_us{}_{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
 filename_volume_no_dens_adj = filename+"_volumes_no_dens_adj_sl{}_rp{}_us{}_{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
+filename_volume_all_groups = filename+"_volumes_all_groups_sl{}_rp{}_us{}_{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
 
 filename_volume_singular = filename+"_volumes_singular_sl{}_rp{}_us{}_{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
 
@@ -205,6 +206,9 @@ filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}_{}w{}{}.npy".for
 
 filename_kdata = filename+"_kdata_sl{}_rp{}_us{}{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
 filename_kdata_no_noise = filename+"_kdata_no_noise_sl{}_rp{}_us{}{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
+
+
+
 
 filename_b1 = filename+"_b1_sl{}_rp{}_us{}{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
 
@@ -397,237 +401,58 @@ else:
         data_no_noise = np.load(filename_kdata_no_noise)
 
 
+import random
 
+kdata_all_channels_all_slices_for_groups=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,-1,nb_slices,npoint)
+
+traj=radial_traj.get_traj()
+traj=traj.reshape(ntimesteps,-1,nb_slices,npoint,3)
+all_slices_index = np.arange(nb_slices)
 center_sl=int(nb_slices/2)
-center_point=int(npoint/2)
-res=4
-res_sl=2
-border=4
-border_sl=2
+
+frac_center=0.2
+nb_center_slices=int(frac_center*nb_slices)
+center_slices_index =  list(range(center_sl-int(nb_center_slices/2),center_sl+int(nb_center_slices/2)))
+
+ngroups=4
+border_slices_index = np.r_[:center_sl - int(nb_center_slices / 2),
+                          (center_sl + int(nb_center_slices / 2)):nb_slices]
+
+import random
+#for ts in range(ntimesteps):
+traj_all_groups=[]
+kdata_all_groups=[]
+for ts in tqdm(range(ntimesteps)):
+    border_slices_index = np.r_[:center_sl - int(nb_center_slices / 2),
+                          (center_sl + int(nb_center_slices / 2)):nb_slices]
+
+    random.Random(ts).shuffle(border_slices_index)
+    slice_indices_all_groups = [sorted(center_slices_index + list(border_slices_index[i::ngroups])) for i in range(ngroups)]
+    traj_ts=[]
+    kdata_ts=[]
+    for i in range(ngroups):
+        traj_ts.append(traj[ts,:,slice_indices_all_groups[i],:,:])
+        kdata_ts.append(kdata_all_channels_all_slices_for_groups[:,ts,:,slice_indices_all_groups[i],:])
+
+    traj_all_groups.append(traj_ts)
+    kdata_all_groups.append(kdata_ts)
+
+traj_all_groups=np.array(traj_all_groups)
+traj_all_groups=np.moveaxis(traj_all_groups,1,0)
+kdata_all_groups=np.array(kdata_all_groups)
+kdata_all_groups=np.moveaxis(kdata_all_groups,1,0)
+kdata_all_groups=np.moveaxis(kdata_all_groups,2,1)
+kdata_all_groups=kdata_all_groups.reshape(ngroups,nb_channels,nb_segments,-1,npoint)
+
+radial_traj_all_groups=[]
+for i in range(ngroups):
+    curr_radial_traj=copy(radial_traj)
+    curr_traj = traj_all_groups[i]
+    curr_traj=curr_traj.reshape(nb_segments,-1,3)
+    curr_radial_traj.traj=curr_traj
+    radial_traj_all_groups.append(curr_radial_traj)
 
 
-mean_signal=np.mean(np.abs(kdata_all_channels_all_slices[0,:,(center_sl-res_sl):(center_sl+res_sl),(center_point-res):(center_point+res)]))
-
-std_signal=np.std(np.abs(kdata_all_channels_all_slices[0,:,:,np.r_[0:border,(npoint-border):npoint]][:,:,np.r_[0:border_sl,(nb_slices-border_sl):nb_slices]]))
-
-mean_signal/std_signal
-
-kdata_reshaped=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,-1,nb_slices,npoint)
-mean_signal_by_ts=np.mean(np.abs(kdata_reshaped[0,:,:,(center_sl-res_sl):(center_sl+res_sl),(center_point-res):(center_point+res)]).reshape(ntimesteps,-1),axis=-1)
-
-std_signal_by_ts=np.std(np.abs(kdata_reshaped[0,:,:,:,np.r_[0:border,(npoint-border):npoint]][:,:,:,np.r_[0:border_sl,(nb_slices-border_sl):nb_slices]]),axis=(0,2,3))
-
-plt.figure();plt.plot(mean_signal_by_ts/std_signal_by_ts),plt.title("SNR by timestep")
-
-# traj=radial_traj.get_traj()
-#
-#
-# kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,nspoke,nb_slices,npoint)
-# data_no_noise=data_no_noise.reshape(nb_channels,ntimesteps,nspoke,nb_slices,npoint)
-#
-# ch=4
-# ts=0
-# ch=np.random.choice(range(nb_channels))
-# sl=8
-# curr_kdata=kdata_all_channels_all_slices[:,ts,:,sl,:]
-# curr_kdata_no_noise=data_no_noise[ch,ts,:,sl,:]
-#
-# plt.figure()
-# plt.plot(curr_kdata.T)
-#
-#
-# plt.figure()
-# plt.plot(curr_kdata_no_noise.T)
-#
-#
-# sp=4
-# ts=0
-# ch=np.random.choice(range(nb_channels))
-# sl=8
-# curr_kdata=kdata_all_channels_all_slices[:,ts,sp,sl,:]
-# curr_kdata_no_noise=data_no_noise[ch,ts,:,sl,:]
-#
-# plt.figure()
-# plt.plot(curr_kdata.T)
-#
-#
-# plt.figure()
-# plt.plot(curr_kdata_no_noise.T)
-#
-# kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,nb_segments,-1)
-# data_no_noise=data_no_noise.reshape(nb_channels,nb_segments,-1)
-#
-# ts=0
-# curr_data=kdata_all_channels_all_slices[:,ts]
-# curr_data_no_noise=data_no_noise[:,ts]
-#
-# u,s,vh=np.linalg.svd(curr_data)
-# u_no_noise,s_no_noise,vh_no_noise=np.linalg.svd(curr_data_no_noise)
-#
-# plt.figure();plt.plot(np.cumsum(s)/np.sum(s));plt.plot(np.cumsum(s_no_noise)/np.sum(s_no_noise))
-#
-#
-# keys,D=read_mrf_dict(dictfile,FF_list=np.arange(0.,1.01,0.05),aggregate_components=True)
-# D_plus=np.linalg.pinv(D)
-#
-# ch=0
-# curr_kdata=kdata_all_channels_all_slices[0].reshape(ntimesteps,-1)
-# curr_kdata_no_noise=data_no_noise[0].reshape(ntimesteps,-1)
-#
-#
-#
-# def filter_in_k_space(curr_kdata_sp,res=20):
-#     center_point=int(curr_kdata.shape[0]/2)
-#     F_curr_kdata = finufft.nufft1d2(np.arange(-np.pi, np.pi, 2 * np.pi / npoint) + np.pi / (npoint), curr_kdata[sp])
-#     F_curr_kdata[:center_point - res] = 0
-#     F_curr_kdata[center_point + res:] = 0
-#
-#     curr_kdata_corrected = finufft.nufft1d2(np.arange(-np.pi, np.pi, 2 * np.pi / npoint) + np.pi / (npoint),
-#                                             F_curr_kdata, isign=1) / npoint
-#
-#     return curr_kdata_corrected
-#
-#
-#
-# if filename_phi not in os.listdir():
-#     mrfdict = dictsearch.Dictionary()
-#     keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.05))
-#
-#     import dask.array as da
-#     u,s,vh = da.linalg.svd(da.asarray(values))
-#
-#     vh=np.array(vh)
-#     s=np.array(s)
-#
-#     phi=vh[:L0]
-#     np.save(filename_phi,phi)
-# else:
-#     phi=np.load(filename_phi)
-#
-# traj=radial_traj.get_traj().reshape(ntimesteps,-1,3)
-# kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,-1)
-#
-# kdata_singular=np.zeros((nb_channels,)+traj.shape[:-1]+(L0,),dtype=kdata_all_channels_all_slices.dtype)
-# for ts in tqdm(range(ntimesteps)):
-#     kdata_singular[:,ts,:,:]=kdata_all_channels_all_slices[:,ts,:,None]@(phi.conj().T[ts][None,:])
-#
-# kdata_singular=np.moveaxis(kdata_singular,-1,1)
-#
-# kdata_singular=kdata_singular.reshape(nb_channels,L0,nb_segments,nb_slices,npoint)
-#
-#
-# data_no_noise=data_no_noise.reshape(nb_channels,ntimesteps,-1)
-#
-# kdata_no_noise_singular=np.zeros((nb_channels,)+traj.shape[:-1]+(L0,),dtype=kdata_all_channels_all_slices.dtype)
-# for ts in tqdm(range(ntimesteps)):
-#     kdata_no_noise_singular[:,ts,:,:]=data_no_noise[:,ts,:,None]@(phi.conj().T[ts][None,:])
-#
-# kdata_no_noise_singular=np.moveaxis(kdata_no_noise_singular,-1,1)
-#
-# kdata_no_noise_singular=kdata_no_noise_singular.reshape(nb_channels,L0,nb_segments,nb_slices,npoint)
-#
-#
-# ch=0
-# seg=np.random.choice(range(nb_segments))
-# sl=8
-#
-# plt.figure()
-# plt.plot(kdata_singular[ch,0,seg,sl,:])
-# plt.plot(kdata_no_noise_singular[ch,0,seg,sl,:])
-#
-#
-# print("Building Volumes....")
-# if str.split(filename_volume_singular,"/")[-1] not in os.listdir(folder):
-#     volumes_singular=simulate_radial_undersampled_singular_images_multi(kdata_singular,radial_traj,image_size,density_adj=True,b1=b1_all_slices,ntimesteps=L0,light_memory_usage=True)
-#     np.save(filename_volume_singular,volumes_singular)
-#     # sl=20
-#     # ani = animate_images(volumes_singular[0,:,:,:])
-#     #del volumes_singular
-#
-# volumes_singular_no_noise = simulate_radial_undersampled_singular_images_multi(kdata_no_noise_singular, radial_traj, image_size,
-#                                                                       density_adj=True, b1=b1_all_slices, ntimesteps=L0,
-#                                                                       light_memory_usage=True)
-#
-#
-# animate_multiple_images(volumes_singular_no_noise[0],volumes_singular[0])
-#
-# sigma=2*np.pi/(npoint)
-# sigma_z=2*np.pi/(2*nb_slices)
-# sigmas=np.array([sigma]*2+[sigma_z])
-#
-# ts=0
-# curr_kdata_all_channels_all_slices=kdata_all_channels_all_slices[:,ts]
-# curr_kdata_all_channels_all_slices=curr_kdata_all_channels_all_slices.reshape(nb_channels,-1)
-# curr_traj=traj[ts]
-#
-# d_ki_kj=np.linalg.norm((np.expand_dims(curr_traj,axis=0)-np.expand_dims(curr_traj,axis=1))/(np.sqrt(2)*(np.expand_dims(sigmas,axis=(0,1)))),axis=-1)**2
-# curr_kdata_all_channels_all_slices=curr_kdata_all_channels_all_slices.reshape(-1,npoint)
-# density = np.abs(np.linspace(-1, 1, npoint))
-# density = np.expand_dims(density, tuple(range(curr_kdata_all_channels_all_slices.ndim - 1)))
-# curr_kdata_all_channels_all_slices *=density
-# curr_kdata_all_channels_all_slices=curr_kdata_all_channels_all_slices.reshape(nb_channels,-1)
-# sigma=1
-#
-# gaussian_kernel_matrix=np.exp(-d_ki_kj)
-# filtered_curr_kdata=np.einsum("ij,lj->li",gaussian_kernel_matrix,curr_kdata_all_channels_all_slices)
-# filtered_curr_kdata=filtered_curr_kdata.reshape(nb_channels,-1,npoint)
-# curr_data_no_noise=data_no_noise[:,ts,:,:]
-# curr_data_no_noise*=np.expand_dims(density,axis=0)
-#
-# sl=10
-# ch=np.random.choice(range(nb_channels))
-# plt.figure()
-# plt.plot(curr_data_no_noise[ch,sl,:])
-# plt.plot(filtered_curr_kdata[ch,sl,:])
-#
-#
-# from scipy.ndimage import gaussian_filter1d
-# ts=np.random.choice(range(nb_segments))
-# sl=0
-# ch=np.random.choice(range(nb_channels))
-# input=kdata_all_channels_all_slices[ch,ts,sl,:]
-# output=gaussian_filter1d(input,1.5)
-# output[center_point-16:center_point+16]=input[center_point-16:center_point+16]
-# input_ref=data_no_noise[ch,ts,sl,:]
-# #
-# plt.figure()
-# plt.plot(input)
-# plt.plot(output)
-# plt.plot(input_ref)
-#
-#
-# plt.figure()
-# plt.plot(kdata_all_channels_all_slices[0,0,int(nb_slices/2),:])
-
-
-
-
-# kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(-1,npoint)
-# from scipy.ndimage import gaussian_filter1d
-# input=kdata_all_channels_all_slices[0,0,int(nb_slices/2),:]
-# output=gaussian_filter1d(input,1)
-#
-# plt.figure()
-# plt.plot(np.imag(input))
-# plt.plot(np.imag(output))
-
-
-
-#
-# if gauss_filter:
-#     from scipy.ndimage import gaussian_filter1d
-#     kdata_all_channels_all_slices = kdata_all_channels_all_slices.reshape(-1, npoint)
-#     data_filtered = np.apply_along_axis(lambda x: filter_in_k_space(x, 20), -1,kdata_all_channels_all_slices)
-#
-#     data_filtered[:,(center_point-16):(center_point+16)]=kdata_all_channels_all_slices[:,center_point-16:center_point+16]
-#     data_filtered = data_filtered.reshape(nb_channels, nb_segments, nb_slices, -1)
-#
-#     kdata_all_channels_all_slices=data_filtered
-#     np.save(filename_kdata, kdata_all_channels_all_slices)
-#
-# plt.figure()
-# plt.plot(kdata_all_channels_all_slices[0,0,int(nb_slices/2),:])
-#
 
 if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     res = 16
@@ -639,12 +464,12 @@ else:
 sl=int(b1_all_slices.shape[1]/2)
 list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
 plot_image_grid(list_images,(3,3),title="Sensitivity map for slice {}".format(sl))
-
-#del kdata_all_channels_all_slices
-kdata_all_channels_all_slices=np.load(filename_kdata)
-volume_full=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
-
-animate_images(volume_full[0])
+#
+# #del kdata_all_channels_all_slices
+# kdata_all_channels_all_slices=np.load(filename_kdata)
+# volume_full=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
+#
+# animate_images(volume_full[0])
 
 
 print("Building Volumes....")
@@ -659,15 +484,21 @@ if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
     del volumes_all
 
 print("Building Volumes....")
-if str.split(filename_volume_no_dens_adj,"/")[-1] not in os.listdir(folder):
-    del kdata_all_channels_all_slices
-    kdata_all_channels_all_slices = np.load(filename_kdata)
+if str.split(filename_volume_all_groups,"/")[-1] not in os.listdir(folder):
 
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
-    np.save(filename_volume_no_dens_adj,volumes_all)
+    volume_all_groups=[]
+    for i in range(ngroups):
+        curr_kdata=kdata_all_groups[i]
+        curr_radial_traj=radial_traj_all_groups[i]
+
+        curr_volumes=simulate_radial_undersampled_images_multi(curr_kdata,curr_radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
+        volume_all_groups.append(curr_volumes)
+    volume_all_groups=np.array(volume_all_groups)
+    np.save(filename_volume_all_groups,volume_all_groups)
     # sl=10
     # ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
-    del volumes_all
+    del volume_all_groups
+
 
 ##volumes for slice taking into account coil sensi
 print("Building Mask....")
@@ -703,21 +534,18 @@ save_map=True
 #mask = m.mask
 
 mask=np.load(filename_mask)
-if dens_adj:
-    volumes_all = np.load(filename_volume)
-else:
-    volumes_all = np.load(filename_volume_no_dens_adj)
+volumes_all_groups=np.load(filename_volume_all_groups)
 
 #file_map=str.split(file_map,".pkl")[0]+"_test.pkl"
 
 if not(load_map):
-    niter = 4
+    niter = 1
     #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=True, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative",dens_adj=dens_adj)#,mu_TV=0.5)#,kdata_init=data_no_noise)
-    all_maps=optimizer.search_patterns_test_multi(dictfile,volumes_all,retained_timesteps=None)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj_all_groups, split=100, pca=True,threshold_pca=10, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative",dens_adj=dens_adj)#,mu_TV=0.5)#,kdata_init=data_no_noise)
+    all_maps=optimizer.search_patterns_test_multi_CSA(dictfile,volumes_all_groups,retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -751,7 +579,7 @@ curr_file=file_map
 file = open(curr_file, "rb")
 all_maps = pickle.load(file)
 file.close()
-for iter in list(range(len(all_maps.keys()))):
+for iter in list(range(np.minimum(len(all_maps.keys()),2))):
 
     map_rebuilt=all_maps[iter][0]
     mask=all_maps[iter][1]
@@ -781,8 +609,6 @@ list_suffix=["DE_Simu_FF_reco3.9".format(snr)]
 list_suffix=["fullReco_SNR_{}".format(snr),"DE_Simu_FF_reco3.9_SNR_{}".format(snr)]
 list_suffix=["fullReco_SNR_{}".format(snr),"DE_Simu_FF_reco3.9_SNR_{}".format(snr),"DE_Simu_FF_v2_reco1.55_SNR_{}".format(snr)]
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3.9".format(snr),"DE_Simu_FF_v2_reco1.55".format(snr),"DE_Simu_FF_v2_reco4".format(snr)]
-
-list_suffix=["DE_Simu_FF_reco3_SNR_{}".format(snr)]
 
 if snr is not None:
     list_suffix=["DE_Simu_FF_reco3_SNR_{}".format(snr)]

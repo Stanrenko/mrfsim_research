@@ -503,15 +503,14 @@ class ImageSeries(object):
                         # kx_gpu = to_gpu(kx)
                         # ky_gpu = to_gpu(ky)
                         # kz_gpu = to_gpu(kz)
-                        fk_gpu = to_gpu(fk)
 
                         plan = cufinufft(2, (N1, N2, N3), 1, eps=eps, dtype=dtype)
                         plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
 
-                        plan.execute(c_gpu, fk_gpu)
+                        plan.execute(c_gpu, to_gpu(fk))
                         c = np.squeeze(c_gpu.get())
 
-                        fk_gpu.gpudata.free()
+                        #fk_gpu.gpudata.free()
                         c_gpu.gpudata.free()
 
                         plan.__del__()
@@ -645,29 +644,6 @@ class ImageSeries(object):
         kdata = np.array(kdata)
 
         return kdata
-
-    # def generate_kdata(self,trajectory,useGPU=False,eps=1e-6):
-    #     size = self.image_size
-    #
-    #     kdata = [
-    #         finufft.nufft2d2(t.real, t.imag, p)
-    #         for t, p in zip(traj, self.images_series)
-    #     ]
-    #
-    #     #kdata /= np.sum(np.abs(kdata) ** 2) ** 0.5 / len(kdata)
-    #
-    #     if density_adj:
-    #         density = np.zeros(kdata.shape)
-    #
-    #         density = [voronoi_volumes(np.transpose(np.array([t[:,0],t[:,1]])))[0] for t in traj]
-    #         kdata = [k*density[i] for i,k in enumerate(kdata)]/(2*np.pi)**2
-    #
-    #     images_series_rebuilt = [
-    #         finufft.nufft2d1(t.real, t.imag, s, size)
-    #         for t, s in zip(traj, kdata)
-    #     ]
-    #
-    #     return np.array(images_series_rebuilt)
 
     def buildROImask(self):
         return buildROImask(self.paramMap)
