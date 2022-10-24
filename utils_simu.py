@@ -538,13 +538,10 @@ def generate_epg_dico_T1MRFSS_NoInv(fileseq,filedictconf,FA_list,TE_list,recover
 
 
 
-def generate_epg_dico_T1MRFSS_from_sequence_file(fileseq,filedictconf,recovery,rep=2,overwrite=True,sim_mode="mean"):
+def generate_epg_dico_T1MRFSS_from_sequence_file(fileseq,filedictconf,recovery,rep=2,overwrite=True,sim_mode="mean",start=None,window=None):
     prefix_dico=str.split(filedictconf,".json")[0]
     suffix_seq=str.split(fileseq,"_sequence")[1]
     suffix_seq=str.split(suffix_seq,".json")[0]
-    dictfile=prefix_dico+suffix_seq+"_reco{}.dict".format(str(recovery))
-
-    print("Generating dictionary {} from {}".format(dictfile,fileseq))
 
     with open(fileseq) as f:
         sequence_config = json.load(f)
@@ -577,8 +574,16 @@ def generate_epg_dico_T1MRFSS_from_sequence_file(fileseq,filedictconf,recovery,r
     fat_cs = [- value / 1000 for value in fat_cs]  # temp
 
     # other options
+    if window is None:
+        window = dict_config["window_size"]
 
-    window = dict_config["window_size"]
+
+    if start is None:
+        dictfile = prefix_dico + suffix_seq + "_reco{}_w{}_sim{}.dict".format(str(recovery), window,sim_mode)
+    else:
+        dictfile = prefix_dico + suffix_seq + "_reco{}_w{}_sim{}_start{}.dict".format(str(recovery), window, sim_mode,start)
+
+    print("Generating dictionary {} from {}".format(dictfile, fileseq))
 
     # water
     printer("Generate water signals.")
@@ -588,7 +593,10 @@ def generate_epg_dico_T1MRFSS_from_sequence_file(fileseq,filedictconf,recovery,r
     if sim_mode == "mean":
         water = [np.mean(gp, axis=0) for gp in groupby(water, window)]
     elif sim_mode == "mid_point":
-        water = water[(int(window / 2) - 1):-1:window]
+        if start is None:
+            start=(int(window / 2) - 1)
+
+        water = water[start:-1:window]
     else:
         raise ValueError("Unknow sim_mode")
 
@@ -604,7 +612,9 @@ def generate_epg_dico_T1MRFSS_from_sequence_file(fileseq,filedictconf,recovery,r
     if sim_mode == "mean":
         fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
     elif sim_mode == "mid_point":
-        fat = fat[(int(window / 2) - 1):-1:window]
+        if start is None:
+            start=(int(window / 2) - 1)
+        fat = fat[start:-1:window]
     else:
         raise ValueError("Unknow sim_mode")
 
@@ -615,6 +625,7 @@ def generate_epg_dico_T1MRFSS_from_sequence_file(fileseq,filedictconf,recovery,r
     keys = list(itertools.product(wT1, fT1, att, df))
     values = np.stack(np.broadcast_arrays(water, fat), axis=-1)
     values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
+    print(values.shape)
 
     printer("Save dictionary.")
     mrfdict = dictsearch.Dictionary(keys, values)
@@ -760,6 +771,51 @@ def convert_params_to_sequence_breaks(params, min_TR_delay, num_breaks_TE, num_b
     # print(num_breaks_FA)
     TE_breaks = params[:num_breaks_TE].astype(int)
     FA_breaks = params[num_breaks_TE:(num_breaks_FA + num_breaks_TE)].astype(int)
+    TE_breaks = [0] + list(np.cumsum(TE_breaks)) + [spokes_count]
+    FA_breaks = [0] + list(np.cumsum(FA_breaks)) + [spokes_count]
+    # print(TE_breaks)
+    # print(FA_breaks)
+    for j in range(num_breaks_TE + 1):
+        TE_[(TE_breaks[j] + 1):(TE_breaks[j + 1] + 1)] = params[num_breaks_TE + num_breaks_FA + j]
+    FA_ = np.zeros(spokes_count + 1)
+    for j in range(num_breaks_FA + 1):
+        FA_[(FA_breaks[j] + 1):(FA_breaks[j + 1] + 1)] = params[j + num_breaks_TE + 1 + num_breaks_TE + num_breaks_FA]
+
+    FA_[0] = np.pi
+
+    TR_ = np.zeros(spokes_count + 1)
+    TR_[0] = 8.32 / 1000
+    if not (inversion):
+        FA_[0] = 0
+        TR_[0] = 0
+    TR_[1:] = np.array(TE_[1:]) + min_TR_delay
+    TR_[-1] = TR_[-1] + params[-1]
+    TR_ = list(TR_)
+    return TR_, FA_, TE_
+
+
+def convert_sequence_to_params_breaks_common(FA_, TE_, recovery):
+    FA_breaks_ = list(np.argwhere(np.diff(np.array(FA_[1:])) != 0).flatten()) + [-1]
+    TE_breaks_ = list(np.argwhere(np.diff(np.array(TE_[1:])) != 0).flatten()) + [-1]
+    # print(FA_breaks)
+    # print(TE_breaks)
+
+    FA_values = [FA_[1:][i] for i in FA_breaks_]
+    TE_values = [TE_[1:][i] for i in TE_breaks_]
+    TE_breaks_ = [0] + TE_breaks_
+    FA_breaks_ = [0] + FA_breaks_
+    params_ = list(np.diff(FA_breaks_[:-1])) + list(TE_values) + list(FA_values) + [
+        recovery]
+
+    return params_, TE_breaks_, FA_breaks_
+
+
+def convert_params_to_sequence_breaks_common(params, min_TR_delay, num_breaks_TE, num_breaks_FA, spokes_count, inversion=True):
+    TE_ = np.zeros(spokes_count + 1)
+    # print(num_breaks_TE)
+    # print(num_breaks_FA)
+    TE_breaks = params[:(num_breaks_FA + num_breaks_TE)][1::2].astype(int)
+    FA_breaks = params[:(num_breaks_FA + num_breaks_TE)].astype(int)
     TE_breaks = [0] + list(np.cumsum(TE_breaks)) + [spokes_count]
     FA_breaks = [0] + list(np.cumsum(FA_breaks)) + [spokes_count]
     # print(TE_breaks)

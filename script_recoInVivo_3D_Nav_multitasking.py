@@ -101,7 +101,7 @@ filename_dico_volumes_corrected=str.split(filename,".dat") [0]+"_dico_volumes_co
 filename_dico_kdata_retained=str.split(filename,".dat") [0]+"_dico_kdata_retained{}.pkl".format(suffix)
 filename_m_opt=str.split(filename,".dat") [0]+"_m_opt{}.pkl".format(suffix)
 
-dictfile = "./mrf175_SimReco2.dict"
+dictfile = "./mrf_dictconf_SimReco2_adjusted_reco4.dict"
 ind_dico = 200
 
 filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
@@ -391,13 +391,14 @@ categories = np.digitize(displacement_for_binning, bins)
 df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, columns=["displacement", "cat"])
 df_groups = df_cat.groupby("cat").count()
 
-group_1=(categories==1)|(categories==2)
+group_1=(categories==2)
 group_2=(categories==3)
 group_3=(categories==4)
-group_4=(categories==5)|(categories==6)|(categories==7)
+group_4=(categories==5)
 
 groups=[group_1,group_2,group_3,group_4]
 
+ntimesteps=nb_gating_spokes
 nav_spoke_groups=np.argmin(np.abs(np.arange(0, ntimesteps, 1).reshape(-1, 1) - np.arange(0, ntimesteps,ntimesteps / nb_gating_spokes).reshape(1,-1)),axis=-1)
 data_mt_training=copy(data_for_nav)
 data_mt_training=np.squeeze(data_mt_training)
@@ -421,14 +422,15 @@ for i in tqdm(range(len(groups))):
         data_mt_training_on_timesteps[:,ts,:]=data_mt_training[:,gating_spoke_of_ts,:]
 
 
-dictfile = "./mrf175_SimReco2.dict"
+
+dictfile = "./mrf_dictconf_SimReco2_adjusted_reco4_w28_simmid_point_start0.dict"
 ind_dico = 20
 
 filename_dico_comp = str.split(dictfile,".dict") [0]+"_phi_dico_{}comp.npy".format(ind_dico)
 
 if str.split(filename_dico_comp,"/")[-1]  not in os.listdir():
 
-    FF_list = list(np.arange(0., 1.05, 0.05))
+    FF_list = list(np.arange(0., 1.0, 0.05))
     keys, signal = read_mrf_dict(dictfile, FF_list)
 
     import dask.array as da
@@ -468,9 +470,9 @@ else:
 Sk_cur = copy(Sk)
 niter=100
 diffs = []
-tol_diff = 1e-2
-variance_explained=0.99
-proj_on_fingerprints=False
+tol_diff = 1e-3
+variance_explained=0.95
+proj_on_fingerprints=True
 
 for i in tqdm(range(niter)):
     Sk_1 = Sk_cur.reshape(Sk_cur.shape[0],-1)
@@ -545,64 +547,110 @@ del Sk_cur
 # plt.plot(np.abs(signal[i_sig]),label="Original signal {}".format(i_sig),linestyle="dotted")
 # plt.legend()
 #
+
+Sk_final_3 = np.moveaxis(Sk_final,2,0).reshape(Sk_final.shape[2],-1)
+Sk_final_3_proj = phi_dico.T@phi_dico.conj()@Sk_final_3
+Sk_mask_reshaped = np.moveaxis(Sk_mask,2,0).reshape(Sk_mask.shape[2],-1)
+
+
+kdata=data_for_nav
+nb_channels = kdata.shape[0]
+npoint = kdata.shape[-1]
+nb_slices = kdata.shape[1]
+nb_gating_spokes = kdata.shape[2]
+
+j = np.random.choice(Sk_final_3_proj.shape[-1])
+#j=1917
+plt.figure()
+plt.plot(np.abs(Sk_final_3[:,j]*Sk_mask_reshaped[:,j]),label="Original fingerprint {}".format(""),linestyle="dotted")
+plt.plot(np.abs(Sk_final_3[:,j]),label="Completed fingerprint {}".format(""))
+plt.plot(np.abs(Sk_final_3_proj[:,j]),label="Projected fingerprint")
+plt.legend()
+
+test_signal=Sk[400,:,:]
+plt.figure()
+plt.plot(np.real(test_signal.T))
+
+
+
+def calc_y(x):
+    global A
+    global intercept
+    if intercept:
+        w=x[:signal.shape[0]].reshape(1,-1)
+        b=x[signal.shape[0]:]
+        y_predict = b + w @ signal
+    else:
+        w=x.reshape(1,-1)
+        y_predict = w @ signal
+
+    return y_predict
+
+def objective(x):
+    global y
+    return np.sum(np.abs((y-calc_y(x)))**2) + 10*np.sum(np.abs(x))
+
+
+
+intercept=False
+
+y=np.real(Sk[400,0,:])
+A=np.real(signal)
+
+if intercept:
+    x0 = np.zeros(A.shape[0]+y.shape[0],dtype=A.dtype)
+else:
+    x0 = np.zeros(A.shape[0], dtype=A.dtype)
+#no_bnds = (-1.0e10, 1.0e10)
+#bnds = tuple([no_bnds] *x0.shape[0])
+
+from scipy.optimize import minimize
+
+solution = minimize(objective,x0)
+x = solution.x
+
+
+
+
 #
-# Sk_final_3 = np.moveaxis(Sk_final,2,0).reshape(Sk_final.shape[2],-1)
-# Sk_final_3_proj = phi_dico.T@phi_dico.conj()@Sk_final_3
-# Sk_mask_reshaped = np.moveaxis(Sk_mask,2,0).reshape(Sk_mask.shape[2],-1)
+Sk_final_3_proj_for_nav_image=Sk_final_3_proj.reshape(ntimesteps,npoint,len(groups))
+Sk_final_3_proj_for_nav_image=np.moveaxis(Sk_final_3_proj_for_nav_image,2,0).astype("complex64")
+
+Sk_final_3_for_nav_image=Sk_final_3.reshape(ntimesteps,npoint,len(groups))
+Sk_final_3_for_nav_image=np.moveaxis(Sk_final_3_for_nav_image,2,0).astype("complex64")
+
+Sk_for_nav_image = np.moveaxis(Sk,1,0)
+Sk_for_nav_image = np.moveaxis(Sk_for_nav_image,2,1)
+
 #
 #
-# kdata=data_for_nav
-# nb_channels = kdata.shape[0]
-# npoint = kdata.shape[-1]
-# nb_slices = kdata.shape[1]
-# nb_gating_spokes = kdata.shape[2]
-#
-# j = np.random.choice(Sk_final_3_proj.shape[-1])
-# j=1917
-# plt.figure()
-# plt.plot(np.abs(Sk_final_3[:,j]*Sk_mask_reshaped[:,j]),label="Original fingerprint {}".format(""),linestyle="dotted")
-# plt.plot(np.abs(Sk_final_3[:,j]),label="Completed fingerprint {}".format(""))
-# plt.plot(np.abs(Sk_final_3_proj[:,j]),label="Projected fingerprint")
-# plt.legend()
-#
-# Sk_final_3_proj_for_nav_image=Sk_final_3_proj.reshape(ntimesteps,npoint,len(groups))
-# Sk_final_3_proj_for_nav_image=np.moveaxis(Sk_final_3_proj_for_nav_image,2,0).astype("complex64")
-#
-# Sk_final_3_for_nav_image=Sk_final_3.reshape(ntimesteps,npoint,len(groups))
-# Sk_final_3_for_nav_image=np.moveaxis(Sk_final_3_for_nav_image,2,0).astype("complex64")
-#
-# Sk_for_nav_image = np.moveaxis(Sk,1,0)
-# Sk_for_nav_image = np.moveaxis(Sk_for_nav_image,2,1)
-#
-#
-#
-#
-# nav_traj_completed_proj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=len(groups),
-#                        applied_timesteps=list(range(len(groups))))
-#
-# images_nav_mean_original = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
-#
-# gr=2
-# plt.figure()
-# plt.imshow(np.abs(images_nav_mean_original[gr,:,:]),cmap="gray")
-# plt.title("Original 0-filled Image Respiratory Bin {}".format(gr))
-#
-# images_nav_mean_completed = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_3_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
-#
-# plt.figure()
-# plt.imshow(np.abs(images_nav_mean_completed[0,:,:]),cmap="gray")
-# plt.title("Completed Image Respiratory Bin {}".format(gr))
-#
-# images_nav_mean_proj = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_3_proj_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
-# plt.figure()
-# plt.imshow(np.abs(images_nav_mean_proj[1,:,:]),cmap="gray")
-# plt.title("Projected Image Respiratory Bin {}".format(gr))
-#
-# images_nav_mean_timesteps = np.abs(simulate_nav_images_multi(np.expand_dims(data_mt_training_on_timesteps,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
-# sl=0
-# plt.figure()
-# plt.imshow(np.abs(images_nav_mean_timesteps[sl,:,:]),cmap="gray")
-# plt.title("Original Nav Image Slice {}".format(sl))
+
+nav_traj_completed_proj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=len(groups),
+                       applied_timesteps=list(range(len(groups))))
+
+images_nav_mean_original = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+
+gr=2
+plt.figure()
+plt.imshow(np.abs(images_nav_mean_original[gr,:,:]),cmap="gray")
+plt.title("Original 0-filled Image Respiratory Bin {}".format(gr))
+
+images_nav_mean_completed = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_3_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+
+plt.figure()
+plt.imshow(np.abs(images_nav_mean_completed[0,:,:]),cmap="gray")
+plt.title("Completed Image Respiratory Bin {}".format(gr))
+
+images_nav_mean_proj = np.abs(simulate_nav_images_multi(np.expand_dims(Sk_final_3_proj_for_nav_image,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+plt.figure()
+plt.imshow(np.abs(images_nav_mean_proj[1,:,:]),cmap="gray")
+plt.title("Projected Image Respiratory Bin {}".format(gr))
+
+images_nav_mean_timesteps = np.abs(simulate_nav_images_multi(np.expand_dims(data_mt_training_on_timesteps,axis=0), nav_traj_completed_proj, nav_image_size, b1_nav_mean))
+sl=0
+plt.figure()
+plt.imshow(np.abs(images_nav_mean_timesteps[sl,:,:]),cmap="gray")
+plt.title("Original Nav Image Slice {}".format(sl))
 
 
 

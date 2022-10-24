@@ -1490,6 +1490,88 @@ def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6,ntimesteps=None):
     return kdata
 
 
+def generate_kdata_new(volumes,trajectory,useGPU=False,eps=1e-6,ntimesteps=None,retained_timesteps=None):
+    if ntimesteps is None:
+        traj=trajectory.get_traj()
+    else:
+        traj = trajectory.get_traj_for_reconstruction(ntimesteps)
+
+    if retained_timesteps is not None:
+        traj=traj[retained_timesteps]
+
+    ntimesteps=volumes.shape[0]
+    if not(len(traj)==ntimesteps):
+        raise ValueError("Mismatch between image series size and retained timesteps")
+    if traj.shape[-1]==2:# For slices
+        if not(useGPU):
+            kdata = [
+                    finufft.nufft2d2(t[:,0], t[:,1], p)
+                    for t, p in zip(traj, volumes)
+                ]
+        else:
+            # Allocate memory for the nonuniform coefficients on the GPU.
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+            N1,N2 = volumes.shape[1],volumes.shape[2]
+            M = traj.shape[1]
+            c_gpu = GPUArray((1, M), dtype=complex_dtype)
+            # Initialize the plan and set the points.
+            kdata=[]
+            for i in list(range(volumes.shape[0])):
+                fk = volumes[i, :, :]
+                kx = traj[i, :, 0]
+                ky = traj[i, :, 1]
+
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                fk = fk.astype(complex_dtype)
+
+                plan = cufinufft(2, (N1, N2), 1, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kx), to_gpu(ky))
+                plan.execute(c_gpu, to_gpu(fk))
+                c = np.squeeze(c_gpu.get())
+                kdata.append(c)
+                plan.__del__()
+
+    elif traj.shape[-1]==3:# For volumes
+        if not (useGPU):
+
+            kdata = [
+                finufft.nufft3d2(t[:, 2],t[:, 0], t[:, 1], p)
+                for t, p in zip(traj, volumes)
+            ]
+
+            # traj=traj.reshape(-1,3)
+            # kdata = finufft.nufft3d2(traj[:, 2],traj[:, 0], traj[:, 1], volumes)
+            # kdata=kdata.reshape(ntimesteps,-1)
+        else:
+            # Allocate memory for the nonuniform coefficients on the GPU.
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+            N1, N2,N3 = volumes.shape[1], volumes.shape[2],volumes.shape[3]
+            M = traj.shape[1]
+            c_gpu = GPUArray((M), dtype=complex_dtype)
+            # Initialize the plan and set the points.
+            kdata = []
+            for i in list(range(volumes.shape[0])):
+                fk = volumes[i, :, :]
+                kx = traj[i, :, 0]
+                ky = traj[i, :, 1]
+                kz = traj[i, :, 2]
+
+                kx = kx.astype(dtype)
+                ky = ky.astype(dtype)
+                kz = kz.astype(dtype)
+                fk = fk.astype(complex_dtype)
+
+                plan = cufinufft(2, (N1, N2,N3), 1, eps=eps, dtype=dtype)
+                plan.set_pts(to_gpu(kz),to_gpu(kx), to_gpu(ky))
+                plan.execute(c_gpu, to_gpu(fk))
+                c = np.squeeze(c_gpu.get())
+                kdata.append(c)
+                plan.__del__()
+    return kdata
+
 def generate_kdata_singular(volumes, trajectory, useGPU=False, eps=1e-6):
     """
     generate L0 singular kdata for all the spokes in the trajectory
@@ -1547,6 +1629,15 @@ def generate_kdata_multi(volumes,trajectory,b1_all_slices,useGPU=False,eps=1e-6,
     kdata=[]
     for i in tqdm(range(b1_all_slices.shape[0])):
         kdata.append(generate_kdata(volumes*np.expand_dims(b1_all_slices[i],axis=0),trajectory, useGPU=useGPU, eps=eps,ntimesteps=ntimesteps))
+
+    kdata = np.array(kdata)
+
+    return kdata
+
+def generate_kdata_multi_new(volumes,trajectory,b1_all_slices,useGPU=False,eps=1e-6,ntimesteps=None,retained_timesteps=None):
+    kdata=[]
+    for i in tqdm(range(b1_all_slices.shape[0])):
+        kdata.append(generate_kdata_new(volumes*np.expand_dims(b1_all_slices[i],axis=0),trajectory, useGPU=useGPU, eps=eps,ntimesteps=ntimesteps,retained_timesteps=retained_timesteps))
 
     kdata = np.array(kdata)
 
@@ -1998,12 +2089,18 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
 
     # if light_memory_usage and not(useGPU):
     #    print("Warning : light memory usage is not used without GPU")
-
     traj = trajectory.get_traj_for_reconstruction(ntimesteps)
+
+    nb_channels = len(kdata)
+
+    if not (len(kdata[0]) == len(traj)):
+        kdata = kdata.reshape(nb_channels, len(traj), -1)
+
+
     #print(traj[0].shape)
     npoint = trajectory.paramDict["npoint"]
     nb_allspokes = trajectory.paramDict["total_nspokes"]
-    nb_channels = len(kdata)
+
     #print(kdata.shape)
     nspoke = int(nb_allspokes / ntimesteps)
 
@@ -2017,8 +2114,7 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
         dtheta = 1
         dz = 1/(2*np.pi)
 
-    if not (len(kdata[0]) == len(traj)):
-        kdata = kdata.reshape(nb_channels, len(traj), -1)
+
 
     if type(density_adj) is bool:
         if density_adj:
@@ -2258,6 +2354,208 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
     return images_series_rebuilt
 
 
+def simulate_radial_undersampled_images_multi_new(kdata, trajectory, size, density_adj=True, eps=1e-6,
+                                            b1=None, ntimesteps=175, useGPU=False, light_memory_usage=False,
+                                               weights=None,
+                                              retained_timesteps=None,ntimesteps_final=None):
+    # Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
+
+    # if light_memory_usage and not(useGPU):
+    #    print("Warning : light memory usage is not used without GPU")
+    traj = trajectory.get_traj_for_reconstruction(ntimesteps)
+
+    nb_channels = len(kdata)
+
+    if not (len(kdata[0]) == len(traj)):
+        kdata = kdata.reshape(nb_channels, len(traj), -1)
+
+    if retained_timesteps is not None:
+        traj = traj[retained_timesteps]
+        kdata = kdata[:, retained_timesteps]
+        ntimesteps=len(retained_timesteps)
+
+    # print(traj[0].shape)
+    npoint = trajectory.paramDict["npoint"]
+    nb_allspokes = trajectory.paramDict["total_nspokes"]
+    nb_rep=trajectory.paramDict["nb_rep"]
+
+    # print(kdata.shape)
+    nspoke = int(nb_allspokes / ntimesteps)
+
+    num_samples = traj.shape[1]
+
+
+    if type(density_adj) is bool:
+        if density_adj:
+            density_adj = "Radial"
+
+    if density_adj == "Radial":
+        density = np.abs(np.linspace(-1, 1, npoint))
+        #density=np.expand_dims(axis=0)
+        for j in tqdm(range(nb_channels)):
+            kdata[j] = [(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata[j]]
+        kdata=np.array(kdata)
+
+    if weights is not None:
+        kdata=kdata.reshape(nb_channels,ntimesteps,nspoke,nb_rep,-1)
+        weights=np.expand_dims(weights,axis=(0,-1))
+        kdata*=weights
+        kdata=kdata.reshape(nb_channels,ntimesteps,-1)
+
+
+
+
+    if kdata[0][0].dtype == "complex64":
+        try:
+            traj = traj.astype("float32")
+        except:
+            for i in range(traj.shape[0]):
+                traj[i] = traj[i].astype("float32")
+        print(traj[0].dtype)
+
+
+    for i in tqdm(range(nb_channels)):
+        kdata[i] /= num_samples
+
+    # kdata = (normalize_image_series(np.array(kdata)))
+
+    if ntimesteps_final is not None:
+        ntimesteps=ntimesteps_final
+        traj=traj.reshape(ntimesteps_final,-1,3)
+        kdata=kdata.reshape(nb_channels,ntimesteps_final,-1)
+
+    output_shape = (ntimesteps,) + size
+
+    images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
+
+    print("Performing NUFFT")
+    if traj[0].shape[-1] == 2:  # 2D
+
+        for i, t in tqdm(enumerate(traj)):
+            fk = finufft.nufft2d1(t[:, 0], t[:, 1], np.squeeze(kdata[:, i, :]), size)
+
+            # images_series_rebuilt = np.moveaxis(images_series_rebuilt, 0, 1)
+            if b1 is None:
+                print(fk.shape)
+                if fk.ndim > 2:
+                    images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+                else:
+                    print('Taking abs of image')
+                    images_series_rebuilt[i] = np.abs(fk)
+            else:
+                images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
+
+    elif traj[0].shape[-1] == 3:  # 3D
+        if not (useGPU):
+
+            for i, t in tqdm(enumerate(traj)):
+                if not (light_memory_usage):
+
+                    fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[:, i, :], size)
+                    if b1 is None:
+                        images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+                    else:
+                        images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
+
+                else:
+
+                    for j in tqdm(range(nb_channels)):
+
+                        fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata[j,i],
+                                                  size)
+                        if b1 is None:
+                            images_series_rebuilt[i] += np.abs(fk) ** 2
+                        else:
+                            images_series_rebuilt[i] += b1[j].conj() * fk
+
+                    if b1 is None:
+                        images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
+        else:
+            N1, N2, N3 = size[0], size[1], size[2]
+            dtype = np.float32  # Datatype (real)
+            complex_dtype = np.complex64
+
+            for i in tqdm(list(range(kdata[0].shape[0]))):
+                if not (light_memory_usage):
+                    fk_gpu = GPUArray((nb_channels, N1, N2, N3), dtype=complex_dtype)
+                    c_retrieved = kdata[:, i, :]
+                    kx = traj[i][:, 0]
+                    ky = traj[i][:, 1]
+                    kz = traj[i][:, 2]
+
+                    # Cast to desired datatype.
+                    kx = kx.astype(dtype)
+                    ky = ky.astype(dtype)
+                    kz = kz.astype(dtype)
+                    c_retrieved = c_retrieved.astype(complex_dtype)
+
+                    # Allocate memory for the uniform grid on the GPU.
+                    c_retrieved_gpu = to_gpu(c_retrieved)
+
+                    # Initialize the plan and set the points.
+                    plan = cufinufft(1, (N1, N2, N3), nb_channels, eps=eps, dtype=dtype)
+                    plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+
+                    # Execute the plan, reading from the strengths array c and storing the
+                    # result in fk_gpu.
+                    plan.execute(c_retrieved_gpu, fk_gpu)
+
+                    fk = np.squeeze(fk_gpu.get())
+
+                    fk_gpu.gpudata.free()
+                    c_retrieved_gpu.gpudata.free()
+
+                    if b1 is None:
+                        images_series_rebuilt[i] = np.sqrt(np.sum(np.abs(fk) ** 2, axis=0))
+                    else:
+                        images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
+
+                    plan.__del__()
+                else:
+                    # fk = np.zeros(output_shape,dtype=complex_dtype)
+                    for j in tqdm(range(nb_channels)):
+                        fk_gpu = GPUArray((N1, N2, N3), dtype=complex_dtype)
+                        c_retrieved = kdata[j,i]
+                        kx = traj[i][:, 0]
+                        ky = traj[i][:, 1]
+                        kz = traj[i][:, 2]
+
+                        # Cast to desired datatype.
+                        kx = kx.astype(dtype)
+                        ky = ky.astype(dtype)
+                        kz = kz.astype(dtype)
+                        c_retrieved = c_retrieved.astype(complex_dtype)
+
+                        # Allocate memory for the uniform grid on the GPU.
+                        c_retrieved_gpu = to_gpu(c_retrieved)
+
+                        # Initialize the plan and set the points.
+                        plan = cufinufft(1, (N1, N2, N3), 1, eps=eps, dtype=dtype)
+                        plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
+
+                        # Execute the plan, reading from the strengths array c and storing the
+                        # result in fk_gpu.
+                        plan.execute(c_retrieved_gpu, fk_gpu)
+
+                        fk = np.squeeze(fk_gpu.get())
+
+                        fk_gpu.gpudata.free()
+                        c_retrieved_gpu.gpudata.free()
+
+                        if b1 is None:
+                            images_series_rebuilt[i] += np.abs(fk) ** 2
+                        else:
+                            images_series_rebuilt[i] += b1[j].conj() * fk
+                        plan.__del__()
+
+                    if b1 is None:
+                        images_series_rebuilt[i] = np.sqrt(images_series_rebuilt[i])
+
+        del kdata
+        gc.collect()
+
+    return images_series_rebuilt
+
 
 def simulate_radial_undersampled_singular_images_multi(kdata, trajectory, size, density_adj=True, eps=1e-6,
                                               is_theta_z_adjusted=False, b1=None, useGPU=False,
@@ -2469,6 +2767,60 @@ def undersampling_operator(volumes,trajectory,b1_all_slices,density_adj=True):
     return images_series_rebuilt
 
 
+def undersampling_operator_new(volumes,trajectory,b1_all_slices,density_adj=True,weights=None,retained_timesteps=None,ntimesteps=None):
+    """
+    returns A.H @ W @ A @ volumes where A=F Fourier + sampling operator and W correspond to radial density adjustment
+    """
+    if ntimesteps is None:
+        ntimesteps=volumes.shape[0]
+    size=volumes.shape[1:]
+    nb_channels=b1_all_slices.shape[0]
+
+    traj = trajectory.get_traj()
+    traj = traj.reshape(ntimesteps,-1, 3)
+    if retained_timesteps is not None:
+        traj=traj[retained_timesteps]
+        ntimesteps=len(retained_timesteps)
+
+    npoint = trajectory.paramDict["npoint"]
+
+    num_k_samples = traj.shape[1]
+
+    output_shape = (ntimesteps,) + size
+    images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
+
+    for k in tqdm(range(nb_channels)):
+
+        curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
+        print(curr_volumes.shape)
+        if len(size)==3:
+            curr_kdata = [finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], v) for (t,v) in zip (traj,curr_volumes)]
+        else:
+            curr_kdata = [finufft.nufft2d2( t[:, 0], t[:, 1], v) for (t, v) in zip(traj, curr_volumes)]
+        curr_kdata=np.array(curr_kdata)
+        print(curr_kdata.shape)
+        if density_adj:
+            curr_kdata=curr_kdata.reshape(ntimesteps,-1,npoint)
+            density = np.abs(np.linspace(-1, 1, npoint))
+            density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+            curr_kdata*=density
+        curr_kdata = curr_kdata.reshape(ntimesteps, -1)
+        if weights is not None:
+            curr_kdata = curr_kdata.reshape(weights.shape +(-1,))
+            weights = np.expand_dims(weights, axis=-1)
+            curr_kdata *= weights
+            curr_kdata = curr_kdata.reshape(ntimesteps, -1)
+
+        if len(size) == 3:
+            fk = [finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kd, size) for (t,kd) in zip(traj,curr_kdata)]
+        else:
+            fk = [finufft.nufft2d1(t[:, 0], t[:, 1], kd, size) for (t, kd) in zip(traj, curr_kdata)]
+        fk=np.array(fk)
+        print(fk.shape)
+        images_series_rebuilt += b1_all_slices[k].conj()* fk
+
+    images_series_rebuilt /= num_k_samples
+    return images_series_rebuilt
 
 def simulate_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6):
     # Strong Assumption : from one time step to the other, the sampling is just rotated, hence voronoi volumes can be calculated only once
@@ -2892,6 +3244,125 @@ def correct_mvt_kdata(kdata,trajectory,cond,ntimesteps,density_adj=True,log=Fals
     kdata_retained_final = np.array(kdata_retained_final)
 
     return kdata_retained_final,traj_retained_final,retained_timesteps
+
+
+
+def correct_mvt_kdata_zero_filled(trajectory,cond,ntimesteps):
+
+    traj=trajectory.get_traj()
+
+    mode=trajectory.paramDict["mode"]
+    incoherent=trajectory.paramDict["incoherent"]
+
+
+    nb_rep = int(cond.shape[0]/traj.shape[0])
+    npoint = int(traj.shape[1] / nb_rep)
+    nspoke = int(traj.shape[0] / ntimesteps)
+
+    traj_for_selection = np.array(groupby(traj, npoint, axis=1))
+    traj_for_selection = traj_for_selection.reshape(cond.shape[0], -1, 3)
+    indices = np.unravel_index(np.argwhere(cond).T,(nb_rep,ntimesteps,nspoke))
+    retained_indices = np.squeeze(np.array(indices).T)
+    retained_timesteps = np.unique(retained_indices[:, 1])
+    ## DENSITY CORRECTION
+
+    df = pd.DataFrame(columns=["rep", "ts", "spoke", "kz", "theta"], index=range(nb_rep * ntimesteps * nspoke))
+    df["rep"] = np.repeat(list(range(nb_rep)), ntimesteps * nspoke)
+    df["ts"] = list(np.repeat(list(range(ntimesteps)), (nspoke))) * nb_rep
+    df["spoke"] = list(range(nspoke)) * nb_rep * ntimesteps
+
+    df["kz"] = traj_for_selection[:, :, 2][:, 0]
+    golden_angle = 111.246 * np.pi / 180
+
+    if not(incoherent):
+        df["theta"] = np.array(list(np.mod(np.arange(0, int(df.shape[0] / nb_rep)) * golden_angle, np.pi)) * nb_rep)
+    elif incoherent:
+        if mode=="old":
+            df["theta"] = np.array(list(np.mod(np.arange(0, int(df.shape[0])) * golden_angle, np.pi)))
+        elif mode=="new":
+            df["theta"] = np.mod((np.array(list(np.arange(0, nb_rep) * golden_angle)).reshape(-1,1)+np.array(list(np.arange(0, int(df.shape[0] / nb_rep)) * golden_angle)).reshape(1,-1)).flatten(),np.pi)
+
+
+    df_retained = df.iloc[np.nonzero(cond)]
+    kz_by_timestep = df_retained.groupby("ts")["kz"].unique()
+    theta_by_rep_timestep = df_retained.groupby(["ts", "rep"])["theta"].unique()
+
+    df_retained = df_retained.join(kz_by_timestep, on="ts", rsuffix="_s")
+    df_retained = df_retained.join(theta_by_rep_timestep, on=["ts", "rep"], rsuffix="_s")
+
+    # Theta weighting
+    df_retained["theta_s"] = df_retained["theta_s"].apply(lambda x: np.sort(x))
+    #df_retained["theta_s"] = df_retained["theta_s"].apply(
+    #    lambda x: np.concatenate([[x[-1] - np.pi], x, [x[0] + np.pi]]))
+    df_retained["theta_s"] = df_retained["theta_s"].apply(
+        lambda x: np.unique(np.concatenate([[0], x, [np.pi]])))
+    diff_theta=(df_retained.theta - df_retained["theta_s"])
+    theta_inside_boundary=(df_retained["theta"]!=0)*(df_retained["theta"]!=np.pi)
+    df_retained["theta_inside_boundary"] = theta_inside_boundary
+
+    min_theta = df_retained.groupby(["ts", "rep"])["theta"].min()
+    max_theta = df_retained.groupby(["ts", "rep"])["theta"].max()
+    df_retained = df_retained.join(min_theta, on=["ts", "rep"], rsuffix="_min")
+    df_retained = df_retained.join(max_theta, on=["ts", "rep"], rsuffix="_max")
+    is_min_theta = (df_retained["theta"]==df_retained["theta_min"])
+    is_max_theta = (df_retained["theta"] == df_retained["theta_max"])
+    df_retained["is_min_theta"] = is_min_theta
+    df_retained["is_max_theta"] = is_max_theta
+
+    df_retained["theta_weight"] = theta_inside_boundary*diff_theta.apply(lambda x: (np.sort(x[x>=0])[1]+np.sort(-x[x<=0])[1])/2 if ((x>=0).sum()>1) and ((x<=0).sum()>1) else 0)+ \
+                                  (1-theta_inside_boundary)*diff_theta.apply(lambda x: np.sort(np.abs(x))[1]/2)
+
+    df_retained["theta_weight_before_correction"] = df_retained["theta_weight"]
+
+    df_retained["theta_weight"] = df_retained["theta_weight"]+ (theta_inside_boundary)* ((is_min_theta)*df_retained["theta"]+(is_max_theta)*(np.pi-df_retained["theta"]))/2
+
+    df_retained.loc[df_retained["theta_weight"].isna(), "theta_weight"] = 1.0
+    sum_weights = df_retained.groupby(["ts", "rep"])["theta_weight"].sum()
+    df_retained = df_retained.join(sum_weights, on=["ts", "rep"], rsuffix="_sum")
+    #df_retained["theta_weight"] = df_retained["theta_weight"] / df_retained["theta_weight_sum"]
+
+    # KZ weighting
+    #df_retained.loc[df_retained.ts == 138].to_clipboard()
+    df_retained["kz_s"] = df_retained["kz_s"].apply(lambda x: np.unique(np.concatenate([[-np.pi], x, [np.pi]])))
+    diff_kz=(df_retained.kz - df_retained["kz_s"])
+    kz_inside_boundary=(df_retained["kz"].abs()!=np.pi)
+    df_retained["kz_inside_boundary"]=kz_inside_boundary
+
+    min_kz = df_retained.groupby(["ts"])["kz"].min()
+    max_kz = df_retained.groupby(["ts"])["kz"].max()
+    df_retained = df_retained.join(min_kz, on=["ts"], rsuffix="_min")
+    df_retained = df_retained.join(max_kz, on=["ts"], rsuffix="_max")
+
+    is_min_kz = (df_retained["kz"] == df_retained["kz_min"])
+    is_max_kz = (df_retained["kz"] == df_retained["kz_max"])
+
+    df_retained["is_min_kz"] = is_min_kz
+    df_retained["is_max_kz"] = is_max_kz
+
+    df_retained["kz_weight"] = kz_inside_boundary*diff_kz.apply(lambda x: (np.sort(x[x >= 0])[1] + np.sort(-x[x <= 0])[1]) / 2 if ((x >= 0).sum() > 1) and (
+        ((x <= 0).sum() > 1)) else 0)+(1-kz_inside_boundary)*diff_kz.apply(lambda x: np.sort(np.abs(x))[1]/2)
+
+
+
+    df_retained["kz_weight"] = df_retained["kz_weight"] + (kz_inside_boundary) * (
+            (is_min_kz) * (df_retained["kz"]+np.pi) + (is_max_kz) * (np.pi - df_retained["kz"])) / 2
+
+    df_retained.loc[df_retained["kz_weight"].isna(), "kz_weight"] = 1.0
+    sum_weights = df_retained.drop_duplicates(subset=["kz","ts"])
+    sum_weights = sum_weights.groupby(["ts"])["kz_weight"].apply(lambda x: x.sum())
+    df_retained = df_retained.join(sum_weights, on=["ts"], rsuffix="_sum")
+    #df_retained["kz_weight"] = df_retained["kz_weight"] / df_retained["kz_weight_sum"]
+    theta_weight = df_retained["theta_weight"]
+    kz_weight = df_retained["kz_weight"]
+    weights = np.zeros(cond.shape[0])
+    weights[cond] = theta_weight * kz_weight
+    weights = weights.reshape(nb_rep, -1)
+    weights = np.moveaxis(weights, 0, 1)
+    weights = weights.reshape(ntimesteps, nspoke, -1)
+    weights=weights[retained_timesteps]
+
+    return weights,retained_timesteps
+
 
 
 def plot_image_grid(list_images,nb_row_col,figsize=(10,10),title="",cmap=None,save_file=None):
