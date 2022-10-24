@@ -3485,26 +3485,20 @@ class SimpleDictSearch(Optimizer):
             else:
                 mu0 = self.paramDict["mu"]
 
+
+
+
             signals *= mu0
             print("Mu0 : {}".format(mu0))
+            signals0 = copy(signals)/mu0
+
             if "mu_TV" in self.paramDict:
                 mu_TV = self.paramDict["mu_TV"]
-                grad_TV = grad_J_TV(volumes, 1, mask=mask) + grad_J_TV(volumes, 2, mask=mask)
-                grad_TV = grad_TV[:, mask > 0]
-                grad_norm = np.linalg.norm(signals / mu0, axis=0)
-                grad_TV_norm = np.linalg.norm(grad_TV, axis=0)
-                signals -= mu0 * mu_TV * grad_norm / grad_TV_norm * grad_TV
 
-                # signals_corrected=signals-0.5*grad_norm/grad_TV_norm*grad_TV
-
-                # ts=0
-                # vol_no_TV=makevol(signals[ts],mask>0)
-                # vol_TV = makevol(signals_corrected[ts],mask>0)
-                # from utils_mrf import animate_multiple_images
-                # animate_multiple_images(vol_no_TV,vol_TV)
-
-                # del grad_TV
-            signals0 = signals
+                if "weights_TV" not in self.paramDict:
+                    self.paramDict["weights_TV"]=[1.,0.,0.]
+                weights_TV=np.array(self.paramDict["weights_TV"])
+                weights_TV/=np.sum(weights_TV)
 
         del volumes
 
@@ -3644,33 +3638,7 @@ class SimpleDictSearch(Optimizer):
                 mempool.free_all_blocks()
                 print("Cupy memory usage {}:".format(mempool.used_bytes()))
 
-            if i > 0 and threshold is not None:
-                all_signals = all_signals_unthresholded
-                if not (self.paramDict["return_matched_signals"]):
-                    map_rebuilt, J_optim, phase_optim = match_signals(all_signals, keys, pca_water, pca_fat,
-                                                                      array_water_unique, array_fat_unique,
-                                                                      transformed_array_water_unique,
-                                                                      transformed_array_fat_unique, var_w, var_f,
-                                                                      sig_wf, pca, index_water_unique,
-                                                                      index_fat_unique, remove_duplicates, verbose,
-                                                                      niter, split, useGPU_dictsearch, mask,
-                                                                      tv_denoising_weight)
-                else:
-                    map_rebuilt, J_optim, phase_optim, matched_signals = match_signals(all_signals, keys, pca_water,
-                                                                                       pca_fat,
-                                                                                       array_water_unique,
-                                                                                       array_fat_unique,
-                                                                                       transformed_array_water_unique,
-                                                                                       transformed_array_fat_unique,
-                                                                                       var_w, var_f,
-                                                                                       sig_wf, pca,
-                                                                                       index_water_unique,
-                                                                                       index_fat_unique,
-                                                                                       remove_duplicates, verbose,
-                                                                                       niter, split,
-                                                                                       useGPU_dictsearch, mask,
-                                                                                       tv_denoising_weight,
-                                                                                       return_matched_signals=True)
+
 
             print("Generating prediction volumes and undersampled images for iteration {}".format(i))
             # generate prediction volumes
@@ -3709,7 +3677,9 @@ class SimpleDictSearch(Optimizer):
             # signals = matched_signals +  signals0 - signalsi
             # mu=0.01;signals = mu*matched_signals +  mu*signals0 - mu**2*signalsi
             # j=np.random.choice(signals0.shape[1]);import matplotlib.pyplot as plt;plt.figure();plt.plot(signals0[:,j]/np.linalg.norm(signals0[:,j]));plt.plot(matched_signals[:,j]/np.linalg.norm(matched_signals[:,j]));plt.plot(signals[:,j]/np.linalg.norm(signals[:,j]));
-            grad = signalsi - signals0 / mu0
+            grad = signalsi - signals0
+            del signalsi
+
 
             # if "kdata_init" in self.paramDict:
             #    print("Debugging cost function")
@@ -3726,6 +3696,7 @@ class SimpleDictSearch(Optimizer):
                 kdata_grad = generate_kdata_multi(grad_volumes, trajectory, self.paramDict["b1"],
                                                   ntimesteps=ntimesteps)
 
+                del grad_volumes
                 mu_numerator = 0
                 mu_denom = 0
 
@@ -3742,7 +3713,7 @@ class SimpleDictSearch(Optimizer):
                                                                   trajectory.paramDict["npoint"])).flatten().conj(),
                                curr_kdata_grad))
                     mu_numerator += np.real(np.dot(curr_grad.conj(), curr_grad))
-
+                del kdata_grad
                 mu = -num_samples * mu_numerator / mu_denom
                 # mu/=2
             elif self.paramDict["mu"] == "Brute":
@@ -3755,41 +3726,48 @@ class SimpleDictSearch(Optimizer):
                 mu = -self.paramDict["mu"]
             print("Mu for iter {} : {}".format(i, mu))
 
-            # if "mu_TV" in self.paramDict:
-            #    grad_TV = grad_J_TV(matched_volumes, 1, mask=mask) + grad_J_TV(matched_volumes, 2, mask=mask)
-            #    grad_TV = grad_TV[:,mask>0]
-            #    grad_norm = np.linalg.norm(grad, axis=0)
-            #    grad_TV_norm = np.linalg.norm(grad_TV, axis=0)
-            #    signals = matched_signals + mu * grad
-            #
-            #    signals += mu*mu_TV * grad_norm / grad_TV_norm * grad_TV
-            #
-            #     # mu_TV_list = np.linspace(0.22,0.45,4)
-            #     # J_list=[]
-            #     # for mu_TV in tqdm(mu_TV_list):
-            #     #     signals_corrected = signals + mu_TV * mu * grad_norm / grad_TV_norm * grad_TV
-            #     #     volumes_corrected=np.array([makevol(im, mask > 0) for im in signals_corrected])
-            #     #     J_list.append(J(volumes_corrected, kdata_init, True, trajectory))
-            #     # J_list = np.array(J_list)
-            #     # import matplotlib.pyplot as plt
-            #     # plt.figure();plt.plot(mu_TV_list,J_list)
-            #
-            #    # signals_corrected=signals+0.2*mu*grad_norm/grad_TV_norm*grad_TV
-            #    #  #
-            #    # ts=0
-            #    # vol_no_TV=makevol(signals[ts],mask>0)
-            #    # vol_TV = makevol(signals_corrected[ts],mask>0)
-            #    # from utils_mrf import animate_multiple_images
-            #    # animate_multiple_images(vol_no_TV,vol_TV)
-            #    # import matplotlib.pyplot as plt
-            #    # plt.figure()
-            #    # plt.plot(vol_no_TV[6,128, :])
-            #    # plt.plot(vol_TV[6,128,:])
+            signals = matched_signals + mu * grad
+            del grad
+            del matched_signals
+
+            if "mu_TV" in self.paramDict:
+                print("Applying TV regularization")
+                grad_TV = weights_TV[0] * grad_J_TV(matched_volumes, 0, mask=mask) + weights_TV[1] * grad_J_TV(
+                    matched_volumes, 1, mask=mask) + weights_TV[2] * grad_J_TV(matched_volumes, 2, mask=mask)
+                grad_TV = grad_TV[:, mask > 0]
+                grad_norm = np.linalg.norm(grad, axis=0)
+                grad_TV_norm = np.linalg.norm(grad_TV, axis=0)
+                #signals = matched_signals + mu * grad
+
+                signals += mu * mu_TV * grad_norm / grad_TV_norm * grad_TV
+                del grad_TV
+
+                # mu_TV_list = np.linspace(0.22,0.45,4)
+                # J_list=[]
+                # for mu_TV in tqdm(mu_TV_list):
+                #     signals_corrected = signals + mu_TV * mu * grad_norm / grad_TV_norm * grad_TV
+                #     volumes_corrected=np.array([makevol(im, mask > 0) for im in signals_corrected])
+                #     J_list.append(J(volumes_corrected, kdata_init, True, trajectory))
+                # J_list = np.array(J_list)
+                # import matplotlib.pyplot as plt
+                # plt.figure();plt.plot(mu_TV_list,J_list)
+
+               # signals_corrected=signals+0.2*mu*grad_norm/grad_TV_norm*grad_TV
+               #  #
+               # ts=0
+               # vol_no_TV=makevol(signals[ts],mask>0)
+               # vol_TV = makevol(signals_corrected[ts],mask>0)
+               # from utils_mrf import animate_multiple_images
+               # animate_multiple_images(vol_no_TV,vol_TV)
+               # import matplotlib.pyplot as plt
+               # plt.figure()
+               # plt.plot(vol_no_TV[6,128, :])
+               # plt.plot(vol_TV[6,128,:])
             #
             # else:
             #     signals = matched_signals +mu* grad
-            signals = matched_signals + mu * grad
-            del grad
+            del matched_volumes
+
             # norm_signals = np.linalg.norm(signals, axis=0)
             # all_signals_unthresholded = signals / norm_signals
 
@@ -4224,7 +4202,7 @@ class SimpleDictSearch(Optimizer):
                 grad_TV = grad_TV[:,mask>0]
                 grad_norm = np.linalg.norm(grad, axis=0)
                 grad_TV_norm = np.linalg.norm(grad_TV, axis=0)
-                signals = matched_signals + mu * grad
+                #signals = matched_signals + mu * grad
 
                 signals += mu*mu_TV * grad_norm / grad_TV_norm * grad_TV
                 del grad_TV

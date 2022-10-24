@@ -421,7 +421,7 @@ mrfdict.save(dictfile, overwrite=overwrite)
 import numpy as np
 import pandas as pd
 import json
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v2_1_87.json") as f:
+with open("./mrf_sequence_adjusted_760.json") as f:
     sequence_config = json.load(f)
 
 TE=sequence_config["TE"]

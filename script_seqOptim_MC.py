@@ -667,7 +667,7 @@ fat_shift = -np.array(dict_config["fat_cshift"])
 TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized.json",3,1.94/1000)
 TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted.json",3,1.94/1000)
 
-spokes_count=1400
+spokes_count=760
 
 TE_new = np.zeros(spokes_count + 1)
 TR_new = np.zeros(spokes_count + 1)
@@ -678,7 +678,6 @@ for i in range(spokes_count):
     FA_new[i + 1] = FA_list[int((i+1) * (len(FA_list) - 1) / spokes_count)]
 FA_breaks=[0]+list(np.argwhere(np.diff(np.array(FA_new[1:]))!=0).flatten())+[spokes_count]
 TE_breaks=[0]+list(np.argwhere(np.diff(np.array(TE_new[1:]))!=0).flatten())+[spokes_count]
-
 
 def cost_function_simul_breaks(params):
     global spokes_count
@@ -832,6 +831,9 @@ cost_function_simul_breaks(res.x)
 
 TR_,FA_,TE_=convert_params_to_sequence_breaks(res.x,min_TR_delay,num_breaks_TE,num_breaks_FA,spokes_count)
 
+TR_,FA_,TE_=convert_params_to_sequence_breaks(np.array(params_0),1.87/1000,num_breaks_TE,num_breaks_FA,spokes_count)
+
+
 plt.figure()
 plt.plot(FA_[1:])
 
@@ -839,7 +841,7 @@ plt.plot(FA_[1:])
 plt.figure()
 plt.plot(TE_[1:])
 
-generate_epg_dico_T1MRFSS(r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v2.json","./mrf_dictconf_SimReco2_lightDFB1.json",FA_,TE_,4,1.87/1000,fileseq_basis="./mrf_sequence_adjusted.json")
+generate_epg_dico_T1MRFSS(r"./mrf_sequence_adjusted_760.json","./mrf_dictconf_Dico2_Invivo_lightDFB1.json",FA_,TE_,3,1.87/1000,fileseq_basis="./mrf_sequence_adjusted.json")
 
 
 
