@@ -132,6 +132,8 @@ dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_1_87_reco4_w8_simmean.dic
 #mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v2_1_87_reco3
 
 
+undersampling_factor=2
+
 filename = base_folder+localfile
 
 filename_save=str.split(filename,".dat") [0]+".npy"
@@ -142,11 +144,11 @@ folder = "/".join(str.split(filename,"/")[:-1])
 
 suffix="_allspokes8"
 
-filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
+filename_b1 = str.split(filename,".dat") [0]+"_us{}_b1{}.npy".format(undersampling_factor,"")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 
-filename_volume = str.split(filename,".dat") [0]+"_volumes{}.npy".format("")
-filename_kdata = str.split(filename,".dat") [0]+"_kdata{}.npy".format("")
+filename_volume = str.split(filename,".dat") [0]+"_us{}_volumes{}.npy".format(undersampling_factor,"")
+filename_kdata = str.split(filename,".dat") [0]+"_us{}_kdata{}.npy".format(undersampling_factor,"")
 filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
 filename_mask='./data/InVivo/3D/patient.003.v3/meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_mask.npy'
 
@@ -230,7 +232,7 @@ x_FOV = dico_seqParams["x_FOV"]
 y_FOV = dico_seqParams["y_FOV"]
 z_FOV = dico_seqParams["z_FOV"]
 nb_part = dico_seqParams["nb_part"]
-undersampling_factor = dico_seqParams["alFree"][9]
+#undersampling_factor = dico_seqParams["alFree"][9]
 
 del dico_seqParams
 
@@ -335,7 +337,7 @@ data_shape = data.shape
 nb_channels=data_shape[0]
 nb_allspokes = data_shape[-3]
 npoint = data_shape[-1]
-nb_slices = data_shape[-2]*undersampling_factor
+nb_slices = data_shape[-2]
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
 
 
@@ -363,9 +365,20 @@ if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
     #del data
     print("Performing Density Adjustment....")
     data *= density
-    np.save(filename_kdata, data)
-    del data
+    #np.save(filename_kdata, data)
+    #del data
+    data = data.reshape(nb_channels, ntimesteps, -1, nb_slices,npoint)
+    kdata_group = np.zeros((nb_channels, ntimesteps, int(nb_allspokes / ntimesteps), int(nb_slices / undersampling_factor), npoint),dtype=data.dtype)
 
+    shift = 0
+
+    for ts in range(ntimesteps):
+        kdata_group[:, ts, :, :, :] = data[:, ts, :, shift::undersampling_factor, :]
+        shift += 1
+        shift = shift % (undersampling_factor)
+
+    kdata_group = kdata_group.reshape(nb_channels, nb_allspokes, int(nb_slices / undersampling_factor), npoint)
+    np.save(filename_kdata,kdata_group)
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
 else:
@@ -429,7 +442,7 @@ if nb_channels==1:
 # # #
 # radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 # radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
-# volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True)[0]
+# volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True)[0]
 # #
 # animate_images(volume_outofphase)
 #
@@ -493,9 +506,9 @@ volumes_all = np.load(filename_volume)
 #mask=new_mask
 
 #animate_images(mask)
-suffix="_lightDFB1"
+suffix="_lightDFB1_us".format(undersampling_factor)
 if not(load_map):
-    niter = 0
+    niter = 10
     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=10,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative")#,mu_TV=1,weights_TV=[1.,0.,0.])
     all_maps=optimizer.search_patterns_test_multi(dictfile,volumes_all,retained_timesteps=None)
 
@@ -516,6 +529,8 @@ else:
     file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
     file = open(file_map, "rb")
     all_maps = pickle.load(file)
+
+
 
 
 curr_file=file_map

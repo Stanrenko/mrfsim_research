@@ -1,7 +1,7 @@
 from utils_simu import *
 from dictoptimizers import SimpleDictSearch
 
-generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted.json","mrf_dictconf_SimReco2.json",4,sim_mode="mid_point",start=0,window=int(1400/50))
+generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted_1_87.json","mrf_dictconf_Dico2_Invivo_lightDFB1.json",4)
 
 #TR_list,FA_list,TE_list=load_sequence_file("mrf_sequence_adjusted.json",3,1.87/1000)
 #

@@ -176,32 +176,111 @@ def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersa
     result = np.stack([traj.real,traj.imag, k_z], axis=-1)
     return result.reshape(result.shape[0],-1,result.shape[-1])
 
+
+
+# def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,mode="old",offset=0):
+#     timesteps = int(total_nspoke / nspoke)
+#     nb_rep = int(nb_slices / undersampling_factor)
+#     all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
+#     golden_angle = 111.246 * np.pi / 180
+#     if mode=="old":
+#         all_rotations = np.exp(1j * np.arange(nb_rep) * total_nspoke * golden_angle)
+#     elif mode=="new":
+#         all_rotations = np.exp(1j * np.arange(nb_rep) * golden_angle)
+#     else:
+#         raise ValueError("Unknown value for mode")
+#     all_spokes = np.repeat(np.expand_dims(all_spokes, axis=1), nb_rep, axis=1)
+#     traj = all_rotations[np.newaxis, :, np.newaxis] * all_spokes
+#
+#     k_z = np.zeros((timesteps, nb_rep))
+#     all_slices = np.linspace(-np.pi, np.pi, nb_slices)
+#     k_z[0, :] = all_slices[offset::undersampling_factor]
+#     for j in range(1, k_z.shape[0]):
+#         k_z[j, :] = np.sort(np.roll(all_slices, -j)[offset::undersampling_factor])
+#
+#     k_z=np.repeat(k_z, nspoke, axis=0)
+#     k_z = np.expand_dims(k_z, axis=-1)
+#     k_z, traj = np.broadcast_arrays(k_z, traj)
+#
+#     result = np.stack([traj.real,traj.imag, k_z], axis=-1)
+#     return result.reshape(result.shape[0],-1,result.shape[-1])
+
 def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,mode="old",offset=0):
     timesteps = int(total_nspoke / nspoke)
     nb_rep = int(nb_slices / undersampling_factor)
-    all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
+
     golden_angle = 111.246 * np.pi / 180
+    all_slices = np.linspace(-np.pi, np.pi, nb_slices)
+
+    # all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
+    # if mode=="old":
+    #     all_rotations = np.exp(1j * np.arange(nb_rep) * total_nspoke * golden_angle)
+    # elif mode=="new":
+    #     all_rotations = np.exp(1j * np.arange(nb_rep) * golden_angle)
+    # else:
+    #     raise ValueError("Unknown value for mode")
+    # all_spokes = np.repeat(np.expand_dims(all_spokes, axis=1), nb_rep, axis=1)
+    # traj = all_rotations[np.newaxis, :, np.newaxis] * all_spokes
+    #
+    # k_z = np.zeros((timesteps, nb_rep))
+    # k_z[0, :] = all_slices[offset::undersampling_factor]
+    # for j in range(1, k_z.shape[0]):
+    #     k_z[j, :] = np.sort(np.roll(all_slices, -j)[offset::undersampling_factor])
+    #
+    # k_z=np.repeat(k_z, nspoke, axis=0)
+    # k_z = np.expand_dims(k_z, axis=-1)
+    # k_z, traj = np.broadcast_arrays(k_z, traj)
+    #
+    # result = np.stack([traj.real,traj.imag, k_z], axis=-1)
+    # return result.reshape(result.shape[0],-1,result.shape[-1])
+
+    all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
     if mode=="old":
-        all_rotations = np.exp(1j * np.arange(nb_rep) * total_nspoke * golden_angle)
+        all_rotations = np.exp(1j * np.arange(nb_slices) * total_nspoke * golden_angle)
     elif mode=="new":
-        all_rotations = np.exp(1j * np.arange(nb_rep) * golden_angle)
+        all_rotations = np.exp(1j * np.arange(nb_slices) * golden_angle)
     else:
         raise ValueError("Unknown value for mode")
-    all_spokes = np.repeat(np.expand_dims(all_spokes, axis=1), nb_rep, axis=1)
+
+    all_spokes = np.repeat(np.expand_dims(all_spokes, axis=1), nb_slices, axis=1)
     traj = all_rotations[np.newaxis, :, np.newaxis] * all_spokes
 
-    k_z = np.zeros((timesteps, nb_rep))
-    all_slices = np.linspace(-np.pi, np.pi, nb_slices)
-    k_z[0, :] = all_slices[offset::undersampling_factor]
+    k_z=np.zeros((timesteps, nb_slices))
+    k_z[0, :] = all_slices
     for j in range(1, k_z.shape[0]):
-        k_z[j, :] = np.sort(np.roll(all_slices, -j)[offset::undersampling_factor])
+        k_z[j, :] = np.sort(np.roll(all_slices, -j))
 
     k_z=np.repeat(k_z, nspoke, axis=0)
     k_z = np.expand_dims(k_z, axis=-1)
     k_z, traj = np.broadcast_arrays(k_z, traj)
 
     result = np.stack([traj.real,traj.imag, k_z], axis=-1)
-    return result.reshape(result.shape[0],-1,result.shape[-1])
+
+
+    if undersampling_factor>1:
+        result = result.reshape(timesteps, nspoke, -1, npoint, result.shape[-1])
+        result_us=np.zeros((timesteps, nspoke, nb_rep, npoint, 3),
+                          dtype=result.dtype)
+        shift = offset
+
+        for ts in range(timesteps):
+
+            result_us[ts, :, :, :, :] = result[ts, :, shift::undersampling_factor, :, :]
+            shift += 1
+            shift = shift % (undersampling_factor)
+
+        result=result_us
+
+
+    return result.reshape(total_nspoke,-1,3)
+
+
+
+
+
+
+
+
 
 
 def radial_golden_angle_traj_random_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,frac_center=0.25,mode="old",incoherent=True):
@@ -2236,12 +2315,13 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
                     else:
                         for j in tqdm(range(nb_channels)):
 
-                            index_non_zero_kdata=np.nonzero(kdata[j][i])
-                            kdata_current=kdata[j][i][index_non_zero_kdata]
-                            t_current=t[index_non_zero_kdata]
-                            print(t_current.shape)
-                            print(kdata_current.shape)
-                            fk = finufft.nufft3d1(t_current[:, 2], t_current[:, 0], t_current[:, 1], kdata_current, size)
+                            #index_non_zero_kdata=np.nonzero(kdata[j][i])
+                            #kdata_current=kdata[j][i][index_non_zero_kdata]
+                            #t_current=t[index_non_zero_kdata]
+                            kdata_current = kdata[j][i]
+                            #print(t_current.shape)
+                            #print(kdata_current.shape)
+                            fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kdata_current, size)
                             if b1 is None:
                                 images_series_rebuilt[i] += np.abs(fk) ** 2
                             else:

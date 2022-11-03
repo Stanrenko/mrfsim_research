@@ -814,16 +814,18 @@ def convert_params_to_sequence_breaks_common(params, min_TR_delay, num_breaks_TE
     TE_ = np.zeros(spokes_count + 1)
     # print(num_breaks_TE)
     # print(num_breaks_FA)
-    TE_breaks = params[:(num_breaks_FA + num_breaks_TE)][1::2].astype(int)
+    TE_breaks = params[:(num_breaks_FA + num_breaks_TE)][:3].astype(int)
     FA_breaks = params[:(num_breaks_FA + num_breaks_TE)].astype(int)
-    TE_breaks = [0] + list(np.cumsum(TE_breaks)) + [spokes_count]
+
+    TE_breaks = [0] + list(np.cumsum(TE_breaks)[[0,2]]) + [spokes_count]
     FA_breaks = [0] + list(np.cumsum(FA_breaks)) + [spokes_count]
+    #print(params)
     # print(TE_breaks)
     # print(FA_breaks)
     for j in range(num_breaks_TE + 1):
         TE_[(TE_breaks[j] + 1):(TE_breaks[j + 1] + 1)] = params[num_breaks_TE + num_breaks_FA + j]
     FA_ = np.zeros(spokes_count + 1)
-    for j in range(num_breaks_FA + 1):
+    for j in range(len(FA_breaks)-1):
         FA_[(FA_breaks[j] + 1):(FA_breaks[j + 1] + 1)] = params[j + num_breaks_TE + 1 + num_breaks_TE + num_breaks_FA]
 
     FA_[0] = np.pi
@@ -833,6 +835,82 @@ def convert_params_to_sequence_breaks_common(params, min_TR_delay, num_breaks_TE
     if not (inversion):
         FA_[0] = 0
         TR_[0] = 0
+    TR_[1:] = np.array(TE_[1:]) + min_TR_delay
+    TR_[-1] = TR_[-1] + params[-1]
+    TR_ = list(TR_)
+    return TR_, FA_, TE_
+
+def generate_random_curve(T, params_rho,params_phi,bound_min,bound_max):
+    #FA_bound_min = np.random.choice(np.arange(5, 16)) * np.pi / 180
+    #FA_bound_max = np.random.choice(np.arange(30, 60)) * np.pi / 180
+    H=len(params_rho)
+    rho = (params_rho * np.logspace(-0.5, -2.5, H)).reshape(-1, 1)
+    phi = (params_phi * 2 * np.pi).reshape(-1, 1)
+
+    t = np.arange(0, 2 * np.pi, 2 * np.pi / T).reshape(1, -1)
+
+    traj = np.sum(rho * np.sin(np.arange(1, H + 1).reshape(-1, 1) @ t + phi), axis=0)
+    traj_min = np.min(traj)
+    traj_max = np.max(traj)
+
+    traj = (traj - traj_min) / (traj_max - traj_min) * (bound_max - bound_min) + bound_min
+
+    #traj = [np.pi] + list(FA_traj)
+
+    return traj
+
+
+def convert_params_to_sequence_breaks_random(params, min_TR_delay, spokes_count, bound_min_TE,bound_max_TE,bound_min_FA,bound_max_FA,inversion=True):
+    nb_params=len(params)
+    params_TE=params[:int((nb_params-1)/2)]
+    params_FA = params[int((nb_params-1)/2):-1]
+    nb_params_TE=int(len(params_TE)/2)
+    nb_params_FA = int(len(params_FA) / 2)
+
+    TE_=generate_random_curve(spokes_count, params_TE[:int(nb_params_TE)],params_TE[int(nb_params_TE):],bound_min_TE,bound_max_TE)
+    FA_ = generate_random_curve(spokes_count, params_FA[:int(nb_params_FA)], params_FA[int(nb_params_FA):], bound_min_FA,
+                                bound_max_FA)
+    FA_=[np.pi]+list(FA_)
+    TE_ = [0] + list(TE_)
+
+    TR_ = np.zeros(spokes_count + 1)
+    TR_[0] = 8.32 / 1000
+
+    if not (inversion):
+        FA_[0] = 0
+        TR_[0] = 0
+
+    TR_[1:] = np.array(TE_[1:]) + min_TR_delay
+    TR_[-1] = TR_[-1] + params[-1]
+    TR_ = list(TR_)
+    return TR_, FA_, TE_
+
+def convert_params_to_sequence_breaks_random_FA(params, min_TR_delay, spokes_count,num_breaks_TE,num_params_FA,
+                                                 bound_min_FA, bound_max_FA, inversion=True):
+    TE_ = np.zeros(spokes_count + 1)
+    # print(num_breaks_TE)
+    # print(num_breaks_FA)
+    TE_breaks = params[:num_breaks_TE].astype(int)
+    TE_breaks = [0] + list(np.cumsum(TE_breaks)) + [spokes_count]
+    # print(TE_breaks)
+    # print(FA_breaks)
+    for j in range(num_breaks_TE + 1):
+        TE_[(TE_breaks[j] + 1):(TE_breaks[j + 1] + 1)] = params[num_breaks_TE + j]
+
+    params_FA = params[(2*num_breaks_TE+1):(2*num_breaks_TE+1+num_params_FA)]
+    nb_params_FA = int(len(params_FA) / 2)
+    FA_ = generate_random_curve(spokes_count, params_FA[:int(nb_params_FA)], params_FA[int(nb_params_FA):],bound_min_FA,bound_max_FA)
+    FA_ = [np.pi] + list(FA_)
+
+    #TE_ = [0] + list(TE_)
+
+    TR_ = np.zeros(spokes_count + 1)
+    TR_[0] = 8.32 / 1000
+
+    if not (inversion):
+        FA_[0] = 0
+        TR_[0] = 0
+
     TR_[1:] = np.array(TE_[1:]) + min_TR_delay
     TR_[-1] = TR_[-1] + params[-1]
     TR_ = list(TR_)
