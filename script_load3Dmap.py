@@ -157,6 +157,9 @@ sm.graphics.mean_diff_plot(m2["ff"], m1["ff"])
 
 #compare_maps ROI
 
+
+
+
 import pickle
 from utils_mrf import *
 from mutools import io
@@ -167,29 +170,28 @@ folder ="./data/InVivo/3D/patient.003.v3/"
 #meas_MID00360_FID09597_raFin_3D_tra_1x1x5mm_FULL_1400_DE_FF_reco4_allspokes8_MRF_map
 file_maps=[
             #"meas_MID00033_FID09694_raFin_3D_tra_1x1x5mm_FULL_new_volumes_MRF_map.pkl",
-            "meas_MID00034_FID09695_raFin_3D_tra_1x1x5mm_FULL_DE_reco3_MRF_map.pkl"
-#"meas_MID00034_FID09695_raFin_3D_tra_1x1x5mm_FULL_DE_reco3CS_MRF_map.pkl"
+            "meas_MID00034_FID09695_raFin_3D_tra_1x1x5mm_FULL_DE_reco3_allspokes8_MRF_map.pkl",
+"meas_MID00034_FID09695_raFin_3D_tra_1x1x5mm_FULL_DE_reco3CS_MRF_map.pkl"
+
            #"meas_MID00028_FID07406_raFin_3D_tra_1x1x5mm_FULL_optimCorrelShorten_allspokes8_MRF_map.pkl",
            #"meas_MID00028_FID07406_raFin_3D_tra_1x1x5mm_FULL_optimCorrelShorten_allspokes8_DicoInvivo_MRF_map.pkl"
            ]
 
 file_maps=[
+            #"meas_MID00033_FID09694_raFin_3D_tra_1x1x5mm_FULL_new_volumes_MRF_map.pkl",
             "meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_MRF_map.pkl",
-            "meas_MID00023_FID13880_raFin_3D_tra_1x1x5mm_FULL_760_DE_reco3_MRF_map.pkl",
-            "meas_MID00024_FID13881_raFin_3D_tra_1x1x5mm_FULL_760_old_reco3_MRF_map.pkl"
+            "meas_MID00024_FID13881_raFin_3D_tra_1x1x5mm_FULL_760_old_reco3_volumes_CF_iterative_MRF_map.pkl",
+"meas_MID00023_FID13880_raFin_3D_tra_1x1x5mm_FULL_760_DE_reco3_volumes_CF_iterative_MRF_map.pkl"
+
+           #"meas_MID00028_FID07406_raFin_3D_tra_1x1x5mm_FULL_optimCorrelShorten_allspokes8_MRF_map.pkl",
+           #"meas_MID00028_FID07406_raFin_3D_tra_1x1x5mm_FULL_optimCorrelShorten_allspokes8_DicoInvivo_MRF_map.pkl"
            ]
 
 
 file_maps=[
-            "meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_MRF_map.pkl",
-            "meas_MID00022_FID13879_raFin_3D_tra_1x1x5mm_US4_1400_old_volumes_CF_iterative_MRF_map.pkl"
-           ]
-
-file_maps=[
-            "meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_MRF_map.pkl",
-            "meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_lightDFB1_MRF_map.pkl"
-           ]
-
+    "meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_lightDFB1_MRF_map.pkl",
+    "meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_lightDFB1_us_MRF_map.pkl"
+    ]
 
 file_ROI=folder+"roi_test_one_slice.mha"
 
@@ -207,15 +209,7 @@ all_maps_1=dico_maps[file_maps[0]]
 maskROI=np.array(ROI_data)[all_maps_1[0][1]>0]
 #maskROI = buildROImask(all_maps_1[0][0],max_clusters=10)
 
-# test=makevol(maskROI==6,all_maps_1[0][1]>0)
-# animate_images(test)
 
-# maskROI[maskROI==9]=0
-# maskROI[maskROI==4]=0
-# maskROI[maskROI==11]=0
-
-# test=makevol(maskROI,all_maps_1[0][1]>0)
-# animate_images(test)
 
 #regression_paramMaps_ROI(all_maps_1[0][0],all_maps_2[0][0],all_maps_1[0][1]>0,all_maps_2[0][1]>0,save=True,fontsize=5,mode="Standard",adj_wT1=False,maskROI=maskROI,title="No Reco vs Full Reco")
 #regression_paramMaps_ROI(all_maps_1[0][0],all_maps_2_optim[0][0],all_maps_1[0][1]>0,all_maps_2_optim[0][1]>0,save=True,fontsize=5,mode="Standard",adj_wT1=False,maskROI=maskROI,title="No Reco Optim vs Full Reco"e)
@@ -224,8 +218,8 @@ dico_values={}
 for k in dico_maps.keys():
     all_maps_2=dico_maps[k]
     for iter in all_maps_2.keys():
-        #if iter<3:
-        dico_values[k+"_it{}".format(iter)]=get_ROI_values(all_maps_1[0][0],all_maps_2[iter][0],all_maps_1[0][1]>0,all_maps_2[iter][1]>0,maskROI=maskROI,return_std=True)
+        if (iter==0)or(k=="meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_lightDFB1_us_MRF_map.pkl"):
+            dico_values[k+"_it{}".format(iter)]=get_ROI_values(all_maps_1[0][0],all_maps_2[iter][0],all_maps_1[0][1]>0,all_maps_2[iter][1]>0,maskROI=maskROI,return_std=True)
 
 
 #volume_ROI=makevol(maskROI,all_maps_1[0][1]>0)
@@ -238,18 +232,16 @@ import statsmodels.api as sm
 
 k = "wT1"
 for key in list(dico_values.keys())[1:]:
-
     values=dico_values[key][k].sort_values(by=["Obs Mean"])
-    print(values)
     sm.graphics.mean_diff_plot(np.array(values[["Obs Mean"]]).flatten(), np.array(values[["Pred Mean"]]).flatten());
     plt.title("{} : {} vs Reference Sequence".format(k,key))
 
 k = "ff"
 for key in list(dico_values.keys())[1:]:
     values=dico_values[key][k].sort_values(by=["Obs Mean"])
-    print(values)
     sm.graphics.mean_diff_plot(np.array(values[["Obs Mean"]]).flatten(), np.array(values[["Pred Mean"]]).flatten());
     plt.title("{} : {} vs Reference Sequence".format(k,key))
+
 
 plt.figure()
 k="wT1"

@@ -3685,10 +3685,11 @@ class SimpleDictSearch(Optimizer):
             #    print("Debugging cost function")
             #    #volumes = np.array([makevol(im, mask > 0) for im in signals0])
             #    grad_volumes = np.array([makevol(im, mask > 0) for im in grad])
-            #    mu_list=np.linspace(-1.6,-0,8)
+            #    mu_list=np.linspace(-1.6,-0,16)
             #    J_list=[J(matched_volumes +mu_* grad_volumes,kdata_init,True,trajectory) for mu_ in mu_list]
             #    import matplotlib.pyplot as plt
             #    plt.figure();plt.plot(mu_list,J_list)
+            #     plt.axvline(x=mu,color="red")
 
             if self.paramDict["mu"] == "Adaptative":
 
