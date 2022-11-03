@@ -1,0 +1,21 @@
+{"sigma":0.6 ,
+ "noise_type":"Relative",
+ "noise_size":100,
+ "DFs":[-30,0,30],
+ "FFs":[0,0.1,0.2,0.3,0.4,0.5],
+ "B1s":[0.5,0.7,1],
+ "T1s":[0.6, 0.8, 1 , 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 2 ],
+ "inversion":True,
+ "min_TR_delay":0.00187,
+ "bound_min_TE":0.0022,
+ "bound_max_TE":0.004,
+ "bound_min_FA":0.087266,
+ "H":3,
+ "lambda_FA":0,
+ "lambda_time":0,
+ "lambda_FF":2,
+ "lambda_T1":1,
+ "lambda_stdT1":0,
+ "maxiter":2
+}
+
