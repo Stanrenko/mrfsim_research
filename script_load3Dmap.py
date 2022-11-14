@@ -165,7 +165,7 @@ from utils_mrf import *
 from mutools import io
 
 
-folder ="./data/InVivo/3D/patient.003.v3/"
+folder ="./data/InVivo/3D/patient.003.v4/"
 
 #meas_MID00360_FID09597_raFin_3D_tra_1x1x5mm_FULL_1400_DE_FF_reco4_allspokes8_MRF_map
 file_maps=[
@@ -189,11 +189,18 @@ file_maps=[
 
 
 file_maps=[
-    "meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_lightDFB1_MRF_map.pkl",
-    "meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_lightDFB1_us_MRF_map.pkl"
+    "meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_lightDFB1_MRF_map.pkl",
+    #"meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_lightDFB1_us_4_MRF_map.pkl",
+    "meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_us4_volumes_CF_iterative_MRF_map.pkl"
     ]
 
-file_ROI=folder+"roi_test_one_slice.mha"
+file_maps=[
+    "meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_lightDFB1_MRF_map.pkl",
+    #"meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_lightDFB1_us_4_MRF_map.pkl",
+    "meas_MID00061_FID14883_raFin_3D_tra_1x1x5mm_FULL_760_DE_reco3_lightDFB1_MRF_map.pkl"
+    ]
+
+file_ROI=folder+"roi.mha"
 
 dico_maps={}
 
@@ -218,8 +225,8 @@ dico_values={}
 for k in dico_maps.keys():
     all_maps_2=dico_maps[k]
     for iter in all_maps_2.keys():
-        if (iter==0)or(k=="meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_lightDFB1_us_MRF_map.pkl"):
-            dico_values[k+"_it{}".format(iter)]=get_ROI_values(all_maps_1[0][0],all_maps_2[iter][0],all_maps_1[0][1]>0,all_maps_2[iter][1]>0,maskROI=maskROI,return_std=True)
+
+        dico_values[k+"_it{}".format(iter)]=get_ROI_values(all_maps_1[0][0],all_maps_2[iter][0],all_maps_1[0][1]>0,all_maps_2[iter][1]>0,maskROI=maskROI,return_std=True)
 
 
 #volume_ROI=makevol(maskROI,all_maps_1[0][1]>0)

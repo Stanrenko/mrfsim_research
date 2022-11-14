@@ -76,9 +76,9 @@ suffix="_DE_Simu_FF_v6_reco3.5"
 with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v6.json") as f:
     sequence_config = json.load(f)
 
-dictfile="./mrf_dictconf_SimReco2_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v4_reco3.8_w8_simmean.dict"
-suffix="_DE_Simu_FF_V4_reco3.8"
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v4.json") as f:
+dictfile="./mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
+suffix="_DE_Simu_FF_reco3"
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json") as f:
     sequence_config = json.load(f)
 #generate_epg_dico_T1MRFSS_from_sequence_file("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json","./mrf_dictconf_SimReco2_lightDFB1.json",3)
 # dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v3_reco3.6.dict"
@@ -100,10 +100,10 @@ with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filte
 # with open("./mrf_sequence_adjusted.json") as f:
 #     sequence_config = json.load(f)
 #
-# dictfile="mrf175_SimReco2_adjusted.dict"
-# suffix="_fullReco"
-# with open("./mrf_sequence_adjusted.json") as f:
-#     sequence_config = json.load(f)
+dictfile="mrf175_SimReco2_adjusted.dict"
+suffix="_fullReco"
+with open("./mrf_sequence_adjusted.json") as f:
+    sequence_config = json.load(f)
 
 
 if gauss_filter:
@@ -160,15 +160,15 @@ rep=nrep-1
 TR_total = np.sum(sequence_config["TR"])
 
 Treco = TR_total-np.sum(sequence_config["TR"])
-Treco=3800
+Treco=3000
 ##other options
-sequence_config["T_recovery"]=Treco
-sequence_config["nrep"]=nrep
-sequence_config["rep"]=rep
+#sequence_config["T_recovery"]=Treco
+#sequence_config["nrep"]=nrep
+#sequence_config["rep"]=rep
 
-seq=T1MRFSS(**sequence_config)
+#seq=T1MRFSS(**sequence_config)
 
-#seq=T1MRF(**sequence_config)
+seq=T1MRF(**sequence_config)
 
 
 
@@ -299,6 +299,8 @@ if str.split(filename_kdata, "/")[-1] not in os.listdir(folder):
 
 if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
     np.save(filename_groundtruth,m.images_series[::nspoke])
+
+
 
 #animate_images(m.images_series[::nspoke,int(nb_slices/2)])
 
@@ -744,17 +746,19 @@ if not(load_map):
 
 else:
     import pickle
-    file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
+    #file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
     file = open(file_map, "rb")
     all_maps = pickle.load(file)
+    file.close()
 
-
+niter=len(all_maps.keys())
 plt.close("all")
 maskROI = buildROImask_unique(m.paramMap)
+niter=0
 for it in range(niter+1):
 
     regression_paramMaps_ROI(m.paramMap, all_maps[it][0], m.mask > 0, all_maps[it][1] > 0, maskROI, adj_wT1=True,
-                             title="it{}_regROI_".format(it) + "_".join(str.split(str.split(str.split(filename_volume, "/")[-1], ".npy")[0],".")), save=True)
+                             title="it{}_regROI_".format(it) + "_".join(str.split(str.split(str.split(filename_volume, "/")[-1], ".npy")[0],".")), save=True,fontsize_axis=10,kept_keys=["wT1","ff"],marker_size=2)
 
 #regression_paramMaps(m.paramMap,all_maps[0][0],mode="Boxplot")
 
@@ -783,6 +787,8 @@ for iter in list(range(len(all_maps.keys()))):
 
 plt.close("all")
 
+
+
 name="SquareSimu3D_SS_Multicoil"
 #name="Knee3D_SS_SimReco2_MultiCoil"
 #name="SquareSimu3D_SS_FF0_1"
@@ -804,9 +810,9 @@ list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3".format(snr),"DE_Simu_FF_v
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","old_760_reco3"]
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","old_760_reco3","DE_Simu_FF_v6_reco3.8"]
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","DE_Simu_FF_v6_reco3.8","DE_Simu_FF_random_v4_reco3.9","DE_Simu_FF_random_v5_reco4","DE_Simu_FF_random_v2_reco4","DE_Simu_FF_random_FA_v2_reco4"]
-
+list_suffix=["fullReco"]
 #list_suffix=["fullReco","DE_Simu_FF_v3_reco3.6".format(snr)]
-
+undersampling_factor=4
 #list_suffix=["fullReco_SNR_{}".format(snr)]
 dic_maps={}
 for suffix in list_suffix:
@@ -827,9 +833,9 @@ for suffix in list_suffix:
     with open(base_folder + file_map, "rb") as file:
         dic_maps[file_map] = pickle.load(file)
     #dic_maps[file_map] = all_maps
-# file_map="/{}_sl{}_rp{}_us{}{}w{}_ch{}_{}_MRF_map.pkl".format(name,nb_slices,repeat_slice,1,1400,nspoke,nb_channels,suffix)
-# with open(base_folder + file_map, "rb") as file:
-#     dic_maps["fullReco_noUS"] = pickle.load(file)
+file_map="/{}_sl{}_rp{}_us{}{}w{}_ch{}_{}_MRF_map.pkl".format(name,nb_slices,repeat_slice,1,1400,nspoke,nb_channels,suffix)
+with open(base_folder + file_map, "rb") as file:
+    dic_maps["fullReco_noUS"] = pickle.load(file)
 min_iter=0
 max_iter=min_iter+1
 k="wT1"
@@ -879,33 +885,35 @@ plt.legend()
 
 
 
+min_iter=0
+max_iter=10
+labels=["US kz x 4","No US"]
+#maskROI=buildROImask_unique(m.paramMap,key=k)
+maskROI=m.buildROImask()
 
-labels=["Undersampling kz x 4","No Undersampling"]
+df_result=pd.DataFrame()
 
+plt.figure()
+k="wT1"
 for i,key in enumerate(dic_maps.keys()):
     for it in (list(range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter),3))):
         if key=="fullReco_noUS" and it>0:
             continue
-        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
-        roi_values.sort_values(by=["Obs Mean"],inplace=True)
-        #dic_roi_values[key]=roi_values
-        if key == "fullReco_noUS":
-            ax[0].plot(roi_values["Obs Mean"], roi_values["Pred Mean"].values,
-                       label=labels[i] + " Iteration {}".format(it),linestyle="dashed",linewidth=2.0,color="k")
-            ax[1].plot(roi_values["Obs Mean"], roi_values["Pred Std"].values,
-                       label=labels[i] + " Iteration {}".format(it),linestyle="dashed",linewidth=2.0,color="k")
-
+        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI,fat_threshold=0.7)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+        #roi_values.sort_values(by=["Obs Mean"],inplace=True)
+        error=list((roi_values["Pred Mean"]-roi_values["Obs Mean"]))
+        if df_result.empty:
+            df_result=pd.DataFrame(data=error,columns=[labels[i] + " Iteration {}".format(it)])
         else:
-            ax[0].plot(roi_values["Obs Mean"], roi_values["Pred Mean"].values,
-                       label=labels[i] + " Iteration {}".format(it))
-            ax[1].plot(roi_values["Obs Mean"], roi_values["Pred Std"].values,
-                       label=labels[i] + " Iteration {}".format(it))
+            df_result[labels[i] + " Iteration {}".format(it)]=error
 
-ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="--")
-plt.legend()
+columns=[df_result.columns[-1]]+list(df_result.columns[:-1])
+df_result=df_result[columns]
+df_result.boxplot(grid=False, rot=45, fontsize=10,showfliers=False)
+plt.axhline(y=0,linestyle="dashed",color="k",linewidth=0.5)
 
 k="ff"
-maskROI=buildROImask_unique(m.paramMap,key=k)
+#maskROI=buildROImask_unique(m.paramMap,key=k)
 fig,ax=plt.subplots(1,2)
 plt.title(k)
 for i,key in enumerate(dic_maps.keys()):
@@ -926,10 +934,124 @@ for i,key in enumerate(dic_maps.keys()):
                        label=labels[i] + " Iteration {}".format(it))
 
 
-ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="--")
+ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="dotted")
 
 plt.legend()
 
+
+min_iter=0
+max_iter=10
+labels=["Undersampling kz x 4","No Undersampling"]
+#maskROI=buildROImask_unique(m.paramMap,key=k)
+maskROI=m.buildROImask()
+
+
+k="wT1"
+fig,ax=plt.subplots(1,2)
+for i,key in enumerate(dic_maps.keys()):
+    for it in (list(range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter),3))):
+        if key=="fullReco_noUS" and it>0:
+            continue
+        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI,fat_threshold=0.7)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+        roi_values.sort_values(by=["Obs Mean"],inplace=True)
+        #dic_roi_values[key]=roi_values
+        if key == "fullReco_noUS":
+            ax[0].plot(roi_values["Obs Mean"], roi_values["Pred Mean"].values,
+                       label=labels[i] + " Iteration {}".format(it),linestyle="dashed",linewidth=2.0,color="k")
+            ax[1].plot(roi_values["Obs Mean"], roi_values["Pred Std"].values,
+                       label=labels[i] + " Iteration {}".format(it),linestyle="dashed",linewidth=2.0,color="k")
+
+        else:
+            ax[0].plot(roi_values["Obs Mean"], roi_values["Pred Mean"].values,
+                       label=labels[i] + " Iteration {}".format(it))
+            ax[1].plot(roi_values["Obs Mean"], roi_values["Pred Std"].values,
+                       label=labels[i] + " Iteration {}".format(it))
+
+ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="dotted")
+plt.legend()
+
+k="ff"
+#maskROI=buildROImask_unique(m.paramMap,key=k)
+fig,ax=plt.subplots(1,2)
+plt.title(k)
+for i,key in enumerate(dic_maps.keys()):
+    for it in (list(range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter),3))):
+        if key=="fullReco_noUS" and it>0:
+            continue
+        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=False,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+        roi_values.sort_values(by=["Obs Mean"],inplace=True)
+        #dic_roi_values[key]=roi_values
+        if key=="fullReco_noUS":
+            ax[0].plot(roi_values["Obs Mean"],roi_values["Pred Mean"].values,label=labels[i]+" Iteration {}".format(it),linestyle="dashed",linewidth=2.0,color="k")
+            ax[1].plot(roi_values["Obs Mean"],roi_values["Pred Std"].values,label=labels[i]+" Iteration {}".format(it),linestyle="dashed",linewidth=2.0,color="k")
+
+        else:
+            ax[0].plot(roi_values["Obs Mean"], roi_values["Pred Mean"].values,
+                       label=labels[i] + " Iteration {}".format(it))
+            ax[1].plot(roi_values["Obs Mean"], roi_values["Pred Std"].values,
+                       label=labels[i] + " Iteration {}".format(it))
+
+
+ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="dotted")
+
+plt.legend()
+
+
+
+min_iter=0
+max_iter=10
+labels=["Undersampling kz x 4","No Undersampling"]
+#maskROI=buildROImask_unique(m.paramMap,key=k)
+maskROI=m.buildROImask()
+
+k="wT1"
+fig,ax=plt.subplots(1,2)
+for i,key in enumerate(dic_maps.keys()):
+    for it in (list(range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter),3))):
+        if key=="fullReco_noUS" and it>0:
+            continue
+        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI,fat_threshold=0.7)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+        roi_values.sort_values(by=["Obs Mean"],inplace=True)
+        #dic_roi_values[key]=roi_values
+        if key == "fullReco_noUS":
+            ax[0].scatter(roi_values["Obs Mean"], roi_values["Pred Mean"].values,
+                       label=labels[i] + " Iteration {}".format(it),marker="x",s=20,color="k",alpha=0.5)
+            ax[1].scatter(roi_values["Obs Mean"], roi_values["Pred Std"].values,
+                       label=labels[i] + " Iteration {}".format(it),marker="x",s=20,color="k",alpha=0.5)
+
+        else:
+            ax[0].scatter(roi_values["Obs Mean"], roi_values["Pred Mean"].values,
+                       label=labels[i] + " Iteration {}".format(it),s=6)
+            ax[1].scatter(roi_values["Obs Mean"], roi_values["Pred Std"].values,
+                       label=labels[i] + " Iteration {}".format(it),s=6)
+
+ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],color="k")
+plt.legend()
+
+
+k="ff"
+fig,ax=plt.subplots(1,2)
+for i,key in enumerate(dic_maps.keys()):
+    for it in (list(range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter),3))):
+        if key=="fullReco_noUS" and it>0:
+            continue
+        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI,fat_threshold=0.7)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+        roi_values.sort_values(by=["Obs Mean"],inplace=True)
+        #dic_roi_values[key]=roi_values
+        if key == "fullReco_noUS":
+            ax[0].scatter(roi_values["Obs Mean"], roi_values["Pred Mean"].values,
+                       label=labels[i] + " Iteration {}".format(it),marker="x",s=10,color="k",alpha=0.5)
+            ax[1].scatter(roi_values["Obs Mean"], roi_values["Pred Std"].values,
+                       label=labels[i] + " Iteration {}".format(it),marker="x",s=10,color="k",alpha=0.5)
+
+        else:
+            ax[0].scatter(roi_values["Obs Mean"], roi_values["Pred Mean"].values,
+                       label=labels[i] + " Iteration {}".format(it),s=3)
+            ax[1].scatter(roi_values["Obs Mean"], roi_values["Pred Std"].values,
+                       label=labels[i] + " Iteration {}".format(it),s=3)
+
+ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],color="k")
+plt.legend()
 
 
 min_iter=0

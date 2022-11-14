@@ -348,6 +348,10 @@ def create_random_map(list_params,region_size,size,mask):
     map = np.repeat(np.repeat(basis, region_size, axis=1), region_size, axis=0) * mask
     return map
 
+def create_map(list_params,region_size,mask):
+    map = np.repeat(np.repeat(list_params, region_size, axis=1), region_size, axis=0) * mask
+    return map
+
 def compare_patterns(pixel_number,images_1,images_2,title_1="image_1",title_2="image_2"):
 
     fig,(ax1,ax2,ax3) = plt.subplots(1,3)
@@ -753,7 +757,7 @@ def regression_paramMaps(map1,map2,mask1=None,mask2=None,title="Maps regression 
 
 def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, title="Maps regression plots",
                              fontsize=5, adj_wT1=False, fat_threshold=0.8, mode="Standard", proj_on_mask1=True,plt_std=False,
-                             figsize=(15, 10),save=False,kept_keys=None,min_ROI_count=15,units=None,fontsize_axis=None):
+                             figsize=(15, 10),save=False,kept_keys=None,min_ROI_count=15,units=None,fontsize_axis=None,marker_size=1):
 
     keys_1 = set(map1.keys())
     keys_2 = set(map2.keys())
@@ -840,7 +844,7 @@ def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, t
                 pred_std = np.array(df_pred.groupby("Groups").std())[1:]
                 ax[i].errorbar(obs, pred, list(pred_std.flatten()), linestyle='None', marker='^')
             else:
-                ax[i].scatter(obs,pred,s=1)
+                ax[i].scatter(obs,pred,s=marker_size)
             ax[i].plot(x_, x_, "r")
         elif mode == "Boxplot":
             unique_obs = np.unique(obs)

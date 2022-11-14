@@ -31,7 +31,7 @@ dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
 
 
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_optim_FF.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json") as f:
     sequence_config = json.load(f)
 
 #with open("./mrf_sequence_adjusted.json") as f:
@@ -60,28 +60,28 @@ sequence_config["T_recovery"]=Treco
 sequence_config["nrep"]=rep
 
 
-
+nb_allspokes=len(sequence_config["TE"])
 
 seq=T1MRFSS(**sequence_config)
 
 water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
-
-nb_segments=int(water.shape[0]/rep)
 
 
 indices=[]
 for i in range(1,water.ndim):
     indices.append(np.random.choice(water.shape[i]))
 
-plt.figure()
-plt.title("Worst T1 Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(wT1[-1], att[indices[2]], df[indices[3]]))
-plt.plot(np.real(water[::nb_segments,-1,indices[1],indices[2],indices[3]]))
+fig,ax=plt.subplots()
+ax.set_title("Worst T1 Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(wT1[-1], att[0], df[4]))
+ax.plot(range(rep),np.real(water[::nb_allspokes,-1,0,0,4]),color="grey")
+ax.set_xticks(list(range(rep)))
+
 
 fig,ax=plt.subplots(2,1)
-fig.suptitle("T1 {} B1 {} Df {}".format(wT1[-1],att[indices[2]],df[indices[3]]))
-ax[0].plot(np.real(water[:,-1,indices[1],indices[2],indices[3]].reshape(rep,1400)).T)
+fig.suptitle("T1 {} B1 {} Df {}".format(wT1[-1],att[0],df[4]))
+ax[0].plot(np.real(water[:,-1,0,0,4]))
 ax[0].set_title("Real Part")
-ax[1].plot(np.imag(water[:,-1,indices[1],indices[2],indices[3]].reshape(rep,1400)).T)
+ax[1].plot(np.imag(water[:,-1,0,0,4]))
 ax[1].set_title("Imag Part")
 
 plt.close("all")
@@ -93,13 +93,13 @@ for j in range(num_sig):
 
     plt.figure()
     plt.title("Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(wT1[indices[0]], att[indices[2]], df[indices[3]]))
-    plt.plot(np.real(water[::nb_segments,indices[0],indices[1],indices[2],indices[3]]))
+    plt.plot(np.real(water[::nb_allspokes,indices[0],indices[1],indices[2],indices[3]]))
 
     fig,ax=plt.subplots(2,1)
     fig.suptitle("T1 {} B1 {} Df {}".format(wT1[indices[0]],att[indices[2]],df[indices[3]]))
-    ax[0].plot(np.real(water[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,1400)).T)
+    ax[0].plot(np.real(water[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,nb_allspokes)).T)
     ax[0].set_title("Real Part")
-    ax[1].plot(np.imag(water[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,1400)).T)
+    ax[1].plot(np.imag(water[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,nb_allspokes)).T)
     ax[1].set_title("Imag Part")
 
 plt.close("all")
@@ -341,8 +341,8 @@ with open("./mrf_sequence_adjusted.json") as f:
 with open("./mrf_dictconf_Dico2_Invivo.json") as f:
     dict_config = json.load(f)
 
-with open("./mrf_dictconf_SimReco2.json") as f:
-    dict_config = json.load(f)
+#with open("./mrf_dictconf_SimReco2.json") as f:
+#    dict_config = json.load(f)
 
 # generate signals
 wT1 = dict_config["water_T1"]
@@ -354,13 +354,20 @@ df = dict_config["delta_freqs"]
 df = [- value / 1000 for value in df] # temp
 # df = np.linspace(-0.1, 0.1, 101)
 
+min_TR_delay=2.25
+TE_list=np.array(sequence_config["TE"])
+TR_list=list(TE_list+min_TR_delay)
+sequence_config["TR"]=TR_list
+
+
+
 seq=T1MRF(**sequence_config)
 
 
 
 
 
-dictfile = "mrf175_SimReco2_adjusted.dict"
+dictfile = "mrf175_Dico2_Invivo_2_25.dict"
 
 sim_mode="mean"
 overwrite=True
@@ -858,3 +865,50 @@ for j in range(num_sig):
     ax[0].set_title("Real Part")
     ax[1].plot(np.imag(water[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,nb_allspokes)).T)
     ax[1].set_title("Imag Part")
+
+
+
+
+import pandas as pd
+#import matplotlib
+#matplotlib.use("TkAgg")
+from mrfsim import *
+from image_series import *
+from utils_mrf import *
+from utils_simu import *
+
+import json
+from finufft import nufft1d1,nufft1d2
+from scipy import signal,interpolate
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
+import matplotlib.pyplot as plt
+import numpy as np
+from movements import *
+from dictoptimizers import *
+import glob
+from tqdm import tqdm
+import pickle
+from scipy.io import savemat
+
+## Random map simulation
+
+
+plt.close("all")
+
+
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json") as f:
+    sequence_config_1 = json.load(f)
+
+with open("./mrf_sequence_adjusted.json") as f:
+    sequence_config_2 = json.load(f)
+
+plt.figure()
+plt.plot(np.array(sequence_config_2["B1"])*5,label="MRF T1-FF")
+plt.plot(np.array(sequence_config_1["B1"])*5,label="Fast MRF T1-FF")
+plt.legend()
+
+plt.figure()
+plt.plot(np.array(sequence_config_2["TE"]),label="MRF T1-FF")
+plt.plot(np.array(sequence_config_1["TE"]),label="Fast MRF T1-FF")
+plt.legend()
