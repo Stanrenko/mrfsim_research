@@ -15,7 +15,7 @@ from scipy.ndimage import affine_transform
 from datetime import datetime
 
 import pandas as pd
-from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series,build_mask,generate_kdata,build_mask_single_image,buildROImask,correct_mvt_kdata
+from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series,build_mask,generate_kdata,build_mask_single_image,buildROImask,correct_mvt_kdata,create_map
 from mutools.optim.dictsearch import dictsearch
 import itertools
 from mrfsim import groupby,makevol,load_data,loadmat
@@ -1315,6 +1315,45 @@ class RandomMap3D(ImageSeries3D):
 
         }
 
+    def buildROImask(self):
+
+        mask=self.mask
+
+        nb_slices = self.paramDict["nb_slices"]
+        if not (self.paramDict["nb_empty_slices"] == 0):
+            mask_without_empty_slices = self.mask[
+                                        self.paramDict["nb_empty_slices"]:-self.paramDict["nb_empty_slices"], :, :]
+        else:
+            mask_without_empty_slices = self.mask
+
+        mask_red=self.paramDict["mask_reduction_factor"]
+        sliced_image_size = (self.image_size[1], self.image_size[2])
+        repeat_slice = self.paramDict["repeat_slice"]
+        params_slices_count = int(nb_slices / repeat_slice)
+        num_regions_shape=(int(sliced_image_size[0]*(1-2*mask_red) / self.region_size), int(sliced_image_size[1]*((1-2*mask_red)) / self.region_size))
+        count_regions_per_slice=np.prod(num_regions_shape)
+
+        roi_all_slices = np.zeros(self.image_size)
+
+        current_roi_num=1
+        for j in range(params_slices_count):
+            sliced_mask = mask_without_empty_slices[j, :, :]
+            rois=np.arange(current_roi_num,current_roi_num+count_regions_per_slice).reshape(num_regions_shape)
+            rois=np.repeat(np.repeat(rois, self.region_size, axis=1), self.region_size, axis=0).flatten()
+            #map = create_map(rois, self.region_size, sliced_mask)
+
+            j_current = j * repeat_slice + self.paramDict["nb_empty_slices"]
+            j_next = np.minimum((j + 1) * repeat_slice, nb_slices) + self.paramDict["nb_empty_slices"]
+            rois_volume = makevol(rois, mask[j_current] > 0)
+
+            nb_repeat_current = j_next - j_current
+            slices_value = rois_volume
+
+            roi_all_slices[j_current:j_next, :, :] = np.resize(slices_value, (nb_repeat_current,) + slices_value.shape)
+
+            current_roi_num+=count_regions_per_slice
+
+        return roi_all_slices[mask > 0]
 
 
 

@@ -2786,7 +2786,7 @@ class SimpleDictSearch(Optimizer):
             print("################# ITERATION : Number {} out of {} ####################".format(i, niter))
             print("Calculating optimal fat fraction and best pattern per signal for iteration {}".format(i))
             if not(self.paramDict["return_matched_signals"])and(niter==0):
-                map_rebuilt,J_optim,phase_optim=match_signals_v2(all_signals,keys, pca_water, pca_fat, array_water_unique, array_fat_unique,
+                map_rebuilt,J_optim,phase_optim=match_signals(all_signals,keys, pca_water, pca_fat, array_water_unique, array_fat_unique,
                           transformed_array_water_unique, transformed_array_fat_unique, var_w,var_f,sig_wf,pca,index_water_unique,index_fat_unique,remove_duplicates, verbose,
                           niter, split, useGPU_dictsearch,mask,tv_denoising_weight,log_phase)
             else:
