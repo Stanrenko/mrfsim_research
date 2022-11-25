@@ -66,20 +66,22 @@ medfilter=False
 
 #name = "SquareSimu3D_SS_FF0_1"
 name = "SquareSimu3D_SS_Multicoil"
-#name = "Knee3D_SS_SimReco2_MultiCoil"
+name = "Knee3D_Control_SS_SimReco2_MultiCoil"
 snr=None
 gauss_filter=False
 
 #dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
-dictfile="./mrf_dictconf_SimReco2_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v6_reco3.5_w8_simmean.dict"
-suffix="_DE_Simu_FF_v6_reco3.5"
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v6.json") as f:
+
+dictfile="./mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_reco3.95_w8_simmean.dict"
+suffix="_DE_Simu_FF_random_v1_reco3_95"
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json") as f:
     sequence_config = json.load(f)
 
-dictfile="./mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
-suffix="_DE_Simu_FF_reco3"
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json") as f:
-    sequence_config = json.load(f)
+
+#dictfile="./mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v5_reco4_w8_simmean.dict"
+#suffix="_DE_Simu_random_v5_reco4"
+#with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v5.json") as f:
+#    sequence_config = json.load(f)
 #generate_epg_dico_T1MRFSS_from_sequence_file("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json","./mrf_dictconf_SimReco2_lightDFB1.json",3)
 # dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v3_reco3.6.dict"
 # dictfile="mrf_dictconf_SimReco2_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v3_reco3.6.dict"
@@ -88,11 +90,11 @@ with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filte
 #    sequence_config = json.load(f)
 
 
-# dictfile="mrf_dictconf_SimReco2_adjusted_760_reco3_w8_simmean.dict"
+dictfile="mrf_dictconf_SimReco2_adjusted_760_reco3_w8_simmean.dict"
 # dictfile="mrf_dictconf_SimReco2_lightDFB1_adjusted_760_reco3_w8_simmean.dict"
-# suffix="_old_760_reco3"
-# with open("./mrf_sequence_adjusted_760.json") as f:
-#     sequence_config = json.load(f)
+suffix="_old_760_reco3"
+with open("./mrf_sequence_adjusted_760.json") as f:
+    sequence_config = json.load(f)
 
 
 # dictfile="mrf_SimReco2_light_adjusted.dict"
@@ -100,10 +102,10 @@ with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filte
 # with open("./mrf_sequence_adjusted.json") as f:
 #     sequence_config = json.load(f)
 #
-dictfile="mrf175_SimReco2_adjusted.dict"
-suffix="_fullReco"
-with open("./mrf_sequence_adjusted.json") as f:
-    sequence_config = json.load(f)
+# dictfile="mrf175_SimReco2_adjusted.dict"
+# suffix="_fullReco"
+# with open("./mrf_sequence_adjusted.json") as f:
+#     sequence_config = json.load(f)
 
 
 if gauss_filter:
@@ -162,13 +164,13 @@ TR_total = np.sum(sequence_config["TR"])
 Treco = TR_total-np.sum(sequence_config["TR"])
 Treco=3000
 ##other options
-#sequence_config["T_recovery"]=Treco
-#sequence_config["nrep"]=nrep
-#sequence_config["rep"]=rep
+sequence_config["T_recovery"]=Treco
+sequence_config["nrep"]=nrep
+sequence_config["rep"]=rep
 
-#seq=T1MRFSS(**sequence_config)
+seq=T1MRFSS(**sequence_config)
 
-seq=T1MRF(**sequence_config)
+#seq=T1MRF(**sequence_config)
 
 
 
@@ -227,7 +229,7 @@ filename_phi=str.split(dictfile,".dict") [0]+"_phi_L0_{}.npy".format(L0)
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 nb_channels=8
-npoint = 128
+npoint = 512
 
 
 
@@ -245,17 +247,14 @@ dict_config["ff"]=np.arange(0.,1.05,0.05)
 #dict_config["delta_freqs"]=[0.0]
 
 if "SquareSimu3D" in name:
+
     region_size=4 #size of the regions with uniform values for params in pixel number (square regions)
     mask_reduction_factor=1/4
-
-
     m = RandomMap3D(name,dict_config,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,undersampling_factor=undersampling_factor,repeat_slice=repeat_slice,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor,gen_mode=gen_mode)
-
 
 elif "Knee" in name:
      num =1
-     file_matlab_paramMap = "./data/KneePhantom/Phantom{}/paramMap.mat".format(num)
-
+     file_matlab_paramMap = "./data/KneePhantom/Phantom{}/paramMap_Control.mat".format(num)
      m = MapFromFile3D(name,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,image_size=image_size,file=file_matlab_paramMap,rounding=True,gen_mode="other",undersampling_factor=undersampling_factor,resting_time=4000)
 
 # elif name=="KneePhantom":
@@ -266,8 +265,6 @@ elif "Knee" in name:
 
 else:
     raise ValueError("Unknown Name")
-
-
 
 if str.split(filename_paramMap,"/")[-1] not in os.listdir(folder):
     m.buildParamMap()
@@ -672,16 +669,7 @@ if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
     # ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
     del volumes_all
 
-print("Building Volumes....")
-if str.split(filename_volume_no_dens_adj,"/")[-1] not in os.listdir(folder):
-    del kdata_all_channels_all_slices
-    kdata_all_channels_all_slices = np.load(filename_kdata)
 
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
-    np.save(filename_volume_no_dens_adj,volumes_all)
-    # sl=10
-    # ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
-    del volumes_all
 
 ##volumes for slice taking into account coil sensi
 print("Building Mask....")
@@ -725,12 +713,12 @@ else:
 #file_map=str.split(file_map,".pkl")[0]+"_test.pkl"
 
 if not(load_map):
-    niter = 4
+    niter = 0
     #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative",dens_adj=dens_adj)#,kdata_init=kdata_all_channels_all_slices)#,mu_TV=0.5)#,kdata_init=data_no_noise)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=10, pca=True,threshold_pca=10, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative",dens_adj=dens_adj)#,kdata_init=kdata_all_channels_all_slices)#,mu_TV=0.5)#,kdata_init=data_no_noise)
     all_maps=optimizer.search_patterns_test_multi(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
@@ -751,14 +739,14 @@ else:
     all_maps = pickle.load(file)
     file.close()
 
-niter=len(all_maps.keys())
-plt.close("all")
-maskROI = buildROImask_unique(m.paramMap)
-niter=0
-for it in range(niter+1):
-
-    regression_paramMaps_ROI(m.paramMap, all_maps[it][0], m.mask > 0, all_maps[it][1] > 0, maskROI, adj_wT1=True,
-                             title="it{}_regROI_".format(it) + "_".join(str.split(str.split(str.split(filename_volume, "/")[-1], ".npy")[0],".")), save=True,fontsize_axis=10,kept_keys=["wT1","ff"],marker_size=2)
+# niter=len(all_maps.keys())
+# plt.close("all")
+# maskROI = buildROImask_unique(m.paramMap)
+# niter=0
+# for it in range(niter+1):
+#
+#     regression_paramMaps_ROI(m.paramMap, all_maps[it][0], m.mask > 0, all_maps[it][1] > 0, maskROI, adj_wT1=True,
+#                              title="it{}_regROI_".format(it) + "_".join(str.split(str.split(str.split(filename_volume, "/")[-1], ".npy")[0],".")), save=True,fontsize_axis=10,kept_keys=["wT1","ff"],marker_size=2)
 
 #regression_paramMaps(m.paramMap,all_maps[0][0],mode="Boxplot")
 
@@ -790,7 +778,7 @@ plt.close("all")
 
 
 name="SquareSimu3D_SS_Multicoil"
-#name="Knee3D_SS_SimReco2_MultiCoil"
+name="Knee3D_Control_SS_SimReco2_MultiCoil"
 #name="SquareSimu3D_SS_FF0_1"
 
 list_suffix=["fullReco_T1MRF_adjusted","fullReco_Brute","DE_Simu_FF_reco3","DE_Simu_FF_v2_reco3"]
@@ -810,16 +798,16 @@ list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3".format(snr),"DE_Simu_FF_v
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","old_760_reco3"]
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","old_760_reco3","DE_Simu_FF_v6_reco3.8"]
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","DE_Simu_FF_v6_reco3.8","DE_Simu_FF_random_v4_reco3.9","DE_Simu_FF_random_v5_reco4","DE_Simu_FF_random_v2_reco4","DE_Simu_FF_random_FA_v2_reco4"]
-list_suffix=["fullReco"]
+list_suffix=["fullReco","old_760_reco3","DE_Simu_random_v5_reco4","DE_Simu_FF_random_v1_reco3_95"]
 #list_suffix=["fullReco","DE_Simu_FF_v3_reco3.6".format(snr)]
-undersampling_factor=4
+undersampling_factor=1
 #list_suffix=["fullReco_SNR_{}".format(snr)]
 dic_maps={}
 for suffix in list_suffix:
 
-    if ("random_FA" in suffix):
+    if ("random" in suffix)or("old" in suffix):
         file_map = "/{}_sl{}_rp{}_us{}{}w{}_ch{}_{}_MRF_map.pkl".format(name, nb_slices, repeat_slice, undersampling_factor,
-                                                                   1400, nspoke,nb_channels, suffix)
+                                                                   760, nspoke,nb_channels, suffix)
 
     elif ("DE_Simu_FF" in suffix) or ("old" in suffix):
         file_map = "/{}_sl{}_rp{}_us{}{}w{}_ch{}_{}_MRF_map.pkl".format(name, nb_slices, repeat_slice, undersampling_factor,
@@ -886,15 +874,15 @@ plt.legend()
 
 
 min_iter=0
-max_iter=10
-labels=["US kz x 4","No US"]
-#maskROI=buildROImask_unique(m.paramMap,key=k)
-maskROI=m.buildROImask()
+max_iter=1
+labels=["MRF T1-FF","MRF T1-FF 760 spokes","Optim Gaussian Noise","Optim Undersampling Simu"]
+maskROI=buildROImask_unique(m.paramMap)
+#maskROI=m.buildROImask()
 
 df_result=pd.DataFrame()
 
 plt.figure()
-k="wT1"
+k="ff"
 for i,key in enumerate(dic_maps.keys()):
     for it in (list(range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter),3))):
         if key=="fullReco_noUS" and it>0:
@@ -940,10 +928,10 @@ plt.legend()
 
 
 min_iter=0
-max_iter=10
-labels=["Undersampling kz x 4","No Undersampling"]
-#maskROI=buildROImask_unique(m.paramMap,key=k)
-maskROI=m.buildROImask()
+max_iter=1
+labels=["fullReco","Optim Gaussian Noise","Optim Undersampling Simu"]
+maskROI=buildROImask_unique(m.paramMap)
+
 
 
 k="wT1"
