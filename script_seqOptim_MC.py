@@ -24,15 +24,15 @@ dTs=np.arange(-500,1000,100)*10**-3
 #dTs=np.array([500,500,1000])
 DFs=[-30,0,30]
 #DFs=[-60,-30,0,30,60]
-FFs=[0.,0.1,0.2,0.3,0.95]
+FFs=[0.,0.1,0.2,0.3,0.4,0.5,0.95]
 B1=[0.5,0.7,1]
 #DFs=[-60,-30,0,30,60]
 #FFs=[0.,0.1,0.2,0.3,0.4,0.5,0.6,0.7]
 recovery=0
-sigma=0.6
+sigma=0.01
 noise_size=100
 group_size=8
-noise_type="Relative"
+noise_type="Absolute"
 
 recovery=0
 fileseq_1=r"./mrf_sequence_adjusted_optimized_M0_local_optim_correl_smooth.json"
@@ -86,9 +86,34 @@ r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_
 
 
 recoveries=[4,3.9,3,3,3.9,4,4,4,4]
+
+
+
+fileseq_list=[
+    r"./mrf_sequence_adjusted.json",
+    r"./mrf_sequence_adjusted_760.json",
+
+"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v5.json",
+    "mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json"
+    #"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v3.json",
+#"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v4.json"
+
+
+    #r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v2.json",
+#r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v3.json",
+#r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v6.json",
+
+]
+
+
+recoveries=[4,3,4,3.95]
+
+
 df_results=pd.DataFrame(index=[f+"_"+str(recoveries[j]) for j,f in enumerate(fileseq_list)],columns=["Error rel wT1","Error abs FF","std wT1","std FF","TR"])
 min_TR_delay=1.87/1000
-
+l=None
+#plt.figure()
+labels=["MRF T1-FF 1400 Spokes","MRF T1-FF 760 Spokes","Optimized MRF T1-FF","Optimized  US MRF T1-FF"]
 for j,fileseq_1 in enumerate(fileseq_list):
     recovery=recoveries[j]
     ind = fileseq_1 + "_" + str(recovery)
@@ -124,10 +149,12 @@ for j,fileseq_1 in enumerate(fileseq_list):
 
     all_maps,matched_signals=dict_optim_bc_cf.search_patterns_test((s_w,s_f,keys),s)
 
-    # j=np.random.choice(range(matched_signals.shape[-1]))
-    # plt.figure()
-    # plt.plot(matched_signals[:,j])
-    # plt.plot(s[:,j])
+    if l is None:
+        l = np.random.choice(range(matched_signals.shape[-1]))
+
+    plt.figure()
+    plt.plot(matched_signals[:,l],label=labels[j])
+    plt.plot(s[:,l])
 
     keys_all=list(product(keys,FFs))
     keys_all=[(*rest, a) for rest,a in keys_all]
@@ -148,7 +175,6 @@ for j,fileseq_1 in enumerate(fileseq_list):
     error_ff=np.mean(np.mean(error,axis=-1))
     std_ff = np.mean(np.std(error,axis=-1))
     df_results.loc[ind]=[error_wT1,error_ff,std_wT1,std_ff,np.sum(TR_list_1)]
-
 df_results
 #
 #

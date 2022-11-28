@@ -7,7 +7,7 @@ except:
     pass
 
 
-
+from utils_simu import simulate_gen_eq_signal
 from scipy import ndimage
 from scipy.optimize import minimize
 from scipy.ndimage import affine_transform
@@ -25,6 +25,7 @@ from tqdm import tqdm
 from Transformers import PCAComplex
 import matplotlib.animation as animation
 from trajectory import *
+
 try:
     import pycuda.autoinit
     from pycuda.gpuarray import GPUArray, to_gpu
@@ -220,7 +221,7 @@ class ImageSeries(object):
         #     raise ValueError("Unknow sim_mode")
 
         # building the time axis
-        self.build_timeline(seq)
+        self.build_timeline(seq.TR)
 
         # join water and fat
         print("Build dictionary.")
@@ -275,9 +276,110 @@ class ImageSeries(object):
 
         self.cached_images_series=images_series
 
-    def build_timeline(self,seq):
+    def build_ref_images_bloch(self,TR_, FA_, TE_,norm=None,phase=None):
+        print("Building Ref Images")
+        if self.paramMap is None:
+            return ValueError("buildparamMap should be called prior to image simulation")
 
-        TR_list = seq.TR
+        list_keys = ["wT1","wT2","fT1","fT2","attB1","df","ff"]
+        for k in list_keys:
+            if k not in self.paramMap:
+                raise ValueError("key {} should be in the paramMap".format(k))
+
+        map_all_on_mask = np.stack(list(self.paramMap.values())[:-1], axis=-1)
+        map_ff_on_mask = self.paramMap["ff"]
+
+        params_all = np.reshape(map_all_on_mask, (-1, 6))
+        params_unique = np.unique(params_all, axis=0)
+
+        wT1_in_map = np.unique(params_unique[:, 0])
+        wT2_in_map = np.unique(params_unique[:, 1])
+        fT1_in_map = np.unique(params_unique[:, 2])
+        fT2_in_map = np.unique(params_unique[:, 3])
+        attB1_in_map = np.unique(params_unique[:, 4])
+        df_in_map = np.unique(params_unique[:, 5])
+
+        # Simulating the image sequence
+
+        # water
+        print("Simulating Signals")
+
+        s, water, fat, keys=simulate_gen_eq_signal(TR_, FA_, TE_, [0.1], df_in_map*1000, wT1_in_map/1000, fT1_in_map[0] / 1000, attB1_in_map, T_2w=wT2_in_map[0] / 1000, T_2f=fT2_in_map[0] / 1000,
+                               amp=np.array(self.fat_amp), shift=np.array(self.fat_cs)*1000, sigma=None, group_size=1,
+                               return_fat_water=True)  # ,amp=np.array([1]),shift=np.array([-418]),sigma=None):
+
+        # if self.paramDict["sim_mode"]=="mean":
+        #     fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
+        # elif self.paramDict["sim_mode"]=="mid_point":
+        #     fat = fat[(int(window / 2) - 1):-1:window]
+        # else:
+        #     raise ValueError("Unknow sim_mode")
+
+        # building the time axis
+        self.build_timeline(np.array(TR_[1:])*1000)
+
+
+        # join water and fat
+        print("Build dictionary.")
+
+        water=water.reshape(water.shape[0],-1)
+        fat = fat.reshape(fat.shape[0], -1)
+        if self.paramDict["gen_mode"] == "loop":
+            values=np.stack((water, fat),axis=-1)
+            values = np.moveaxis(values, 0, 1)
+        else :
+            values = np.stack(np.broadcast_arrays(water, fat), axis=-1)
+            values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
+        mrfdict = dictsearch.Dictionary(keys, values)
+
+        images_series = np.zeros(self.image_size + (values.shape[-2],), dtype=np.complex_)
+        #water_series = images_series.copy()
+        #fat_series = images_series.copy()
+
+        map_all_with_ff = np.append(map_all_on_mask, map_ff_on_mask.reshape(-1, 1), axis=-1)
+        #unique_values, index_unique = np.unique(map_all_with_ff, return_inverse=True,axis=0)
+
+        #images_in_mask_unique = np.array(
+        #    [mrfdict[tuple(pixel_params[:-1])][:, 0] * (1 - pixel_params[-1]) + mrfdict[tuple(
+        #        pixel_params[:-1])][:, 1] * (pixel_params[-1]) for pixel_params in unique_values])
+        print("Building image series")
+        map_all_on_mask = map_all_on_mask[:, [0, 2, 4, 5]]
+        map_all_on_mask[:,0]/=1000
+        map_all_on_mask[:, 1] /= 1000
+        map_all_on_mask[:, 3] *= 1000
+        images_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0] * (1 - map_ff_on_mask[i]) + mrfdict[tuple(
+            pixel_params)][:, 1] * (map_ff_on_mask[i]) for (i, pixel_params) in enumerate(map_all_on_mask)])
+
+        if norm is not None :
+            images_in_mask *= np.expand_dims(norm,axis=1)
+
+        if phase is not None:
+            images_in_mask *= np.expand_dims(np.exp(1j*phase),axis=1)
+
+        #water_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 0]  for (i, pixel_params) in enumerate(map_all_on_mask)])
+        #fat_in_mask = np.array([mrfdict[tuple(pixel_params)][:, 1]  for (i, pixel_params) in enumerate(map_all_on_mask)])
+        print("Image series built")
+
+        images_series[self.mask > 0, :] = images_in_mask
+        #water_series[self.mask > 0, :] = water_in_mask
+        #fat_series[self.mask > 0, :] = fat_in_mask
+
+        images_series = np.moveaxis(images_series, -1, 0)
+        #water_series = np.moveaxis(water_series, -1, 0)
+        #fat_series = np.moveaxis(fat_series, -1, 0)
+
+
+        #images_series=normalize_image_series(images_series)
+        self.images_series=images_series
+
+        #self.water_series = water_series
+        #self.fat_series=fat_series
+
+        self.cached_images_series=images_series
+
+
+    def build_timeline(self,TR_list):
+
         # t = np.cumsum([np.sum(dt, axis=0) for dt in groupby(np.array(TR_list), window)]).reshape(1,-1)
 
         t = np.cumsum(TR_list).reshape(1, -1)

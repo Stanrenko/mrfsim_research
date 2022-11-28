@@ -897,18 +897,23 @@ from scipy.io import savemat
 plt.close("all")
 
 
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v5.json") as f:
     sequence_config_1 = json.load(f)
 
 with open("./mrf_sequence_adjusted.json") as f:
     sequence_config_2 = json.load(f)
 
+with open("./mrf_sequence_adjusted_760.json") as f:
+    sequence_config_3 = json.load(f)
+
 plt.figure()
-plt.plot(np.array(sequence_config_2["B1"])*5,label="MRF T1-FF")
-plt.plot(np.array(sequence_config_1["B1"])*5,label="Fast MRF T1-FF")
+plt.plot(np.array(sequence_config_2["B1"])*5,label="MRF T1-FF 1400 spokes")
+#plt.plot(np.array(sequence_config_3["B1"])*5,label="MRF T1-FF 760 spokes")
+plt.plot(np.array(sequence_config_1["B1"])*5,label="Optimized MRF T1-FF")
 plt.legend()
 
 plt.figure()
-plt.plot(np.array(sequence_config_2["TE"]),label="MRF T1-FF")
-plt.plot(np.array(sequence_config_1["TE"]),label="Fast MRF T1-FF")
+plt.plot(np.array(sequence_config_2["TE"]),label="MRF T1-FF 1400 spokes")
+#plt.plot(np.array(sequence_config_3["TE"]),label="MRF T1-FF 760 spokes")
+plt.plot(np.array(sequence_config_1["TE"]),label="Optimized T1-FF")
 plt.legend()
