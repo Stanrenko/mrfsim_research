@@ -28,6 +28,9 @@ suffix_simu=""
 #dictfile = "mrf175_SimReco2_light.dict"
 #dictjson="mrf_dictconf_SimReco2_light_df0.json"
 dictjson="mrf_dictconf_SimReco2.json".format(suffix_simu)
+
+dictfile_light='./mrf175_SimReco2_light_matching_adjusted.dict'
+
 #dictfile = "mrf175_SimReco2.dict"
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
@@ -72,10 +75,13 @@ gauss_filter=False
 
 #dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
 
-dictfile="./mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_reco3.95_w8_simmean.dict"
-suffix="_DE_Simu_FF_random_v1_reco3_95"
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json") as f:
+#dictfile="./mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_reco3.95_w8_simmean.dict"
+dictfile="./mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v3_reco4_w8_simmean.dict"
+suffix="_DE_Simu_FF_random_v3_reco4"
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v3.json") as f:
     sequence_config = json.load(f)
+
+suffix_file_map=""
 
 
 #dictfile="./mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v5_reco4_w8_simmean.dict"
@@ -90,17 +96,17 @@ with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filte
 #    sequence_config = json.load(f)
 
 
-dictfile="mrf_dictconf_SimReco2_adjusted_760_reco3_w8_simmean.dict"
+#dictfile="mrf_dictconf_SimReco2_adjusted_760_reco3_w8_simmean.dict"
 # dictfile="mrf_dictconf_SimReco2_lightDFB1_adjusted_760_reco3_w8_simmean.dict"
-suffix="_old_760_reco3"
-with open("./mrf_sequence_adjusted_760.json") as f:
+#suffix="_old_760_reco3"
+#with open("./mrf_sequence_adjusted_760.json") as f:
+#    sequence_config = json.load(f)
+
+
+dictfile="mrf_SimReco2_light_adjusted.dict"
+suffix=""
+with open("./mrf_sequence_adjusted.json") as f:
     sequence_config = json.load(f)
-
-
-# dictfile="mrf_SimReco2_light_adjusted.dict"
-# suffix=""
-# with open("./mrf_sequence_adjusted.json") as f:
-#     sequence_config = json.load(f)
 #
 # dictfile="mrf175_SimReco2_adjusted.dict"
 # suffix="_fullReco"
@@ -162,15 +168,15 @@ rep=nrep-1
 TR_total = np.sum(sequence_config["TR"])
 
 Treco = TR_total-np.sum(sequence_config["TR"])
-Treco=3000
+Treco=4000
 ##other options
-sequence_config["T_recovery"]=Treco
-sequence_config["nrep"]=nrep
-sequence_config["rep"]=rep
+#sequence_config["T_recovery"]=Treco
+#sequence_config["nrep"]=nrep
+#sequence_config["rep"]=rep
 
-seq=T1MRFSS(**sequence_config)
+#seq=T1MRFSS(**sequence_config)
 
-#seq=T1MRF(**sequence_config)
+seq=T1MRF(**sequence_config)
 
 
 
@@ -223,7 +229,7 @@ filename_kdata_no_noise = filename+"_kdata_no_noise_sl{}_rp{}_us{}{}w{}_ch{}{}.n
 filename_b1 = filename+"_b1_sl{}_rp{}_us{}{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
 
 filename_mask= filename+"_mask_sl{}_rp{}_us{}{}w{}_ch{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
-file_map = filename + "_sl{}_rp{}_us{}{}w{}_ch{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix)
+file_map = filename + "_sl{}_rp{}_us{}{}w{}_ch{}{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,nb_channels,suffix,suffix_file_map)
 filename_phi=str.split(dictfile,".dict") [0]+"_phi_L0_{}.npy".format(L0)
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
@@ -294,8 +300,8 @@ else:
 if str.split(filename_kdata, "/")[-1] not in os.listdir(folder):
     m.build_ref_images(seq)
 
-if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
-    np.save(filename_groundtruth,m.images_series[::nspoke])
+#if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
+#    np.save(filename_groundtruth,m.images_series[::nspoke])
 
 
 
@@ -718,8 +724,8 @@ if not(load_map):
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=10, pca=True,threshold_pca=10, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative",dens_adj=dens_adj)#,kdata_init=kdata_all_channels_all_slices)#,mu_TV=0.5)#,kdata_init=data_no_noise)
-    all_maps=optimizer.search_patterns_test_multi(dictfile,volumes_all,retained_timesteps=None)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=10, pca=True,threshold_pca=10, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative",dens_adj=dens_adj,dictfile_light=dictfile_light,threshold_ff=0.9)#,kdata_init=kdata_all_channels_all_slices)#,mu_TV=0.5)#,kdata_init=data_no_noise)
+    all_maps=optimizer.search_patterns_test_multi_2_steps_dico(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -739,14 +745,14 @@ else:
     all_maps = pickle.load(file)
     file.close()
 
-# niter=len(all_maps.keys())
-# plt.close("all")
-# maskROI = buildROImask_unique(m.paramMap)
-# niter=0
-# for it in range(niter+1):
-#
-#     regression_paramMaps_ROI(m.paramMap, all_maps[it][0], m.mask > 0, all_maps[it][1] > 0, maskROI, adj_wT1=True,
-#                              title="it{}_regROI_".format(it) + "_".join(str.split(str.split(str.split(filename_volume, "/")[-1], ".npy")[0],".")), save=True,fontsize_axis=10,kept_keys=["wT1","ff"],marker_size=2)
+niter=len(all_maps.keys())
+plt.close("all")
+maskROI = buildROImask_unique(m.paramMap)
+niter=0
+for it in range(niter+1):
+
+    regression_paramMaps_ROI(m.paramMap, all_maps[it][0], m.mask > 0, all_maps[it][1] > 0, maskROI, adj_wT1=True,
+                             title="it{}_regROI_".format(it) + "_".join(str.split(str.split(str.split(filename_volume, "/")[-1], ".npy")[0],".")), save=True,fontsize_axis=10,kept_keys=["wT1","ff"],marker_size=2)
 
 #regression_paramMaps(m.paramMap,all_maps[0][0],mode="Boxplot")
 
@@ -799,6 +805,8 @@ list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","old_760_reco3"]
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","old_760_reco3","DE_Simu_FF_v6_reco3.8"]
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","DE_Simu_FF_v6_reco3.8","DE_Simu_FF_random_v4_reco3.9","DE_Simu_FF_random_v5_reco4","DE_Simu_FF_random_v2_reco4","DE_Simu_FF_random_FA_v2_reco4"]
 list_suffix=["fullReco","old_760_reco3","DE_Simu_random_v5_reco4","DE_Simu_FF_random_v1_reco3_95"]
+list_suffix=["DE_Simu_FF_random_v1_reco3_95","DE_Simu_FF_random_v3_reco4"]
+
 #list_suffix=["fullReco","DE_Simu_FF_v3_reco3.6".format(snr)]
 undersampling_factor=1
 #list_suffix=["fullReco_SNR_{}".format(snr)]
@@ -876,6 +884,7 @@ plt.legend()
 min_iter=0
 max_iter=1
 labels=["MRF T1-FF","MRF T1-FF 760 spokes","Optim Gaussian Noise","Optim Undersampling Simu"]
+labels=["v1","v3"]
 maskROI=buildROImask_unique(m.paramMap)
 #maskROI=m.buildROImask()
 

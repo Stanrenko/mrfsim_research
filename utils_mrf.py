@@ -177,6 +177,28 @@ def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersa
     return result.reshape(result.shape[0],-1,result.shape[-1])
 
 
+def spherical_golden_angle_means_traj_3D(total_nspoke, npoint, nb_slices, undersampling_factor=4,k_max=np.pi):
+    nb_rep = int(nb_slices / undersampling_factor)
+    base_spoke = -k_max+np.arange(npoint)*2*k_max/(npoint-1)
+    base_spoke=base_spoke.reshape(1,-1)
+    #traj = np.reshape(all_spokes, (-1, nspoke * npoint))
+    phi_1=0.4656
+    phi_2=0.6823
+    all_spokes_count=nb_rep*total_nspoke
+    m=np.arange(all_spokes_count)
+    alpha=2*np.pi*np.mod(m*phi_1,1).reshape(-1,1)
+    beta=np.arccos(np.mod(m*phi_2,1)).reshape(-1,1)
+    traj=np.cos(beta)*np.exp(1j*alpha)*base_spoke
+    k_z=np.sin(beta)*base_spoke
+    print(k_z.shape)
+    print(traj.shape)
+    k_z, traj = np.broadcast_arrays(k_z, traj)
+    result = np.stack([traj.real, traj.imag, k_z], axis=-1)
+    #result=result.reshape(total_nspoke,nb_rep,npoint,3)
+    #result=np.moveaxis(result,1,0)
+    return result.reshape(total_nspoke,-1,3)
+
+
 
 # def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,mode="old",offset=0):
 #     timesteps = int(total_nspoke / nspoke)

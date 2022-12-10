@@ -1,5 +1,5 @@
 import numpy as np
-from utils_mrf import radial_golden_angle_traj,radial_golden_angle_traj_3D,spiral_golden_angle_traj,spiral_golden_angle_traj_v2,radial_golden_angle_traj_random_3D,radial_golden_angle_traj_3D_incoherent,cartesian_traj_2D
+from utils_mrf import radial_golden_angle_traj,radial_golden_angle_traj_3D,spiral_golden_angle_traj,spiral_golden_angle_traj_v2,radial_golden_angle_traj_random_3D,radial_golden_angle_traj_3D_incoherent,cartesian_traj_2D,spherical_golden_angle_means_traj_3D
 from mrfsim import groupby
 
 
@@ -130,6 +130,32 @@ class Radial3D(Trajectory):
 
         return self.traj
 
+
+
+class Spherical3D(Trajectory):
+
+    def __init__(self,total_nspokes=1400,npoint=512,undersampling_factor=4,**kwargs):
+        super().__init__(**kwargs)
+        self.paramDict["total_nspokes"] = total_nspokes
+        self.paramDict["npoint"] = npoint
+        self.paramDict["undersampling_factor"] = undersampling_factor
+        self.paramDict["nb_rep"]=int(self.paramDict["nb_slices"]/self.paramDict["undersampling_factor"])
+
+
+
+    def get_traj(self):
+        if self.traj is None:
+            #nspoke = self.paramDict["nspoke"]
+            npoint = self.paramDict["npoint"]
+
+
+            total_nspokes = self.paramDict["total_nspokes"]
+            nb_slices=self.paramDict["nb_slices"]
+            undersampling_factor=self.paramDict["undersampling_factor"]
+            self.traj=spherical_golden_angle_means_traj_3D(total_nspokes, npoint, nb_slices,undersampling_factor)
+
+
+        return self.traj
 
 class Cartesian3D(Trajectory):
 

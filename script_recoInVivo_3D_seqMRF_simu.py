@@ -54,6 +54,9 @@ use_GPU = True
 light_memory_usage=True
 gen_mode="other"
 medfilter=False
+
+dictfile_light='./mrf175_SimReco2_light_matching_adjusted.dict'
+
 #suffix="_plateau600"
 #suffix="_constantTE_last"
 #suffix=""
@@ -65,7 +68,7 @@ medfilter=False
 
 
 #name = "SquareSimu3D_SS_FF0_1"
-name = "SquareSimu3D_SS_SimReco2_attB1_70"
+name = "SquareSimu3D_SS_SimReco2"
 
 dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
 suffix="_DE_Simu_FF_reco3"
@@ -77,10 +80,10 @@ with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filte
 # with open("./mrf_sequence_adjusted.json") as f:
 #     sequence_config = json.load(f)
 
-#dictfile="mrf175_SimReco2_adjusted.dict"
-#suffix="_fullReco"
-#with open("./mrf_sequence_adjusted.json") as f:
-#    sequence_config = json.load(f)
+dictfile="mrf175_SimReco2_adjusted.dict"
+suffix="_fullReco"
+with open("./mrf_sequence_adjusted.json") as f:
+    sequence_config = json.load(f)
 
 nb_allspokes = len(sequence_config["TE"])
 nspoke=8
@@ -131,13 +134,13 @@ TR_total = np.sum(sequence_config["TR"])
 Treco = TR_total-np.sum(sequence_config["TR"])
 Treco=3000
 ##other options
-sequence_config["T_recovery"]=Treco
-sequence_config["nrep"]=nrep
-sequence_config["rep"]=rep
+#sequence_config["T_recovery"]=Treco
+#sequence_config["nrep"]=nrep
+#sequence_config["rep"]=rep
 
-seq=T1MRFSS(**sequence_config)
+#seq=T1MRFSS(**sequence_config)
 
-#seq=T1MRF(**sequence_config)
+seq=T1MRF(**sequence_config)
 
 
 
@@ -351,17 +354,19 @@ save_map=True
 mask=np.load(filename_mask)
 volumes_all = np.load(filename_volume)
 
+suffix_map="_2StepsDico"
+file_map = filename + "_sl{}_rp{}_us{}{}w{}{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix,suffix_map)
 
 
-
+start=datetime.now()
 if not(load_map):
-    niter = 5
+    niter = 0
     #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=10, log=True, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
-    all_maps=optimizer.search_patterns_test(dictfile,volumes_all,retained_timesteps=None)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=20, log=True, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,threshold_ff=0.9,dictfile_light=dictfile_light)
+    all_maps=optimizer.search_patterns_test_multi_2_steps_dico(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -380,9 +385,11 @@ else:
     file = open(file_map, "rb")
     all_maps = pickle.load(file)
 
+end=datetime.now()
+print(end-start)
 
 maskROI=buildROImask_unique(m.paramMap)
-regression_paramMaps_ROI(m.paramMap,all_maps[0][0],m.mask>0,all_maps[0][1]>0,maskROI,adj_wT1=True,title="regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
+regression_paramMaps_ROI(m.paramMap,all_maps[0][0],m.mask>0,all_maps[0][1]>0,maskROI,adj_wT1=True,title="regROI_"+str.split(str.split(file_map,"/")[-1],".pkl")[0],save=True)
 
 plt.close("all")
 maskROI = buildROImask_unique(m.paramMap)
@@ -420,10 +427,10 @@ plt.close("all")
 
 name="SquareSimu3D_SS_SimReco2"
 #name="SquareSimu3D_SS_FF0_1"
-dic_maps={}
+
 list_suffix=["fullReco_T1MRF_adjusted","fullReco_Brute","DE_Simu_FF_reco3","DE_Simu_FF_v2_reco3"]
 list_suffix=["fullReco","DE_Simu_FF_reco3"]
-
+file_maps=[]
 for suffix in list_suffix:
     if "NoInv" in suffix:
         file_map = "/{}_sl{}_rp{}_us{}{}w{}_{}_MRF_map.pkl".format(name, nb_slices, repeat_slice, undersampling_factor,
@@ -434,8 +441,16 @@ for suffix in list_suffix:
 
     else:
         file_map="/{}_sl{}_rp{}_us{}{}w{}_{}_MRF_map.pkl".format(name,nb_slices,repeat_slice,undersampling_factor,1400,nspoke,suffix)
+    file_maps.append[file_map]
+
+file_maps=['/SquareSimu3D_SS_SimReco2_sl20_rp1_us11400w8_fullReco_MRF_map.pkl','/SquareSimu3D_SS_SimReco2_sl20_rp1_us11400w8_fullReco_2StepsDico_MRF_map.pkl']
+
+dic_maps={}
+for file_map in file_maps:
     with open( base_folder + file_map, "rb") as file:
         dic_maps[file_map] = pickle.load(file)
+
+
 
 k="wT1"
 maskROI=buildROImask_unique(m.paramMap,key=k)
