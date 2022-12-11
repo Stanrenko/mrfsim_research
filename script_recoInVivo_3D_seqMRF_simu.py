@@ -69,6 +69,8 @@ dictfile_light='./mrf175_SimReco2_light_matching_adjusted.dict'
 
 #name = "SquareSimu3D_SS_FF0_1"
 name = "SquareSimu3D_SS_SimReco2"
+name = "KneePhantom_Fat"
+
 
 dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
 suffix="_DE_Simu_FF_reco3"
@@ -187,7 +189,7 @@ file_map = filename + "_sl{}_rp{}_us{}{}w{}{}_MRF_map.pkl".format(nb_slices,repe
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 nb_channels=1
-npoint = 128
+npoint = 512
 
 
 
@@ -211,11 +213,11 @@ if "SquareSimu3D" in name:
 
     m = RandomMap3D(name,dict_config,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,undersampling_factor=undersampling_factor,repeat_slice=repeat_slice,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor,gen_mode=gen_mode)
 
-# elif name=="KneePhantom":
-#     num =1
-#     file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(name,num)
-#
-#     m = MapFromFile(name,image_size=image_size,file=file_matlab_paramMap,rounding=True,gen_mode="other")
+elif "KneePhantom" in name:
+    num =1
+    file_matlab_paramMap = "./data/KneePhantom/Phantom{}/paramMap.mat".format(num)
+
+    m = MapFromFile3D(name,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,image_size=image_size,file=file_matlab_paramMap,rounding=True,gen_mode="other",undersampling_factor=undersampling_factor,resting_time=4000)
 
 else:
     raise ValueError("Unknown Name")
@@ -402,6 +404,7 @@ for it in range(niter+1):
 
 
 curr_file=file_map
+curr_file='./3D/KneePhantom_sl20_rp1_us11400w8_fullReco_MRF_map.pkl'
 file = open(curr_file, "rb")
 all_maps = pickle.load(file)
 file.close()
@@ -428,6 +431,7 @@ plt.close("all")
 name="SquareSimu3D_SS_SimReco2"
 #name="SquareSimu3D_SS_FF0_1"
 
+
 list_suffix=["fullReco_T1MRF_adjusted","fullReco_Brute","DE_Simu_FF_reco3","DE_Simu_FF_v2_reco3"]
 list_suffix=["fullReco","DE_Simu_FF_reco3"]
 file_maps=[]
@@ -443,7 +447,7 @@ for suffix in list_suffix:
         file_map="/{}_sl{}_rp{}_us{}{}w{}_{}_MRF_map.pkl".format(name,nb_slices,repeat_slice,undersampling_factor,1400,nspoke,suffix)
     file_maps.append[file_map]
 
-file_maps=['/SquareSimu3D_SS_SimReco2_sl20_rp1_us11400w8_fullReco_MRF_map.pkl','/SquareSimu3D_SS_SimReco2_sl20_rp1_us11400w8_fullReco_2StepsDico_MRF_map.pkl']
+file_maps=['/KneePhantom_sl20_rp1_us11400w8_fullReco_MRF_map.pkl','/KneePhantom_sl20_rp1_us11400w8_fullReco_2StepsDico_MRF_map.pkl']
 
 dic_maps={}
 for file_map in file_maps:
@@ -468,7 +472,7 @@ ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="--")
 plt.legend()
 
 k="ff"
-maskROI=buildROImask_unique(m.paramMap,key=k)
+maskROI=buildROImask_unique(m.paramMap,key="wT1")
 fig,ax=plt.subplots(1,2)
 plt.title(k)
 for key in dic_maps.keys():
@@ -483,6 +487,35 @@ for key in dic_maps.keys():
 ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="--")
 
 plt.legend()
+
+
+
+df_result=pd.DataFrame()
+min_iter=0
+max_iter=1
+plt.figure()
+k="ff"
+maskROI=buildROImask_unique(m.paramMap,key="wT1")
+labels=["Original","2 steps"]
+for i,key in enumerate(dic_maps.keys()):
+    for it in (list(range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter),3))):
+        if key=="fullReco_noUS" and it>0:
+            continue
+        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI,fat_threshold=0.7)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+        #roi_values.sort_values(by=["Obs Mean"],inplace=True)
+        error=list((roi_values["Pred Mean"]-roi_values["Obs Mean"]))
+        if df_result.empty:
+            df_result=pd.DataFrame(data=error,columns=[labels[i] + " Iteration {}".format(it)])
+        else:
+            df_result[labels[i] + " Iteration {}".format(it)]=error
+
+columns=[df_result.columns[-1]]+list(df_result.columns[:-1])
+df_result=df_result[columns]
+df_result.boxplot(grid=False, rot=45, fontsize=10,showfliers=False)
+plt.axhline(y=0,linestyle="dashed",color="k",linewidth=0.5)
+
+
+
 
 
 k="attB1"

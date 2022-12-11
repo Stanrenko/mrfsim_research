@@ -496,24 +496,27 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
 
 
 
-def match_signals_v2_low_ff(all_signals_low_ff,keys,pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique,var_w_total,var_f_total,sig_wf_total,index_water_unique,index_fat_unique,useGPU_dictsearch,unique_keys,d_T1,d_fT1,d_B1,d_DF,labels):
+def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique,var_w_total,var_f_total,sig_wf_total,index_water_unique,index_fat_unique,useGPU_dictsearch,unique_keys,d_T1,d_fT1,d_B1,d_DF,labels,split,high_ff=False):
     #nb_signals_low_ff = len(ind_low_ff)
     #nb_signals_high_ff = len(ind_high_ff)
     nb_clusters = unique_keys.shape[-1]
 
-    nb_signals_low_ff=all_signals_low_ff.shape[-1]
-    idx_max_all_unique_low_ff = np.zeros(nb_signals_low_ff)
-    alpha_optim_low_ff = np.zeros(nb_signals_low_ff)
+    nb_signals=all_signals_current.shape[-1]
+    idx_max_all_unique_low_ff = np.zeros(nb_signals)
+    alpha_optim_low_ff = np.zeros(nb_signals)
     if not (useGPU_dictsearch):
-        for j in tqdm(range(nb_clusters)):
+        for cl in tqdm(range(nb_clusters)):
 
-            indices = np.argwhere(labels == j)
+            indices = np.argwhere(labels == cl)
+            nb_signals_cluster=len(indices)
+            num_group = int(nb_signals_cluster / split) + 1
+
             # if j_signal==nb_signals:
             #    break
-            keys_T1 = (keys[:, 0] < unique_keys[:, j][0] + d_T1) & ((keys[:, 0] > unique_keys[:, j][0] - d_T1))
-            keys_fT1 = (keys[:, 1] < unique_keys[:, j][1] + d_fT1) & ((keys[:, 1] > unique_keys[:, j][1] - d_fT1))
-            keys_B1 = (keys[:, 2] < unique_keys[:, j][2] + d_B1) & ((keys[:, 2] > unique_keys[:, j][2] - d_B1))
-            keys_DF = (keys[:, 3] < unique_keys[:, j][3] + d_DF) & ((keys[:, 3] > unique_keys[:, j][3] - d_DF))
+            keys_T1 = (keys[:, 0] < unique_keys[:, cl][0] + d_T1) & ((keys[:, 0] > unique_keys[:, cl][0] - d_T1))
+            keys_fT1 = (keys[:, 1] < unique_keys[:, cl][1] + d_fT1) & ((keys[:, 1] > unique_keys[:, cl][1] - d_fT1))
+            keys_B1 = (keys[:, 2] < unique_keys[:, cl][2] + d_B1) & ((keys[:, 2] > unique_keys[:, cl][2] - d_B1))
+            keys_DF = (keys[:, 3] < unique_keys[:, cl][3] + d_DF) & ((keys[:, 3] > unique_keys[:, cl][3] - d_DF))
             retained_signals = np.argwhere(keys_T1 & keys_fT1 & keys_B1 & keys_DF).flatten()
 
             #print(retained_signals.shape)
@@ -523,61 +526,88 @@ def match_signals_v2_low_ff(all_signals_low_ff,keys,pca_water,pca_fat,transforme
             var_f = var_f_total[retained_signals]
             sig_wf = sig_wf_total[retained_signals]
 
-            transformed_all_signals_water = np.transpose(
-                pca_water.transform(np.transpose(all_signals_low_ff[:, indices.flatten()])))
-            transformed_all_signals_fat = np.transpose(
-                pca_fat.transform(np.transpose(all_signals_low_ff[:, indices.flatten()])))
-            sig_ws_all_unique = np.matmul(transformed_array_water_unique,
-                                          transformed_all_signals_water.conj())
-            sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
-                                          transformed_all_signals_fat.conj())
-            current_sig_ws_for_phase = sig_ws_all_unique[index_water_unique, :][retained_signals]
-            current_sig_fs_for_phase = sig_fs_all_unique[index_fat_unique, :][retained_signals]
-            A = sig_wf * current_sig_ws_for_phase - var_w * current_sig_fs_for_phase
-            B = (
-                        current_sig_ws_for_phase + current_sig_fs_for_phase) * sig_wf - var_w * current_sig_fs_for_phase - var_f * current_sig_ws_for_phase
-            a = B.real * current_sig_fs_for_phase.real + B.imag * current_sig_fs_for_phase.imag - B.imag * current_sig_ws_for_phase.imag - B.real * current_sig_ws_for_phase.real
-            b = A.real * current_sig_ws_for_phase.real + A.imag * current_sig_ws_for_phase.imag + B.imag * current_sig_ws_for_phase.imag + B.real * current_sig_ws_for_phase.real - A.imag * current_sig_fs_for_phase.imag - A.real * current_sig_fs_for_phase.real
-            c = -A.real * current_sig_ws_for_phase.real - A.imag * current_sig_ws_for_phase.imag
-            discr = b ** 2 - 4 * a * c
-            alpha1 = (-b + np.sqrt(discr)) / (2 * a)
-            alpha2 = (-b - np.sqrt(discr)) / (2 * a)
-            del a
-            del b
-            del c
-            del discr
-            current_alpha_all_unique = (1 * (alpha1 >= 0) & (alpha1 <= 1)) * alpha1 + (
-                    1 - (1 * (alpha1 >= 0) & (alpha1 <= 1))) * alpha2
-            # current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
-            apha_more_0 = (current_alpha_all_unique >= 0)
-            alpha_less_1 = (current_alpha_all_unique <= 1)
-            alpha_out_bounds = (1 * (apha_more_0)) * (1 * (alpha_less_1)) == 0
-            J_0 = np.abs(current_sig_ws_for_phase) / np.sqrt(var_w)
-            J_1 = np.abs(current_sig_fs_for_phase) / np.sqrt(var_f)
-            current_alpha_all_unique[alpha_out_bounds] = np.argmax(
-                np.concatenate([J_0[alpha_out_bounds, None], J_1[alpha_out_bounds, None]], axis=-1), axis=-1).astype(
-                "float")
+            all_signals_cluster=all_signals_current[:, indices.flatten()]
+            idx_max_all_unique_cluster = []
+            alpha_optim_cluster = []
 
-            # current_sig_ws = (current_sig_ws_for_phase * np.exp(1j * phase_adj)).real
-            # current_sig_fs = (current_sig_fs_for_phase * np.exp(1j * phase_adj)).real
-            J_all = np.abs((
-                                   1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase) / np.sqrt(
-                (
-                        1 - current_alpha_all_unique) ** 2 * var_w + current_alpha_all_unique ** 2 * var_f + 2 * current_alpha_all_unique * (
-                        1 - current_alpha_all_unique) * sig_wf)
+            for j in range(num_group):
+                j_signal = j * split
+                j_signal_next = np.minimum((j + 1) * split, nb_signals_cluster)
 
-            all_J = np.stack([J_all, J_0, J_1], axis=0)
-            ind_max_J = np.argmax(all_J, axis=0)
-            del all_J
-            J_all = (ind_max_J == 0) * J_all + (ind_max_J == 1) * J_0 + (ind_max_J == 2) * J_1
-            del J_0
-            del J_1
-            current_alpha_all_unique = (ind_max_J == 0) * current_alpha_all_unique + (ind_max_J == 1) * 0 + (
-                    ind_max_J == 2) * 1
-            idx_max_all_current_sig = np.argmax(J_all, axis=0)
-            current_alpha_all_unique_optim = current_alpha_all_unique[idx_max_all_current_sig, np.arange(J_all.shape[1])]
-            idx_max_all_unique_low_ff[indices.flatten()] = (retained_signals[idx_max_all_current_sig])
-            alpha_optim_low_ff[indices.flatten()] = (current_alpha_all_unique_optim)
+                transformed_all_signals_water = np.transpose(
+                    pca_water.transform(np.transpose(all_signals_cluster[:, j_signal:j_signal_next])))
+                transformed_all_signals_fat = np.transpose(
+                    pca_fat.transform(np.transpose(all_signals_cluster[:, j_signal:j_signal_next])))
+                sig_ws_all_unique = np.matmul(transformed_array_water_unique,
+                                              transformed_all_signals_water.conj())
+                sig_fs_all_unique = np.matmul(transformed_array_fat_unique,
+                                              transformed_all_signals_fat.conj())
+                current_sig_ws_for_phase = sig_ws_all_unique[index_water_unique, :][retained_signals]
+                current_sig_fs_for_phase = sig_fs_all_unique[index_fat_unique, :][retained_signals]
+                A = sig_wf * current_sig_ws_for_phase - var_w * current_sig_fs_for_phase
+                B = (
+                            current_sig_ws_for_phase + current_sig_fs_for_phase) * sig_wf - var_w * current_sig_fs_for_phase - var_f * current_sig_ws_for_phase
+                a = B.real * current_sig_fs_for_phase.real + B.imag * current_sig_fs_for_phase.imag - B.imag * current_sig_ws_for_phase.imag - B.real * current_sig_ws_for_phase.real
+                b = A.real * current_sig_ws_for_phase.real + A.imag * current_sig_ws_for_phase.imag + B.imag * current_sig_ws_for_phase.imag + B.real * current_sig_ws_for_phase.real - A.imag * current_sig_fs_for_phase.imag - A.real * current_sig_fs_for_phase.real
+                c = -A.real * current_sig_ws_for_phase.real - A.imag * current_sig_ws_for_phase.imag
+                discr = b ** 2 - 4 * a * c
+                alpha1 = (-b + np.sqrt(discr)) / (2 * a)
+                alpha2 = (-b - np.sqrt(discr)) / (2 * a)
+                del a
+                del b
+                del c
+                del discr
+                current_alpha_all_unique = (1 * (alpha1 >= 0) & (alpha1 <= 1)) * alpha1 + (
+                        1 - (1 * (alpha1 >= 0) & (alpha1 <= 1))) * alpha2
+                # current_alpha_all_unique = np.minimum(np.maximum(current_alpha_all_unique, 0.0), 1.0)
+                apha_more_0 = (current_alpha_all_unique >= 0)
+                alpha_less_1 = (current_alpha_all_unique <= 1)
+                alpha_out_bounds = (1 * (apha_more_0)) * (1 * (alpha_less_1)) == 0
+
+                if not(high_ff):
+                    J_0 = np.abs(current_sig_ws_for_phase) / np.sqrt(var_w)
+                J_1 = np.abs(current_sig_fs_for_phase) / np.sqrt(var_f)
+
+                if not(high_ff):
+                    current_alpha_all_unique[alpha_out_bounds] = np.argmax(
+                    np.concatenate([J_0[alpha_out_bounds, None], J_1[alpha_out_bounds, None]], axis=-1), axis=-1).astype(
+                    "float")
+                else:
+                    current_alpha_all_unique[alpha_out_bounds] = 1
+
+                # current_sig_ws = (current_sig_ws_for_phase * np.exp(1j * phase_adj)).real
+                # current_sig_fs = (current_sig_fs_for_phase * np.exp(1j * phase_adj)).real
+                J_all = np.abs((
+                                       1 - current_alpha_all_unique) * current_sig_ws_for_phase + current_alpha_all_unique * current_sig_fs_for_phase) / np.sqrt(
+                    (
+                            1 - current_alpha_all_unique) ** 2 * var_w + current_alpha_all_unique ** 2 * var_f + 2 * current_alpha_all_unique * (
+                            1 - current_alpha_all_unique) * sig_wf)
+
+
+                if not(high_ff):
+                    all_J = np.stack([J_all, J_0, J_1], axis=0)
+                else:
+                    all_J = np.stack([J_all, J_1], axis=0)
+                ind_max_J = np.argmax(all_J, axis=0)
+                del all_J
+
+                if not(high_ff):
+                    J_all = (ind_max_J == 0) * J_all + (ind_max_J == 1) * J_0 + (ind_max_J == 2) * J_1
+                    del J_0
+                    current_alpha_all_unique = (ind_max_J == 0) * current_alpha_all_unique + (ind_max_J == 1) * 0 + (
+                            ind_max_J == 2) * 1
+                else:
+                    J_all = (ind_max_J == 0) * J_all + (ind_max_J == 1) * J_1
+                    current_alpha_all_unique = (ind_max_J == 0) * current_alpha_all_unique + (ind_max_J == 1) * 1
+                del J_1
+
+                idx_max_all_current_sig = np.argmax(J_all, axis=0)
+                current_alpha_all_unique_optim = current_alpha_all_unique[idx_max_all_current_sig, np.arange(J_all.shape[1])]
+                idx_max_all_unique_cluster.extend(idx_max_all_current_sig)
+                alpha_optim_cluster.extend(current_alpha_all_unique_optim)
+
+            idx_max_all_unique_low_ff[indices.flatten()] = (retained_signals[idx_max_all_unique_cluster])
+            alpha_optim_low_ff[indices.flatten()] = (alpha_optim_cluster)
 
     else:
         raise ValueError("Not implemented yet")
@@ -5280,10 +5310,7 @@ class SimpleDictSearch(Optimizer):
         log_phase = self.paramDict["log_phase"]
 
 
-        d_T1 = 100
-        d_fT1 = 100
-        d_B1 = 0.1
-        d_DF = 0.015
+
 
         if movement_correction:
             if cond_mvt is None:
@@ -5460,8 +5487,11 @@ class SimpleDictSearch(Optimizer):
             ind_high_ff = np.argwhere(all_maps_bc_cf_light[0][0]["ff"] >= threshold_ff)
             ind_low_ff = np.argwhere(all_maps_bc_cf_light[0][0]["ff"] < threshold_ff)
             all_maps_low_ff = np.array([all_maps_bc_cf_light[0][0][k][ind_low_ff] for k in list(all_maps_bc_cf_light[0][0].keys())[:-1]]).squeeze()
+            all_maps_high_ff = np.array([all_maps_bc_cf_light[0][0][k][ind_high_ff] for k in
+                                        list(all_maps_bc_cf_light[0][0].keys())[:-1]]).squeeze()
             unique_keys, labels = np.unique(all_maps_low_ff, axis=-1, return_inverse=True)
             #nb_clusters = unique_keys.shape[-1]
+            unique_keys_high_ff, labels_high_ff = np.unique(all_maps_high_ff, axis=-1, return_inverse=True)
 
             nb_signals_low_ff = len(ind_low_ff)
             nb_signals_high_ff = len(ind_high_ff)
@@ -5472,14 +5502,25 @@ class SimpleDictSearch(Optimizer):
             all_signals_low_ff = all_signals[:, ind_low_ff.flatten()]
             all_signals_high_ff = all_signals[:, ind_high_ff.flatten()]
 
-            idx_max_all_unique_low_ff,alpha_optim_low_ff=match_signals_v2_low_ff(all_signals_low_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
+            d_T1 = 100
+            d_fT1 = 100
+            d_B1 = 0.1
+            d_DF = 0.015
+
+            idx_max_all_unique_low_ff,alpha_optim_low_ff=match_signals_v2_clustered_on_dico(all_signals_low_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
                                     transformed_array_fat_unique, var_w_total, var_f_total, sig_wf_total,
                                     index_water_unique, index_fat_unique, useGPU_dictsearch, unique_keys, d_T1, d_fT1,
-                                    d_B1, d_DF, labels)
+                                    d_B1, d_DF, labels,split,False)
 
-            idx_max_all_unique_high_ff,alpha_optim_high_ff=match_signals_v2_high_ff(all_signals_high_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
-                                     transformed_array_fat_unique, var_w_total, var_f_total, sig_wf_total,
-                                     index_water_unique, index_fat_unique, useGPU_dictsearch, split)
+            d_T1 = 300
+            d_fT1 = 100
+            d_B1 = 0.1
+            d_DF = 0.015
+
+            idx_max_all_unique_high_ff,alpha_optim_high_ff=match_signals_v2_clustered_on_dico(all_signals_high_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
+                                    transformed_array_fat_unique, var_w_total, var_f_total, sig_wf_total,
+                                    index_water_unique, index_fat_unique, useGPU_dictsearch, unique_keys_high_ff, d_T1, d_fT1,
+                                    d_B1, d_DF, labels_high_ff,split,False)
 
 
 
