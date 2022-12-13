@@ -128,9 +128,114 @@ dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_1_87_reco4_w8_simmean.dic
 #dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_760_reco3_w8_simmean.dict"
 
 
-#mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v2_1_87_reco3
-#mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v2_1_87_reco3
+localfile="/patient.003.v4/meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old.dat"
+localfile="/patient.003.v4/meas_MID00061_FID14883_raFin_3D_tra_1x1x5mm_FULL_760_DE_reco3.dat"
+localfile="/patient.003.v4/meas_MID00062_FID14884_raFin_3D_tra_1x1x5mm_FULL_760_random_v4_reco3_9.dat"
+localfile="/patient.003.v4/meas_MID00063_FID14885_raFin_3D_tra_1x1x5mm_FULL_760_random_v5_reco4.dat"
 
+dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_2_25_reco4_w8_simmean.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_2_25_reco3_w8_simmean.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v4_2_25_reco3.9_w8_simmean.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v5_2_25_reco4_w8_simmean.dict"
+
+
+localfile="/patient.003.v5/meas_MID00025_FID15028_raFin_3D_tra_1x1x5mm_FULl.dat"
+localfile="/patient.003.v5/meas_MID00020_FID15023_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+
+
+localfile="/phantom.011.v1/meas_MID00040_FID15097_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/phantom.011.v1/meas_MID00039_FID15096_raFin_3D_tra_1x1x5mm_FULL_old.dat"
+localfile="/phantom.011.v1/meas_MID00043_FID15100_raFin_3D_tra_1x1x5mm_FULl.dat"
+
+#dictfile="mrf175_Dico2_Invivo_1_63.dict"
+dictfile="mrf175_Dico2_Invivo_adjusted.dict"
+#dictfile="mrf175_Dico2_Invivo_1_94.dict"
+
+#localfile="/patient.004.v2/meas_MID00208_FID15302_raFin_3D_tra_1x1x5mm_FULL_new_FOV300.dat"
+localfile="/patient.004.v2/meas_MID00207_FID15301_raFin_3D_tra_1x1x5mm_FULL_old.dat"
+localfile="/patient.004.v2/meas_MID00209_FID15303_raFin_3D_tra_1x1x5mm_FULL_DE_FF_reco3.dat"
+localfile="/patient.004.v2/meas_MID00210_FID15304_raFin_3D_tra_1x1x5mm_FULL_DE_random_v5_reco4.dat"
+localfile="/patient.004.v2/meas_MID00212_FID15306_raFin_3D_tra_1x1x5mm_FULl.dat"
+localfile="/patient.004.v2/meas_MID00206_FID15300_raFin_3D_tra_1x1x5mm_FULL_new.dat" #FOV 400 - TR delay 1880
+
+#dictfile="mrf175_Dico2_Invivo_1_63.dict"
+#dictfile="mrf175_Dico2_Invivo_1_63.dict"
+#dictfile="mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_1_62_reco3_w8_simmean.dict"
+#dictfile="mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v5_1_62_reco4_w8_simmean.dict"
+#dictfile="mrf175_Dico2_Invivo_1_63.dict"
+dictfile="mrf175_Dico2_Invivo_1_94.dict"
+
+
+
+localfile="/patient.003.v6/meas_MID00171_FID15471_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/patient.003.v6/meas_MID00169_FID15469_raFin_3D_tra_1x1x5mm_FULL_noTRFill.dat"
+localfile="/patient.003.v6/meas_MID00170_FID15470_raFin_3D_tra_1x1x5mm_FULL_oldpulse.dat"
+
+
+dictfile="mrf175_Dico2_Invivo_1_73.dict"
+
+localfile="/patient.005.v2/meas_MID00020_FID16067_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+#localfile="/patient.005.v2/meas_MID00021_FID16068_raFin_3D_tra_1x1x5mm_FULL_bmy_oldpulse.dat"
+#localfile="/patient.005.v2/meas_MID00022_FID16069_raFin_3D_tra_1x1x5mm_FULL_bmy_newpulse.dat"
+
+
+dictfile="mrf175_Dico2_Invivo_2_00.dict"
+
+
+localfile="/patient.007.v1/meas_MID00019_FID17057_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/patient.007.v1/meas_MID00022_FID17060_raFin_3D_tra_1x1x5mm_FULL_randomv1_3_95_bis_dummy_echo.dat"
+#localfile="/patient.005.v2/meas_MID00021_FID16068_raFin_3D_tra_1x1x5mm_FULL_bmy_oldpulse.dat"
+#localfile="/patient.005.v2/meas_MID00022_FID16069_raFin_3D_tra_1x1x5mm_FULL_bmy_newpulse.dat"
+
+
+dictfile="mrf175_Dico2_Invivo_1_84.dict"
+#dictfile="mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_84_reco3.95_w8_simmean.dict"
+dictfile="mrf175_Dico2_Invivo_random_v1_1_84.dict"
+
+
+
+localfile="/patient.002.v2/meas_MID00155_FID17671_raFin_3D_tra_1x1x5mm_FULL_randomv1_reco395.dat"
+localfile="/patient.002.v2/meas_MID00158_FID17674_raFin_3D_tra_1x1x5mm_FULL_760_reco4.dat"
+localfile="/patient.002.v2/meas_MID00159_FID17675_raFin_3D_tra_1x1x5mm_FULL_1400_reco4.dat"
+
+
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_88_reco3.95_w8_simmean.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_760_1_88_reco4_w8_simmean.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_88_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1_88_reco4_w8_simmean.dict"
+
+
+localfile="/patient.003.v7/meas_MID00021_FID18400_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395.dat"
+localfile="/patient.003.v7/meas_MID00022_FID18401_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395_US2.dat"
+#localfile="/patient.003.v7/meas_MID00023_FID18402_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395_US3.dat"
+#localfile="/patient.003.v7/meas_MID00024_FID18403_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395_US4.dat"
+localfile="/patient.003.v7/meas_MID00034_FID18413_raFin_3D_tra_1x1x5mm_FULL_optim_reco395_US3_sl60.dat"
+
+#localfile="/patient.003.v7/meas_MID00025_FID18404_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+#localfile="/patient.003.v7/meas_MID00026_FID18405_raFin_3D_tra_1x1x5mm_FULL_new_US2.dat"
+#localfile="/patient.003.v7/meas_MID00027_FID18406_raFin_3D_tra_1x1x5mm_FULL_new_US3.dat"
+#localfile="/patient.003.v7/meas_MID00028_FID18407_raFin_3D_tra_1x1x5mm_FULL_new_US4.dat"
+#localfile="/patient.003.v7/meas_MID00033_FID18412_raFin_3D_tra_1x1x5mm_FULL_new_US3_sl60.dat"
+
+
+localfile="/patient.002.v4/meas_MID00165_FID18800_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+#localfile="/patient.002.v4/meas_MID00166_FID18801_raFin_3D_tra_1x1x5mm_FULL_new_US2.dat"
+#localfile="/patient.002.v4/meas_MID00167_FID18802_raFin_3D_tra_1x1x5mm_FULL_new_US3.dat"
+
+localfile="/patient.002.v4/meas_MID00168_FID18803_raFin_3D_tra_1x1x5mm_FULL_old.dat"
+#localfile="/patient.002.v4/meas_MID00169_FID18804_raFin_3D_tra_1x1x5mm_FULL_old_US2.dat"
+#localfile="/patient.002.v4/meas_MID00170_FID18805_raFin_3D_tra_1x1x5mm_FULL_old_US3.dat"
+
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_88_reco3.95_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_88_reco3.95_w8_simmean.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_88_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1_88_reco4_w8_simmean.dict"
+
+
+
+#localfile="/patient.001.v1/meas_MID00215_FID60605_raFin_3D_tra_FULl.dat"
+
+#/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data Processed/patient.001.v1/meas_MID00215_FID60605_raFin_3D_tra_FULl_us4_kdata.npy
 
 filename = base_folder+localfile
 
@@ -148,9 +253,13 @@ filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 filename_volume = str.split(filename,".dat") [0]+"_volumes{}.npy".format("")
 filename_kdata = str.split(filename,".dat") [0]+"_kdata{}.npy".format("")
 filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
-filename_mask='./data/InVivo/3D/patient.003.v3/meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_mask.npy'
-
+#filename_mask='./data/InVivo/3D/patient.001.v1/meas_MID00215_FID60605_raFin_3D_tra_FULl_mask.npy'
+#filename_mask='./data/InVivo/3D/patient.003.v3/meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_mask.npy'
+#filename_mask='./data/InVivo/3D/patient.003.v4/meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_mask.npy'
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
+#filename_mask='./data/InVivo/3D/patient.003.v7/meas_MID00021_FID18400_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395_mask.npy'
+#filename_mask='./data/InVivo/3D/patient.003.v7/meas_MID00025_FID18404_raFin_3D_tra_1x1x5mm_FULL_new_mask.npy'
+filename_mask='./data/InVivo/3D/patient.002.v4/meas_MID00165_FID18800_raFin_3D_tra_1x1x5mm_FULL_new_mask.npy'
 
 
 window=8
@@ -160,6 +269,8 @@ light_memory_usage=True
 #Parsed_File = rT.map_VBVD(filename)
 #idx_ok = rT.detect_TwixImg(Parsed_File)
 #RawData = Parsed_File[str(idx_ok)]["image"].readImage()
+
+#filename_seqParams="./data/InVivo/3D/patient.001.v1/meas_MID00215_FID60605_raFin_3D_tra_FULl_seqParams.pkl"
 
 if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):
 
@@ -229,8 +340,10 @@ ntimesteps=int(nb_segments/window)
 x_FOV = dico_seqParams["x_FOV"]
 y_FOV = dico_seqParams["y_FOV"]
 z_FOV = dico_seqParams["z_FOV"]
+#z_FOV=64
 nb_part = dico_seqParams["nb_part"]
 undersampling_factor = dico_seqParams["alFree"][9]
+#undersampling_factor=1
 
 del dico_seqParams
 
@@ -245,6 +358,7 @@ elif meas_sampling_mode==3:
     mode = "new"
 
 
+#undersampling_factor=4
 
 
 if str.split(filename_save,"/")[-1] not in os.listdir(folder):
@@ -342,7 +456,7 @@ image_size = (nb_slices, int(npoint/2), int(npoint/2))
 dx = x_FOV/(npoint/2)
 dy = y_FOV/(npoint/2)
 dz = z_FOV/nb_slices
-
+#dz=4
 #file_name_nav_mat=str.split(filename,".dat") [0]+"_nav.mat"
 #savemat(file_name_nav_mat,{"Kdata":data_for_nav})
 
@@ -372,7 +486,14 @@ else:
     #kdata_all_channels_all_slices = open_memmap(filename_kdata)
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
-
+# undersampling_factor=4
+#
+# nb_allspokes=kdata_all_channels_all_slices.shape[1]
+# nb_channels=kdata_all_channels_all_slices.shape[0]
+# npoint=kdata_all_channels_all_slices.shape[-1]
+# nb_slices=kdata_all_channels_all_slices.shape[-2]*undersampling_factor
+#
+# image_size = (nb_slices, int(npoint/2), int(npoint/2))
 
 print("Calculating Coil Sensitivity....")
 
@@ -381,17 +502,15 @@ radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampli
 
 nb_segments=radial_traj.get_traj().shape[0]
 
-
 if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     res = 16
-    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage)
+    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage,hanning_filter=False)
     np.save(filename_b1,b1_all_slices)
     del kdata_all_channels_all_slices
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
 else:
     b1_all_slices=np.load(filename_b1)
-
 
 sl=int(b1_all_slices.shape[1]/2)
 list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
@@ -423,29 +542,28 @@ if nb_channels==1:
 # std_signal_by_ts=np.std(np.abs(kdata_reshaped[0,:,:,:,np.r_[0:border,(npoint-border):npoint]][:,:,:,np.r_[0:border_sl,(nb_slices-border_sl):nb_slices]]),axis=(0,2,3))
 #
 #plt.figure();plt.plot(mean_signal_by_ts/std_signal_by_ts),plt.title("SNR by timestep")
-#
+# #
 # del kdata_all_channels_all_slices
 # kdata_all_channels_all_slices=np.load(filename_kdata)
-# # #
+# # # #
 # radial_traj_anatomy=Radial3D(total_nspokes=400,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
 # radial_traj_anatomy.traj = radial_traj.get_traj()[800:1200]
 # volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices[:,800:1200,:,:],radial_traj_anatomy,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True)[0]
-# #
+# # #
 # animate_images(volume_outofphase)
-#
+# #
 # from mutools import io
 # file_mha = filename.split(".dat")[0] + "_volume_oop_allspokes.mha"
 # io.write(file_mha,np.abs(volume_outofphase),tags={"spacing":[dz,dx,dy]})
-
-
+# #
 
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
     kdata_all_channels_all_slices=np.load(filename_kdata)
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=True,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True,normalize_iterative=True)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True,normalize_iterative=True)
     np.save(filename_volume,volumes_all)
-    # sl=20
     # ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
+    #ani = animate_images(volumes_all[:, 5, :, :])
     del volumes_all
 
 print("Building Mask....")
@@ -453,13 +571,13 @@ if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
     #selected_spokes = np.r_[10:648,1099:1400]
     selected_spokes=None
     kdata_all_channels_all_slices = np.load(filename_kdata)
-    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/15, normalize_kdata=False,light_memory_usage=True,selected_spokes=selected_spokes)
+    mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/20, normalize_kdata=False,light_memory_usage=True,selected_spokes=selected_spokes)
     np.save(filename_mask,mask)
     animate_images(mask)
     del mask
 
-with open("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400.json","r") as file:
-    sequence_config=json.load(file)
+# with open("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400.json","r") as file:
+#     sequence_config=json.load(file)
 
 # TE = np.array(sequence_config["TE"])
 # unique_TE=np.unique(TE)
@@ -493,11 +611,11 @@ volumes_all = np.load(filename_volume)
 #mask=new_mask
 
 #animate_images(mask)
-suffix="_lightDFB1"
+suffix="_2StepsDico"
 if not(load_map):
     niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=10,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative")#,mu_TV=1,weights_TV=[1.,0.,0.])
-    all_maps=optimizer.search_patterns_test_multi(dictfile,volumes_all,retained_timesteps=None)
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=50,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=None,mu="Adaptative",threshold_ff=0.9,dictfile_light=dictfile_light)#,mu_TV=1,weights_TV=[1.,0.,0.])
+    all_maps=optimizer.search_patterns_test_multi_2_steps_dico(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -513,10 +631,11 @@ if not(load_map):
 
 else:
     import pickle
-    file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
+    #file_map = filename.split(".dat")[0] + "_MRF_map.pkl"
+    file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format(suffix)
     file = open(file_map, "rb")
     all_maps = pickle.load(file)
-
+    file.close()
 
 curr_file=file_map
 file = open(curr_file, "rb")

@@ -31,7 +31,7 @@ dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
 
 
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_optim_FF.json") as f:
     sequence_config = json.load(f)
 
 #with open("./mrf_sequence_adjusted.json") as f:
@@ -334,11 +334,11 @@ from scipy.io import savemat
 
 
 
-with open("./mrf_sequence_adjusted.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json") as f:
     sequence_config = json.load(f)
 
 
-with open("./mrf_dictconf_SimReco2_light_matching.json") as f:
+with open("./mrf_dictconf_Dico2_Invivo.json") as f:
     dict_config = json.load(f)
 
 #with open("./mrf_dictconf_SimReco2.json") as f:
@@ -354,14 +354,20 @@ df = dict_config["delta_freqs"]
 df = [- value / 1000 for value in df] # temp
 # df = np.linspace(-0.1, 0.1, 101)
 
-#min_TR_delay=2.25
-#TE_list=np.array(sequence_config["TE"])
-#TR_list=list(TE_list+min_TR_delay)
-#sequence_config["TR"]=TR_list
+min_TR_delay=1.84
+TE_list=np.array(sequence_config["TE"])
+TR_list=list(TE_list+min_TR_delay)
+sequence_config["TR"]=TR_list
+
+
 
 seq=T1MRF(**sequence_config)
 
-dictfile = "mrf175_SimReco2_light_matching_adjusted.dict"
+
+
+
+
+dictfile = "mrf175_Dico2_Invivo_random_v1_1_84.dict"
 
 sim_mode="mean"
 overwrite=True
@@ -422,7 +428,7 @@ mrfdict.save(dictfile, overwrite=overwrite)
 import numpy as np
 import pandas as pd
 import json
-with open("./mrf_sequence_adjusted_760.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json") as f:
     sequence_config = json.load(f)
 
 TE=sequence_config["TE"]
@@ -457,7 +463,12 @@ print(np.max(np.array(FA)))
 
 
 
+from utils_simu import *
+generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json","./mrf_dictconf_Dico2_Invivo.json",3.95)
 
+
+
+generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json","./mrf_dictconf_SimReco2.json",3)
 
 
 

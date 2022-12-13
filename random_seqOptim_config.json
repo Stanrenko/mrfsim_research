@@ -1,5 +1,7 @@
-{"sigma":0.6 ,
- "noise_type":"Relative",
+{
+ "spokes_count": 760,
+ "sigma":0.03 ,
+ "noise_type":"Absolute",
  "noise_size":100,
  "DFs":[-30,0,30],
  "FFs":[0,0.1,0.2,0.3,0.4,0.5],
@@ -10,12 +12,12 @@
  "bound_min_TE":0.0022,
  "bound_max_TE":0.004,
  "bound_min_FA":0.087266,
- "H":3,
+ "H":5,
  "lambda_FA":0,
  "lambda_time":0,
  "lambda_FF":2,
  "lambda_T1":1,
  "lambda_stdT1":0,
- "maxiter":2
+ "maxiter":1000
 }
 

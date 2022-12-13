@@ -993,17 +993,21 @@ def build_mask(filename_kdata,filename_traj,sampling_mode,undersampling_factor,d
 @machine
 @set_parameter("filename_volume", str, default=None, description="MRF time series")
 @set_parameter("filename_mask", str, default=None, description="Mask")
+@set_parameter("filename", str, default=None, description="filename for parameters")
+@set_parameter("undersampling_factor", int, default=None, description="Kz undersampling factor")
 @set_parameter("dictfile", str, default=None, description="Dictionary file")
 @set_parameter("optimizer_config",type=Config,default=DEFAULT_OPT_CONFIG,description="Optimizer parameters")
 @set_parameter("slices",type=Config,default=None,description="Slices to consider for pattern matching")
-def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
+def build_maps(filename_volume,filename_mask,filename,undersampling_factor,dictfile,optimizer_config,slices):
     opt_type = optimizer_config["type"]
 
     file_map = filename_volume.split(".npy")[0] + "_{}_MRF_map.pkl".format(opt_type)
     volumes_all = np.load(filename_volume)
     mask=np.load(filename_mask)
 
-    filename = filename_volume.split("_volumes.npy")[0] + ".dat"
+    if filename is None:
+        filename = filename_volume.split("_volumes.npy")[0] + ".dat"
+
     folder = "/".join(str.split(filename, "/")[:-1])
     dico_seqParams = build_dico_seqParams(filename, folder)
 
@@ -1069,10 +1073,15 @@ def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
     elif opt_type=="CF_iterative":
         niter=optimizer_config["niter"]
         mu=optimizer_config["mu"]
-        undersampling_factor=optimizer_config["US"]
+        if undersampling_factor is None:
+            undersampling_factor=optimizer_config["US"]
         nspoke=optimizer_config["nspoke"]
-        use_navigator_dll = dico_seqParams["use_navigator_dll"]
 
+        if "use_navigator_dll" in dico_seqParams:
+            use_navigator_dll = dico_seqParams["use_navigator_dll"]
+
+        else:
+            use_navigator_dll=False
         if use_navigator_dll:
             meas_sampling_mode = dico_seqParams["alFree"][14]
         else:
@@ -1088,6 +1097,8 @@ def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
             incoherent = True
             mode = "new"
 
+        print("incoherent {}".format(incoherent))
+
         nb_segments = dico_seqParams["alFree"][4]
 
 
@@ -1097,10 +1108,20 @@ def build_maps(filename_volume,filename_mask,dictfile,optimizer_config,slices):
         filename_b1 = filename_volume.split("_volumes.npy")[0] + "_b1.npy"
         b1_all_slices=np.load(filename_b1)
 
+        if "mu_TV" not in optimizer_config:
+            optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=split, pca=True,
+                                         threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
+                                         useGPU_simulation=False, gen_mode="other",b1=b1_all_slices,mu=mu,ntimesteps=int(nb_segments/nspoke))
+        else:
+            if "weights_TV" not in optimizer_config:
+                optimizer_config["weights_TV"]=[1.0,0.0,0.0]
 
-        optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=split, pca=True,
-                                     threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
-                                     useGPU_simulation=False, gen_mode="other",b1=b1_all_slices,mu=mu,ntimesteps=int(nb_segments/nspoke))
+            optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=split,
+                                         pca=True,
+                                         threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
+                                         useGPU_simulation=False, gen_mode="other", b1=b1_all_slices, mu=mu,
+                                         ntimesteps=int(nb_segments / nspoke),mu_TV=optimizer_config["mu_TV"],weights_TV=optimizer_config["weights_TV"])
+
         all_maps = optimizer.search_patterns_test_multi(dictfile, volumes_all)
 
 

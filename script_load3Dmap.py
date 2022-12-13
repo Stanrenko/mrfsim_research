@@ -165,7 +165,7 @@ from utils_mrf import *
 from mutools import io
 
 
-folder ="./data/InVivo/3D/patient.003.v4/"
+folder ="./data/InVivo/3D/patient.003.v7/"
 
 #meas_MID00360_FID09597_raFin_3D_tra_1x1x5mm_FULL_1400_DE_FF_reco4_allspokes8_MRF_map
 file_maps=[
@@ -189,15 +189,42 @@ file_maps=[
 
 
 file_maps=[
-    "meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_lightDFB1_MRF_map.pkl",
-    #"meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_lightDFB1_us_4_MRF_map.pkl",
-    "meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_us4_volumes_CF_iterative_MRF_map.pkl"
+    "meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_lightDFB1_MRF_map.pkl",
+    "meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_lightDFB1_us_MRF_map.pkl"
     ]
 
 file_maps=[
     "meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_lightDFB1_MRF_map.pkl",
-    #"meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_lightDFB1_us_4_MRF_map.pkl",
-    "meas_MID00061_FID14883_raFin_3D_tra_1x1x5mm_FULL_760_DE_reco3_lightDFB1_MRF_map.pkl"
+    "meas_MID00061_FID14883_raFin_3D_tra_1x1x5mm_FULL_760_DE_reco3_lightDFB1_MRF_map.pkl",
+    "meas_MID00062_FID14884_raFin_3D_tra_1x1x5mm_FULL_760_random_v4_reco3_9_lightDFB1_MRF_map.pkl",
+    "meas_MID00063_FID14885_raFin_3D_tra_1x1x5mm_FULL_760_random_v5_reco4_lightDFB1_MRF_map.pkl"
+    ]
+
+file_maps=[
+    "meas_MID00215_FID60605_raFin_3D_tra_FULl_volumes_CF_iterative_MRF_map.pkl",
+    "meas_MID00215_FID60605_raFin_3D_tra_FULl_us4_volumes_CF_iterative_MRF_map.pkl"
+    ]
+
+file_maps=[
+    "meas_MID00019_FID17057_raFin_3D_tra_1x1x5mm_FULL_new_MRF_map.pkl",
+    "meas_MID00022_FID17060_raFin_3D_tra_1x1x5mm_FULL_randomv1_3_95_bis_dummy_echo_MRF_map.pkl",
+    "meas_MID00022_FID17060_raFin_3D_tra_1x1x5mm_FULL_randomv1_3_95_bis_dummy_echo_SS_MRF_map.pkl"
+    ]
+
+file_maps=[
+    "meas_MID00159_FID17675_raFin_3D_tra_1x1x5mm_FULL_1400_reco4_2StepsDico_MRF_map.pkl",
+    "meas_MID00159_FID17675_raFin_3D_tra_1x1x5mm_FULL_1400_reco4_SS_MRF_map.pkl"
+    ]
+
+
+file_maps=[
+    "meas_MID00021_FID18400_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395_2StepsDico_MRF_map.pkl",
+    "meas_MID00025_FID18404_raFin_3D_tra_1x1x5mm_FULL_new_2StepsDico_MRF_map.pkl",
+"meas_MID00022_FID18401_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395_US2_2StepsDico_MRF_map.pkl",
+"meas_MID00022_FID18401_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395_US2_MRF_map.pkl",
+"meas_MID00026_FID18405_raFin_3D_tra_1x1x5mm_FULL_new_US2_2StepsDico_MRF_map.pkl",
+"meas_MID00026_FID18405_raFin_3D_tra_1x1x5mm_FULL_new_US2_MRF_map.pkl"
+
     ]
 
 file_ROI=folder+"roi.mha"
@@ -241,46 +268,56 @@ k = "wT1"
 for key in list(dico_values.keys())[1:]:
     values=dico_values[key][k].sort_values(by=["Obs Mean"])
     sm.graphics.mean_diff_plot(np.array(values[["Obs Mean"]]).flatten(), np.array(values[["Pred Mean"]]).flatten());
-    plt.title("{} : {} vs Reference Sequence".format(k,key))
+    #plt.title("{} : {} vs Reference Sequence".format(k,key))
 
 k = "ff"
 for key in list(dico_values.keys())[1:]:
     values=dico_values[key][k].sort_values(by=["Obs Mean"])
     sm.graphics.mean_diff_plot(np.array(values[["Obs Mean"]]).flatten(), np.array(values[["Pred Mean"]]).flatten());
-    plt.title("{} : {} vs Reference Sequence".format(k,key))
+    #plt.title("{} : {} vs Reference Sequence".format(k,key))
 
+
+labels=["Optim","Current","Optim US 2","Optim US 2 Traditional Matching","Current US 2","Current US 2 Traditional Matching"]
 
 plt.figure()
-k="wT1"
+k="df"
 plt.title(k +" roi mean")
-for key in dico_values.keys():
+for i,key in enumerate(dico_values.keys()):
     values=dico_values[key][k].sort_values(by=["Obs Mean"])
-    plt.plot(values[["Pred Mean"]],'o',label=key)#,marker="x")
+    if key=="meas_MID00215_FID60605_raFin_3D_tra_FULl_volumes_CF_iterative_MRF_map.pkl_it0":
+        plt.plot(values[["Pred Mean"]],'x',label=labels[i],color="k")#,marker="x")
+
+    else:
+        plt.plot(values[["Pred Mean"]],'o',label=labels[i])#,marker="x")
 plt.legend()
 
 
 
 plt.figure()
 plt.title(k + " roi std")
-for key in dico_values.keys():
+for i,key in enumerate(dico_values.keys()):
     values=dico_values[key][k].sort_values(by=["Obs Mean"])
-    plt.plot(values[["Obs Mean"]],values[["Pred Std"]],label=key,marker="x")
+    if key=="meas_MID00215_FID60605_raFin_3D_tra_FULl_volumes_CF_iterative_MRF_map.pkl_it0":
+        plt.plot(values[["Obs Mean"]], values[["Pred Std"]], label=labels[i], linestyle="dashed",color="k")
+    else:
+        plt.plot(values[["Obs Mean"]],values[["Pred Std"]],label=labels[i],marker="x")
 plt.legend()
 
 
+labels=["MRF T1-FF 1400 spokes","Optimized MRF T1-FF 760 spokes"]
 plt.figure()
 k="ff"
 plt.title(k +" roi mean")
-for key in dico_values.keys():
+for i,key in enumerate(dico_values.keys()):
     values=dico_values[key][k].sort_values(by=["Obs Mean"])
-    plt.plot(values[["Obs Mean"]],values[["Pred Mean"]],"o",label=key)
+    plt.plot(values[["Obs Mean"]],values[["Pred Mean"]],"o",label=labels[i])
 plt.legend()
 
 plt.figure()
 plt.title(k + " roi std")
-for key in dico_values.keys():
+for i,key in enumerate(dico_values.keys()):
     values=dico_values[key][k].sort_values(by=["Obs Mean"])
-    plt.plot(values[["Obs Mean"]],values[["Pred Std"]],label=key,marker="x")
+    plt.plot(values[["Obs Mean"]],values[["Pred Std"]],label=labels[i],marker="x")
 plt.legend()
 
 plt.figure()

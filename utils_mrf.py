@@ -38,6 +38,10 @@ from mpl_toolkits.axes_grid1 import ImageGrid
 from skimage.metrics import structural_similarity as ssim
 import collections
 import gc
+import pycuda
+import pycuda.autoinit
+from pycuda.gpuarray import GPUArray, to_gpu
+from cufinufft import cufinufft
 try:
     import pycuda
     import pycuda.autoinit
@@ -1523,6 +1527,10 @@ def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6,ntimesteps=None):
         traj=trajectory.get_traj()
     else:
         traj = trajectory.get_traj_for_reconstruction(ntimesteps)
+
+    if volumes.dtype=="complex64":
+        traj=traj.astype("float32")
+
     ntimesteps=volumes.shape[0]
     if traj.shape[-1]==2:# For slices
         if not(useGPU):
@@ -1732,6 +1740,9 @@ def generate_kdata_singular_multi(volumes,trajectory,b1_all_slices,useGPU=False,
 
 def generate_kdata_multi(volumes,trajectory,b1_all_slices,useGPU=False,eps=1e-6,ntimesteps=None):
     kdata=[]
+    if volumes.dtype=="complex64":
+        b1_all_slices=b1_all_slices.astype("complex64")
+
     for i in tqdm(range(b1_all_slices.shape[0])):
         kdata.append(generate_kdata(volumes*np.expand_dims(b1_all_slices[i],axis=0),trajectory, useGPU=useGPU, eps=eps,ntimesteps=ntimesteps))
 
@@ -2824,7 +2835,7 @@ def undersampling_operator_singular(volumes,trajectory,b1_all_slices,density_adj
     return images_series_rebuilt
 
 
-def undersampling_operator(volumes,trajectory,b1_all_slices,density_adj=True):
+def undersampling_operator(volumes,trajectory,b1_all_slices,density_adj=True,light_memory_usage=False):
     """
     returns A.H @ W @ A @ volumes where A=F Fourier + sampling operator and W correspond to radial density adjustment
     """
@@ -2837,37 +2848,75 @@ def undersampling_operator(volumes,trajectory,b1_all_slices,density_adj=True):
     traj = traj.reshape(ntimesteps,-1, 3)
     npoint = trajectory.paramDict["npoint"]
 
+    if volumes.dtype == "complex64":
+        traj=traj.astype("float32")
+        b1_all_slices=b1_all_slices.astype("complex64")
+
     num_k_samples = traj.shape[1]
 
     output_shape = (ntimesteps,) + size
     images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
 
     for k in tqdm(range(nb_channels)):
+        if not(light_memory_usage):
+            curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
+            print(curr_volumes.shape)
+            if len(size)==3:
+                curr_kdata = [finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], v) for (t,v) in zip (traj,curr_volumes)]
+            else:
+                curr_kdata = [finufft.nufft2d2( t[:, 0], t[:, 1], v) for (t, v) in zip(traj, curr_volumes)]
+            del curr_volumes
+            curr_kdata=np.array(curr_kdata)
+            print(curr_kdata.shape)
+            if density_adj:
+                curr_kdata=curr_kdata.reshape(ntimesteps,-1,npoint)
+                density = np.abs(np.linspace(-1, 1, npoint))
+                density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+                curr_kdata*=density
 
-        curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
-        print(curr_volumes.shape)
-        if len(size)==3:
-            curr_kdata = [finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], v) for (t,v) in zip (traj,curr_volumes)]
+
+            curr_kdata = curr_kdata.reshape(ntimesteps, -1)
+
+            if len(size) == 3:
+                fk = [finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kd, size) for (t,kd) in zip(traj,curr_kdata)]
+            else:
+                fk = [finufft.nufft2d1(t[:, 0], t[:, 1], kd, size) for (t, kd) in zip(traj, curr_kdata)]
+            del curr_kdata
+            fk=np.array(fk)
+            print(fk.shape)
+            images_series_rebuilt += b1_all_slices[k].conj()* fk
+
         else:
-            curr_kdata = [finufft.nufft2d2( t[:, 0], t[:, 1], v) for (t, v) in zip(traj, curr_volumes)]
-        curr_kdata=np.array(curr_kdata)
-        print(curr_kdata.shape)
-        if density_adj:
-            curr_kdata=curr_kdata.reshape(ntimesteps,-1,npoint)
-            density = np.abs(np.linspace(-1, 1, npoint))
-            density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
-            curr_kdata*=density
+            for ts in tqdm(range(ntimesteps)):
+                curr_volumes = volumes[ts] * b1_all_slices[k]
+                print(curr_volumes.shape)
+                if len(size) == 3:
+                    t=traj[ts]
+                    curr_kdata = finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], curr_volumes)
+                else:
+                    t = traj[ts]
+                    curr_kdata = finufft.nufft3d2(t[:, 0], t[:, 1], curr_volumes)
+                del curr_volumes
+                print(curr_kdata.shape)
+                if density_adj:
+                    curr_kdata = curr_kdata.reshape(-1, npoint)
+                    density = np.abs(np.linspace(-1, 1, npoint))
+                    density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+                    curr_kdata *= density
 
+                curr_kdata = curr_kdata.flatten()
 
-        curr_kdata = curr_kdata.reshape(ntimesteps, -1)
+                if len(size) == 3:
+                    t=traj[ts]
+                    fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], curr_kdata, size)
+                else:
+                    t = traj[ts]
+                    fk = finufft.nufft3d1(t[:, 0], t[:, 1], curr_kdata, size)
+                del curr_kdata
 
-        if len(size) == 3:
-            fk = [finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kd, size) for (t,kd) in zip(traj,curr_kdata)]
-        else:
-            fk = [finufft.nufft2d1(t[:, 0], t[:, 1], kd, size) for (t, kd) in zip(traj, curr_kdata)]
-        fk=np.array(fk)
-        print(fk.shape)
-        images_series_rebuilt += b1_all_slices[k].conj()* fk
+                print(fk.shape)
+                images_series_rebuilt[ts] += b1_all_slices[k].conj() * fk
+
 
     images_series_rebuilt /= num_k_samples
     return images_series_rebuilt
@@ -3539,7 +3588,7 @@ def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256),hanni
             b1[i]=b1[i] / np.max(np.abs(b1[i].flatten()))
     return b1
 
-def calculate_sensitivity_map_3D(kdata,trajectory,res=16,image_size=(1,256,256),useGPU=False,eps=1e-6,light_memory_usage=False,density_adj=False):
+def calculate_sensitivity_map_3D(kdata,trajectory,res=16,image_size=(1,256,256),useGPU=False,eps=1e-6,light_memory_usage=False,density_adj=False,hanning_filter=False):
     traj_all = trajectory.get_traj()
     traj_all = traj_all.reshape(-1, traj_all.shape[-1])
     npoint = kdata.shape[-1]
@@ -3554,11 +3603,21 @@ def calculate_sensitivity_map_3D(kdata,trajectory,res=16,image_size=(1,256,256),
 
     if not(light_memory_usage):
         kdata_for_sensi = np.zeros(kdata.shape, dtype=np.complex128)
-        kdata_for_sensi[:, :, :, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:,
+        if not(hanning_filter):
+            kdata_for_sensi[:, :, :, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:,
                                                                                             :, :,
                                                                                             (center_res - int(res / 2)):(
                                                                                                     center_res + int(
                                                                                                 res / 2))]
+        else:
+            kdata_for_sensi[:, :, :, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:,
+                                                                                                :, :,
+                                                                                                (center_res - int(
+                                                                                                    res / 2)):(
+                                                                                                        center_res + int(
+                                                                                                    res / 2))]*np.expand_dims(np.hanning(2 * int(res / 2)), axis=(0, 1, 2))
+
+
 
         del kdata
         kdata_for_sensi = kdata_for_sensi.reshape(nb_channels, -1)
@@ -3574,12 +3633,23 @@ def calculate_sensitivity_map_3D(kdata,trajectory,res=16,image_size=(1,256,256),
             coil_sensitivity=np.zeros((nb_channels,)+image_size,dtype=np.complex128)
             kdata_for_sensi = np.zeros(kdata.shape[1:], dtype=np.complex128)
             for i in tqdm(range(nb_channels)):
-                kdata_for_sensi[:, :, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[i,
+                if not(hanning_filter):
+                    kdata_for_sensi[:, :, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[i,
                                                                                                     :, :,
                                                                                                     (center_res - int(
                                                                                                         res / 2)):(
                                                                                                             center_res + int(
-                                                                                                        res / 2))]
+                                                                                                      res / 2))]
+
+                else:
+                    kdata_for_sensi[:, :, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[i,
+                                                                                                     :, :,
+                                                                                                     (center_res - int(
+                                                                                                         res / 2)):(
+                                                                                                             center_res + int(
+                                                                                                         res / 2))]*np.expand_dims(np.hanning(2 * int(res / 2)), axis=(0, 1))
+
+
                 flattened_kdata_for_sensi=kdata_for_sensi.flatten()
                 index_non_zero_kdata = np.nonzero(flattened_kdata_for_sensi)
                 flattened_kdata_for_sensi=flattened_kdata_for_sensi[index_non_zero_kdata]
@@ -4642,16 +4712,16 @@ def grad_J(m,traj,data,npoint,nspoke,nb_slices,density_adj=True,useGPU=False,sca
 def psi(t,alpha=1e-13):
     return np.sqrt(t+alpha**2)
 
-def delta(m,axis):
-    return np.diff(m,axis=1+axis,append=0)
+def delta(m,axis,shift=1):
+    return np.diff(m,axis=shift+axis,append=0)
 
-def delta_adjoint(m,axis):
-    return -np.diff(m, axis=1 + axis, prepend=0)
+def delta_adjoint(m,axis,shift=1):
+    return -np.diff(m, axis=shift + axis, prepend=0)
 
-def J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None):
+def J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None,shift=1):
 
     #global delta_m
-    delta_m = delta(m, axis)
+    delta_m = delta(m, axis,shift)
 
 
 
@@ -4677,11 +4747,11 @@ def J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None):
 
     return np.sum(weights*psi(np.abs(delta_m)**2,alpha))
 
-def grad_J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None):
+def grad_J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None,shift=1):
 
 
 
-    delta_m = delta(m,axis)
+    delta_m = delta(m,axis,shift)
 
     if is_weighted:
         if (mask is None)and(weights is None):
@@ -4691,12 +4761,14 @@ def grad_J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None):
             bound_inf = np.min(np.argwhere(mask > 0)[:, axis])
             bound_sup = np.max(np.argwhere(mask > 0)[:, axis])
             weights = np.ones(delta_m.shape, dtype=delta_m.dtype)
-            idx = [np.s_[:], np.s_[:], np.s_[:], np.s_[:]]
-            idx[axis + 1] = np.s_[:bound_inf]
+
+            idx = [np.s_[:]]*weights.ndim
+            idx[axis + shift] = np.s_[:bound_inf]
             weights[tuple(idx)] = 0
 
-            idx = [np.s_[:], np.s_[:], np.s_[:], np.s_[:]]
-            idx[axis + 1] = np.s_[bound_sup:]
+
+            idx = [np.s_[:]]*weights.ndim
+            idx[axis + shift] = np.s_[bound_sup:]
             weights[tuple(idx)] = 0
 
     else:
@@ -4704,4 +4776,4 @@ def grad_J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None):
 
     W = psi(np.abs(delta_m)**2,alpha)
 
-    return delta_adjoint(weights*delta_m/W,axis)
+    return delta_adjoint(weights*delta_m/W,axis,shift)

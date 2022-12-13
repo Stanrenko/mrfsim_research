@@ -132,7 +132,18 @@ dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_1_87_reco4_w8_simmean.dic
 #mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v2_1_87_reco3
 
 
-undersampling_factor=2
+localfile="/patient.003.v4/meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old.dat"
+#localfile="/patient.003.v4/meas_MID00061_FID14883_raFin_3D_tra_1x1x5mm_FULL_760_DE_reco3.dat"
+#localfile="/patient.003.v4/meas_MID00062_FID14884_raFin_3D_tra_1x1x5mm_FULL_760_random_v4_reco3_9.dat"
+#localfile="/patient.003.v4/meas_MID00063_FID14885_raFin_3D_tra_1x1x5mm_FULL_760_random_v5_reco4.dat"
+
+dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_2_25_reco4_w8_simmean.dict"
+#dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_2_25_reco3_w8_simmean.dict"
+#dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v4_2_25_reco3.9_w8_simmean.dict"
+#dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v5_2_25_reco4_w8_simmean.dict"
+
+
+undersampling_factor=4
 
 filename = base_folder+localfile
 
@@ -150,7 +161,7 @@ filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 filename_volume = str.split(filename,".dat") [0]+"_us{}_volumes{}.npy".format(undersampling_factor,"")
 filename_kdata = str.split(filename,".dat") [0]+"_us{}_kdata{}.npy".format(undersampling_factor,"")
 filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
-filename_mask='./data/InVivo/3D/patient.003.v3/meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_mask.npy'
+filename_mask='./data/InVivo/3D/patient.003.v4/meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_mask.npy'
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
@@ -506,7 +517,7 @@ volumes_all = np.load(filename_volume)
 #mask=new_mask
 
 #animate_images(mask)
-suffix="_lightDFB1_us".format(undersampling_factor)
+suffix="_lightDFB1_us_{}".format(undersampling_factor)
 if not(load_map):
     niter = 10
     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=10,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative")#,mu_TV=1,weights_TV=[1.,0.,0.])
