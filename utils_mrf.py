@@ -38,10 +38,6 @@ from mpl_toolkits.axes_grid1 import ImageGrid
 from skimage.metrics import structural_similarity as ssim
 import collections
 import gc
-import pycuda
-import pycuda.autoinit
-from pycuda.gpuarray import GPUArray, to_gpu
-from cufinufft import cufinufft
 try:
     import pycuda
     import pycuda.autoinit
@@ -2845,7 +2841,10 @@ def undersampling_operator(volumes,trajectory,b1_all_slices,density_adj=True,lig
     nb_channels=b1_all_slices.shape[0]
 
     traj = trajectory.get_traj()
-    traj = traj.reshape(ntimesteps,-1, 3)
+    if len(size)==3:
+        traj = traj.reshape(ntimesteps,-1, 3)
+    else:
+        traj = traj.reshape(ntimesteps, -1, 2)
     npoint = trajectory.paramDict["npoint"]
 
     if volumes.dtype == "complex64":

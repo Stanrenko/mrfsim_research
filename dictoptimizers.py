@@ -10,6 +10,7 @@ from image_series import MapFromDict
 from datetime import datetime
 from skimage.restoration import denoise_tv_chambolle
 from copy import copy
+import os
 #import cupy as cp
 try:
     #from pycuda.autoinit import _finish_up
@@ -6499,7 +6500,10 @@ class SimpleDictSearch(Optimizer):
 
 
 
-            keys_for_map = [tuple(k) for k in keys.get()]
+            if useGPU_dictsearch:
+                keys=keys.get()
+
+            keys_for_map = [tuple(k) for k in keys]
 
             params_all_unique = np.array(
                 [keys_for_map[idx] + (alpha_optim[l],) for l, idx in enumerate(idx_max_all_unique.astype(int))])
@@ -7456,7 +7460,7 @@ class ToyNN(Optimizer):
 
 class BruteDictSearch(Optimizer):
 
-    def __init__(self,FF_list=np.arange(0.,1.05,0.05),split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,remove_duplicate_signals=False,log_phase=False,return_matched_signals=False,**kwargs):
+    def __init__(self,FF_list=np.arange(0.,1.05,0.05),split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,remove_duplicate_signals=False,log_phase=False,return_matched_signals=False,n_clusters_dico=None,pruning=None,**kwargs):
         #transf is a function that takes as input timesteps arrays and outputs shifts as output
         super().__init__(**kwargs)
         self.paramDict["split"] = split
@@ -7468,8 +7472,12 @@ class BruteDictSearch(Optimizer):
         #self.paramDict["useAdjPred"]=useAdjPred
 
 
+
         self.paramDict["useGPU_dictsearch"]=useGPU_dictsearch
         self.paramDict["log_phase"] = log_phase
+
+        self.paramDict["n_clusters_dico"]=n_clusters_dico
+        self.paramDict["pruning"] = pruning
 
     def search_patterns(self,dictfile,volumes,retained_timesteps=None):
 
@@ -7491,6 +7499,10 @@ class BruteDictSearch(Optimizer):
 
         remove_duplicates = self.paramDict["remove_duplicate_signals"]
         #adj_phase=self.paramDict["adj_phase"]
+        n_clusters_dico = self.paramDict["n_clusters_dico"]
+        pruning = self.paramDict["pruning"]
+        if n_clusters_dico is not None:
+            clustering_file=str.split(dictfile,".dict")[0]+"_{}groups.npy".format(n_clusters_dico)
 
         if volumes.ndim > 2:
             signals = volumes[:, mask > 0]
@@ -7520,11 +7532,10 @@ class BruteDictSearch(Optimizer):
 
         if pca:
             pca = PCAComplex(n_components_=threshold_pca)
-
             pca.fit(values)
-
-
             transformed_values = pca.transform(values)
+        else:
+            transformed_values=values
 
         var = np.sum(transformed_values * transformed_values.conj(), axis=1).real
 
@@ -7538,6 +7549,48 @@ class BruteDictSearch(Optimizer):
 
         print("Calculating optimal fat fraction and best pattern per signal")
         nb_signals = all_signals.shape[1]
+        nb_signals_dico=values.shape[0]
+
+        if n_clusters_dico is not None:
+
+            if clustering_file not in os.listdir():
+                print(os.listdir())
+                print("Forming dictionary groups for group matching")
+                n_el_per_group = int(nb_signals_dico / n_clusters_dico)
+
+                curr_values = copy(values)
+                s_cur = values[0]
+
+                cluster_signals = []
+                labels = np.zeros(nb_signals_dico)
+                for j in tqdm(range(n_clusters_dico+1)):
+                    if j == (n_clusters_dico):
+                        n_el_per_group_curr = nb_signals_dico - n_clusters_dico * n_el_per_group
+                        if n_el_per_group_curr==0:
+                            break
+                    else:
+                        n_el_per_group_curr = n_el_per_group
+                    indices_group = np.argsort(np.linalg.norm(curr_values - s_cur, axis=1))[:n_el_per_group_curr]
+                    labels[indices_group] = j
+                    #dico_group_indices_aggreg.append(list(indices_group))
+
+                    s_cur = np.mean(curr_values[indices_group], axis=0)
+                    cluster_signals.append(s_cur)
+                    # curr_values=np.delete(curr_values,indices_group,axis=0)
+                    curr_values[indices_group] = np.inf
+
+                np.save(clustering_file,(cluster_signals,labels),allow_pickle=True)
+            else:
+                (cluster_signals, labels)=np.load(clustering_file,allow_pickle=True)
+
+
+            labels = labels.astype(int)
+            cluster_signals = np.array(cluster_signals)
+
+            if pca:
+                cluster_signals = pca.transform(cluster_signals)
+
+            var_clusters = np.sum(cluster_signals * cluster_signals.conj(), axis=1).real
 
         if remove_duplicates:
             all_signals, index_signals_unique = np.unique(all_signals, axis=1, return_inverse=True)
@@ -7545,145 +7598,226 @@ class BruteDictSearch(Optimizer):
 
 
 
-        print("There are {} unique signals to match along {} dic components".format(nb_signals,values.shape[0]))
+        print("There are {} unique signals to match along {} dic components".format(nb_signals,nb_signals_dico))
+
+
+        if n_clusters_dico is None:
+            num_group = int(nb_signals / split) + 1
+
+            idx_max_all_unique = []
+
+            lambd=[]
 
 
 
-        num_group = int(nb_signals / split) + 1
+            for j in tqdm(range(num_group)):
+                j_signal = j * split
+                j_signal_next = np.minimum((j + 1) * split, nb_signals)
+                if j_signal>=nb_signals:
+                    break
 
-        idx_max_all_unique = []
-
-        lambd=[]
-
-        for j in tqdm(range(num_group)):
-            j_signal = j * split
-            j_signal_next = np.minimum((j + 1) * split, nb_signals)
-
-            if self.verbose:
-                print("PCA transform")
-                start = datetime.now()
-
-
-            if not(useGPU_dictsearch):
-
-                if pca:
-                    transformed_all_signals = np.transpose(pca.transform(np.transpose(all_signals[:, j_signal:j_signal_next])))
-
-                    sig = np.matmul(transformed_values.conj(),
-                                                  transformed_all_signals)
-
-                    phi = 0.5 * np.angle(sig ** 2 / np.expand_dims(np.real(var), axis=-1))
-                    sig=np.real(np.matmul(transformed_values.conj(), transformed_all_signals) * np.exp(
-                        -1j * phi))
-
-
-                else:
-                    sig = np.matmul(values.conj(), all_signals[:, j_signal:j_signal_next])
-                    phi = 0.5 * np.angle(sig ** 2 / np.expand_dims(np.real(var), axis=-1))
-                    sig=np.real(np.matmul(values.conj(), all_signals[:, j_signal:j_signal_next]) * np.exp(
-                        -1j * phi))
-
-                lambd = sig / np.expand_dims(np.real(var), axis=-1)
-
-
-            else:
-
-
-                if pca:
-
-                    transformed_all_signals = cp.transpose(
-                        pca.transform(cp.transpose(cp.asarray(all_signals[:, j_signal:j_signal_next]))))
-
-                    sig = (cp.matmul(cp.asarray(transformed_values).conj(),
-                                                   cp.asarray(transformed_all_signals)))
-
-                    phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(cp.real(cp.asarray(var)), axis=-1))
-                    sig = cp.real(cp.matmul(cp.asarray(transformed_values).conj(), transformed_all_signals) * cp.exp(
-                        -1j * phi))
-
-                else:
-
-                    sig = (cp.matmul(cp.asarray(values).conj(),
-                                                   cp.asarray(all_signals)[:, j_signal:j_signal_next]))
-
-                    phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(cp.real(var), axis=-1))
-                    sig = cp.real(cp.matmul(values.conj(), all_signals[:, j_signal:j_signal_next] )* cp.exp(
-                        -1j * phi))
-
-                lambd = sig / cp.expand_dims(cp.real(var), axis=-1)
-
-            if self.verbose:
-                end = datetime.now()
-                print(end - start)
-
-            if self.verbose:
-                start = datetime.now()
-
-
-            #current_sig_ws = current_sig_ws_for_phase.real
-            #current_sig_fs = current_sig_fs_for_phase.real
-
-            if self.verbose:
-                end = datetime.now()
-                print(end-start)
-
-            if not(useGPU_dictsearch):
-                #if adj_phase:
                 if self.verbose:
-                    print("Adjusting Phase")
-                    print("Calculating alpha optim and flooring")
+                    print("PCA transform")
+                    start = datetime.now()
 
-                    ### Testing direct phase solving
 
-                J_all=lambd**2*np.expand_dims(var,axis=-1) - 2*lambd*sig
+                if not(useGPU_dictsearch):
 
-                if not(self.paramDict["return_matched_signals"]):
-                    del lambd
-                    del phi
+                    if pca:
+                        transformed_all_signals = np.transpose(pca.transform(np.transpose(all_signals[:, j_signal:j_signal_next])))
 
-                end = datetime.now()
+                        sig = np.matmul(transformed_values.conj(),
+                                                      transformed_all_signals)
 
-            else:
+                        phi = 0.5 * np.angle(sig ** 2 / np.expand_dims(np.real(var), axis=-1))
+                        sig=np.real(np.matmul(transformed_values.conj(), transformed_all_signals) * np.exp(
+                            -1j * phi))
 
-                J_all=lambd**2*cp.expand_dims(var,axis=-1) - 2*lambd*sig
 
-                J_all = J_all.get()
+                    else:
+                        sig = np.matmul(values.conj(), all_signals[:, j_signal:j_signal_next])
+                        phi = 0.5 * np.angle(sig ** 2 / np.expand_dims(np.real(var), axis=-1))
+                        sig=np.real(np.matmul(values.conj(), all_signals[:, j_signal:j_signal_next]) * np.exp(
+                            -1j * phi))
 
-                if not(self.paramDict["return_matched_signals"]):
-                    del lambd
-                    del phi
+                    lambd = sig / np.expand_dims(np.real(var), axis=-1)
+
+
                 else:
-                    lambd=lambd.get()
-                    phi=phi.get()
+
+
+                    if pca:
+
+                        transformed_all_signals = cp.transpose(
+                            pca.transform(cp.transpose(cp.asarray(all_signals[:, j_signal:j_signal_next]))))
+
+                        sig = (cp.matmul(cp.asarray(transformed_values).conj(),
+                                                       cp.asarray(transformed_all_signals)))
+
+                        phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(cp.real(cp.asarray(var)), axis=-1))
+                        sig = cp.real(cp.matmul(cp.asarray(transformed_values).conj(), transformed_all_signals) * cp.exp(
+                            -1j * phi))
+
+                    else:
+
+                        sig = (cp.matmul(cp.asarray(values).conj(),
+                                                       cp.asarray(all_signals)[:, j_signal:j_signal_next]))
+
+                        phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(cp.real(var), axis=-1))
+                        sig = cp.real(cp.matmul(values.conj(), all_signals[:, j_signal:j_signal_next] )* cp.exp(
+                            -1j * phi))
+
+                    lambd = sig / cp.expand_dims(cp.real(var), axis=-1)
+
+                if self.verbose:
+                    end = datetime.now()
+                    print(end - start)
+
+                if self.verbose:
+                    start = datetime.now()
+
+
+                #current_sig_ws = current_sig_ws_for_phase.real
+                #current_sig_fs = current_sig_fs_for_phase.real
+
+                if self.verbose:
+                    end = datetime.now()
+                    print(end-start)
+
+                if not(useGPU_dictsearch):
+                    #if adj_phase:
+                    if self.verbose:
+                        print("Adjusting Phase")
+                        print("Calculating alpha optim and flooring")
+
+                        ### Testing direct phase solving
+
+                    J_all=lambd**2*np.expand_dims(var,axis=-1) - 2*lambd*sig
+
+                    if not(self.paramDict["return_matched_signals"]):
+                        del lambd
+                        del phi
+
+                    end = datetime.now()
+
+                else:
+
+                    J_all=lambd**2*cp.expand_dims(var,axis=-1) - 2*lambd*sig
+
+                    J_all = J_all.get()
+
+                    if not(self.paramDict["return_matched_signals"]):
+                        del lambd
+                        del phi
+                    else:
+                        lambd=lambd.get()
+                        phi=phi.get()
+
+
+                    if verbose:
+                        end = datetime.now()
+                        print(end - start)
+
+                if verbose:
+                    print("Extracting index of pattern with max correl")
+                    start = datetime.now()
+
+                idx_max_all_current = np.argmin(J_all, axis=0)
+                #check_max_correl=np.max(J_all,axis=0)
+
+                if verbose:
+                    end = datetime.now()
+                    print(end-start)
+
+                if verbose:
+                    print("Filling the lists with results for this loop")
+                    start = datetime.now()
+
+                idx_max_all_unique.extend(idx_max_all_current)
+
+                if verbose:
+                    end = datetime.now()
+                    print(end - start)
+
+            # idx_max_all_unique = np.argmax(J_all, axis=0)
+            del J_all
+
+        else:
+
+            num_group = int(nb_signals / split) + 1
+
+            #idx_max_all_current = []
+
+            idx_max_all_unique=np.zeros(nb_signals,dtype="int64")
+
+            #lambd = []
+
+            for j in tqdm(range(num_group)):
+                j_signal = j * split
+                j_signal_next = np.minimum((j + 1) * split, nb_signals)
+
+                if j_signal>=nb_signals:
+                    break
+
+                if self.verbose:
+                    print("PCA transform")
+                    start = datetime.now()
+
+                if not (useGPU_dictsearch):
+
+                    transformed_all_signals = np.transpose(
+                        pca.transform(np.transpose(all_signals[:, j_signal:j_signal_next])))
+
+                    sig = np.matmul(cluster_signals.conj(),transformed_all_signals)
+
+                    phi = 0.5 * np.angle(sig ** 2 / np.expand_dims(np.real(var_clusters), axis=-1))
+                    sig = np.real(np.matmul(cluster_signals.conj(), transformed_all_signals) * np.exp(
+                        -1j * phi))
+
+                    lambd = sig / np.expand_dims(np.real(var_clusters), axis=-1)
+
+                    J_all_clusters = lambd ** 2 * np.expand_dims(var_clusters, axis=-1) - 2 * lambd * sig
+
+                    idx_max_all_clusters_current = np.argsort(J_all_clusters, axis=0)[:int(pruning*n_clusters_dico)]
+
+                    retained_clusters = idx_max_all_clusters_current.flatten()
+                    retained_signals_indices = np.where(np.in1d(labels, retained_clusters))[0]
+
+                    # if len(idx_max_all_clusters) == 0:
+                    #     idx_max_all_clusters = idx_max_all_clusters_current
+                    # else:
+                    #     idx_max_all_clusters = np.append(idx_max_all_unique, idx_max_all_clusters_current, axis=1)
+                    var_current=var[retained_signals_indices]
+                    retained_signals_dico=transformed_values[retained_signals_indices]
+
+
+                    sig = np.matmul(retained_signals_dico.conj(), transformed_all_signals)
+
+                    phi = 0.5 * np.angle(sig ** 2 / np.expand_dims(np.real(var_current), axis=-1))
+                    sig = np.real(np.matmul(retained_signals_dico.conj(), transformed_all_signals) * np.exp(
+                            -1j * phi))
+
+                    lambd = sig / np.expand_dims(np.real(var_current), axis=-1)
+
+                    J_all = lambd ** 2 * np.expand_dims(var_current, axis=-1) - 2 * lambd * sig
+                    idx_max_all_current = np.argmin(J_all, axis=0)
+                    idx_max_all_unique[j_signal:j_signal_next]=(retained_signals_indices[idx_max_all_current])
+
+
+                else:
+                    raise ValueError("Not Implemented yet")
+
+
+
 
 
                 if verbose:
                     end = datetime.now()
                     print(end - start)
 
-            if verbose:
-                print("Extracting index of pattern with max correl")
-                start = datetime.now()
+            # idx_max_all_unique = np.argmax(J_all, axis=0)
+            del J_all
 
-            idx_max_all_current = np.argmin(J_all, axis=0)
-            #check_max_correl=np.max(J_all,axis=0)
-
-            if verbose:
-                end = datetime.now()
-                print(end-start)
-
-            if verbose:
-                print("Filling the lists with results for this loop")
-                start = datetime.now()
-
-            idx_max_all_unique.extend(idx_max_all_current)
-
-            if verbose:
-                end = datetime.now()
-                print(end - start)
-
-        # idx_max_all_unique = np.argmax(J_all, axis=0)
-        del J_all
 
 
 

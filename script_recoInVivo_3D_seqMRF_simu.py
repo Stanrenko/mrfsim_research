@@ -69,7 +69,7 @@ dictfile_light='./mrf175_SimReco2_light_matching_adjusted.dict'
 
 #name = "SquareSimu3D_SS_FF0_1"
 name = "SquareSimu3D_SS_SimReco2"
-name = "KneePhantom_Fat"
+#name = "KneePhantom"
 
 
 dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
@@ -189,7 +189,7 @@ file_map = filename + "_sl{}_rp{}_us{}{}w{}{}_MRF_map.pkl".format(nb_slices,repe
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 nb_channels=1
-npoint = 512
+npoint = 128
 
 
 
@@ -215,7 +215,7 @@ if "SquareSimu3D" in name:
 
 elif "KneePhantom" in name:
     num =1
-    file_matlab_paramMap = "./data/KneePhantom/Phantom{}/paramMap.mat".format(num)
+    file_matlab_paramMap = "./data/KneePhantom/Phantom{}/paramMap_Control.mat".format(num)
 
     m = MapFromFile3D(name,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,image_size=image_size,file=file_matlab_paramMap,rounding=True,gen_mode="other",undersampling_factor=undersampling_factor,resting_time=4000)
 
@@ -252,8 +252,8 @@ else:
 if str.split(filename_kdata, "/")[-1] not in os.listdir(folder):
     m.build_ref_images(seq)
 
-if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
-    np.save(filename_groundtruth,m.images_series[::nspoke])
+#if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
+#    np.save(filename_groundtruth,m.images_series[::nspoke])
 
 #animate_images(m.images_series[::nspoke,int(nb_slices/2)])
 # i=0
@@ -356,14 +356,14 @@ save_map=True
 mask=np.load(filename_mask)
 volumes_all = np.load(filename_volume)
 
-suffix_map="_2StepsDico"
+suffix_map="_Brute"
 file_map = filename + "_sl{}_rp{}_us{}{}w{}{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix,suffix_map)
-
+#dictfile="./mrf175_SimReco2_light_adjusted.dict"
 
 start=datetime.now()
 if not(load_map):
     niter = 0
-    #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True)
+    #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=1,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True,n_clusters_dico=100,pruning=0.05)
     #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
 
@@ -404,7 +404,7 @@ for it in range(niter+1):
 
 
 curr_file=file_map
-curr_file='./3D/KneePhantom_sl20_rp1_us11400w8_fullReco_MRF_map.pkl'
+#curr_file='./3D/KneePhantom_Fat_sl20_rp1_us11400w8_fullReco_2StepsDico_MRF_map.pkl'
 file = open(curr_file, "rb")
 all_maps = pickle.load(file)
 file.close()
@@ -447,7 +447,7 @@ for suffix in list_suffix:
         file_map="/{}_sl{}_rp{}_us{}{}w{}_{}_MRF_map.pkl".format(name,nb_slices,repeat_slice,undersampling_factor,1400,nspoke,suffix)
     file_maps.append[file_map]
 
-file_maps=['/KneePhantom_sl20_rp1_us11400w8_fullReco_MRF_map.pkl','/KneePhantom_sl20_rp1_us11400w8_fullReco_2StepsDico_MRF_map.pkl']
+file_maps=['/SquareSimu3D_SS_SimReco2_sl20_rp1_us11400w8_fullReco_MRF_map.pkl','/SquareSimu3D_SS_SimReco2_sl20_rp1_us11400w8_fullReco_2StepsDico_MRF_map.pkl','/SquareSimu3D_SS_SimReco2_sl20_rp1_us11400w8_fullReco_Brute_MRF_map.pkl']
 
 dic_maps={}
 for file_map in file_maps:
@@ -462,7 +462,7 @@ fig,ax=plt.subplots(1,2)
 plt.title(k)
 for key in dic_maps.keys():
     for it in (range(len(dic_maps[key].keys()))):
-        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=False,maskROI=maskROI)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
         roi_values.sort_values(by=["Obs Mean"],inplace=True)
         #dic_roi_values[key]=roi_values
         ax[0].plot(roi_values["Obs Mean"],roi_values["Pred Mean"].values,label=key+"_it{}".format(it))
@@ -496,12 +496,12 @@ max_iter=1
 plt.figure()
 k="ff"
 maskROI=buildROImask_unique(m.paramMap,key="wT1")
-labels=["Original","2 steps"]
+labels=["Original","2 steps","Brute"]
 for i,key in enumerate(dic_maps.keys()):
     for it in (list(range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter),3))):
         if key=="fullReco_noUS" and it>0:
             continue
-        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=True,maskROI=maskROI,fat_threshold=0.7)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
+        roi_values=get_ROI_values(m.paramMap,dic_maps[key][it][0],m.mask>0,dic_maps[key][it][1]>0,return_std=True,adj_wT1=False,maskROI=maskROI,fat_threshold=0.7)[k].loc[:,["Obs Mean","Pred Mean","Pred Std"]]
         #roi_values.sort_values(by=["Obs Mean"],inplace=True)
         error=list((roi_values["Pred Mean"]-roi_values["Obs Mean"]))
         if df_result.empty:

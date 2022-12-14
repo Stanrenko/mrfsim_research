@@ -87,3 +87,42 @@ print(D)
 index.nprobe = 10              # make comparable with experiment above
 D, I = index.search(xq, k)     # search
 print(I[-5:])
+
+
+
+
+#import matplotlib
+#matplotlib.u<se("TkAgg")
+import numpy as np
+from mrfsim import T1MRF
+from image_series import *
+from dictoptimizers import SimpleDictSearch,GaussianWeighting,BruteDictSearch
+from utils_mrf import *
+import json
+import readTwix as rT
+import time
+import os
+from numpy.lib.format import open_memmap
+from numpy import memmap
+import pickle
+from scipy.io import loadmat,savemat
+from mutools import io
+from sklearn import linear_model
+from scipy.optimize import minimize
+from movements import TranslationBreathing
+
+npoint=512
+nb_allspokes=1400
+window=8
+ntimesteps=int(nb_allspokes/window)
+
+radial_traj=Radial(total_nspokes=nb_allspokes,npoint=npoint)
+image_size=(int(npoint/2),int(npoint/2))
+volume=np.zeros(image_size,dtype="complex64")
+volume[int(image_size[0]/2),int(image_size[1]/2)]=1
+volumes=np.tile(volume,reps=(ntimesteps,1,1))
+b1_all_slices=np.ones((1,)+image_size)
+
+psf=undersampling_operator(volumes,radial_traj,b1_all_slices)
+
+animate_images(psf)
