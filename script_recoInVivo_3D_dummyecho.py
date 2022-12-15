@@ -259,7 +259,7 @@ filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 #filename_mask='./data/InVivo/3D/patient.003.v7/meas_MID00021_FID18400_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395_mask.npy'
 #filename_mask='./data/InVivo/3D/patient.003.v7/meas_MID00025_FID18404_raFin_3D_tra_1x1x5mm_FULL_new_mask.npy'
-filename_mask='./data/InVivo/3D/patient.002.v4/meas_MID00165_FID18800_raFin_3D_tra_1x1x5mm_FULL_new_mask.npy'
+#filename_mask='./data/InVivo/3D/patient.002.v4/meas_MID00165_FID18800_raFin_3D_tra_1x1x5mm_FULL_new_mask.npy'
 
 
 window=8
@@ -518,6 +518,15 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 
 if nb_channels==1:
     b1_all_slices=np.ones(b1_all_slices.shape)
+
+
+
+# import dask.array as da
+# u_dico, s_dico, vh_dico = da.linalg.svd(da.from_array(b1_all_slices[:,int(nb_slices/2)].reshape(nb_channels,-1)))
+# s_dico=np.array(s_dico)
+# plt.figure();plt.plot(np.cumsum(s_dico)/np.sum(s_dico))
+#
+# vh_dico=np.array(vh_dico)
 
 #volume_outofphase=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True)[0]
 #animate_images(volume_outofphase)

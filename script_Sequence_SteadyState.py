@@ -332,13 +332,11 @@ from tqdm import tqdm
 import pickle
 from scipy.io import savemat
 
-
-
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json") as f:
+with open("./mrf_sequence_adjusted.json") as f:
     sequence_config = json.load(f)
 
 
-with open("./mrf_dictconf_Dico2_Invivo.json") as f:
+with open("./mrf_dictconf_SimReco2_light_matching.json") as f:
     dict_config = json.load(f)
 
 #with open("./mrf_dictconf_SimReco2.json") as f:
@@ -359,15 +357,9 @@ TE_list=np.array(sequence_config["TE"])
 TR_list=list(TE_list+min_TR_delay)
 sequence_config["TR"]=TR_list
 
-
-
 seq=T1MRF(**sequence_config)
 
-
-
-
-
-dictfile = "mrf175_Dico2_Invivo_random_v1_1_84.dict"
+dictfile = "mrf175_SimReco2_light_matching_adjusted.dict"
 
 sim_mode="mean"
 overwrite=True
@@ -460,8 +452,6 @@ print(np.min(np.array(TE)))
 print(np.max(np.array(TE)))
 print(np.min(np.array(FA)))
 print(np.max(np.array(FA)))
-
-
 
 from utils_simu import *
 generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json","./mrf_dictconf_Dico2_Invivo.json",3.95)

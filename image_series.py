@@ -948,6 +948,19 @@ class RandomMap(ImageSeries):
 
         }
 
+    def buildROImask(self):
+        mask_red = self.paramDict["mask_reduction_factor"]
+        sliced_image_size = (self.image_size[0], self.image_size[0])
+        num_regions_shape = (int(sliced_image_size[0] * (1 - 2 * mask_red) / self.region_size),
+                             int(sliced_image_size[1] * ((1 - 2 * mask_red)) / self.region_size))
+        count_regions_per_slice = np.prod(num_regions_shape)
+
+        current_roi_num=1
+        rois = np.arange(current_roi_num, current_roi_num + count_regions_per_slice).reshape(num_regions_shape)
+        rois = np.repeat(np.repeat(rois, self.region_size, axis=1), self.region_size, axis=0).flatten()
+
+        return rois
+
 
 
 class MapFromFile(ImageSeries):
@@ -1422,11 +1435,6 @@ class RandomMap3D(ImageSeries3D):
         mask=self.mask
 
         nb_slices = self.paramDict["nb_slices"]
-        if not (self.paramDict["nb_empty_slices"] == 0):
-            mask_without_empty_slices = self.mask[
-                                        self.paramDict["nb_empty_slices"]:-self.paramDict["nb_empty_slices"], :, :]
-        else:
-            mask_without_empty_slices = self.mask
 
         mask_red=self.paramDict["mask_reduction_factor"]
         sliced_image_size = (self.image_size[1], self.image_size[2])
@@ -1439,7 +1447,6 @@ class RandomMap3D(ImageSeries3D):
 
         current_roi_num=1
         for j in range(params_slices_count):
-            sliced_mask = mask_without_empty_slices[j, :, :]
             rois=np.arange(current_roi_num,current_roi_num+count_regions_per_slice).reshape(num_regions_shape)
             rois=np.repeat(np.repeat(rois, self.region_size, axis=1), self.region_size, axis=0).flatten()
             #map = create_map(rois, self.region_size, sliced_mask)

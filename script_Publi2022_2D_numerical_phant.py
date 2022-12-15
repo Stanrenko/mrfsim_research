@@ -23,15 +23,16 @@ from movements import TranslationBreathing
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
 base_folder = "./2D"
 
-dictfile = "mrf175_SimReco2_light.dict"
-dictjson="mrf_dictconf_SimReco2_light.json"
+dictfile = "mrf175_SimReco2_adjusted.dict"
+dictjson="mrf_dictconf_SimReco2.json"
+dictfile_light='mrf175_SimReco2_light_matching_adjusted.dict'
 #dictfile = "mrf175_SimReco2.dict"
 #dictfile = "mrf175_SimReco2_window_1.dict"
 #dictfile = "mrf175_SimReco2_window_21.dict"
 #dictfile = "mrf175_SimReco2_window_55.dict"
 #dictfile = "mrf175_Dico2_Invivo.dict"
 
-with open("mrf_sequence.json") as f:
+with open("mrf_sequence_adjusted.json") as f:
     sequence_config = json.load(f)
 
 seq = T1MRF(**sequence_config)
@@ -54,11 +55,11 @@ dict_config["ff"]=np.arange(0.,1.01,0.01)
 region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
 mask_reduction_factor=1/4
 
+snr=5
+name = "SquareSimu2D_SimReco2"
 
-name = "SquareSimu2D"
 
-
-use_GPU = False
+use_GPU = True
 light_memory_usage=True
 gen_mode="other"
 
@@ -85,11 +86,11 @@ for num in range(nb_phantom):
 
     filename_kdata = filename+"_kdata_{}.npy".format(num)
 
-    filename_volume = filename+"_volumes_{}.npy".format(num)
+    filename_volume = filename+"_volumes_{}_snr{}.npy".format(num,snr)
     filename_mask= filename+"_mask_{}.npy".format(num)
-    file_map_brute = filename + "_{}_brute_MRF_map.pkl".format(num)
-    file_map_matrix = filename + "_{}_matrix_MRF_map.pkl".format(num)
-    file_map_cf = filename + "_{}_cf_MRF_map.pkl".format(num)
+    file_map_brute = filename + "_{}_snr{}_brute_MRF_map.pkl".format(num,snr)
+    file_map_matrix = filename + "_{}_snr{}_matrix_MRF_map.pkl".format(num,snr)
+    file_map_cf = filename + "_{}_snr{}_cf_MRF_map.pkl".format(num,snr)
 
 
 
@@ -139,7 +140,7 @@ for num in range(nb_phantom):
     if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
 
         #images = copy(m.images_series)
-        data=m_.generate_kdata(radial_traj,useGPU=use_GPU)
+        data=m_.generate_kdata(radial_traj,useGPU=False)
 
         data=np.array(data)
         np.save(filename_kdata, data)
@@ -148,15 +149,22 @@ for num in range(nb_phantom):
         #kdata_all_channels_all_slices = open_memmap(filename_kdata)
         data = np.load(filename_kdata)
 
-
-    data=data.reshape(nb_allspokes,-1,npoint)
+    data=data.reshape(nb_allspokes,npoint)
+    if snr is not None:
+        center_point = int(npoint / 2)
+        res = int(npoint / 16)
+        mean_data = np.mean(
+            np.abs(data[:, (center_point - res):(center_point + res)]))
+        noise = mean_data / snr * (np.random.normal(size=data.shape) + 1j * np.random.normal(size=data.shape))
+        data+=noise
+    data=np.expand_dims(data,axis=0)
     b1_all_slices = np.ones(image_size)
     b1_all_slices=np.expand_dims(b1_all_slices,axis=0)
 
     ##volumes for slice taking into account coil sensi
     print("Building Volumes....")
     if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-        volumes_all=simulate_radial_undersampled_images(data,radial_traj,image_size,density_adj=True,useGPU=use_GPU)
+        volumes_all=simulate_radial_undersampled_images_multi(data,radial_traj,image_size,density_adj=True,useGPU=False,b1=b1_all_slices,normalize_iterative=True)
         np.save(filename_volume,volumes_all)
         # sl=20
         # ani = animate_images(volumes_all[:,sl,:,:])
@@ -172,7 +180,7 @@ for num in range(nb_phantom):
 
     ########################## Dict mapping ########################################
 
-    with open("mrf_sequence.json") as f:
+    with open("mrf_sequence_adjusted.json") as f:
         sequence_config = json.load(f)
 
     seq = T1MRF(**sequence_config)
@@ -180,7 +188,8 @@ for num in range(nb_phantom):
     load_map=False
     save_map=True
 
-    dictfile = "mrf175_SimReco2_light.dict"
+    #dictfile = "mrf175_SimReco2_light.dict"
+    #dictfile = "mrf175_Dico2_Invivo_adjusted.dict"
     #dictfile = "mrf175_SimReco2_window_1.dict"
     #dictfile = "mrf175_SimReco2_window_21.dict"
     #dictfile = "mrf175_SimReco2_window_55.dict"
@@ -193,15 +202,29 @@ for num in range(nb_phantom):
     ntimesteps=175
     niter = 0
 
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,
-                                 threshold_pca=20, log=False, useGPU_dictsearch=False, useGPU_simulation=False,
-                                 gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
+    optimizer_brute = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=1,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=use_GPU,ntimesteps=ntimesteps,log_phase=True,n_clusters_dico=50,pruning=0.05)
+    # all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
-    optimizer_brute = BruteDictSearch(FF_list=np.arange(0, 1.05, 0.05), mask=mask, split=100, pca=True, threshold_pca=20,
-                                log=False, useGPU_dictsearch=False, ntimesteps=ntimesteps, log_phase=True)
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,
+                                 threshold_pca=20, log=True, useGPU_dictsearch=use_GPU, useGPU_simulation=False,
+                                 gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
+                                 threshold_ff=0.9, dictfile_light=dictfile_light)
+
+    optimizer_clustering = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=500, pca=True,
+                                 threshold_pca=20, log=True, useGPU_dictsearch=use_GPU, useGPU_simulation=False,
+                                 gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
+                                 threshold_ff=0.9, dictfile_light=dictfile_light)
+    # all_maps = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, volumes_all, retained_timesteps=None)
+
+    # optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,
+    #                              threshold_pca=20, log=False, useGPU_dictsearch=use_GPU, useGPU_simulation=False,
+    #                              gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps)
+    #
+    # optimizer_brute = BruteDictSearch(FF_list=np.arange(0, 1.05, 0.05), mask=mask, split=100, pca=True, threshold_pca=20,
+    #                             log=False, useGPU_dictsearch=False, ntimesteps=ntimesteps, log_phase=True)
 
     if str.split(file_map_cf,"/")[-1] not in os.listdir(folder):
-        all_maps_cf = optimizer.search_patterns_test(dictfile, volumes_all, retained_timesteps=None)
+        all_maps_cf = optimizer.search_patterns_test_multi(dictfile, volumes_all, retained_timesteps=None)
         with open(file_map_cf,"wb") as file:
             pickle.dump(all_maps_cf, file)
 
@@ -220,7 +243,7 @@ for num in range(nb_phantom):
             all_maps_brute=pickle.load(file)
 
     if str.split(file_map_matrix, "/")[-1] not in os.listdir(folder):
-        all_maps_matrix = optimizer.search_patterns_matrix(dictfile, volumes_all, retained_timesteps=None)
+        all_maps_matrix = optimizer_clustering.search_patterns_test_multi_2_steps_dico(dictfile, volumes_all, retained_timesteps=None)
 
         with open(file_map_matrix,"wb") as file:
             pickle.dump(all_maps_matrix, file)
@@ -231,11 +254,11 @@ for num in range(nb_phantom):
             all_maps_matrix=pickle.load(file)
 
 
-    maskROI=buildROImask_unique(m_.paramMap)
+    maskROI=m_.buildROImask()
 
-    regression_paramMaps_ROI(m_.paramMap,all_maps_brute[0][0],mask>0,all_maps_brute[0][1]>0,maskROI,adj_wT1=False,title="Brute_regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
-    regression_paramMaps_ROI(m_.paramMap,all_maps_cf[0][0],mask>0,all_maps_cf[0][1]>0,maskROI,adj_wT1=False,title="CF_regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
-    regression_paramMaps_ROI(m_.paramMap,all_maps_matrix[0][0],mask>0,all_maps_matrix[0][1]>0,maskROI,adj_wT1=False,title="Matrix_regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
+    regression_paramMaps_ROI(m_.paramMap,all_maps_brute[0][0],mask>0,all_maps_brute[0][1]>0,maskROI,adj_wT1=True,title="Brute_regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
+    regression_paramMaps_ROI(m_.paramMap,all_maps_cf[0][0],mask>0,all_maps_cf[0][1]>0,maskROI,adj_wT1=True,title="CF_regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
+    regression_paramMaps_ROI(m_.paramMap,all_maps_matrix[0][0],mask>0,all_maps_matrix[0][1]>0,maskROI,adj_wT1=True,title="CF_Clustering_regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
 
     results = get_ROI_values(m_.paramMap,all_maps_brute[0][0],mask>0,all_maps_brute[0][1]>0,maskROI=maskROI,kept_keys=["attB1","df","wT1","ff"],adj_wT1=False,fat_threshold=0.7)
 
@@ -272,11 +295,11 @@ import statsmodels.api as sm
 plt.close("all")
 plt.figure()
 sm.graphics.mean_diff_plot(df_comp["FF reference"], df_comp["FF matrix"])
-plt.title("FF : Comparison reference vs matrix method",fontsize=13)
+plt.title("FF : Comparison reference vs CF clustering method",fontsize=13)
 
 plt.figure()
 sm.graphics.mean_diff_plot(df_comp["FF reference"], df_comp["FF proposed"])
-plt.title("FF : Comparison reference vs proposed method",fontsize=13)
+plt.title("FF : Comparison reference vs CF method",fontsize=13)
 
 plt.figure()
 sm.graphics.mean_diff_plot(df_comp["FF proposed"], df_comp["FF matrix"])
@@ -285,15 +308,15 @@ plt.title("FF : Comparison proposed vs matrix method",fontsize=13)
 plt.close("all")
 plt.figure()
 sm.graphics.mean_diff_plot(df_comp["FF Ground Truth"], df_comp["FF matrix"])
-plt.title("FF : Comparison ground truth vs matrix method",fontsize=13)
+plt.title("FF : Comparison ground truth vs BC clustering method",fontsize=13)
 
 plt.figure()
 sm.graphics.mean_diff_plot(df_comp["FF Ground Truth"], df_comp["FF proposed"])
-plt.title("FF : Comparison ground truth vs proposed method",fontsize=13)
+plt.title("FF : Comparison ground truth vs BC method",fontsize=13)
 
 plt.figure()
 sm.graphics.mean_diff_plot(df_comp["FF Ground Truth"], df_comp["FF reference"])
-plt.title("FF : Comparison ground truth vs reference method",fontsize=13)
+plt.title("FF : Comparison ground truth vs Brute method",fontsize=13)
 
 import seaborn as sns
 g=sns.pairplot(df_comp,diag_kind="kde",kind="reg",plot_kws={'line_kws':{'color':'red',"alpha":0.5},"scatter_kws":{"s":3}},corner=True)
@@ -320,19 +343,15 @@ plt.title("$T1_{H2O}$ : Comparison proposed vs matrix method",fontsize=13)
 
 
 plt.close("all")
-plt.figure()
 sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ Ground Truth"], df_comp["$T1_{H2O}$ matrix"])
-plt.title("$T1_{H2O}$ : Comparison ground truth vs matrix method",fontsize=13)
+plt.title("$T1_{H2O}$ : Comparison ground truth vs BC Clustering method",fontsize=13)
 plt.show()
 
-plt.figure()
 sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ Ground Truth"], df_comp["$T1_{H2O}$ proposed"])
-plt.title("$T1_{H2O}$ : Comparison ground truth vs proposed method",fontsize=13)
+plt.title("$T1_{H2O}$ : Comparison ground truth vs BC method",fontsize=13)
 plt.show()
-
-plt.figure()
 sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ Ground Truth"], df_comp["$T1_{H2O}$ reference"])
-plt.title("$T1_{H2O}$ : Comparison ground truth vs reference method",fontsize=13)
+plt.title("$T1_{H2O}$ : Comparison ground truth vs Brute method",fontsize=13)
 plt.show()
 
 import seaborn as sns

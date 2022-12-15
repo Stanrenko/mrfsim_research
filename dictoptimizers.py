@@ -7540,9 +7540,6 @@ class BruteDictSearch(Optimizer):
         var = np.sum(transformed_values * transformed_values.conj(), axis=1).real
 
 
-        if useGPU_dictsearch:
-            var = cp.asarray(var)
-
         values_results = []
         keys_results = [0]
 
@@ -7591,6 +7588,11 @@ class BruteDictSearch(Optimizer):
                 cluster_signals = pca.transform(cluster_signals)
 
             var_clusters = np.sum(cluster_signals * cluster_signals.conj(), axis=1).real
+
+            if useGPU_dictsearch:
+                var_clusters=cp.asarray(var_clusters)
+                labels=cp.asarray(labels)
+                cluster_signals=cp.asarray(cluster_signals)
 
         if remove_duplicates:
             all_signals, index_signals_unique = np.unique(all_signals, axis=1, return_inverse=True)
@@ -7787,9 +7789,8 @@ class BruteDictSearch(Optimizer):
                     #     idx_max_all_clusters = idx_max_all_clusters_current
                     # else:
                     #     idx_max_all_clusters = np.append(idx_max_all_unique, idx_max_all_clusters_current, axis=1)
-                    var_current=var[retained_signals_indices]
-                    retained_signals_dico=transformed_values[retained_signals_indices]
-
+                    var_current=cp.asarray(var[retained_signals_indices])
+                    retained_signals_dico=cp.asarray(transformed_values[retained_signals_indices])
 
                     sig = np.matmul(retained_signals_dico.conj(), transformed_all_signals)
 
@@ -7803,13 +7804,44 @@ class BruteDictSearch(Optimizer):
                     idx_max_all_current = np.argmin(J_all, axis=0)
                     idx_max_all_unique[j_signal:j_signal_next]=(retained_signals_indices[idx_max_all_current])
 
-
                 else:
-                    raise ValueError("Not Implemented yet")
 
+                    transformed_all_signals = cp.transpose(
+                        pca.transform(cp.transpose(cp.asarray(all_signals[:, j_signal:j_signal_next]))))
 
+                    sig = cp.matmul(cp.asarray(cluster_signals.conj()), transformed_all_signals)
 
+                    phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(cp.real(var_clusters), axis=-1))
+                    sig = cp.real(cp.matmul(cp.asarray(cluster_signals.conj()), transformed_all_signals) * cp.exp(
+                        -1j * phi))
 
+                    lambd = sig / cp.expand_dims(cp.real(var_clusters), axis=-1)
+
+                    J_all_clusters = lambd ** 2 * cp.expand_dims(var_clusters, axis=-1) - 2 * lambd * sig
+
+                    idx_max_all_clusters_current = cp.argsort(J_all_clusters, axis=0)[:int(pruning * n_clusters_dico)]
+
+                    retained_clusters = idx_max_all_clusters_current.flatten()
+                    retained_signals_indices = cp.where(cp.in1d(labels, retained_clusters))[0]
+
+                    # if len(idx_max_all_clusters) == 0:
+                    #     idx_max_all_clusters = idx_max_all_clusters_current
+                    # else:
+                    #     idx_max_all_clusters = np.append(idx_max_all_unique, idx_max_all_clusters_current, axis=1)
+                    var_current = cp.asarray(var[retained_signals_indices.get()])
+                    retained_signals_dico =cp.asarray(transformed_values[retained_signals_indices.get()])
+
+                    sig = cp.matmul(retained_signals_dico.conj(), transformed_all_signals)
+
+                    phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(cp.real(var_current), axis=-1))
+                    sig = cp.real(cp.matmul(retained_signals_dico.conj(), transformed_all_signals) * cp.exp(
+                        -1j * phi))
+
+                    lambd = sig / cp.expand_dims(cp.real(var_current), axis=-1)
+
+                    J_all = lambd ** 2 * cp.expand_dims(var_current, axis=-1) - 2 * lambd * sig
+                    idx_max_all_current = cp.argmin(J_all, axis=0)
+                    idx_max_all_unique[j_signal:j_signal_next] = (retained_signals_indices[idx_max_all_current]).get()
 
                 if verbose:
                     end = datetime.now()

@@ -50,9 +50,6 @@ suffix=""
 #suffix="_PWWeighted"
 #suffix="_"
 
-
-
-
 use_GPU = True
 light_memory_usage=True
 gen_mode="other"
@@ -65,7 +62,6 @@ medfilter=False
 #     sequence_config = json.load(f)
 #with open("./mrf_sequence_adjusted.json") as f:
 #    sequence_config = json.load(f)
-
 
 #name = "SquareSimu3D_SS_FF0_1"
 name = "SquareSimu3D_SS_Multicoil"
@@ -178,12 +174,9 @@ Treco=4000
 
 seq=T1MRF(**sequence_config)
 
-
-
-
 nb_filled_slices = 16
-nb_empty_slices=2
-repeat_slice=1
+nb_empty_slices = 2
+repeat_slice = 1
 
 if "Knee3D" in name:
     repeat_slice=1
