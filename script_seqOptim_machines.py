@@ -5,6 +5,8 @@ import json
 from scipy.optimize import differential_evolution
 import pickle
 from datetime import datetime
+from image_series import *
+from trajectory import *
 
 path = r"/home/cslioussarenko/PythonRepositories"
 #path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
@@ -20,7 +22,7 @@ from machines import machine, Toolbox, Config, set_parameter, set_output, printe
 DEFAULT_RANDOM_OPT_CONFIG="random_seqOptim_config.json"
 DEFAULT_RANDOM_FA_OPT_CONFIG="random_FA_seqOptim_config.json"
 DEFAULT_BREAKS_COMMON_OPT_CONFIG="breaks_common_seqOptim_config.json"
-
+DEFAULT_RANDOM_FA_US_OPT_CONFIG="random_FA_US_seqOptim_config.json"
 
 
 
@@ -166,6 +168,62 @@ def optimize_sequence_breaks_common(optimizer_config):
     optimizer_config["fat_shift"] = list(fat_shift)
 
     with open("./optims/breaks_common_opt_config_{}.json".format(date_time), "w") as file:
+        json.dump(optimizer_config, file)
+
+    return
+
+
+
+@machine
+@set_parameter("optimizer_config",type=Config,default=DEFAULT_RANDOM_FA_US_OPT_CONFIG,description="Optimizer parameters")
+def optimize_sequence_random_FA_undersampling(optimizer_config):
+
+    now = datetime.now()
+    date_time = now.strftime("%Y%m%d_%H%M%S")
+
+    with open("./mrf_dictconf_SimReco2.json") as f:
+        dict_config = json.load(f)
+
+    fat_amp = np.array(dict_config["fat_amp"])
+    fat_shift = -np.array(dict_config["fat_cshift"])
+
+    optimizer_config["fat_amp"]=fat_amp
+    optimizer_config["fat_shift"] = fat_shift
+
+    H = optimizer_config["H"]
+    num_params_FA=2*H
+    optimizer_config["num_params_FA"]=num_params_FA
+    num_breaks_TE=optimizer_config["num_breaks_TE"]
+    bound_min_TE=optimizer_config["bound_min_TE"]
+    bound_max_TE = optimizer_config["bound_max_TE"]
+    spokes_count = optimizer_config["spokes_count"]
+
+
+
+
+    bounds=[(100,400)]*(num_breaks_TE)+[(bound_min_TE,bound_max_TE)]*(num_breaks_TE+1)+[(0,1)]*num_params_FA+[(0,4)]+[(15*np.pi/180,70*np.pi/180)]
+
+    from scipy.optimize import LinearConstraint
+    A_TEbreaks = np.zeros((1, len(bounds)))
+    A_TEbreaks[0, :num_breaks_TE] = 1
+    con1 = LinearConstraint(A_TEbreaks, lb=-np.inf, ub=spokes_count - 100)
+    constraints = (con1)
+
+    maxiter = optimizer_config["maxiter"]
+
+    log_cost = LogCost(lambda p:cost_function_simul_breaks_random_FA_KneePhantom(p,**optimizer_config))
+
+    res = differential_evolution(lambda p:cost_function_simul_breaks_random_FA_KneePhantom(p,**optimizer_config), bounds=bounds, callback=log_cost,maxiter=maxiter,constraints=constraints)
+
+    with open("./optims/res_simul_random_FA_US_{}.pkl".format(date_time), "wb") as file:
+        pickle.dump(res, file)
+
+    np.save("./optims/log_cost_{}.npy".format(date_time),log_cost.cost_values)
+
+    optimizer_config["fat_amp"] = list(fat_amp)
+    optimizer_config["fat_shift"] = list(fat_shift)
+
+    with open("./optims/random_FA_opt_config_{}.json".format(date_time), "w") as file:
         json.dump(optimizer_config, file)
 
     return
@@ -488,6 +546,136 @@ def cost_function_simul_breaks_common(params,**kwargs):
     return lambda_T1 * error_wT1 + lambda_FF * error_ff + lambda_FA * FA_cost + lambda_time * time_cost+lambda_stdT1 * std_wT1
 
 
+
+def cost_function_simul_breaks_random_FA_KneePhantom(params,**kwargs):
+    #global result
+
+
+    DFs = kwargs["DFs"]
+    FFs = kwargs["FFs"]
+    B1s = kwargs["B1s"]
+    T1s = kwargs["T1s"]
+
+    inversion = kwargs["inversion"]
+    min_TR_delay = kwargs["min_TR_delay"]
+    bound_min_FA = kwargs["bound_min_FA"]
+    num_breaks_TE = kwargs["num_breaks_TE"]
+    num_params_FA = kwargs["num_params_FA"]
+
+    spokes_count = kwargs["spokes_count"]
+    npoint = kwargs["npoint"]
+
+    lambda_FA = kwargs["lambda_FA"]
+    lambda_time = kwargs["lambda_time"]
+    lambda_FF = kwargs["lambda_FF"]
+    lambda_T1 = kwargs["lambda_T1"]
+    lambda_DF = kwargs["lambda_DF"]
+    lambda_B1 = kwargs["lambda_B1"]
+
+    lambda_stdT1 = kwargs["lambda_stdT1"]
+
+    fat_amp = kwargs["fat_amp"]
+    fat_shift = kwargs["fat_shift"]
+
+    useGPU=kwargs["useGPU"]
+
+    image_size = (int(npoint / 2), int(npoint / 2))
+
+
+    file = kwargs["file_phantom"]
+
+    m_ = MapFromFile("Knee2D_Optim", file=file, rounding=True)
+    radial_traj = Radial(total_nspokes=spokes_count, npoint=npoint)
+
+    m_.buildParamMap()
+
+
+    start_time=datetime.now()
+    group_size = 8
+    ntimesteps=int(spokes_count/group_size)
+
+    bound_max_FA=params[-1]
+    params_for_curve=params[:-1]
+    TR_, FA_, TE_ = convert_params_to_sequence_breaks_random_FA(params_for_curve, min_TR_delay,spokes_count,num_breaks_TE,num_params_FA,bound_min_FA,bound_max_FA,inversion)
+
+    m_.build_ref_images_bloch(TR_,FA_,TE_)
+
+    s, s_w, s_f, keys = simulate_gen_eq_signal(TR_, FA_, TE_, FFs, DFs, T1s, 300 / 1000,B1s, T_2w=40 / 1000, T_2f=80 / 1000,
+                                               amp=fat_amp, shift=fat_shift, sigma=None, group_size=group_size,
+                                               return_fat_water=True)  # ,amp=np.array([1]),shift=np.array([-418]),sigma=None):
+
+    s_w = s_w.reshape(s_w.shape[0], -1).T
+    s_f = s_f.reshape(s_f.shape[0], -1).T
+
+    data = m_.generate_kdata(radial_traj, useGPU=useGPU)
+    data = np.array(data)
+    data = data.reshape(spokes_count, -1, npoint)
+    volumes_all = simulate_radial_undersampled_images(data, radial_traj, image_size, density_adj=True, useGPU=useGPU,ntimesteps=ntimesteps)
+
+    mask = m_.mask
+    pca = True
+    threshold_pca_bc = 10
+
+    split = 100
+    dict_optim_bc_cf = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=None, split=split, pca=pca,
+                                        threshold_pca=threshold_pca_bc, log=False, useGPU_dictsearch=False,
+                                        useGPU_simulation=False,
+                                        gen_mode="other", movement_correction=False, cond=None, ntimesteps=None,
+                                        return_matched_signals=True)
+
+    all_maps, matched_signals = dict_optim_bc_cf.search_patterns_test((s_w, s_f, keys), volumes_all)
+
+    key = "wT1"
+    map = all_maps[0][0][key][m_.paramMap["ff"]<0.7]*1000
+    map_gt=m_.paramMap[key][m_.paramMap["ff"]<0.7]
+    error = np.abs(map - map_gt)
+    error_wT1 = np.mean(error/ map_gt)
+
+    print("wT1 Cost : {}".format(error_wT1))
+
+    std_wT1 = np.std(error/ map_gt)
+    print("wT1 Std : {}".format(std_wT1))
+
+    key = "ff"
+    map = all_maps[0][0][key]
+    map_gt = m_.paramMap[key]
+    error = np.abs(map - map_gt)
+    error_ff = np.mean(error)
+
+    print("FF Cost : {}".format(error_ff))
+
+    key = "df"
+    map = all_maps[0][0][key]/1000
+    map_gt = m_.paramMap[key]
+    error = np.abs(map - map_gt)
+    error_df = np.mean(error)
+
+    print("DF Cost : {}".format(error_df))
+
+    key = "attB1"
+    map = all_maps[0][0][key]
+    map_gt = m_.paramMap[key]
+    error = np.abs(map - map_gt)
+    error_b1 = np.mean(error)
+
+    print("B1 Cost : {}".format(error_b1))
+
+    # num_breaks_TE=len(TE_breaks)
+    FA_cost = np.mean((np.abs(np.diff(FA_[1:]))))
+    # print("FA Cost : {}".format(FA_cost))
+
+    time_cost = np.sum(TR_)
+    print("Time Cost : {}".format(time_cost))
+    #test_time=time_cost-TR_[-1]
+    #print("Time Test : {}".format(test_time))
+
+    result=lambda_T1 * error_wT1 + lambda_FF * error_ff + lambda_DF * error_df + lambda_B1 * error_b1 +lambda_FA * FA_cost + lambda_time * time_cost+lambda_stdT1 * std_wT1
+
+    end_time=datetime.now()
+    print(end_time-start_time)
+
+    return result
+
 class LogCost(object):
     def __init__(self,f):
         self.cost_values=[]
@@ -507,7 +695,7 @@ toolbox = Toolbox("script_seqOptim_machines", description="MRF sequence optimiza
 toolbox.add_program("optimize_sequence_random", optimize_sequence_random)
 toolbox.add_program("optimize_sequence_random_FA", optimize_sequence_random_FA)
 toolbox.add_program("optimize_sequence_breaks_common", optimize_sequence_breaks_common)
-
+toolbox.add_program("optimize_sequence_random_FA_undersampling", optimize_sequence_random_FA_undersampling)
 
 if __name__ == "__main__":
     toolbox.cli()

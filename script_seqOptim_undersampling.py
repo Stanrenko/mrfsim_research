@@ -254,46 +254,7 @@ def cost_function_simul_breaks_random_FA_KneePhantom(params):
     params_for_curve=params[:-1]
     TR_, FA_, TE_ = convert_params_to_sequence_breaks_random_FA(params_for_curve, min_TR_delay,spokes_count,num_breaks_TE,num_params_FA,bound_min_FA,bound_max_FA,inversion)
 
-    # with open(fileseq_basis,"r") as file:
-    #     seq_config = json.load(file)
-    #
-    # seq_config_new = copy(seq_config_base)
-    # seq_config_new["B1"] = list(np.array(FA_[1:]) * 180 / np.pi / 5)
-    # seq_config_new["TR"] = list(np.array(TR_[1:]) * 10 ** 3)
-    # seq_config_new["TE"] = list(np.array(TE_[1:]) * 10 ** 3)
-    #
-    # nrep = 2
-    # rep = nrep - 1
-    #
-    # Treco = params[-2]*1000
-    #
-    # ##other options
-    # seq_config_new["T_recovery"] = Treco
-    # seq_config_new["nrep"] = nrep
-    # seq_config_new["rep"] = rep
-    #
-    # seq = T1MRFSS(**seq_config_new)
-
-
     m_.build_ref_images_bloch(TR_,FA_,TE_)
-    #images_series_1=copy(m_.images_series)
-    # m_.build_ref_images(seq)
-    # images_series_2=copy(m_.images_series)
-    #
-    # images_series_1=images_series_1[:,m_.mask>0]
-    # images_series_2=images_series_2[:,m_.mask>0]
-    #
-    # j=np.random.choice(images_series_1.shape[-2])
-    #
-    # plt.figure()
-    # plt.plot(np.real(images_series_1[:,j]))
-    # plt.plot(np.real(images_series_2[:,j]))
-    #
-    # plt.figure()
-    # plt.plot(np.imag(images_series_1[:, j]))
-    # plt.plot(np.imag(images_series_2[:, j]))
-
-
 
     s, s_w, s_f, keys = simulate_gen_eq_signal(TR_, FA_, TE_, FFs, DFs, T1s, 300 / 1000,B1s, T_2w=40 / 1000, T_2f=80 / 1000,
                                                amp=fat_amp, shift=fat_shift, sigma=None, group_size=group_size,
@@ -305,21 +266,8 @@ def cost_function_simul_breaks_random_FA_KneePhantom(params):
     data = m_.generate_kdata(radial_traj, useGPU=useGPU)
     data = np.array(data)
     data = data.reshape(spokes_count, -1, npoint)
-    b1_all_slices = np.ones(image_size)
-    b1_all_slices = np.expand_dims(b1_all_slices, axis=0)
     volumes_all = simulate_radial_undersampled_images(data, radial_traj, image_size, density_adj=True, useGPU=useGPU,ntimesteps=ntimesteps)
 
-    # keys=keys.reshape(-1,4)
-    # keys=[tuple(p) for p in keys]
-    #s = s.reshape(s.shape[0], -1)
-
-    # plt.close("all")
-    # plt.figure()
-    # plt.plot(s_w[:len(DFs)].T)
-    # plt.figure()
-    # plt.plot(s_w[len(DFs):2*len(DFs)].T)
-
-    nb_signals = s.shape[-1]
     mask = m_.mask
     pca = True
     threshold_pca_bc = 10
@@ -332,12 +280,6 @@ def cost_function_simul_breaks_random_FA_KneePhantom(params):
                                         return_matched_signals=True)
 
     all_maps, matched_signals = dict_optim_bc_cf.search_patterns_test((s_w, s_f, keys), volumes_all)
-
-    # j=np.random.choice(range(matched_signals.shape[-1]))
-    # plt.figure()
-    # plt.plot(matched_signals[:,j])
-    # plt.plot(s[:,j])
-
 
     key = "wT1"
     map = all_maps[0][0][key][m_.paramMap["ff"]<0.7]*1000

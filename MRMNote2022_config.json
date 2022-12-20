@@ -1,0 +1,9 @@
+{
+ "folder_ROI":"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/4_Patients/MNAI",
+ "folder_raw_data":"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/3_Data/6_Patients",
+ "folder_raw_data_bis": "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/3_Data/11_Inflammatory_myopathies/MNAI",
+ "target_folder": "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data Processed/MRMNote_2022_Invivo",
+ "patient_names": ["CL1KB","CL1KF","CL1KN","MNAV","MNAW","MNAX","MNAZ","MNBC","MNBE","MNBF","MNBG","MNBH","MNBI","MNBK","MNBL","MNBM","MNBN","MNBO","MNBP","MNBQ","MNBS","MNBU","MNBV"],
+ "exam_code": "CL"
+}
+

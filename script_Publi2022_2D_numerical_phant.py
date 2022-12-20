@@ -55,7 +55,7 @@ dict_config["ff"]=np.arange(0.,1.01,0.01)
 region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
 mask_reduction_factor=1/4
 
-snr=5
+snr=None
 name = "SquareSimu2D_SimReco2"
 
 
@@ -85,12 +85,21 @@ for num in range(nb_phantom):
     filename_groundtruth = filename+"_groundtruth_{}.npy".format(num)
 
     filename_kdata = filename+"_kdata_{}.npy".format(num)
+    filename_mask = filename + "_mask_{}.npy".format(num)
 
-    filename_volume = filename+"_volumes_{}_snr{}.npy".format(num,snr)
-    filename_mask= filename+"_mask_{}.npy".format(num)
-    file_map_brute = filename + "_{}_snr{}_brute_MRF_map.pkl".format(num,snr)
-    file_map_matrix = filename + "_{}_snr{}_matrix_MRF_map.pkl".format(num,snr)
-    file_map_cf = filename + "_{}_snr{}_cf_MRF_map.pkl".format(num,snr)
+    if snr is not None:
+        filename_volume = filename+"_volumes_{}_snr{}.npy".format(num,snr)
+
+        file_map_brute = filename + "_{}_snr{}_brute_MRF_map.pkl".format(num,snr)
+        file_map_matrix = filename + "_{}_snr{}_matrix_MRF_map.pkl".format(num,snr)
+        file_map_cf = filename + "_{}_snr{}_cf_MRF_map.pkl".format(num,snr)
+    else:
+        filename_volume = filename + "_volumes_{}.npy".format(num)
+
+        file_map_brute = filename + "_{}_brute_MRF_map.pkl".format(num)
+        file_map_matrix = filename + "_{}_matrix_MRF_map.pkl".format(num)
+        file_map_cf = filename + "_{}_cf_MRF_map.pkl".format(num)
+
 
 
 
@@ -295,7 +304,7 @@ import statsmodels.api as sm
 plt.close("all")
 plt.figure()
 sm.graphics.mean_diff_plot(df_comp["FF reference"], df_comp["FF matrix"])
-plt.title("FF : Comparison reference vs CF clustering method",fontsize=13)
+plt.title("FF : Comparison reference vs BC clustering method",fontsize=13)
 
 plt.figure()
 sm.graphics.mean_diff_plot(df_comp["FF reference"], df_comp["FF proposed"])
@@ -303,7 +312,7 @@ plt.title("FF : Comparison reference vs CF method",fontsize=13)
 
 plt.figure()
 sm.graphics.mean_diff_plot(df_comp["FF proposed"], df_comp["FF matrix"])
-plt.title("FF : Comparison proposed vs matrix method",fontsize=13)
+plt.title("FF : Comparison proposed vs BC Clustering method",fontsize=13)
 
 plt.close("all")
 plt.figure()

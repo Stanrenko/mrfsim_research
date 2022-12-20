@@ -19,10 +19,12 @@ plt.ioff()
 
 UNITS
 folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/4_Patients/MT"
-#folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/4_Patients/CLI"
+#folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/3_Radiology_T1vsT2/CLI"
+#folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/4_Patients/MNAI"
 
 #thighs / legs
 folder_results_matlab =r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/3_Data/6_Patients"
+folder_results_matlab_bis="/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/3_Data/11_Inflammatory_myopathies/MNAI"
 
 target_folder=r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data Processed/MRMNote_2022_Invivo"
 
@@ -33,7 +35,8 @@ ROI_folder_names = glob.glob(folder_ROI+"/MT*")
 #ROI_folder_names = glob.glob(folder_ROI+"/*")
 
 patient_names=np.unique([str.split(str.split(p,"/")[-1],".")[0] for p in ROI_folder_names])
-#patient_names=np.concatenate([["MTTX"],patient_names[4:]])
+#patient_names=['CL1KB','CL1KF','CL1KN','MNAV','MNAW','MNAX','MNAZ','MNBC','MNBE','MNBF','MNBG','MNBH','MNBI','MNBK','MNBL','MNBM','MNBN','MNBO','MNBP','MNBQ','MNBS','MNBU','MNBV']
+
 
 exam_types=["legs","thighs"]
 
@@ -48,20 +51,26 @@ p = patient_names[0]
 all_results_cf={}
 all_results_matrix={}
 
-times_brute=[]
-times_cf=[]
-times_matrix=[]
 
-split=10
+
 useGPU=True
 
+try:
+    times_brute=list(np.load( target_folder + "/" + "times_brute.npy"))
+    times_cf=list(np.load( target_folder + "/" + "times_cf.npy"))
+    times_matrix=list(np.load( target_folder + "/" + "times_cf_clustering.npy"))
+except:
+    times_brute = []
+    times_cf = []
+    times_matrix = []
 
-times_brute=list(np.load( target_folder + "/" + "times_brute.npy"))
-times_cf=list(np.load( target_folder + "/" + "times_cf.npy"))
-times_matrix=list(np.load( target_folder + "/" + "times_matrix.npy"))
+
+exam_type="thighs"
+p="MTTS"
 
 
-for p in patient_names[:3]:
+
+for p in patient_names:
     for exam_type in exam_types:
 
         print("##########################################################################################")
@@ -78,12 +87,18 @@ for p in patient_names[:3]:
 
         try:
             filename = sorted(glob.glob(folder_results_matlab+"/{}*/*_{}_*.dat".format(p,image_type)))[0]
-            folder_results = sorted(glob.glob(folder_results_matlab+"/{}*/*_{}_*[!.dat]".format(p,image_type)))[0]
+            #folder_results = sorted(glob.glob(folder_results_matlab+"/{}*/*_{}_*[!.dat]".format(p,image_type)))[0]
 
-            folder_reco = sorted(glob.glob(folder_results+"/Reco[!_]*"))[-1]
+            #folder_reco = sorted(glob.glob(folder_results+"/Reco[!_]*"))[-1]
         except:
-            print("Could not load kdata or reco folder {} {}".format(p,exam_type))
-            continue
+            try:
+                filename = sorted(glob.glob(folder_results_matlab_bis + "/{}*/*_{}_*.dat".format(p, image_type)))[0]
+            except:
+                try:
+                    filename = sorted(glob.glob(folder_results_matlab_bis + "/{}*/bak/*_{}_*.dat".format(p, image_type)))[0]
+                except:
+                    print("Could not load kdata or reco folder {} {}".format(p,exam_type))
+                    continue
 
 
         filename_base = target_folder+"/"+"_".join(str.split(filename,"/")[-2:])
@@ -266,37 +281,35 @@ for p in patient_names[:3]:
 
             #dictfile = "mrf175_SimReco2.dict"
             dictfile = "mrf175_Dico2_Invivo.dict"
+            dictfile_light="mrf175_Dico2_Invivo_light_for_matching.dict"
 
-
-            with open("mrf_sequence.json") as f:
-                sequence_config = json.load(f)
-
-
-            seq = T1MRF(**sequence_config)
 
             file_map_cf=str.split(filename_base, ".dat")[0] + "_MRF_map_cf_sl{}.pkl".format(sl)
-            file_map_matrix = str.split(filename_base, ".dat")[0] + "_MRF_map_matrix_sl{}.pkl".format(sl)
+            file_map_matrix = str.split(filename_base, ".dat")[0] + "_MRF_map_cf_clustering_sl{}.pkl".format(sl)
             file_map_brute = str.split(filename_base, ".dat")[0] + "_MRF_map_brute_sl{}.pkl".format(sl)
 
             niter = 0
 
 
 
-            optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=split, pca=True,
+            optimizer_clustering = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=100, pca=True,
                                          threshold_pca=15, log=False, useGPU_dictsearch=useGPU, useGPU_simulation=False,
-                                         gen_mode="other")
-            optimizer_brute = BruteDictSearch(FF_list=np.arange(0,1.05,0.05),mask=mask,split=split,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=False)
+                                         gen_mode="other",dictfile_light=dictfile_light,threshold_ff=0.9,ntimesteps=ntimesteps)
+
+            optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=10,
+                                                pca=True,
+                                                threshold_pca=15, log=False, useGPU_dictsearch=useGPU,
+                                                useGPU_simulation=False,
+                                                gen_mode="other",ntimesteps=ntimesteps)
+
+            optimizer_brute = BruteDictSearch(FF_list=np.arange(0,1.05,0.05),mask=mask,split=1,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=useGPU,n_clusters_dico=1000,pruning=0.05,ntimesteps=ntimesteps)
 
             #all_maps = optimizer.search_patterns(dictfile, volumes_all)
-
-
             import pickle
-
-
             if not(str.split(file_map_cf,"/")[-1] in os.listdir(target_folder)):
 
                 start_time=time.time()
-                all_maps_cf=optimizer.search_patterns_test(dictfile,volumes_all)
+                all_maps_cf=optimizer.search_patterns_test_multi(dictfile,volumes_all)
                 end_time=time.time()
                 dtime = (end_time - start_time)/mask.sum()*1000
                 print("CF Time taken per pixel for slice {} : {} ms".format(sl,dtime))
@@ -313,7 +326,7 @@ for p in patient_names[:3]:
             if not (str.split(file_map_matrix,"/")[-1] in os.listdir(target_folder)):
 
                 start_time = time.time()
-                all_maps_matrix = optimizer.search_patterns_matrix(dictfile, volumes_all)
+                all_maps_matrix = optimizer_clustering.search_patterns_test_multi_2_steps_dico(dictfile, volumes_all)
                 end_time = time.time()
                 dtime = (end_time - start_time) / mask.sum()*1000
                 print("Matrix Time taken per pixel for slice {} : {} ms".format(sl, dtime))
@@ -344,7 +357,7 @@ for p in patient_names[:3]:
                     all_maps_brute = pickle.load(file)
 
             np.save( target_folder + "/" + "times_cf.npy",np.array(times_cf))
-            np.save( target_folder + "/" + "times_matrix.npy",np.array(times_matrix))
+            np.save( target_folder + "/" + "times_cf_clustering.npy",np.array(times_matrix))
             np.save( target_folder + "/" + "times_brute.npy",np.array(times_brute))
 
             proj_mask = mask
@@ -356,7 +369,7 @@ for p in patient_names[:3]:
             compare_paramMaps(all_maps_brute[0][0],all_maps_cf[0][0],all_maps_brute[0][1]>0,all_maps_cf[0][1]>0,title1="{} {} Brute {}".format(p,exam_type,sl),title2="{} {} Closed-formula {}".format(p,exam_type,sl),proj_on_mask1=proj_mask>0,adj_wT1=True,save=True,fontsize=15,figsize=(40,10))
             compare_paramMaps(all_maps_brute[0][0], all_maps_matrix[0][0], all_maps_brute[0][1] > 0, all_maps_matrix[0][1] > 0,
                               title1="{} {} Brute {}".format(p, exam_type, sl),
-                              title2="{} {} Matrix {}".format(p, exam_type, sl), proj_on_mask1=proj_mask > 0,
+                              title2="{} {} CF clustering {}".format(p, exam_type, sl), proj_on_mask1=proj_mask > 0,
                               adj_wT1=True, save=True, fontsize=15, figsize=(40, 10))
 
             plt.close("all")
@@ -370,7 +383,7 @@ for p in patient_names[:3]:
                 #df_python.to_csv("{} {} : Results_Comparison_Invivo slice {}".format(p,exam_type,sl))
                 regression_paramMaps_ROI(all_maps_brute[0][0],all_maps_cf[0][0],all_maps_brute[0][1]>0,all_maps_cf[0][1]>0,maskROI=maskROI_current,save=True,title="{} {}: Brute vs CF Invivo slice {}".format(p,exam_type,sl),kept_keys=["attB1","df","wT1","ff"],adj_wT1=True,fat_threshold=0.7,proj_on_mask1=proj_mask>0)
                 regression_paramMaps_ROI(all_maps_brute[0][0], all_maps_matrix[0][0], all_maps_brute[0][1] > 0, all_maps_matrix[0][1] > 0, maskROI=maskROI_current, save=True,
-                                         title="{} {}: Brute vs Matrix Invivo slice {}".format(p, exam_type, sl),
+                                         title="{} {}: Brute vs CF Clustering Invivo slice {}".format(p, exam_type, sl),
                                          kept_keys=["attB1", "df", "wT1", "ff"], adj_wT1=True, fat_threshold=0.7,
                                          proj_on_mask1=proj_mask > 0)
 
@@ -403,7 +416,7 @@ for p in patient_names[:3]:
                 # close the file
                 file.close()
 
-                file_all_results = "MT_ROI_All_results_Matrix.pkl"
+                file_all_results = "MT_ROI_All_results_CF_clustering.pkl"
                 file = open(target_folder + "/" + file_all_results, "wb")
                 # dump information to that file
                 pickle.dump(all_results_matrix, file)
@@ -416,7 +429,7 @@ for p in patient_names[:3]:
                 continue
 
 np.save( target_folder + "/" + "times_cf.npy",np.array(times_cf))
-np.save( target_folder + "/" + "times_matrix.npy",np.array(times_matrix))
+np.save( target_folder + "/" + "times_cf_clustering.npy",np.array(times_matrix))
 np.save( target_folder + "/" + "times_brute.npy",np.array(times_brute))
 
 

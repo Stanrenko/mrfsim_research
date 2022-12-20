@@ -4570,6 +4570,13 @@ class SimpleDictSearch(Optimizer):
         tv_denoising_weight = self.paramDict["tv_denoising_weight"]
         log_phase = self.paramDict["log_phase"]
         # adj_phase=self.paramDict["adj_phase"]
+        if pca:
+            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca_simple.npy".format(threshold_pca)
+            pca_file_name = str.split(pca_file, "/")[-1]
+
+        vars_file = str.split(dictfile, ".dict")[0] + "_vars_simple.pkl".format(threshold_pca)
+        vars_file_name = str.split(vars_file, "/")[-1]
+        path = str.split(os.path.realpath(__file__), "/dictoptimizers.py")[0]
 
         if movement_correction:
             if cond_mvt is None:
@@ -4703,19 +4710,24 @@ class SimpleDictSearch(Optimizer):
         del array_fat
 
         if pca:
-            pca_water = PCAComplex(n_components_=threshold_pca)
-            pca_fat = PCAComplex(n_components_=threshold_pca)
+            if pca_file_name not in os.listdir(path):
+                pca_water = PCAComplex(n_components_=threshold_pca)
+                pca_fat = PCAComplex(n_components_=threshold_pca)
 
-            pca_water.fit(array_water_unique)
-            pca_fat.fit(array_fat_unique)
+                pca_water.fit(array_water_unique)
+                pca_fat.fit(array_fat_unique)
 
-            print(
-                "Water Components Retained {} out of {} timesteps".format(pca_water.n_components_,
-                                                                          nb_water_timesteps))
-            print("Fat Components Retained {} out of {} timesteps".format(pca_fat.n_components_, nb_fat_timesteps))
+                print(
+                    "Water Components Retained {} out of {} timesteps".format(pca_water.n_components_,
+                                                                              nb_water_timesteps))
+                print("Fat Components Retained {} out of {} timesteps".format(pca_fat.n_components_, nb_fat_timesteps))
 
-            transformed_array_water_unique = pca_water.transform(array_water_unique)
-            transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
+                transformed_array_water_unique = pca_water.transform(array_water_unique)
+                transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
+                np.save(pca_file,(pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique),allow_pickle=True)
+            else:
+                print("Loading pca")
+                (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique)=np.load(pca_file,allow_pickle=True)
 
         else:
             pca_water = None
@@ -4723,17 +4735,24 @@ class SimpleDictSearch(Optimizer):
             transformed_array_water_unique = None
             transformed_array_fat_unique = None
 
-        var_w = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
-        var_f = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
-        sig_wf = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(),
-                        axis=1).real
+        if vars_file_name not in os.listdir(path):
+            var_w = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
+            var_f = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
+            sig_wf = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(),
+                            axis=1).real
 
-        var_w = var_w[index_water_unique]
-        var_f = var_f[index_fat_unique]
+            var_w = var_w[index_water_unique]
+            var_f = var_f[index_fat_unique]
 
-        var_w = np.reshape(var_w, (-1, 1))
-        var_f = np.reshape(var_f, (-1, 1))
-        sig_wf = np.reshape(sig_wf, (-1, 1))
+            var_w = np.reshape(var_w, (-1, 1))
+            var_f = np.reshape(var_f, (-1, 1))
+            sig_wf = np.reshape(sig_wf, (-1, 1))
+            with open(vars_file,"wb") as file:
+                pickle.dump((var_w,var_f,sig_wf),file)
+        else:
+            print("Loading var w / var f / sig wf")
+            with open(vars_file, "rb") as file:
+                (var_w, var_f, sig_wf)=pickle.load(file)
 
         if useGPU_dictsearch:
             var_w = cp.asarray(var_w)
@@ -6267,12 +6286,13 @@ class SimpleDictSearch(Optimizer):
 
         movement_correction = self.paramDict["movement_correction"]
         cond_mvt = self.paramDict["cond"]
-        remove_duplicates = self.paramDict["remove_duplicate_signals"]
-        tv_denoising_weight = self.paramDict["tv_denoising_weight"]
-        log_phase = self.paramDict["log_phase"]
+        if pca:
+            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca.npy".format(threshold_pca)
+            pca_file_name = str.split(pca_file, "/")[-1]
 
-
-
+        vars_file = str.split(dictfile, ".dict")[0] + "_vars.pkl".format(threshold_pca)
+        vars_file_name=str.split(vars_file,"/")[-1]
+        path=str.split(os.path.realpath(__file__),"/dictoptimizers.py")[0]
 
         if movement_correction:
             if cond_mvt is None:
@@ -6386,41 +6406,60 @@ class SimpleDictSearch(Optimizer):
             array_water = array_water[:, retained_timesteps]
             array_fat = array_fat[:, retained_timesteps]
 
+        print(path)
+        if (vars_file_name not in os.listdir(path)) or ((pca) and (pca_file_name not in os.listdir(path))):
 
+            print("Calculating unique dico signals")
+            array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
+            array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
 
-        array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
-        array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
+        nb_water_timesteps = array_water.shape[1]
+        nb_fat_timesteps = array_fat.shape[1]
 
-        nb_water_timesteps = array_water_unique.shape[1]
-        nb_fat_timesteps = array_water_unique.shape[1]
+        if vars_file_name not in os.listdir(path):
 
-        var_w_total = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
-        var_f_total = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
-        sig_wf_total = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(),
-                              axis=1).real
-        var_w_total = var_w_total[index_water_unique]
-        var_f_total = var_f_total[index_fat_unique]
-        var_w_total = np.reshape(var_w_total, (-1, 1))
-        var_f_total = np.reshape(var_f_total, (-1, 1))
-        sig_wf_total = np.reshape(sig_wf_total, (-1, 1))
+            var_w_total = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
+            var_f_total = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
+            sig_wf_total = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(),
+                                  axis=1).real
+            var_w_total = var_w_total[index_water_unique]
+            var_f_total = var_f_total[index_fat_unique]
+            var_w_total = np.reshape(var_w_total, (-1, 1))
+            var_f_total = np.reshape(var_f_total, (-1, 1))
+            sig_wf_total = np.reshape(sig_wf_total, (-1, 1))
+            with open(vars_file,"wb") as file:
+                pickle.dump((var_w_total,var_f_total,sig_wf_total,index_water_unique,index_fat_unique),file)
+
+        else:
+            print("Loading var w / var f / sig wf")
+            with open(vars_file, "rb") as file:
+                (var_w_total,var_f_total,sig_wf_total,index_water_unique,index_fat_unique)=pickle.load(file)
 
         #del array_water
         #del array_fat
 
         if pca:
-            pca_water = PCAComplex(n_components_=threshold_pca)
-            pca_fat = PCAComplex(n_components_=threshold_pca)
+            if pca_file_name not in os.listdir(path):
+                pca_water = PCAComplex(n_components_=threshold_pca)
+                pca_fat = PCAComplex(n_components_=threshold_pca)
 
-            pca_water.fit(array_water_unique)
-            pca_fat.fit(array_fat_unique)
+                pca_water.fit(array_water_unique)
+                pca_fat.fit(array_fat_unique)
 
-            print(
-                "Water Components Retained {} out of {} timesteps".format(pca_water.n_components_,
-                                                                          nb_water_timesteps))
-            print("Fat Components Retained {} out of {} timesteps".format(pca_fat.n_components_, nb_fat_timesteps))
+                print(
+                    "Water Components Retained {} out of {} timesteps".format(pca_water.n_components_,
+                                                                              nb_water_timesteps))
+                print("Fat Components Retained {} out of {} timesteps".format(pca_fat.n_components_, nb_fat_timesteps))
 
-            transformed_array_water_unique = pca_water.transform(array_water_unique)
-            transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
+                transformed_array_water_unique = pca_water.transform(array_water_unique)
+                transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
+                np.save(pca_file,(pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique),allow_pickle=True)
+                del array_water_unique
+                del array_fat_unique
+            else:
+                print("Loading pca")
+                (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique)=np.load(pca_file,allow_pickle=True)
+
 
         else:
             pca_water = None
@@ -7479,6 +7518,9 @@ class BruteDictSearch(Optimizer):
         self.paramDict["n_clusters_dico"]=n_clusters_dico
         self.paramDict["pruning"] = pruning
 
+        if "ignore_rho" not in self.paramDict:
+            self.paramDict["ignore_rho"]=False
+
     def search_patterns(self,dictfile,volumes,retained_timesteps=None):
 
 
@@ -7503,6 +7545,13 @@ class BruteDictSearch(Optimizer):
         pruning = self.paramDict["pruning"]
         if n_clusters_dico is not None:
             clustering_file=str.split(dictfile,".dict")[0]+"_{}groups.npy".format(n_clusters_dico)
+            clustering_file_name=str.split(clustering_file, "/")[-1]
+
+        if pca:
+            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca_brute.npy".format(threshold_pca)
+            pca_file_name = str.split(pca_file, "/")[-1]
+
+        path = str.split(os.path.realpath(__file__), "/dictoptimizers.py")[0]
 
         if volumes.ndim > 2:
             signals = volumes[:, mask > 0]
@@ -7531,9 +7580,13 @@ class BruteDictSearch(Optimizer):
             values=values[:,retained_timesteps]
 
         if pca:
-            pca = PCAComplex(n_components_=threshold_pca)
-            pca.fit(values)
-            transformed_values = pca.transform(values)
+            if pca_file_name not in os.listdir(path):
+                pca = PCAComplex(n_components_=threshold_pca)
+                pca.fit(values)
+                transformed_values = pca.transform(values)
+                np.save(pca_file,(pca,transformed_values),allow_pickle=True)
+            else:
+                pca,transformed_values=np.load(pca_file,allow_pickle=True)
         else:
             transformed_values=values
 
@@ -7550,8 +7603,8 @@ class BruteDictSearch(Optimizer):
 
         if n_clusters_dico is not None:
 
-            if clustering_file not in os.listdir():
-                print(os.listdir())
+            if clustering_file_name not in os.listdir(path):
+                #print(os.listdir())
                 print("Forming dictionary groups for group matching")
                 n_el_per_group = int(nb_signals_dico / n_clusters_dico)
 
@@ -7815,7 +7868,10 @@ class BruteDictSearch(Optimizer):
                     sig = cp.real(cp.matmul(cp.asarray(cluster_signals.conj()), transformed_all_signals) * cp.exp(
                         -1j * phi))
 
-                    lambd = sig / cp.expand_dims(cp.real(var_clusters), axis=-1)
+                    if self.paramDict["ignore_rho"]:
+                        lambd=1
+                    else:
+                        lambd = sig / cp.expand_dims(cp.real(var_clusters), axis=-1)
 
                     J_all_clusters = lambd ** 2 * cp.expand_dims(var_clusters, axis=-1) - 2 * lambd * sig
 
@@ -7837,7 +7893,10 @@ class BruteDictSearch(Optimizer):
                     sig = cp.real(cp.matmul(retained_signals_dico.conj(), transformed_all_signals) * cp.exp(
                         -1j * phi))
 
-                    lambd = sig / cp.expand_dims(cp.real(var_current), axis=-1)
+                    if self.paramDict["ignore_rho"]:
+                        lambd=1
+                    else:
+                        lambd = sig / cp.expand_dims(cp.real(var_current), axis=-1)
 
                     J_all = lambd ** 2 * cp.expand_dims(var_current, axis=-1) - 2 * lambd * sig
                     idx_max_all_current = cp.argmin(J_all, axis=0)

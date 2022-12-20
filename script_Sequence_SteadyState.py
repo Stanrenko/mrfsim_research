@@ -332,11 +332,11 @@ from tqdm import tqdm
 import pickle
 from scipy.io import savemat
 
-with open("./mrf_sequence_adjusted.json") as f:
+with open("./mrf_sequence.json") as f:
     sequence_config = json.load(f)
 
 
-with open("./mrf_dictconf_SimReco2_light_matching.json") as f:
+with open("./mrf_dictconf_Dico2_Invivo_light_for_matching.json") as f:
     dict_config = json.load(f)
 
 #with open("./mrf_dictconf_SimReco2.json") as f:
@@ -359,7 +359,7 @@ sequence_config["TR"]=TR_list
 
 seq=T1MRF(**sequence_config)
 
-dictfile = "mrf175_SimReco2_light_matching_adjusted.dict"
+dictfile = "mrf175_Dico2_Invivo_light_for_matching.dict"
 
 sim_mode="mean"
 overwrite=True
