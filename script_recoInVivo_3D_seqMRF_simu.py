@@ -69,7 +69,7 @@ dictfile_light='./mrf175_SimReco2_light_matching_adjusted.dict'
 
 #name = "SquareSimu3D_SS_FF0_1"
 name = "SquareSimu3D_SS_SimReco2"
-#name = "KneePhantom"
+name = "KneePhantom"
 
 
 dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
@@ -189,7 +189,7 @@ file_map = filename + "_sl{}_rp{}_us{}{}w{}{}_MRF_map.pkl".format(nb_slices,repe
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 nb_channels=1
-npoint = 128
+npoint = 512
 
 
 
@@ -363,12 +363,17 @@ file_map = filename + "_sl{}_rp{}_us{}{}w{}{}{}_MRF_map.pkl".format(nb_slices,re
 start=datetime.now()
 if not(load_map):
     niter = 0
-    #optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=1,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True,n_clusters_dico=100,pruning=0.05)
-    #all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
+    optimizer = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=1,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=False,ntimesteps=ntimesteps,log_phase=True,n_clusters_dico=None,pruning=0.05)
+    all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
-
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=20, log=True, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,threshold_ff=0.9,dictfile_light=dictfile_light)
-    all_maps=optimizer.search_patterns_test_multi_2_steps_dico(dictfile,volumes_all,retained_timesteps=None)
+    # optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=1, pca=True,
+    #                              threshold_pca=20, log=False, useGPU_dictsearch=False, useGPU_simulation=False,
+    #                              gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
+    #                              threshold_ff=0.9, dictfile_light=dictfile_light)
+    # all_maps = optimizer.search_patterns_test_multi(dictfile, volumes_all, retained_timesteps=None)
+    #
+    # optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,threshold_pca=20, log=False, useGPU_dictsearch=False, useGPU_simulation=False,gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,threshold_ff=0.9,dictfile_light=dictfile_light)
+    # all_maps=optimizer.search_patterns_test_multi_2_steps_dico(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -447,7 +452,7 @@ for suffix in list_suffix:
         file_map="/{}_sl{}_rp{}_us{}{}w{}_{}_MRF_map.pkl".format(name,nb_slices,repeat_slice,undersampling_factor,1400,nspoke,suffix)
     file_maps.append[file_map]
 
-file_maps=['/SquareSimu3D_SS_SimReco2_sl20_rp1_us11400w8_fullReco_MRF_map.pkl','/SquareSimu3D_SS_SimReco2_sl20_rp1_us11400w8_fullReco_2StepsDico_MRF_map.pkl','/SquareSimu3D_SS_SimReco2_sl20_rp1_us11400w8_fullReco_Brute_MRF_map.pkl']
+file_maps=['/KneePhantom_sl20_rp1_us11400w8_fullReco_MRF_map.pkl','/KneePhantom_sl20_rp1_us11400w8_fullReco_2StepsDico_MRF_map.pkl','/KneePhantom_sl20_rp1_us11400w8_fullReco_Brute_MRF_map.pkl']
 
 dic_maps={}
 for file_map in file_maps:
@@ -496,6 +501,7 @@ max_iter=1
 plt.figure()
 k="ff"
 maskROI=buildROImask_unique(m.paramMap,key="wT1")
+#maskROI=m.buildROImask()
 labels=["Original","2 steps","Brute"]
 for i,key in enumerate(dic_maps.keys()):
     for it in (list(range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter),3))):

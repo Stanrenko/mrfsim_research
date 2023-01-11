@@ -199,7 +199,7 @@ print("Estimating Movement...")
 shifts = list(range(-20, 20))
 bottom = 50
 top = 150
-displacements, _ = calculate_displacement(images_nav_mean, bottom, top, shifts)
+displacements = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
 displacement_for_binning = displacements
 bin_width = 8

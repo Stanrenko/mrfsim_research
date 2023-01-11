@@ -73,9 +73,9 @@ xq[:, 0] += np.arange(nq) / 1000.
 
 import faiss
 
-nlist = 100
+nlist = 3
 m = 8
-k = 4
+k = 10
 quantizer = faiss.IndexFlatL2(d)  # this remains the same
 index = faiss.IndexIVFPQ(quantizer, d, nlist, m, 8)
                                   # 8 specifies that each sub-vector is encoded as 8 bits

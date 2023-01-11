@@ -59,7 +59,7 @@ snr=None
 name = "SquareSimu2D_SimReco2"
 
 
-use_GPU = True
+use_GPU = False
 light_memory_usage=True
 gen_mode="other"
 
@@ -211,16 +211,16 @@ for num in range(nb_phantom):
     ntimesteps=175
     niter = 0
 
-    optimizer_brute = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=1,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=use_GPU,ntimesteps=ntimesteps,log_phase=True,n_clusters_dico=50,pruning=0.05)
+    optimizer_brute = BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=1,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=use_GPU,ntimesteps=ntimesteps,log_phase=True,n_clusters_dico=50,pruning=0.05)
     # all_maps = optimizer.search_patterns(dictfile, volumes_all, retained_timesteps=None)
 
     optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,
-                                 threshold_pca=20, log=True, useGPU_dictsearch=use_GPU, useGPU_simulation=False,
+                                 threshold_pca=15, log=True, useGPU_dictsearch=use_GPU, useGPU_simulation=False,
                                  gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
                                  threshold_ff=0.9, dictfile_light=dictfile_light)
 
     optimizer_clustering = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=500, pca=True,
-                                 threshold_pca=20, log=True, useGPU_dictsearch=use_GPU, useGPU_simulation=False,
+                                 threshold_pca=15, log=True, useGPU_dictsearch=use_GPU, useGPU_simulation=False,
                                  gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
                                  threshold_ff=0.9, dictfile_light=dictfile_light)
     # all_maps = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, volumes_all, retained_timesteps=None)
@@ -269,7 +269,7 @@ for num in range(nb_phantom):
     regression_paramMaps_ROI(m_.paramMap,all_maps_cf[0][0],mask>0,all_maps_cf[0][1]>0,maskROI,adj_wT1=True,title="CF_regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
     regression_paramMaps_ROI(m_.paramMap,all_maps_matrix[0][0],mask>0,all_maps_matrix[0][1]>0,maskROI,adj_wT1=True,title="CF_Clustering_regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
 
-    results = get_ROI_values(m_.paramMap,all_maps_brute[0][0],mask>0,all_maps_brute[0][1]>0,maskROI=maskROI,kept_keys=["attB1","df","wT1","ff"],adj_wT1=False,fat_threshold=0.7)
+    results = get_ROI_values(m_.paramMap,all_maps_brute[0][0],mask>0,all_maps_brute[0][1]>0,maskROI=maskROI,kept_keys=["attB1","df","wT1","ff"],adj_wT1=False,fat_threshold=0.7,return_std=True)
 
     if all_results_brute=={}:
         all_results_brute=results
@@ -278,7 +278,7 @@ for num in range(nb_phantom):
             all_results_brute[k]=np.concatenate([results[k],all_results_brute[k]],axis=0)
 
     results = get_ROI_values(m_.paramMap, all_maps_cf[0][0], mask > 0, all_maps_cf[0][1] > 0, maskROI=maskROI,
-                             kept_keys=["attB1", "df", "wT1", "ff"], adj_wT1=False, fat_threshold=0.7)
+                             kept_keys=["attB1", "df", "wT1", "ff"], adj_wT1=False, fat_threshold=0.7,return_std=True)
 
     if all_results_cf == {}:
         all_results_cf = results
@@ -287,85 +287,81 @@ for num in range(nb_phantom):
             all_results_cf[k] = np.concatenate([results[k], all_results_cf[k]], axis=0)
 
     results = get_ROI_values(m_.paramMap, all_maps_matrix[0][0], mask > 0, all_maps_matrix[0][1] > 0, maskROI=maskROI,
-                             kept_keys=["attB1", "df", "wT1", "ff"], adj_wT1=False, fat_threshold=0.7)
+                             kept_keys=["attB1", "df", "wT1", "ff"], adj_wT1=False, fat_threshold=0.7,return_std=True)
     if all_results_matrix == {}:
         all_results_matrix = results
     else:
         for k in all_results_matrix.keys():
             all_results_matrix[k] = np.concatenate([results[k], all_results_matrix[k]], axis=0)
+plt.close("all")
 
 df_comp=pd.DataFrame(columns=["FF Ground Truth","FF reference","FF matrix","FF proposed"])
 df_comp["FF Ground Truth"]=all_results_brute["ff"][:,0]
-df_comp["FF reference"]=all_results_brute["ff"][:,1]
-df_comp["FF matrix"]=all_results_matrix["ff"][:,1]
-df_comp["FF proposed"]=all_results_cf["ff"][:,1]
+df_comp["FF reference"]=all_results_brute["ff"][:,2]
+df_comp["FF matrix"]=all_results_matrix["ff"][:,2]
+df_comp["FF proposed"]=all_results_cf["ff"][:,2]
+
 
 import statsmodels.api as sm
-plt.close("all")
-plt.figure()
-sm.graphics.mean_diff_plot(df_comp["FF reference"], df_comp["FF matrix"])
-plt.title("FF : Comparison reference vs BC clustering method",fontsize=13)
-
-plt.figure()
-sm.graphics.mean_diff_plot(df_comp["FF reference"], df_comp["FF proposed"])
-plt.title("FF : Comparison reference vs CF method",fontsize=13)
-
-plt.figure()
-sm.graphics.mean_diff_plot(df_comp["FF proposed"], df_comp["FF matrix"])
-plt.title("FF : Comparison proposed vs BC Clustering method",fontsize=13)
 
 plt.close("all")
-plt.figure()
 sm.graphics.mean_diff_plot(df_comp["FF Ground Truth"], df_comp["FF matrix"])
-plt.title("FF : Comparison ground truth vs BC clustering method",fontsize=13)
+plt.title("FF : Comparison ground truth vs proposed with clustering",fontsize=13)
 
-plt.figure()
 sm.graphics.mean_diff_plot(df_comp["FF Ground Truth"], df_comp["FF proposed"])
-plt.title("FF : Comparison ground truth vs BC method",fontsize=13)
+plt.title("FF : Comparison ground truth vs proposed",fontsize=13)
+
+sm.graphics.mean_diff_plot(df_comp["FF Ground Truth"], df_comp["FF reference"])
+plt.title("FF : Comparison ground truth vs reference method",fontsize=13)
 
 plt.figure()
-sm.graphics.mean_diff_plot(df_comp["FF Ground Truth"], df_comp["FF reference"])
-plt.title("FF : Comparison ground truth vs Brute method",fontsize=13)
+plt.hist(all_results_brute["ff"][:,3],label="Reference")
+plt.hist(all_results_cf["ff"][:,3],label="Proposed")
+plt.hist(all_results_matrix["ff"][:,3],label="Proposed with clustering")
+plt.legend()
 
-import seaborn as sns
-g=sns.pairplot(df_comp,diag_kind="kde",kind="reg",plot_kws={'line_kws':{'color':'red',"alpha":0.5},"scatter_kws":{"s":3}},corner=True)
-g.fig.suptitle("FF methods comparison")
+# import seaborn as sns
+# g=sns.pairplot(df_comp,diag_kind="kde",kind="reg",plot_kws={'line_kws':{'color':'red',"alpha":0.5},"scatter_kws":{"s":3}},corner=True)
+# g.fig.suptitle("FF methods comparison")
 
 
 df_comp=pd.DataFrame(columns=["$T1_{H2O}$ Ground Truth","$T1_{H2O}$ reference","$T1_{H2O}$ matrix","$T1_{H2O}$ proposed"])
 df_comp["$T1_{H2O}$ Ground Truth"]=all_results_brute["wT1"][all_results_brute["ff"][:,0]<0.7,0]
-df_comp["$T1_{H2O}$ reference"]=all_results_brute["wT1"][all_results_brute["ff"][:,0]<0.7,1]
-df_comp["$T1_{H2O}$ matrix"]=all_results_matrix["wT1"][all_results_matrix["ff"][:,0]<0.7,1]
-df_comp["$T1_{H2O}$ proposed"]=all_results_cf["wT1"][all_results_cf["ff"][:,0]<0.7,1]
+df_comp["$T1_{H2O}$ reference"]=all_results_brute["wT1"][all_results_brute["ff"][:,0]<0.7,2]
+df_comp["$T1_{H2O}$ matrix"]=all_results_matrix["wT1"][all_results_matrix["ff"][:,0]<0.7,2]
+df_comp["$T1_{H2O}$ proposed"]=all_results_cf["wT1"][all_results_cf["ff"][:,0]<0.7,2]
 
 
 import statsmodels.api as sm
-plt.close("all")
-sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ reference"], df_comp["$T1_{H2O}$ matrix"])
-plt.title("$T1_{H2O}$ : Comparison reference vs matrix method",fontsize=13)
-
-sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ reference"], df_comp["$T1_{H2O}$ proposed"])
-plt.title("$T1_{H2O}$ : Comparison reference vs proposed method",fontsize=13)
-
-sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ proposed"], df_comp["$T1_{H2O}$ matrix"])
-plt.title("$T1_{H2O}$ : Comparison proposed vs matrix method",fontsize=13)
-
 
 plt.close("all")
 sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ Ground Truth"], df_comp["$T1_{H2O}$ matrix"])
-plt.title("$T1_{H2O}$ : Comparison ground truth vs BC Clustering method",fontsize=13)
+plt.title("$T1_{H2O}$ : Comparison ground truth vs proposed with clustering",fontsize=13)
 plt.show()
 
 sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ Ground Truth"], df_comp["$T1_{H2O}$ proposed"])
-plt.title("$T1_{H2O}$ : Comparison ground truth vs BC method",fontsize=13)
-plt.show()
-sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ Ground Truth"], df_comp["$T1_{H2O}$ reference"])
-plt.title("$T1_{H2O}$ : Comparison ground truth vs Brute method",fontsize=13)
-plt.show()
+plt.title("$T1_{H2O}$ : Comparison ground truth vs proposed",fontsize=13)
 
-import seaborn as sns
-g=sns.pairplot(df_comp,diag_kind="kde",kind="reg",plot_kws={'line_kws':{'color':'red',"alpha":0.5},"scatter_kws":{"s":3}},corner=True)
-g.fig.suptitle("$T1_{H2O}$ methods comparison")
+sm.graphics.mean_diff_plot(df_comp["$T1_{H2O}$ Ground Truth"], df_comp["$T1_{H2O}$ reference"])
+plt.title("$T1_{H2O}$ : Comparison ground truth vs reference",fontsize=13)
+
+
+
+plt.figure()
+plt.hist(all_results_brute["wT1"][:,3],label="Reference")
+plt.hist(all_results_cf["wT1"][:,3],label="Proposed")
+plt.hist(all_results_matrix["wT1"][:,3],label="Proposed with clustering")
+plt.legend()
+
+plt.figure()
+plt.hist([all_results_brute["wT1"][:,3],all_results_cf["wT1"][:,3],all_results_matrix["wT1"][:,3]],label=["Reference","Proposed","Proposed with clustering"])
+
+plt.legend()
+
+#
+# import seaborn as sns
+# g=sns.pairplot(df_comp,diag_kind="kde",kind="reg",plot_kws={'line_kws':{'color':'red',"alpha":0.5},"scatter_kws":{"s":3}},corner=True)
+# g.fig.suptitle("$T1_{H2O}$ methods comparison")
 
 
 

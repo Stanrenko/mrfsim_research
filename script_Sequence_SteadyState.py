@@ -352,10 +352,10 @@ df = dict_config["delta_freqs"]
 df = [- value / 1000 for value in df] # temp
 # df = np.linspace(-0.1, 0.1, 101)
 
-min_TR_delay=1.84
-TE_list=np.array(sequence_config["TE"])
-TR_list=list(TE_list+min_TR_delay)
-sequence_config["TR"]=TR_list
+#min_TR_delay=1.84
+#TE_list=np.array(sequence_config["TE"])
+#TR_list=list(TE_list+min_TR_delay)
+#sequence_config["TR"]=TR_list
 
 seq=T1MRF(**sequence_config)
 

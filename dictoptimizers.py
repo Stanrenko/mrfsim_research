@@ -27,7 +27,10 @@ except:
 
 from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from sklearn.cluster import KMeans
-from numba import cuda
+try:
+    from numba import cuda
+except:
+    pass
 import gc
 import pickle
 
@@ -4571,7 +4574,7 @@ class SimpleDictSearch(Optimizer):
         log_phase = self.paramDict["log_phase"]
         # adj_phase=self.paramDict["adj_phase"]
         if pca:
-            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca_simple.npy".format(threshold_pca)
+            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca_simple.pkl".format(threshold_pca)
             pca_file_name = str.split(pca_file, "/")[-1]
 
         vars_file = str.split(dictfile, ".dict")[0] + "_vars_simple.pkl".format(threshold_pca)
@@ -4724,10 +4727,14 @@ class SimpleDictSearch(Optimizer):
 
                 transformed_array_water_unique = pca_water.transform(array_water_unique)
                 transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
-                np.save(pca_file,(pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique),allow_pickle=True)
+                with open(pca_file, "wb") as file:
+                    pickle.dump((pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique), file)
+
             else:
                 print("Loading pca")
-                (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique)=np.load(pca_file,allow_pickle=True)
+                with open(pca_file, "rb") as file:
+                    (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique)=pickle.load(file)
+
 
         else:
             pca_water = None
@@ -6287,7 +6294,7 @@ class SimpleDictSearch(Optimizer):
         movement_correction = self.paramDict["movement_correction"]
         cond_mvt = self.paramDict["cond"]
         if pca:
-            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca.npy".format(threshold_pca)
+            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca.pkl".format(threshold_pca)
             pca_file_name = str.split(pca_file, "/")[-1]
 
         vars_file = str.split(dictfile, ".dict")[0] + "_vars.pkl".format(threshold_pca)
@@ -6453,12 +6460,14 @@ class SimpleDictSearch(Optimizer):
 
                 transformed_array_water_unique = pca_water.transform(array_water_unique)
                 transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
-                np.save(pca_file,(pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique),allow_pickle=True)
+                with open(pca_file,"wb") as file:
+                    pickle.dump((pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique),file)
                 del array_water_unique
                 del array_fat_unique
             else:
                 print("Loading pca")
-                (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique)=np.load(pca_file,allow_pickle=True)
+                with open(pca_file, "rb") as file:
+                    (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique)=pickle.load(file)
 
 
         else:
@@ -7544,11 +7553,11 @@ class BruteDictSearch(Optimizer):
         n_clusters_dico = self.paramDict["n_clusters_dico"]
         pruning = self.paramDict["pruning"]
         if n_clusters_dico is not None:
-            clustering_file=str.split(dictfile,".dict")[0]+"_{}groups.npy".format(n_clusters_dico)
+            clustering_file=str.split(dictfile,".dict")[0]+"_{}groups.pkl".format(n_clusters_dico)
             clustering_file_name=str.split(clustering_file, "/")[-1]
 
         if pca:
-            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca_brute.npy".format(threshold_pca)
+            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca_brute.pkl".format(threshold_pca)
             pca_file_name = str.split(pca_file, "/")[-1]
 
         path = str.split(os.path.realpath(__file__), "/dictoptimizers.py")[0]
@@ -7584,9 +7593,12 @@ class BruteDictSearch(Optimizer):
                 pca = PCAComplex(n_components_=threshold_pca)
                 pca.fit(values)
                 transformed_values = pca.transform(values)
-                np.save(pca_file,(pca,transformed_values),allow_pickle=True)
+                with open(pca_file, "wb") as file:
+                    pickle.dump((pca,transformed_values), file)
             else:
-                pca,transformed_values=np.load(pca_file,allow_pickle=True)
+                with open(pca_file,"rb") as file:
+                    (pca,transformed_values)=pickle.load(file)
+
         else:
             transformed_values=values
 
@@ -7629,9 +7641,11 @@ class BruteDictSearch(Optimizer):
                     # curr_values=np.delete(curr_values,indices_group,axis=0)
                     curr_values[indices_group] = np.inf
 
-                np.save(clustering_file,(cluster_signals,labels),allow_pickle=True)
+                with open(clustering_file,"wb") as file:
+                    pickle.dump((cluster_signals,labels),file)
             else:
-                (cluster_signals, labels)=np.load(clustering_file,allow_pickle=True)
+                with open(clustering_file,"rb") as file:
+                    (cluster_signals, labels)=pickle.load(file)
 
 
             labels = labels.astype(int)
@@ -7842,8 +7856,8 @@ class BruteDictSearch(Optimizer):
                     #     idx_max_all_clusters = idx_max_all_clusters_current
                     # else:
                     #     idx_max_all_clusters = np.append(idx_max_all_unique, idx_max_all_clusters_current, axis=1)
-                    var_current=cp.asarray(var[retained_signals_indices])
-                    retained_signals_dico=cp.asarray(transformed_values[retained_signals_indices])
+                    var_current=var[retained_signals_indices]
+                    retained_signals_dico=transformed_values[retained_signals_indices]
 
                     sig = np.matmul(retained_signals_dico.conj(), transformed_all_signals)
 
