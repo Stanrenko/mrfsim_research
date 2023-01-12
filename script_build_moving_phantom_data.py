@@ -158,23 +158,6 @@ for num,localfile in enumerate(files):
             data_for_nav = np.moveaxis(data_for_nav,-2,0)
             np.save(filename_nav_save, data_for_nav)
 
-        # data = []
-        # k = 0
-        # for i, mdb in enumerate(mdb_list):
-        #     if mdb.is_image_scan() and not (mdb.mdh[14][9]):
-        #
-        #         data.append(mdb)
-        #          #if i < 1400:
-        #          #    print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
-        #         k += 1
-        #
-        # data = np.array([mdb.data for mdb in data])
-        # data = data.reshape((int(nb_part), int(nb_segments-nb_gating_spokes)) + data.shape[1:])
-        # if data.ndim==3
-        #     data=np.expand_dims(data,axis=-2)
-        # data=np.move_axis(data,-2,0)
-        # data=np.moveaxis(1,-2)
-
         del mdb_list
 
         ##################################################
@@ -190,60 +173,11 @@ for num,localfile in enumerate(files):
         data = np.moveaxis(data, 1, 0)
 
         np.save(filename_save,data)
-        #
-        ##################################################
-        #
-        # Parsed_File = rT.map_VBVD(filename)
-        # idx_ok = rT.detect_TwixImg(Parsed_File)
-        # start_time = time.time()
-        # data = Parsed_File[str(idx_ok)]["image"].readImage()
-        # elapsed_time = time.time()
-        # elapsed_time = elapsed_time - start_time
-        #
-        # progress_str = "Data read in %f s \n" % round(elapsed_time, 2)
-        # print(progress_str)
-        #
-        # data = np.squeeze(data)
-        #
-        # if nb_gating_spokes>0:
-        #     data = np.moveaxis(data, 0, -1)
-        #     data = np.moveaxis(data, -2, 0)
-        #
-        # else:
-        #     data = np.moveaxis(data, 0, -1)
-
-        #np.save(filename_save, data)
-
 
     else :
         data = np.load(filename_save)
         if nb_gating_spokes>0:
             data_for_nav=np.load(filename_nav_save)
-    #
-    # if str.split(filename_save,"/")[-1] not in os.listdir(folder):
-    #     Parsed_File = rT.map_VBVD(filename)
-    #     idx_ok = rT.detect_TwixImg(Parsed_File)
-    #     start_time = time.time()
-    #     RawData = Parsed_File[str(idx_ok)]["image"].readImage()
-    #     #test=Parsed_File["0"]["noise"].readImage()
-    #     #test = np.squeeze(test)
-    #
-    #     elapsed_time = time.time()
-    #     elapsed_time = elapsed_time - start_time
-    #     progress_str = "Data read in %f s \n" % round(elapsed_time, 2)
-    #     print(progress_str)
-    #     ## Random map simulation
-    #
-    #     data = np.squeeze(RawData)
-    #     data = np.moveaxis(data, 0, -1)
-    #
-    #     np.save(filename_save,data)
-    #
-    # else :
-    #     data = np.load(filename_save)
-
-    #data = np.moveaxis(data, 0, -1)
-    # data=np.moveaxis(data,-2,-1)
 
     try:
         del twix
@@ -271,6 +205,81 @@ npoint = data_shape[-1]
 nb_slices = data_shape[-3]
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
 undersampling_factor=1
+
+
+quantized_moves=np.array([int(str.split(str.split(f,"_")[-1],".dat")[0]) for f in files]).reshape(-1,1)
+quantized_moves=np.array(list(dico_data.keys())).reshape(-1,1)
+
+from utils_simu import generate_random_curve
+from scipy.ndimage import shift
+
+plt.close("all")
+H=4
+num_params=2*H
+max_move=np.max(list(dico_data_nav.keys()))+1
+min_move=np.min(list(dico_data_nav.keys()))
+
+X=[]
+Y=[]
+nb_training_examples=2000
+nb_translations=5
+
+for j in tqdm(range(nb_training_examples)):
+    rho=np.random.uniform(0,1,size=H)
+    phi=np.random.uniform(0,1,size=H)
+
+
+    movement=generate_random_curve(nb_allspokes,rho,phi,min_move,max_move)
+
+    movement_nav=quantized_moves[np.argmin(np.abs(movement[::int(1400/nb_gating_spokes)]-quantized_moves),axis=0)]
+    movement_nav=np.squeeze(movement_nav)
+
+    print("Data nav building")
+
+    data_for_nav_combined_one_rep = np.zeros(data_for_nav.shape[-2:],dtype=data_for_nav.dtype)
+
+    for i in range(nb_gating_spokes):
+        data_for_nav_combined_one_rep[i,:]=dico_data_nav[movement_nav[i]][0,0,i,:]
+
+    all_timesteps = np.arange(nb_allspokes)
+    nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
+
+    nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=1,
+                               applied_timesteps=list(nav_timesteps))
+
+    nav_image_size = (int(npoint / 2),)
+
+    data_for_nav=np.expand_dims(data_for_nav_combined_one_rep,axis=(0,1))
+    print("Calculating Sensitivity Maps for Nav Images...")
+    b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
+    b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
+
+
+    print("Rebuilding Nav Images...")
+    images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
+    images_nav_mean=np.squeeze(images_nav_mean)
+
+    for l in range(nb_translations):
+        shift_value=np.random.uniform(-50,350)
+        images_nav_mean_transf=shift(images_nav_mean, [0, shift_value])
+        X.append(images_nav_mean_transf)
+        Y.append(movement_nav)
+
+X=np.array(X)
+Y=np.array(Y)
+np.save("X_movement_from_nav.npy",X)
+np.save("Y_movement_from_nav.npy",Y)
+
+plt.figure()
+plt.imshow(images_nav_mean_transf.T)
+plt.figure()
+plt.plot(movement_nav)
+
+
+
+plt.figure()
+plt.imshow(shift(images_nav_mean,[0,50]).T)
+
 
 data_combined=np.zeros(data.shape,dtype=data.dtype)
 data_for_nav_combined = np.zeros(data_for_nav.shape,dtype=data_for_nav.dtype)

@@ -27,7 +27,10 @@ except:
 
 from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from sklearn.cluster import KMeans
-from numba import cuda
+try:
+    from numba import cuda
+except:
+    pass
 import gc
 import pickle
 
@@ -658,24 +661,6 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
             keys_B1 = (keys[:, 2] < unique_keys[:, cl][2] + d_B1) & ((keys[:, 2] > unique_keys[:, cl][2] - d_B1))
             keys_DF = (keys[:, 3] < unique_keys[:, cl][3] + d_DF) & ((keys[:, 3] > unique_keys[:, cl][3] - d_DF))
             retained_signals = cp.argwhere(keys_T1 & keys_fT1 & keys_B1 & keys_DF).flatten()
-
-
-            # print("T1")
-            # print(keys[:,0])
-            # print(unique_keys[:,cl] [0])
-            #
-            # print("fT1")
-            # print(keys[:, 1])
-            # print(unique_keys[:, cl][1])
-            #
-            # print("B1")
-            # print(keys[:, 2])
-            # print(unique_keys[:, cl][2])
-            #
-            # print("DF")
-            # print(keys[:, 3])
-            # print(unique_keys[:, cl][3])
-
 
             #print(retained_signals.shape)
 
@@ -7592,11 +7577,11 @@ class BruteDictSearch(Optimizer):
         n_clusters_dico = self.paramDict["n_clusters_dico"]
         pruning = self.paramDict["pruning"]
         if n_clusters_dico is not None:
-            clustering_file=str.split(dictfile,".dict")[0]+"_{}groups.npy".format(n_clusters_dico)
+            clustering_file=str.split(dictfile,".dict")[0]+"_{}groups.pkl".format(n_clusters_dico)
             clustering_file_name=str.split(clustering_file, "/")[-1]
 
         if pca:
-            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca_brute.npy".format(threshold_pca)
+            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca_brute.pkl".format(threshold_pca)
             pca_file_name = str.split(pca_file, "/")[-1]
 
         path = str.split(os.path.realpath(__file__), "/dictoptimizers.py")[0]
@@ -7632,9 +7617,12 @@ class BruteDictSearch(Optimizer):
                 pca = PCAComplex(n_components_=threshold_pca)
                 pca.fit(values)
                 transformed_values = pca.transform(values)
-                np.save(pca_file,(pca,transformed_values),allow_pickle=True)
+                with open(pca_file, "wb") as file:
+                    pickle.dump((pca,transformed_values), file)
             else:
-                pca,transformed_values=np.load(pca_file,allow_pickle=True)
+                with open(pca_file,"rb") as file:
+                    (pca,transformed_values)=pickle.load(file)
+
         else:
             transformed_values=values
 
@@ -7677,9 +7665,11 @@ class BruteDictSearch(Optimizer):
                     # curr_values=np.delete(curr_values,indices_group,axis=0)
                     curr_values[indices_group] = np.inf
 
-                np.save(clustering_file,(cluster_signals,labels),allow_pickle=True)
+                with open(clustering_file,"wb") as file:
+                    pickle.dump((cluster_signals,labels),file)
             else:
-                (cluster_signals, labels)=np.load(clustering_file,allow_pickle=True)
+                with open(clustering_file,"rb") as file:
+                    (cluster_signals, labels)=pickle.load(file)
 
 
             labels = labels.astype(int)
@@ -7890,8 +7880,8 @@ class BruteDictSearch(Optimizer):
                     #     idx_max_all_clusters = idx_max_all_clusters_current
                     # else:
                     #     idx_max_all_clusters = np.append(idx_max_all_unique, idx_max_all_clusters_current, axis=1)
-                    var_current=cp.asarray(var[retained_signals_indices])
-                    retained_signals_dico=cp.asarray(transformed_values[retained_signals_indices])
+                    var_current=var[retained_signals_indices]
+                    retained_signals_dico=transformed_values[retained_signals_indices]
 
                     sig = np.matmul(retained_signals_dico.conj(), transformed_all_signals)
 

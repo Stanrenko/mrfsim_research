@@ -31,7 +31,10 @@ from sklearn.cluster import KMeans
 from sklearn.model_selection import GridSearchCV
 import pandas as pd
 import itertools
-from sigpy.mri import spiral
+try:
+    from sigpy.mri import spiral
+except:
+    pass
 import cv2
 import pywt
 from mpl_toolkits.axes_grid1 import ImageGrid

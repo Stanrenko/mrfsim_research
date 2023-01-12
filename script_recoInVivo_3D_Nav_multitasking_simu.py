@@ -42,16 +42,7 @@ nb_slices = nb_filled_slices+2*nb_empty_slices
 
 undersampling_factor=2
 
-is_random=True
-frac_center=0.25
-
-if is_random :
-    name = "SquareSimu3DMTRandom"
-else:
-    name = "SquareSimu3DMT"
-
-
-use_GPU = False
+is_random=False
 light_memory_usage=True
 gen_mode="loop"
 
@@ -105,7 +96,7 @@ dict_config["ff"]=np.arange(0.,1.05,0.05)
 
 if "SquareSimu3DMT" in name:
     region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
-    mask_reduction_factor=1/4
+    mask_reduction_factor=0
 
 
     m = RandomMap3D(name,dict_config,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,undersampling_factor=undersampling_factor,repeat_slice=repeat_slice,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor,gen_mode=gen_mode)
@@ -672,14 +663,14 @@ dictjson="mrf_dictconf_SimReco2_light.json"
 #dictfile = "mrf175_SimReco2_window_55.dict"
 #dictfile = "mrf175_Dico2_Invivo.dict"
 
-with open("mrf_sequence.json") as f:
+with open("mrf_sequence_adjusted.json") as f:
     sequence_config = json.load(f)
 
 seq = T1MRF(**sequence_config)
 
 nb_filled_slices = 16
 nb_empty_slices=2
-repeat_slice=16
+repeat_slice=8
 nb_slices = nb_filled_slices+2*nb_empty_slices
 
 undersampling_factor=1
@@ -723,7 +714,7 @@ file_map = filename + "_mvt_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repea
 ntimesteps=175
 nb_channels=1
 nb_allspokes = 1400
-npoint = 128
+npoint = 64
 
 
 
@@ -741,7 +732,7 @@ dict_config["ff"]=np.arange(0.,1.05,0.05)
 
 if name=="SquareSimu3DMTRandom":
     region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
-    mask_reduction_factor=1/4
+    mask_reduction_factor=0
 
 
     m_ = RandomMap3D(name,dict_config,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,undersampling_factor=undersampling_factor,repeat_slice=repeat_slice,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor,gen_mode=gen_mode)
