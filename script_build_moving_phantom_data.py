@@ -241,6 +241,7 @@ for j in tqdm(range(nb_training_examples)):
     for i in range(nb_gating_spokes):
         data_for_nav_combined_one_rep[i,:]=dico_data_nav[movement_nav[i]][0,0,i,:]
 
+    movement_nav=movement_nav*3
     all_timesteps = np.arange(nb_allspokes)
     nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
 
@@ -275,7 +276,8 @@ plt.imshow(images_nav_mean_transf.T)
 plt.figure()
 plt.plot(movement_nav)
 
-
+plt.figure()
+plt.imshow(images_nav_mean_transf.reshape(50,-1,50)[:,-2,:].T)
 
 plt.figure()
 plt.imshow(shift(images_nav_mean,[0,50]).T)

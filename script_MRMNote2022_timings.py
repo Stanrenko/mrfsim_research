@@ -165,9 +165,6 @@ for split in splits:
 
     all_times_brute_gpu.append((end_time - start_time) / nb_signals * 1000)
 
-
-
-
 splits = [10, 100, 1000, nb_signals+1]
 #splits = [1,10]
 return_matched_signals = False

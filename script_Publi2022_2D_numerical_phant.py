@@ -298,16 +298,16 @@ for num in range(nb_phantom):
         for k in all_results_matrix.keys():
             all_results_matrix[k] = np.concatenate([results[k], all_results_matrix[k]], axis=0)
 
-df_comp=pd.DataFrame(columns=["Reference","Proposed","Proposed with clustering"])
+df_comp=pd.DataFrame(columns=["Reference","Proposed","Proposed w/ clustering"])
 df_comp["Reference"]=all_results_brute["ff"][:,2]-all_results_brute["ff"][:,0]
-df_comp["Proposed with clustering"]=all_results_matrix["ff"][:,2]-all_results_brute["ff"][:,0]
+df_comp["Proposed w/ clustering"]=all_results_matrix["ff"][:,2]-all_results_brute["ff"][:,0]
 df_comp["Proposed"]=all_results_cf["ff"][:,2]-all_results_brute["ff"][:,0]
 
 fig=plt.figure()
 ax=df_comp.boxplot(grid=False,showfliers=False,showmeans=True,medianprops=dict(color="red"),boxprops=dict(color="black"),whiskerprops=dict(color="black"),meanprops=dict(marker="x",markeredgecolor="gray"),whis=[5,95])
-ax.set_ylabel("FF Error vs ground truth",fontsize=14)
-plt.yticks(fontsize=10)
-plt.xticks(fontsize=10)
+ax.set_ylabel("FF Error vs ground truth",fontsize=16)
+plt.yticks(fontsize=12)
+plt.xticks(fontsize=12)
 fig.patch.set_facecolor("white")
 fig.set_tight_layout(True)
 
@@ -318,16 +318,16 @@ fig.savefig("boxplot ff numerical errors.png".format(k),dpi=600)
 plt.close("all")
 
 
-df_comp=pd.DataFrame(columns=["Reference","Proposed","Proposed with clustering"])
+df_comp=pd.DataFrame(columns=["Reference","Proposed","Proposed w/ clustering"])
 df_comp["Reference"]=all_results_brute["wT1"][all_results_brute["ff"][:,0]<0.7,2]-all_results_brute["wT1"][all_results_brute["ff"][:,0]<0.7,0]
-df_comp["Proposed with clustering"]=all_results_matrix["wT1"][all_results_matrix["ff"][:,0]<0.7,2]-all_results_brute["wT1"][all_results_brute["ff"][:,0]<0.7,0]
+df_comp["Proposed w/ clustering"]=all_results_matrix["wT1"][all_results_matrix["ff"][:,0]<0.7,2]-all_results_brute["wT1"][all_results_brute["ff"][:,0]<0.7,0]
 df_comp["Proposed"]=all_results_cf["wT1"][all_results_cf["ff"][:,0]<0.7,2]-all_results_brute["wT1"][all_results_brute["ff"][:,0]<0.7,0]
 
 fig=plt.figure()
 ax=df_comp.boxplot(grid=False,showfliers=False,showmeans=True,medianprops=dict(color="red"),boxprops=dict(color="black"),whiskerprops=dict(color="black"),meanprops=dict(marker="x",markeredgecolor="gray"),whis=[5,95])
-ax.set_ylabel("$T1_{H2O}$ Error vs ground truth (ms)",fontsize=14)
-plt.yticks(fontsize=10)
-plt.xticks(fontsize=10)
+ax.set_ylabel("$T1_{H2O}$ Error vs ground truth (ms)",fontsize=16)
+plt.yticks(fontsize=12)
+plt.xticks(fontsize=12)
 fig.patch.set_facecolor("white")
 fig.set_tight_layout(True)
 
@@ -335,18 +335,18 @@ fig.set_tight_layout(True)
 fig.savefig("boxplot T1 numerical errors.png".format(k),dpi=600)
 
 
-df_comp=pd.DataFrame(columns=["Reference","Proposed","Proposed with clustering"])
+df_comp=pd.DataFrame(columns=["Reference","Proposed","Proposed w/ clustering"])
 df_comp["Reference"]=all_results_brute["df"][:,2]-all_results_brute["df"][:,0]
-df_comp["Proposed with clustering"]=all_results_matrix["df"][:,2]-all_results_brute["df"][:,0]
+df_comp["Proposed w/ clustering"]=all_results_matrix["df"][:,2]-all_results_brute["df"][:,0]
 df_comp["Proposed"]=all_results_cf["df"][:,2]-all_results_brute["df"][:,0]
 
 df_comp=df_comp*1000
 
 fig=plt.figure()
 ax=df_comp.boxplot(grid=False,showfliers=False,showmeans=True,medianprops=dict(color="red"),boxprops=dict(color="black"),whiskerprops=dict(color="black"),meanprops=dict(marker="x",markeredgecolor="gray"),whis=[5,95])
-ax.set_ylabel("Df Error vs ground truth (Hz)",fontsize=14)
-plt.yticks(fontsize=10)
-plt.xticks(fontsize=10)
+ax.set_ylabel("Df Error vs ground truth (Hz)",fontsize=16)
+plt.yticks(fontsize=12)
+plt.xticks(fontsize=12)
 fig.patch.set_facecolor("white")
 fig.set_tight_layout(True)
 
@@ -354,25 +354,25 @@ fig.set_tight_layout(True)
 fig.savefig("boxplot df numerical errors.png".format(k),dpi=600)
 
 
-df_comp=pd.DataFrame(columns=["Reference","Proposed","Proposed with clustering"])
+df_comp=pd.DataFrame(columns=["Reference","Proposed","Proposed w/ clustering"])
 df_comp["Reference"]=all_results_brute["attB1"][:,2]-all_results_brute["attB1"][:,0]
-df_comp["Proposed with clustering"]=all_results_matrix["attB1"][:,2]-all_results_brute["attB1"][:,0]
+df_comp["Proposed w/ clustering"]=all_results_matrix["attB1"][:,2]-all_results_brute["attB1"][:,0]
 df_comp["Proposed"]=all_results_cf["attB1"][:,2]-all_results_brute["attB1"][:,0]
 
 fig=plt.figure()
 ax=df_comp.boxplot(grid=False,showfliers=False,showmeans=True,medianprops=dict(color="red"),boxprops=dict(color="black"),whiskerprops=dict(color="black"),meanprops=dict(marker="x",markeredgecolor="gray"),whis=[5,95])
-ax.set_ylabel("B1 Error vs ground truth",fontsize=14)
-plt.yticks(fontsize=10)
-plt.xticks(fontsize=10)
+ax.set_ylabel("B1 Error vs ground truth",fontsize=16)
+plt.yticks(fontsize=12)
+plt.xticks(fontsize=12)
 fig.patch.set_facecolor("white")
 fig.set_tight_layout(True)
 
 fig.savefig("boxplot attB1 numerical errors.png".format(k),dpi=600)
 
 
-df_std=pd.DataFrame(columns=["Reference","Proposed","Proposed with clustering"])
+df_std=pd.DataFrame(columns=["Reference","Proposed","Proposed w/ clustering"])
 df_std["Reference"]=all_results_brute["wT1"][all_results_matrix["ff"][:,0]<0.7,3]
-df_std["Proposed with clustering"]=all_results_matrix["wT1"][all_results_matrix["ff"][:,0]<0.7,3]
+df_std["Proposed w/ clustering"]=all_results_matrix["wT1"][all_results_matrix["ff"][:,0]<0.7,3]
 df_std["Proposed"]=all_results_cf["wT1"][all_results_matrix["ff"][:,0]<0.7,3]
 
 
