@@ -21,6 +21,5 @@
  "npoint": 512,
  "file_phantom": "./data/KneePhantom/Phantom1/paramMap_Control.mat",
  "useGPU": False
-
 }
 

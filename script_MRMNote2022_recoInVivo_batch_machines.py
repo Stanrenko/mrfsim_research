@@ -45,8 +45,10 @@ def run_batch(run_config):
 
     ROI_folder_names = glob.glob(folder_ROI+"/MT*")
     #ROI_folder_names = glob.glob(folder_ROI+"/*")
-
-    patient_names=np.unique([str.split(str.split(p,"/")[-1],".")[0] for p in ROI_folder_names])
+    if "patient_names" in run_config:
+        patient_names=run_config["patient_names"]
+    else:
+        patient_names=np.unique([str.split(str.split(p,"/")[-1],".")[0] for p in ROI_folder_names])
     #patient_names=['CL1KB','CL1KF','CL1KN','MNAV','MNAW','MNAX','MNAZ','MNBC','MNBE','MNBF','MNBG','MNBH','MNBI','MNBK','MNBL','MNBM','MNBN','MNBO','MNBP','MNBQ','MNBS','MNBU','MNBV']
 
 
@@ -201,7 +203,7 @@ def run_batch(run_config):
                                              threshold_pca=15, log=False, useGPU_dictsearch=useGPU, useGPU_simulation=False,
                                              gen_mode="other",dictfile_light=dictfile_light,threshold_ff=0.9,ntimesteps=ntimesteps)
 
-                optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=10,
+                optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=100,
                                                     pca=True,
                                                     threshold_pca=15, log=False, useGPU_dictsearch=useGPU,
                                                     useGPU_simulation=False,

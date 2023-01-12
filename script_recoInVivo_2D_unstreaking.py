@@ -25,7 +25,7 @@ light_memory_usage=False
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/2_Data Raw/zz_Data_old/3_Comp_Matlab/InVivo"
 #base_folder = "./data/InVivo/3D"
 base_folder = "./data/InVivo"
-
+base_folder="./data"
 
 localfile ="/20211105_TestCS_MRF/meas_MID00042_FID40391_raFin_3D_tra_1x1x5mm_FULL_vitro.dat"
 localfile ="/20211209_AL_Tongue/meas_MID00260_FID45164_JAMBES_raFin_CLI.dat"
@@ -52,7 +52,7 @@ localfile ="/Phantom20220310/meas_MID00241_FID57342_JAMBES_raFin_CLI.dat"
 localfile ="/Phantom20220310/meas_MID00254_FID57355_JAMBES_raFin_CLI.dat"
 localfile="/KB/meas_MID02754_FID765278_JAMBES_raFin_CLI_BILAT.dat"
 localfile="/KB/MRF#SSkyra145100#F737243#M2960#D170322#T195218#JAMBES_raFin_CLIBILAT.dat"
-
+localfile="/TestMarc/meas_MID00020_FID21818_JAMBE_raFin_CLI_EMPTY_ICE.dat"
 filename = base_folder+localfile
 
 #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00044_FID42066_raFin_3D_tra_1x1x5mm_us4_vivo.dat"
@@ -66,7 +66,7 @@ folder = "/".join(str.split(filename,"/")[:-1])
 filename_b1 = str.split(filename,".dat") [0]+"_b1.npy"
 filename_volume = str.split(filename,".dat") [0]+"_volumes.npy"
 filename_kdata = str.split(filename,".dat") [0]+"_kdata.npy"
-
+filename_mask= str.split(filename,".dat") [0]+"_mask.npy"
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
@@ -87,6 +87,7 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
     ## Random map simulation
 
     data = np.squeeze(RawData)
+    data=np.expand_dims(data,axis=-1)
     data = np.moveaxis(data, -1, 0)
     data = np.moveaxis(data, 1, -1)
 
@@ -148,23 +149,24 @@ if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     np.save(filename_b1,b1_all_slices)
 else:
     b1_all_slices=np.load(filename_b1)
-sl=2
+sl=0
 list_images = list(np.abs(b1_all_slices[sl]))
 plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
 
-dico=build_dico_seqParams(filename, folder)
-
-sl=2
-
-
+sl=0
 kdata_all_channels=kdata_all_channels_all_slices[sl]
 b1=b1_all_slices[sl]
 
 mask = build_mask_single_image_multichannel(kdata_all_channels, radial_traj, image_size, b1=b1, density_adj=False,
                                                 threshold_factor=1/20)
 
+np.save(filename_mask,mask)
+
 volumes_all = simulate_radial_undersampled_images_multi(kdata_all_channels, radial_traj, image_size, b1=b1,normalize_kdata=False,
-                                                                density_adj=False)
+                                                                density_adj=False,normalize_iterative=True)
+np.save(filename_volume,volumes_all)
+animate_images(np.abs(volumes_all),cmap="gray")
+animate_images(np.angle(volumes_all),cmap="gray")
 
 
 radial_traj_anatomy=Radial(total_nspokes=300,npoint=npoint)

@@ -35,7 +35,7 @@ ROI_folder_names = glob.glob(folder_ROI+"/MT*")
 #ROI_folder_names = glob.glob(folder_ROI+"/*")
 
 patient_names=np.unique([str.split(str.split(p,"/")[-1],".")[0] for p in ROI_folder_names])
-#patient_names=['CL1KB','CL1KF','CL1KN','MNAV','MNAW','MNAX','MNAZ','MNBC','MNBE','MNBF','MNBG','MNBH','MNBI','MNBK','MNBL','MNBM','MNBN','MNBO','MNBP','MNBQ','MNBS','MNBU','MNBV']
+patient_names=['CL1KB','CL1KF','CL1KN','MNAV','MNAW','MNAX','MNAZ','MNBC','MNBE','MNBF','MNBG','MNBH','MNBI','MNBK','MNBL','MNBM','MNBN','MNBO','MNBP','MNBQ','MNBS','MNBU','MNBV']
 
 
 exam_types=["legs","thighs"]
@@ -65,9 +65,9 @@ except:
     times_matrix = []
 
 
-exam_type="thighs"
-p="MTTS"
-
+exam_type="legs"
+p="CL1KN"
+sl=4
 
 
 for p in patient_names:

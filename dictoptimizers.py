@@ -52,10 +52,20 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
                                                                                              array_fat_unique.shape[
                                                                                                  0]))
 
+
+
+
     num_group = int(nb_signals / split) + 1
 
-    idx_max_all_unique = []
-    alpha_optim = []
+    #idx_max_all_unique = []
+    #alpha_optim = []
+
+    if not(useGPU_dictsearch):
+        idx_max_all_unique = np.zeros(nb_signals)
+        alpha_optim = np.zeros(nb_signals)
+    else:
+        idx_max_all_unique = cp.zeros(nb_signals,dtype="int64")
+        alpha_optim = cp.zeros(nb_signals)
 
     if n_clusters_dico is not None:
         niter=0
@@ -225,6 +235,8 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
             if n_clusters_dico is None:
                 idx_max_all_current = np.argmax(J_all, axis=0)
                 current_alpha_all_unique_optim=current_alpha_all_unique[idx_max_all_current, np.arange(J_all.shape[1])]
+                idx_max_all_unique[j_signal:j_signal_next]=idx_max_all_current
+                alpha_optim[j_signal:j_signal_next]=current_alpha_all_unique_optim
             else:
                 idx_max_all_current = np.argsort(J_all, axis=0)[-int(pruning * n_clusters_dico):]
 
@@ -362,7 +374,11 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
             if n_clusters_dico is None:
                 idx_max_all_current = cp.argmax(J_all, axis=0)
                 current_alpha_all_unique_optim = current_alpha_all_unique[idx_max_all_current, np.arange(J_all.shape[1])]
-                current_alpha_all_unique_optim = current_alpha_all_unique_optim.get()
+
+
+                #current_alpha_all_unique_optim = current_alpha_all_unique_optim.get()
+                idx_max_all_unique[j_signal:j_signal_next] = idx_max_all_current
+                alpha_optim[j_signal:j_signal_next]=current_alpha_all_unique_optim
 
             else:
                 idx_max_all_current = cp.argsort(J_all, axis=0)[-int(pruning * n_clusters_dico):]
@@ -387,6 +403,8 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
                 end = datetime.now()
                 print(end - start)
 
+
+
         if verbose:
             print("Extracting index of pattern with max correl")
             start = datetime.now()
@@ -406,13 +424,18 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
 
 
         if n_clusters_dico is None:
-            idx_max_all_unique.extend(idx_max_all_current)
-            alpha_optim.extend(current_alpha_all_unique_optim)
+            pass
+            #if not(useGPU_dictsearch):
+            #    idx_max_all_unique.extend(idx_max_all_current)
+            #    alpha_optim.extend(current_alpha_all_unique_optim)
         else:
             if len(idx_max_all_unique)==0:
                 idx_max_all_unique=idx_max_all_current
             else:
                 idx_max_all_unique=np.append(idx_max_all_unique,idx_max_all_current,axis=1)
+
+        del current_alpha_all_unique_optim
+        del idx_max_all_current
 
 
         if (niter > 0) or return_matched_signals:
@@ -430,6 +453,10 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
             end = datetime.now()
             print(end - start)
 
+
+    if useGPU_dictsearch:
+        idx_max_all_unique=idx_max_all_unique.get()
+        alpha_optim=alpha_optim.get()
     # idx_max_all_unique = np.argmax(J_all, axis=0)
     #del J_all
     #del current_alpha_all_unique
@@ -631,6 +658,24 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
             keys_B1 = (keys[:, 2] < unique_keys[:, cl][2] + d_B1) & ((keys[:, 2] > unique_keys[:, cl][2] - d_B1))
             keys_DF = (keys[:, 3] < unique_keys[:, cl][3] + d_DF) & ((keys[:, 3] > unique_keys[:, cl][3] - d_DF))
             retained_signals = cp.argwhere(keys_T1 & keys_fT1 & keys_B1 & keys_DF).flatten()
+
+
+            # print("T1")
+            # print(keys[:,0])
+            # print(unique_keys[:,cl] [0])
+            #
+            # print("fT1")
+            # print(keys[:, 1])
+            # print(unique_keys[:, cl][1])
+            #
+            # print("B1")
+            # print(keys[:, 2])
+            # print(unique_keys[:, cl][2])
+            #
+            # print("DF")
+            # print(keys[:, 3])
+            # print(unique_keys[:, cl][3])
+
 
             #print(retained_signals.shape)
 
@@ -4571,7 +4616,7 @@ class SimpleDictSearch(Optimizer):
         log_phase = self.paramDict["log_phase"]
         # adj_phase=self.paramDict["adj_phase"]
         if pca:
-            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca_simple.npy".format(threshold_pca)
+            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca_simple.pkl".format(threshold_pca)
             pca_file_name = str.split(pca_file, "/")[-1]
 
         vars_file = str.split(dictfile, ".dict")[0] + "_vars_simple.pkl".format(threshold_pca)
@@ -4724,10 +4769,12 @@ class SimpleDictSearch(Optimizer):
 
                 transformed_array_water_unique = pca_water.transform(array_water_unique)
                 transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
-                np.save(pca_file,(pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique),allow_pickle=True)
+                with open(pca_file,"wb") as file:
+                    pickle.dump((pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique),file)
             else:
                 print("Loading pca")
-                (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique)=np.load(pca_file,allow_pickle=True)
+                with open(pca_file, "rb") as file:
+                    (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique)=pickle.load(file)
 
         else:
             pca_water = None
@@ -6287,7 +6334,7 @@ class SimpleDictSearch(Optimizer):
         movement_correction = self.paramDict["movement_correction"]
         cond_mvt = self.paramDict["cond"]
         if pca:
-            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca.npy".format(threshold_pca)
+            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca.pkl".format(threshold_pca)
             pca_file_name = str.split(pca_file, "/")[-1]
 
         vars_file = str.split(dictfile, ".dict")[0] + "_vars.pkl".format(threshold_pca)
@@ -6453,13 +6500,14 @@ class SimpleDictSearch(Optimizer):
 
                 transformed_array_water_unique = pca_water.transform(array_water_unique)
                 transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
-                np.save(pca_file,(pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique),allow_pickle=True)
+                with open(pca_file,"wb") as file:
+                    pickle.dump((pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique),file)
                 del array_water_unique
                 del array_fat_unique
             else:
                 print("Loading pca")
-                (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique)=np.load(pca_file,allow_pickle=True)
-
+                with open(pca_file, "rb") as file:
+                    (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique)=pickle.load(file)
 
         else:
             pca_water = None
@@ -6509,9 +6557,9 @@ class SimpleDictSearch(Optimizer):
             all_signals_low_ff = all_signals[:, ind_low_ff.flatten()]
             all_signals_high_ff = all_signals[:, ind_high_ff.flatten()]
 
-            d_T1 = 100
+            d_T1 = 400
             d_fT1 = 100
-            d_B1 = 0.1
+            d_B1 = 0.2
             d_DF = 0.015
 
             idx_max_all_unique_low_ff,alpha_optim_low_ff=match_signals_v2_clustered_on_dico(all_signals_low_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
@@ -6519,9 +6567,9 @@ class SimpleDictSearch(Optimizer):
                                     index_water_unique, index_fat_unique, useGPU_dictsearch, unique_keys, d_T1, d_fT1,
                                     d_B1, d_DF, labels,split,False)
 
-            d_T1 = 300
+            d_T1 = 400
             d_fT1 = 100
-            d_B1 = 0.1
+            d_B1 = 0.2
             d_DF = 0.015
 
             idx_max_all_unique_high_ff,alpha_optim_high_ff=match_signals_v2_clustered_on_dico(all_signals_high_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
@@ -7442,7 +7490,7 @@ class ToyNN(Optimizer):
 #         self.paramDict["pca"] = pca
 #         self.paramDict["threshold_pca"] = threshold_pca
 #
-# 
+#
 #
 #     def search_patterns(self,dictfile,volumes):
 #
@@ -7968,3 +8016,4 @@ class BruteDictSearch(Optimizer):
         else:
 
             return dict(zip(keys_results, values_results))
+

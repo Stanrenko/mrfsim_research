@@ -50,8 +50,8 @@ filename_paramMap=filename+"_paramMap_sl{}_rp{}{}.pkl".format(nb_slices,repeat_s
 filename_mask= filename+"_mask_sl{}_rp{}_us{}{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
 
 filename_volume = filename+"_volumes_sl{}_rp{}_us{}_{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
-dictfile='./mrf175_SimReco2_light.dict'
-
+dictfile='./mrf175_Dico2_Invivo.dict'
+dictfile_light='./mrf175_Dico2_Invivo_light_for_matching.dict'
 
 mask=np.load(filename_mask)
 volumes_all=np.load(filename_volume)
@@ -74,7 +74,7 @@ ind=np.random.choice(total_nb_signals,size=nb_signals,replace=False)
 
 all_signals=all_signals[:,ind]
 
-splits = [10, 100, 1000, nb_signals+1]
+splits=[1,10,100,200,300,400,500]
 #splits = [1, 10]
 return_matched_signals = False
 
@@ -94,29 +94,40 @@ for split in splits:
 
     try:
         start_time = time.time()
-        all_maps_bc_cf = dict_optim_bc.search_patterns_test(dictfile, all_signals)
+        all_maps_bc_cf = dict_optim_bc.search_patterns_test_multi(dictfile, all_signals)
         end_time = time.time()
     except:
         continue
     all_times_cf_gpu.append((end_time - start_time) / nb_signals * 1000)
 
 
+fig=plt.figure(figsize=(15,10))
+ax  = fig.add_subplot(111)
+ax.bar(np.array(splits[:len(all_times_cf_gpu)]).astype(str),all_times_cf_gpu,color="gray",width=0.25)
+plt.xticks(fontsize=14)
+plt.yticks(fontsize=14)
+ax.set_ylabel("Matching time per pixel (ms)",fontsize=18)
+ax.set_xlabel("Batch size",fontsize=18)
+fig.patch.set_facecolor("white")
+
+fig.savefig("Proposed method - batch size analysis.png",dpi=600)
 
 all_times_matrix_gpu = []
 
 for split in splits:
 
-    # dict_optim_brute=BruteDictSearch(FF_list=np.arange(0,1.01,0.01),mask=mask,split=split,pca=pca,threshold_pca=threshold_pca_brute,log=False,useGPU_dictsearch=useGPU,ntimesteps=None,log_phase=False,return_matched_signals=return_matched_signals)
     dict_optim_bc = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=None, split=split, pca=pca,
                                      threshold_pca=threshold_pca_bc, log=False, useGPU_dictsearch=useGPU,
                                      useGPU_simulation=False,
                                      gen_mode="other", movement_correction=False, cond=None, ntimesteps=None,
-                                     return_matched_signals=return_matched_signals)
+                                     return_matched_signals=return_matched_signals, dictfile_light=dictfile_light,
+                                     threshold_ff=0.9)
     # dict_optim_bc_matrix = dict_optim_bc_cf
+
 
     try:
         start_time = time.time()
-        all_maps_bc_matrix = dict_optim_bc.search_patterns_matrix(dictfile, all_signals)
+        all_maps_bc_cf = dict_optim_bc.search_patterns_test_multi_2_steps_dico(dictfile, all_signals)
         end_time = time.time()
     except:
         continue
@@ -124,13 +135,23 @@ for split in splits:
     all_times_matrix_gpu.append((end_time - start_time) / nb_signals * 1000)
 #
 #
+fig=plt.figure(figsize=(15,10))
+ax  = fig.add_subplot(111)
+ax.bar(np.array(splits).astype(str),all_times_matrix_gpu,color="gray")
+plt.xticks(fontsize=14)
+plt.yticks(fontsize=14)
+ax.set_ylabel("Matching time per pixel (ms)",fontsize=18)
+ax.set_xlabel("Batch size",fontsize=18)
+fig.patch.set_facecolor("white")
+
+fig.savefig("Proposed method with clustering - batch size analysis.png",dpi=600)
+
 all_times_brute_gpu = []
 
 for split in splits:
 
-    dict_optim_brute = BruteDictSearch(FF_list=np.arange(0, 1.01, 0.01), mask=mask, split=split, pca=pca,
-                                       threshold_pca=threshold_pca_brute, log=False, useGPU_dictsearch=useGPU,
-                                       ntimesteps=None, log_phase=False, return_matched_signals=return_matched_signals)
+    dict_optim_brute=BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=split,pca=pca,threshold_pca=threshold_pca_brute,log=False,useGPU_dictsearch=useGPU,ntimesteps=None,log_phase=False,return_matched_signals=return_matched_signals,n_clusters_dico=1000,pruning=0.05)
+
     # dict_optim_bc =SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=None, split=split, pca=pca,
     #                                threshold_pca=threshold_pca_bc, log=False, useGPU_dictsearch=useGPU, useGPU_simulation=False,
     #                                gen_mode="other", movement_correction=False, cond=None, ntimesteps=None,return_matched_signals=return_matched_signals)
@@ -215,4 +236,9 @@ for split in splits:
         continue
 
     all_times_brute.append((end_time - start_time) / nb_signals * 1000)
+
+
+
+
+
 
