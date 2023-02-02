@@ -10,6 +10,7 @@ import readTwix as rT
 import time
 import glob
 from mutools import io
+from skimage.metrics import structural_similarity as ssim
 from skimage.morphology import area_opening
 
 plt.ioff()
@@ -18,9 +19,11 @@ plt.ioff()
 
 
 UNITS
+exam_code="CL"
+
 folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/4_Patients/MT"
 #folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/3_Radiology_T1vsT2/CLI"
-#folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/4_Patients/MNAI"
+folder_ROI = r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/5_Results/4_Patients/MNAI"
 
 #thighs / legs
 folder_results_matlab =r"/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&3_2017_Fingerprinting_FF_T1/3_Data/6_Patients"
@@ -32,18 +35,17 @@ save_volumes=True
 save_maps=True
 
 ROI_folder_names = glob.glob(folder_ROI+"/MT*")
-#ROI_folder_names = glob.glob(folder_ROI+"/*")
+ROI_folder_names = glob.glob(folder_ROI+"/*")
 
 patient_names=np.unique([str.split(str.split(p,"/")[-1],".")[0] for p in ROI_folder_names])
-patient_names=['CL1KB','CL1KF','CL1KN','MNAV','MNAW','MNAX','MNAZ','MNBC','MNBE','MNBF','MNBG','MNBH','MNBI','MNBK','MNBL','MNBM','MNBN','MNBO','MNBP','MNBQ','MNBS','MNBU','MNBV']
-
+patient_names=["CL1KB","CL1KF","CL1KN","MNAV","MNAW","MNAX","MNAZ","MNBC","MNBE","MNBF","MNBG","MNBH","MNBI"]
 
 exam_types=["legs","thighs"]
 
 
 
-patient_names=["CL1KB"]
-exam_types=["thighs"]
+# patient_names=["CL1KB"]
+# exam_types=["thighs"]
 
 exam_type="thighs"
 p = patient_names[0]
@@ -71,9 +73,11 @@ exam_type="legs"
 p="CL1KN"
 sl=4
 
+df_stats_cf=pd.DataFrame(columns=["NRMSE wT1","NRMSE ff","NRMSE attB1","NRMSE df","SSIM wT1","SSIM ff","SSIM attB1","SSIM df"])
+df_stats_matrix=pd.DataFrame(columns=["NRMSE wT1","NRMSE ff","NRMSE attB1","NRMSE df","SSIM wT1","SSIM ff","SSIM attB1","SSIM df"])
 
-for p in patient_names:
-    for exam_type in exam_types:
+for p in patient_names[:]:
+    for exam_type in exam_types[:]:
 
         print("##########################################################################################")
         print("PROCESSING {} FOR {}".format(p,exam_type))
@@ -121,6 +125,8 @@ for p in patient_names:
             maskROI[j]=np.rot90(maskROI[j], axes=(1, 0))
 
         filename_data = str.split(filename_base, ".dat")[0] + "_data.npy"
+
+        #target_folder_files = [f for f in os.listdir(target_folder) if os.path.isfile(os.path.join(target_folder, f))]
 
         if str.split(filename_data,"/")[-1] not in os.listdir(target_folder):
             try:
@@ -208,6 +214,11 @@ for p in patient_names:
             else:
                 mask=np.load(filename_mask)
 
+            new_mask = build_mask_single_image_multichannel(kdata_all_channels, radial_traj, image_size, b1=b1,
+                                                    density_adj=False, threshold_factor=1 / 7)
+
+            plt.figure()
+            plt.imshow(new_mask)
             #volume_rebuilt = build_single_image_multichannel(kdata_all_channels, radial_traj,
             #                                             image_size, b1=b1, density_adj=False)
 
@@ -298,7 +309,7 @@ for p in patient_names:
                                          threshold_pca=15, log=False, useGPU_dictsearch=useGPU, useGPU_simulation=False,
                                          gen_mode="other",dictfile_light=dictfile_light,threshold_ff=0.9,ntimesteps=ntimesteps)
 
-            optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=10,
+            optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=100,
                                                 pca=True,
                                                 threshold_pca=15, log=False, useGPU_dictsearch=useGPU,
                                                 useGPU_simulation=False,
@@ -308,22 +319,22 @@ for p in patient_names:
 
             #all_maps = optimizer.search_patterns(dictfile, volumes_all)
             import pickle
-            # if not(str.split(file_map_cf,"/")[-1] in os.listdir(target_folder)):
-            #
-            #     start_time=time.time()
-            #     all_maps_cf=optimizer.search_patterns_test_multi(dictfile,volumes_all)
-            #     end_time=time.time()
-            #     dtime = (end_time - start_time)/mask.sum()*1000
-            #     print("CF Time taken per pixel for slice {} : {} ms".format(sl,dtime))
-            #
-            #     times_cf.append(dtime)
-            #
-            #     with open(file_map_cf,"wb") as file:
-            #         pickle.dump(all_maps_cf, file)
-            #
-            # else:
-            #     with open(file_map_cf, "rb") as file:
-            #         all_maps_cf = pickle.load(file)
+            if not(str.split(file_map_cf,"/")[-1] in os.listdir(target_folder)):
+
+                start_time=time.time()
+                all_maps_cf=optimizer.search_patterns_test_multi(dictfile,volumes_all)
+                end_time=time.time()
+                dtime = (end_time - start_time)/mask.sum()*1000
+                print("CF Time taken per pixel for slice {} : {} ms".format(sl,dtime))
+
+                times_cf.append(dtime)
+
+                with open(file_map_cf,"wb") as file:
+                    pickle.dump(all_maps_cf, file)
+
+            else:
+                with open(file_map_cf, "rb") as file:
+                    all_maps_cf = pickle.load(file)
 
             if not (str.split(file_map_matrix,"/")[-1] in os.listdir(target_folder)):
 
@@ -342,21 +353,21 @@ for p in patient_names:
                 with open(file_map_matrix, "rb") as file:
                     all_maps_matrix = pickle.load(file)
 
-            # if not (str.split(file_map_brute,"/")[-1] in os.listdir(target_folder)):
-            #
-            #     start_time = time.time()
-            #     all_maps_brute = optimizer_brute.search_patterns(dictfile, volumes_all)
-            #     end_time = time.time()
-            #     dtime = (end_time - start_time) / mask.sum()*1000
-            #     print("Brute Time taken per pixel for slice {} : {} ms".format(sl, dtime))
-            #     times_brute.append(dtime)
-            #
-            #     with open(file_map_brute, "wb") as file:
-            #         pickle.dump(all_maps_brute, file)
-            #
-            # else:
-            #     with open(file_map_brute, "rb") as file:
-            #         all_maps_brute = pickle.load(file)
+            if not (str.split(file_map_brute,"/")[-1] in os.listdir(target_folder)):
+
+                start_time = time.time()
+                all_maps_brute = optimizer_brute.search_patterns(dictfile, volumes_all)
+                end_time = time.time()
+                dtime = (end_time - start_time) / mask.sum()*1000
+                print("Brute Time taken per pixel for slice {} : {} ms".format(sl, dtime))
+                times_brute.append(dtime)
+
+                with open(file_map_brute, "wb") as file:
+                    pickle.dump(all_maps_brute, file)
+
+            else:
+                with open(file_map_brute, "rb") as file:
+                    all_maps_brute = pickle.load(file)
 
             np.save( target_folder + "/" + "times_cf.npy",np.array(times_cf))
             np.save( target_folder + "/" + "times_cf_clustering.npy",np.array(times_matrix))
@@ -365,6 +376,48 @@ for p in patient_names:
             proj_mask = mask
 
             maskROI_current = maskROI[sl,:,:][mask>0]
+
+            f = str.split(filename_volume, "/")[-1]
+            for k in ["wT1","ff","attB1","df"]:
+                image_brute=makevol(all_maps_brute[0][0][k],mask>0)
+                image_brute =image_brute[new_mask]
+                image_brute = makevol(image_brute,new_mask>0)
+
+                image_cf = makevol(all_maps_cf[0][0][k], mask > 0)
+                image_cf = image_cf[new_mask]
+                image_cf = makevol(image_cf, new_mask > 0)
+
+                image_matrix = makevol(all_maps_matrix[0][0][k], mask > 0)
+                image_matrix = image_matrix[new_mask]
+                image_matrix = makevol(image_matrix, new_mask > 0)
+
+
+
+
+
+
+                ssim_cf=ssim(image_brute,image_cf,win_size=7,K1=0.01,K2=0.03)
+                ssim_matrix=ssim(image_brute, image_matrix,win_size=7,K1=0.01,K2=0.03)
+
+                if k=="wT1":
+                    image_brute_ff = makevol(all_maps_brute[0][0]["ff"], mask > 0)
+                    image_brute_ff = image_brute_ff[new_mask]
+                    mask_ff=image_brute_ff<0.7
+
+                    nrmse_cf=np.sqrt(np.sum((image_cf[new_mask][mask_ff] - image_brute[new_mask][mask_ff]) ** 2) / np.sum(image_brute[new_mask][mask_ff]) ** 2)
+                    nrmse_matrix=np.sqrt(np.sum((image_matrix[new_mask][mask_ff]-image_brute[new_mask][mask_ff])**2)/np.sum(image_brute[new_mask][mask_ff])**2)
+
+                else:
+                    nrmse_cf = np.sqrt(
+                        np.sum((image_cf[new_mask]- image_brute[new_mask]) ** 2) / np.sum(
+                            image_brute[new_mask]) ** 2)
+                    nrmse_matrix = np.sqrt(np.sum((image_matrix[new_mask] - image_brute[new_mask]) ** 2) / np.sum(
+                        image_brute[new_mask]) ** 2)
+
+                df_stats_cf.loc[f,"NRMSE {}".format(k)]=nrmse_cf
+                df_stats_cf.loc[f, "SSIM {}".format(k)] = ssim_cf
+                df_stats_matrix.loc[f, "NRMSE {}".format(k)] = nrmse_matrix
+                df_stats_matrix.loc[f, "SSIM {}".format(k)] = ssim_matrix
 
 
 
@@ -410,7 +463,7 @@ for p in patient_names:
                 import pickle
 
 
-                file_all_results = "MT_ROI_All_results_CF.pkl"
+                file_all_results = "{}_ROI_All_results_CF.pkl".format(exam_code)
                 #
                 file = open(target_folder + "/" + file_all_results, "wb")
                 # dump information to that file
@@ -418,7 +471,7 @@ for p in patient_names:
                 # close the file
                 file.close()
 
-                file_all_results = "MT_ROI_All_results_CF_clustering.pkl"
+                file_all_results = "{}_ROI_All_results_CF_clustering.pkl".format(exam_code)
                 file = open(target_folder + "/" + file_all_results, "wb")
                 # dump information to that file
                 pickle.dump(all_results_matrix, file)
@@ -429,6 +482,12 @@ for p in patient_names:
             except:
                 print("Could not perform the regression on ROI for {} {} {}".format(p,exam_type,sl))
                 continue
+
+df_stats_cf.to_pickle("df_stats_cf_{}.pkl".format(exam_code))
+df_stats_matrix.to_pickle("df_stats_cf_clustering_{}.pkl".format(exam_code))
+
+
+df_stats_cf=pd.read_pickle("df_stats_cf_CL.pkl")
 
 np.save( target_folder + "/" + "times_cf.npy",np.array(times_cf))
 np.save( target_folder + "/" + "times_cf_clustering.npy",np.array(times_matrix))

@@ -101,6 +101,7 @@ localfile="/phantom.001.v1/phantom.001.v1.dat"
 #localfile="/phantom.006.v1/meas_MID00029_FID02800_raFin_3D_tra_1x1x5mm_FULL_FF_TR4000.dat"#Box at the top border with more outside
 #localfile="/phantom.006.v1/meas_MID00023_FID02830_raFin_3D_tra_1x1x5mm_FULL_FF_TR5000.dat"#Box at the top border with more outside
 #localfile="/phantom.006.v2/"
+localfile="/20210113/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read.dat"
 
 
 filename = base_folder+localfile
@@ -357,9 +358,14 @@ window=8
 nb_channels=data_shape[0]
 nb_allspokes = data_shape[-3]
 npoint = data_shape[-1]
-
-
 nb_slices = data_shape[-2]
+
+nb_channels=data_for_nav.shape[0]
+nb_allspokes = 1400
+npoint = data_for_nav.shape[-1]
+nb_slices = data_for_nav.shape[1]
+
+
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
 undersampling_factor=1
 
@@ -541,6 +547,7 @@ if nb_gating_spokes>0:
     images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
     plt.figure()
     plt.imshow(np.abs(images_nav_mean.reshape(-1, int(npoint/2))),cmap="gray")
+    np.save(str.split(filename,".dat")[0]+"_nav_images.npy",images_nav_mean)
 
     plt.figure()
     plt.plot(np.abs(images_nav_mean.reshape(-1, int(npoint/2)))[10,:])

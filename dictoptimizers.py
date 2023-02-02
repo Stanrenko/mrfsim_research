@@ -64,7 +64,7 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
     #alpha_optim = []
 
     if not(useGPU_dictsearch):
-        idx_max_all_unique = np.zeros(nb_signals)
+        idx_max_all_unique = np.zeros(nb_signals,dtype="int64")
         alpha_optim = np.zeros(nb_signals)
     else:
         idx_max_all_unique = cp.zeros(nb_signals,dtype="int64")

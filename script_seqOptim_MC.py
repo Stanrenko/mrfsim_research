@@ -3,9 +3,9 @@ from dictoptimizers import SimpleDictSearch
 
 #generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted.json","mrf_dictconf_SimReco2.json",4,sim_mode="mid_point",start=0,window=int(1400/50))
 
-TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json",3.95,1.88/1000)
+TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted.json",4,2.21/1000)
 #
-generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_88.json","mrf_dictconf_Dico2_Invivo_light_for_matching.json",FA_list,TE_list,3.95,1.88/1000)
+generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_2_21.json","mrf_dictconf_Dico2_Invivo_light_for_matching.json",FA_list,TE_list,4,2.21/1000)
 #
 
 

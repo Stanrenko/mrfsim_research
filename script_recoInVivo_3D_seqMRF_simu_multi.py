@@ -29,7 +29,7 @@ suffix_simu=""
 #dictjson="mrf_dictconf_SimReco2_light_df0.json"
 dictjson="mrf_dictconf_SimReco2.json".format(suffix_simu)
 
-dictfile_light='./mrf175_SimReco2_light_matching_adjusted.dict'
+dictfile_light='./mrf_dictconf_SimReco2_light_matching_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_87_reco3.95_w8_simmean.dict'
 
 #dictfile = "mrf175_SimReco2.dict"
 #dictfile = "mrf175_SimReco2_window_1.dict"
@@ -69,12 +69,15 @@ name = "Knee3D_Control_SS_SimReco2_MultiCoil"
 snr=None
 gauss_filter=False
 
+
+
+
 #dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
 
 #dictfile="./mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_reco3.95_w8_simmean.dict"
-dictfile="./mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v3_reco4_w8_simmean.dict"
-suffix="_DE_Simu_FF_random_v3_reco4"
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v3.json") as f:
+dictfile="./mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_87_reco3.95_w8_simmean.dict"
+suffix="_DE_Simu_FF_random_v1_reco3_95"
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_87.json") as f:
     sequence_config = json.load(f)
 
 suffix_file_map=""
@@ -98,11 +101,11 @@ suffix_file_map=""
 #with open("./mrf_sequence_adjusted_760.json") as f:
 #    sequence_config = json.load(f)
 
-
-dictfile="mrf_SimReco2_light_adjusted.dict"
-suffix=""
-with open("./mrf_sequence_adjusted.json") as f:
-    sequence_config = json.load(f)
+#
+# dictfile="mrf_SimReco2_light_adjusted.dict"
+# suffix=""
+# with open("./mrf_sequence_adjusted.json") as f:
+#     sequence_config = json.load(f)
 #
 # dictfile="mrf175_SimReco2_adjusted.dict"
 # suffix="_fullReco"
@@ -164,15 +167,15 @@ rep=nrep-1
 TR_total = np.sum(sequence_config["TR"])
 
 Treco = TR_total-np.sum(sequence_config["TR"])
-Treco=4000
+Treco=3950
 ##other options
-#sequence_config["T_recovery"]=Treco
-#sequence_config["nrep"]=nrep
-#sequence_config["rep"]=rep
+sequence_config["T_recovery"]=Treco
+sequence_config["nrep"]=nrep
+sequence_config["rep"]=rep
 
-#seq=T1MRFSS(**sequence_config)
+seq=T1MRFSS(**sequence_config)
 
-seq=T1MRF(**sequence_config)
+#seq=T1MRF(**sequence_config)
 
 nb_filled_slices = 16
 nb_empty_slices = 2
@@ -798,7 +801,7 @@ list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","old_760_reco3"]
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","old_760_reco3","DE_Simu_FF_v6_reco3.8"]
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","DE_Simu_FF_v6_reco3.8","DE_Simu_FF_random_v4_reco3.9","DE_Simu_FF_random_v5_reco4","DE_Simu_FF_random_v2_reco4","DE_Simu_FF_random_FA_v2_reco4"]
 list_suffix=["fullReco","old_760_reco3","DE_Simu_random_v5_reco4","DE_Simu_FF_random_v1_reco3_95"]
-list_suffix=["DE_Simu_FF_random_v1_reco3_95","DE_Simu_FF_random_v3_reco4"]
+list_suffix=["fullReco","DE_Simu_FF_random_v1_reco3_95","DE_Simu_FF_random_v2_reco3_53"]
 
 #list_suffix=["fullReco","DE_Simu_FF_v3_reco3.6".format(snr)]
 undersampling_factor=1
@@ -850,7 +853,7 @@ for i,key in enumerate(dic_maps.keys()):
 ax[0].plot(roi_values["Obs Mean"],roi_values["Obs Mean"],linestyle="--")
 plt.legend()
 
-k="ff"
+k="df"
 maskROI=buildROImask_unique(m.paramMap,key=k)
 fig,ax=plt.subplots(1,2)
 plt.title(k)

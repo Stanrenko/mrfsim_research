@@ -222,15 +222,50 @@ dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_88_reco4_w8_simmean.dict"
 #localfile="/patient.002.v4/meas_MID00166_FID18801_raFin_3D_tra_1x1x5mm_FULL_new_US2.dat"
 #localfile="/patient.002.v4/meas_MID00167_FID18802_raFin_3D_tra_1x1x5mm_FULL_new_US3.dat"
 
-#localfile="/patient.002.v4/meas_MID00168_FID18803_raFin_3D_tra_1x1x5mm_FULL_old.dat"
-#localfile="/patient.002.v4/meas_MID00169_FID18804_raFin_3D_tra_1x1x5mm_FULL_old_US2.dat"
-#localfile="/patient.002.v4/meas_MID00170_FID18805_raFin_3D_tra_1x1x5mm_FULL_old_US3.dat"
+localfile="/patient.001.v2/meas_MID00251_FID19228_raFin_3D_tra_1x1x5mm_FULL_new_760.dat"
+localfile="/patient.001.v2/meas_MID00252_FID19229_raFin_3D_tra_1x1x5mm_US3_new_760.dat"
+localfile="/patient.001.v2/meas_MID00253_FID19230_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/patient.001.v2/meas_MID00254_FID19231_raFin_3D_tra_1x1x5mm_US3_new.dat"
+
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_88_reco3.95_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_88_reco3.95_w8_simmean.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_88_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1_88_reco4_w8_simmean.dict"
+
+
+localfile="/phantom.013.v1/meas_MID00152_FID25738_raFin_3D_tra_1x1x5mm_FULL_new_momentum_new.dat"
+localfile="/phantom.013.v1/meas_MID00151_FID25737_raFin_3D_tra_1x1x5mm_FULL_new_momentum.dat"
+
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_27_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_27_reco4_w8_simmean.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_94_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1_94_reco4_w8_simmean.dict"
+
+
+localfile="/patient.003.v8/meas_MID00390_FID25976_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+#localfile="/patient.003.v8/meas_MID00389_FID25975_raFin_3D_tra_1x1x5mm_FULL_new_momentum.dat"
+
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_88_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1_88_reco4_w8_simmean.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_21_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_21_reco4_w8_simmean.dict"
+
+
+
+localfile="/patient.008.v1/meas_MID00197_FID26311_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+#localfile="/patient.008.v1/meas_MID00198_FID26312_raFin_3D_tra_1x1x5mm_FULL_new_rw_Siemens.dat"
+#localfile="/patient.008.v1/meas_MID00199_FID26313_raFin_3D_tra_1x1x5mm_FULL_new_rw_11.dat"
+
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_88_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1_88_reco4_w8_simmean.dict"
+#dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_21_reco4_w8_simmean.dict"
+#dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_21_reco4_w8_simmean.dict"
+
 
 # dictfile="mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_88_reco3.95_w8_simmean.dict"
 # dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_88_reco3.95_w8_simmean.dict"
 # dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_88_reco4_w8_simmean.dict"
 # dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1_88_reco4_w8_simmean.dict"
-
 
 
 #localfile="/patient.001.v1/meas_MID00215_FID60605_raFin_3D_tra_FULl.dat"
@@ -260,7 +295,6 @@ filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
 #filename_mask='./data/InVivo/3D/patient.003.v7/meas_MID00021_FID18400_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395_mask.npy'
 #filename_mask='./data/InVivo/3D/patient.003.v7/meas_MID00025_FID18404_raFin_3D_tra_1x1x5mm_FULL_new_mask.npy'
 #filename_mask='./data/InVivo/3D/patient.002.v4/meas_MID00165_FID18800_raFin_3D_tra_1x1x5mm_FULL_new_mask.npy'
-
 
 window=8
 density_adj_radial=True
@@ -438,8 +472,6 @@ except:
     pass
 
 data_shape = data.shape
-
-
 
 #data_for_nav=data_for_nav[:,:nb_gating_spokes,:,:]
 #data_for_nav = np.moveaxis(data_for_nav,-2,1)
@@ -623,7 +655,7 @@ volumes_all = np.load(filename_volume)
 suffix="_2StepsDico"
 if not(load_map):
     niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=50,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=None,mu="Adaptative",threshold_ff=0.9,dictfile_light=dictfile_light)#,mu_TV=1,weights_TV=[1.,0.,0.])
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=None,mu="Adaptative",threshold_ff=0.9,dictfile_light=dictfile_light)#,mu_TV=1,weights_TV=[1.,0.,0.])
     all_maps=optimizer.search_patterns_test_multi_2_steps_dico(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):

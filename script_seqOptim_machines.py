@@ -211,7 +211,7 @@ def optimize_sequence_random_FA_undersampling(optimizer_config):
 
     maxiter = optimizer_config["maxiter"]
 
-    log_cost = LogCost(lambda p:cost_function_simul_breaks_random_FA_KneePhantom(p,**optimizer_config))
+    log_cost = LogCost(lambda p:cost_function_simul_breaks_random_FA_KneePhantom(p,**optimizer_config),optimizer_config["dumpfile"])
 
     res = differential_evolution(lambda p:cost_function_simul_breaks_random_FA_KneePhantom(p,**optimizer_config), bounds=bounds, callback=log_cost,maxiter=maxiter,constraints=constraints)
 
@@ -625,6 +625,11 @@ def cost_function_simul_breaks_random_FA_KneePhantom(params,**kwargs):
 
     all_maps, matched_signals = dict_optim_bc_cf.search_patterns_test((s_w, s_f, keys), volumes_all)
 
+    #print(all_maps)
+    #print(matched_signals.shape)
+
+
+
     key = "wT1"
     map = all_maps[0][0][key][m_.paramMap["ff"]<0.7]*1000
     map_gt=m_.paramMap[key][m_.paramMap["ff"]<0.7]
@@ -676,16 +681,21 @@ def cost_function_simul_breaks_random_FA_KneePhantom(params,**kwargs):
 
     return result
 
+
 class LogCost(object):
-    def __init__(self,f):
+    def __init__(self,f,dumpfile):
         self.cost_values=[]
         self.it=1
         self.f=f
+        self.dumpfile=dumpfile
 
     def __call__(self,x,**kwargs):
         print("############# ITERATION {}###################".format(self.it))
         self.cost_values.append(self.f(x))
         self.it +=1
+
+        with open(self.dumpfile, "wb") as file:
+            pickle.dump(x, file)
 
     def reset(self):
         self.cost_values = []
