@@ -18,7 +18,9 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from skimage import io
-
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 base_folder = "./data/InVivo/3D/"
 
 X=np.load("X_movement_from_nav.npy")
@@ -248,3 +250,166 @@ len(test_dataset)
 plt.figure()
 plt.plot(test_dataset[num][1])
 plt.plot(pred.cpu().numpy().squeeze())
+
+
+
+
+
+
+
+
+
+
+
+#import matplotlib
+#matplotlib.use("TkAgg")
+from mrfsim import T1MRF
+from image_series import *
+from dictoptimizers import SimpleDictSearch
+from utils_mrf import *
+import json
+import readTwix as rT
+import time
+import os
+from numpy.lib.format import open_memmap
+from numpy import memmap
+import pickle
+from scipy.io import loadmat,savemat
+
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+from skimage import io
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class LeNet(nn.Module):
+    def __init__(self, input_channels,output_size=10):
+        super().__init__()
+        self.conv1 = nn.Conv2d(input_channels, 2*input_channels, kernel_size=(5, 5))
+        # self.pool1 = nn.MaxPool2d(kernel_size=(2,2))
+        self.conv1_bn=nn.BatchNorm2d(2*input_channels)
+        self.conv2 = nn.Conv2d(2*input_channels, 4*input_channels, kernel_size=(5, 5))
+        self.conv2_bn=nn.BatchNorm2d(4*input_channels)
+        # self.pool2= nn.MaxPool2d(kernel_size=(2,2))
+        self.fc1 = nn.Linear(2592, 100)
+        self.fc1_bn=nn.BatchNorm1d(100)
+        self.fc2 = nn.Linear(100, output_size)
+
+    def forward(self, x):
+        # To do
+        # print(x.shape)
+        out = F.relu(self.conv1(x))
+        out=self.conv1_bn(out)
+        out=F.max_pool2d(out, (2, 2))
+        # print(out.shape)
+        out=F.relu(self.conv2(out))
+        out=self.conv2_bn(out)
+        out = F.max_pool2d(out, (2, 2))
+        out = F.dropout(out,p=0.25)
+
+        # print(out.shape)
+        out = torch.flatten(out, 1)
+        #print(out.shape)
+        # print(out.shape)
+        out=F.relu(self.fc1(out))
+        out=self.fc1_bn(out)
+        out = F.dropout(out, p=0.25)
+
+        # print(out.shape)
+        out = F.relu(self.fc2(out))
+        # print(out.shape)
+        return out
+
+
+
+
+
+
+
+
+
+base_folder = "./data/InVivo/3D/"
+
+X=np.load("X_movement_from_nav.npy")
+Y=np.load("Y_movement_from_nav.npy")
+
+X=X.reshape(10000,50,-1,50)
+X=np.moveaxis(X,1,2)
+X=np.moveaxis(X,-1,-2)
+
+num=0
+ch=5
+plt.figure()
+plt.imshow(X[num,ch,:,:])
+plt.figure()
+plt.plot(Y[num])
+
+volumes = torch.Tensor(X)
+labels = torch.Tensor(Y)
+dataset = torch.utils.data.TensorDataset(volumes, labels)
+
+criterion = nn.MSELoss()
+n_epochs = 500
+input_dim =volumes.shape[1]
+label_dim = labels.shape[1]
+batch_size = 512
+lr = 0.001
+device = 'cpu'
+display_step=19
+
+train_size = int(0.8 * len(dataset))
+test_size = len(dataset) - train_size
+
+
+train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
+
+
+def train():
+    losses=[]
+    dataloader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True)
+    unet = LeNet(input_dim, label_dim).to(device)
+    unet_opt = torch.optim.Adam(unet.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(unet_opt, 'min',patience=50)
+    cur_step = 0
+    current_loss=np.inf
+    for epoch in range(n_epochs):
+        batch_loss=[]
+        for real, labels in tqdm(dataloader):
+            cur_batch_size = len(real)
+            #print(real.shape)
+            # Flatten the image
+            real = real.to(device)
+            labels = labels.to(device)
+
+            ### Update U-Net ###
+            unet_opt.zero_grad()
+            pred = unet(real)
+            #print(pred.shape)
+            unet_loss = criterion(pred, labels)
+            unet_loss.backward()
+            unet_opt.step()
+
+            #if cur_step % display_step == 0:
+            #    print(f"Epoch {epoch}: Step {cur_step}: U-Net loss: {unet_loss.item()}")
+
+            batch_loss.append(unet_loss.item())
+            cur_step += 1
+        mean_loss=np.mean(batch_loss)
+        print(f"Epoch {epoch}: LeNet loss: {mean_loss}")
+        losses.append(mean_loss)
+        if mean_loss<current_loss:
+            current_loss=mean_loss
+            torch.save(unet,"model_lenet.pt")
+
+        scheduler.step(current_loss)
+        print(unet_opt.param_groups[0]['lr'])
+
+    return unet,np.array(losses)
+
+unet,losses=train()

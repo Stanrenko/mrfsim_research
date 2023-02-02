@@ -198,6 +198,7 @@ for num,localfile in enumerate(files):
     dico_data_nav[num]=data_for_nav
 
 
+
 ntimesteps = 175
 
 nb_allspokes = data_shape[-2]
@@ -223,6 +224,8 @@ X=[]
 Y=[]
 nb_training_examples=2000
 nb_translations=5
+nb_rep_list=[0,1,2]
+p=[0.2,0.4,0.4]
 
 for j in tqdm(range(nb_training_examples)):
     rho=np.random.uniform(0,1,size=H)
@@ -239,6 +242,7 @@ for j in tqdm(range(nb_training_examples)):
     data_for_nav_combined_one_rep = np.zeros(data_for_nav.shape[-2:],dtype=data_for_nav.dtype)
 
     for i in range(nb_gating_spokes):
+        #data_for_nav_combined_one_rep[i, :] = dico_data_nav[0][0, 0, i, :]
         data_for_nav_combined_one_rep[i,:]=dico_data_nav[movement_nav[i]][0,0,i,:]
 
     movement_nav=movement_nav*3
@@ -260,16 +264,32 @@ for j in tqdm(range(nb_training_examples)):
     images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
     images_nav_mean=np.squeeze(images_nav_mean)
 
+    nb_rep=np.random.choice(nb_rep_list,p=p)
+    for i in range(nb_gating_spokes):
+        low = 27-movement_nav[i]
+        high = 135-movement_nav[i]
+        len = high - low
+        for k in range(nb_rep):
+            images_nav_mean[i, (low + (k + 1) * len):(high + (k + 1) * len)] = images_nav_mean[i, low:high]
+
+
+
     for l in range(nb_translations):
         shift_value=np.random.uniform(-50,350)
         images_nav_mean_transf=shift(images_nav_mean, [0, shift_value])
         X.append(images_nav_mean_transf)
         Y.append(movement_nav)
 
+
+
 X=np.array(X)
 Y=np.array(Y)
-np.save("X_movement_from_nav.npy",X)
-np.save("Y_movement_from_nav.npy",Y)
+np.save("X_movement_from_nav_reps.npy",X)
+np.save("Y_movement_from_nav_reps.npy",Y)
+
+
+plt.figure()
+plt.imshow(images_nav_mean.T)
 
 plt.figure()
 plt.imshow(images_nav_mean_transf.T)
@@ -1133,3 +1153,331 @@ for k in seq_conf.keys():
         seq_count[k]=(len(seq_conf[k]),np.min(seq_conf[k]),np.max(seq_conf[k]))
     except:
         seq_count[k] = (1,seq_conf[k],seq_conf[k])
+
+
+
+
+
+
+
+
+#import matplotlib
+#matplotlib.use("TkAgg")
+from mrfsim import T1MRF
+from image_series import *
+from dictoptimizers import SimpleDictSearch
+from utils_mrf import *
+import json
+import readTwix as rT
+import time
+import os
+from numpy.lib.format import open_memmap
+from numpy import memmap
+import pickle
+from scipy.io import loadmat,savemat
+
+base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
+base_folder = "./data/InVivo/3D/"
+
+import twixtools
+
+serie="phantom.001.v1/"
+local_folder = base_folder+serie
+
+files = os.listdir(local_folder)
+files = [f for f in files if ".dat" in f]
+
+files=sorted(files)
+
+dico_data={}
+dico_data_nav={}
+
+num=1
+localfile=files[1]
+
+for num,localfile in enumerate(files):
+    print("Processing {} ...".format(localfile))
+    filename = local_folder+localfile
+
+    #filename="./data/InVivo/3D/20211221_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
+    #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
+    #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
+
+    filename_save=str.split(filename,".dat") [0]+".npy"
+    filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
+
+    folder = "/".join(str.split(filename,"/")[:-1])
+
+    filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
+
+
+    #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
+    #Parsed_File = rT.map_VBVD(filename)
+    #idx_ok = rT.detect_TwixImg(Parsed_File)
+    #RawData = Parsed_File[str(idx_ok)]["image"].readImage()
+
+    if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):
+
+        twix = twixtools.read_twix(filename,optional_additional_maps=["sWipMemBlock","sKSpace"],optional_additional_arrays=["SliceThickness"])
+
+        if np.max(np.argwhere(np.array(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"])>0))>=16:
+            use_navigator_dll = True
+        else:
+            use_navigator_dll = False
+
+
+
+        alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
+        x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
+        y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
+        z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
+
+        nb_part = twix[-1]["hdr"]["Meas"]["Partitions"]
+
+        dico_seqParams = {"alFree":alFree,"x_FOV":x_FOV,"y_FOV":y_FOV,"z_FOV":z_FOV,"use_navigator_dll":use_navigator_dll,"nb_part":nb_part}
+
+        del alFree
+
+        file = open(filename_seqParams, "wb")
+        pickle.dump(dico_seqParams, file)
+        file.close()
+
+    else:
+        file = open(filename_seqParams, "rb")
+        dico_seqParams = pickle.load(file)
+        file.close()
+
+
+
+    try:
+        del twix
+    except:
+        pass
+
+
+    use_navigator_dll=dico_seqParams["use_navigator_dll"]
+
+    if use_navigator_dll:
+        meas_sampling_mode=dico_seqParams["alFree"][14]
+        nb_gating_spokes = dico_seqParams["alFree"][6]
+    else:
+        meas_sampling_mode = dico_seqParams["alFree"][12]
+        nb_gating_spokes = 0
+
+    if nb_gating_spokes>0:
+        meas_orientation =  dico_seqParams["alFree"][11]
+        if meas_orientation==1:
+            nav_direction = "READ"
+        elif meas_orientation==2:
+            nav_direction = "PHASE"
+        elif meas_orientation==3:
+            nav_direction = "SLICE"
+
+    nb_segments = dico_seqParams["alFree"][4]
+
+    x_FOV = dico_seqParams["x_FOV"]
+    y_FOV = dico_seqParams["y_FOV"]
+    z_FOV = dico_seqParams["z_FOV"]
+    nb_part = dico_seqParams["nb_part"]
+
+    del dico_seqParams
+
+    if meas_sampling_mode==1:
+        incoherent=False
+        mode = None
+    elif meas_sampling_mode==2:
+        incoherent = True
+        mode = "old"
+    elif meas_sampling_mode==3:
+        incoherent = True
+        mode = "new"
+
+
+
+
+    if str.split(filename_save,"/")[-1] not in os.listdir(folder):
+        if 'twix' not in locals():
+            print("Re-loading raw data")
+            twix = twixtools.read_twix(filename)
+
+        mdb_list = twix[-1]['mdb']
+        if nb_gating_spokes > 0:
+            print("Reading Navigator Data....")
+            data_for_nav = []
+            k = 0
+            for i, mdb in enumerate(mdb_list):
+                if mdb.is_image_scan() and mdb.mdh[14][9]:
+                    data_for_nav.append(mdb)
+
+                    #print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
+                    k += 1
+            data_for_nav = np.array([mdb.data for mdb in data_for_nav])
+            data_for_nav = data_for_nav.reshape((int(nb_part),int(nb_gating_spokes))+data_for_nav.shape[1:])
+
+            if data_for_nav.ndim==3:
+                data_for_nav=np.expand_dims(data_for_nav,axis=-2)
+
+            data_for_nav = np.moveaxis(data_for_nav,-2,0)
+            np.save(filename_nav_save, data_for_nav)
+
+        del mdb_list
+
+        ##################################################
+        mapped = twixtools.map_twix(twix)
+        try:
+            del twix
+        except:
+            pass
+        data = mapped[-1]['image']
+        del mapped
+        data = data[:].squeeze()
+        data = np.moveaxis(data, 0, -2)
+        data = np.moveaxis(data, 1, 0)
+
+        np.save(filename_save,data)
+
+    else :
+        data = np.load(filename_save)
+        if nb_gating_spokes>0:
+            data_for_nav=np.load(filename_nav_save)
+
+    try:
+        del twix
+    except:
+        pass
+
+
+
+    if data.ndim==3:
+        nb_channels = 1
+        data = np.expand_dims(data,axis=0)
+        #data_for_nav=np.expand_dims(data_for_nav,axis=0)
+    else:
+        nb_channels=data.shape[0]
+
+    data_shape = data.shape
+    dico_data[num]=data
+    dico_data_nav[num]=data_for_nav
+
+
+
+ntimesteps = 175
+
+nb_allspokes = data_shape[-2]
+npoint = data_shape[-1]
+nb_slices = data_shape[-3]
+image_size = (nb_slices, int(npoint/2), int(npoint/2))
+undersampling_factor=1
+
+all_timesteps = np.arange(nb_allspokes)
+nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
+
+nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint, nb_slices=1,
+                               applied_timesteps=list(nav_timesteps))
+
+nav_image_size = (int(npoint / 2),)
+
+data_for_nav=np.expand_dims(dico_data_nav[0][0,0,:,:],axis=(0,1))
+print("Calculating Sensitivity Maps for Nav Images...")
+b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
+b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
+
+
+print("Rebuilding Nav Images...")
+images_nav_mean_orig = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
+images_nav_mean_orig=np.squeeze(images_nav_mean_orig)
+
+images_nav_mean_orig=np.load("./notebooks/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read_nav_images.npy")[0]
+images_nav_mean_orig[:,:20]=images_nav_mean_orig[:,20][:,None]
+images_nav_mean_orig[:,-30:]=images_nav_mean_orig[:,-30][:,None]
+
+
+plt.figure()
+plt.imshow(images_nav_mean_orig.T)
+
+from utils_simu import generate_random_curve
+from scipy.ndimage import shift
+
+plt.close("all")
+H=4
+num_params=2*H
+
+X=[]
+Y=[]
+nb_training_examples=5000
+nb_translations=5
+nb_rep_list=[0,1,2]
+p=[0.2,0.4,0.4]
+
+max_move=30
+min_move=0
+
+transf=False
+
+for j in tqdm(range(nb_training_examples)):
+    rho=np.random.uniform(0,1,size=H)
+    phi=np.random.uniform(0,1,size=H)
+
+    curr_max_move=np.random.choice(list(range(0,max_move)))
+    if curr_max_move==0:
+        movement=np.zeros(nb_allspokes)
+    else:
+        #curr_min_move = np.random.choice(np.arange(0, curr_max_move))
+        movement=generate_random_curve(nb_allspokes,rho,phi,0,curr_max_move)
+
+    movement_nav=movement[::int(1400/nb_gating_spokes)].astype(int)
+    movement_nav=movement_nav-movement_nav[0]
+    movement_nav=np.squeeze(movement_nav).astype(int)
+
+    print("Data nav building")
+
+    images_nav_mean=np.zeros(images_nav_mean_orig.shape,dtype=images_nav_mean_orig.dtype)
+    random_crop_size=int(np.random.uniform(50,200))
+    random_crop_start=int(np.minimum(np.random.uniform(0,300),400-random_crop_size))
+
+    images_nav_mean[:,random_crop_start:(random_crop_size+random_crop_start)]=images_nav_mean_orig[:,random_crop_start:(random_crop_size+random_crop_start)]
+    images_nav_mean[:, :random_crop_start] = images_nav_mean_orig[:,random_crop_start][:,None]
+    images_nav_mean[:, (random_crop_size+random_crop_start):] = images_nav_mean_orig[:, np.minimum((random_crop_size+random_crop_start),399)][:, None]
+
+    for i in range(nb_gating_spokes):
+        #data_for_nav_combined_one_rep[i, :] = dico_data_nav[0][0, 0, i, :]
+        images_nav_mean[i,:]=shift(images_nav_mean_orig[i,:], -movement_nav[i],mode="nearest")
+
+    images_nav_mean[:, random_crop_start:(random_crop_size + random_crop_start)] = images_nav_mean_orig[:,
+                                                                                   random_crop_start:(
+                                                                                               random_crop_size + random_crop_start)]
+    images_nav_mean[:, :random_crop_start] = images_nav_mean_orig[:, random_crop_start][:, None]
+    images_nav_mean[:, (random_crop_size + random_crop_start):] = images_nav_mean_orig[:,
+                                                                  np.minimum((random_crop_size + random_crop_start),
+                                                                             399)][:, None]
+
+    if transf:
+        nb_rep=np.random.choice(nb_rep_list,p=p)
+        for i in range(nb_gating_spokes):
+            low = np.maximum(27-movement_nav[i],0)
+            high = 135-movement_nav[i]
+            len = high - low
+            for k in range(nb_rep):
+                images_nav_mean[i, (low + (k + 1) * len):(high + (k + 1) * len)] = images_nav_mean[i, low:high]
+
+
+
+        for l in range(nb_translations):
+            shift_value=np.random.uniform(-50,350)
+            images_nav_mean_transf=shift(images_nav_mean, [0, shift_value])
+            X.append(images_nav_mean_transf)
+            Y.append(movement_nav)
+    else:
+        X.append(images_nav_mean)
+        Y.append(movement_nav)
+
+
+plt.figure()
+plt.imshow(images_nav_mean.T)
+plt.figure()
+plt.plot(movement_nav)
+
+X=np.array(X)
+Y=np.array(Y)
+np.save("X_movement_from_nav_invivo_2.npy",X)
+np.save("Y_movement_from_nav_invivo_2.npy",Y)

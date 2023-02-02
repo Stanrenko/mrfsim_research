@@ -16,113 +16,98 @@ import numpy as np
 
 from mutools import io
 
-filename="./data/InVivo/3D/patient.002.v2.bis/meas_MID00155_FID17671_raFin_3D_tra_1x1x5mm_FULL_randomv1_reco395_SS_MRF_map_it0_wT1.mha"
-t1_param_map_new=io.read(filename)
-filename="./data/InVivo/3D/patient.002.v2.bis/meas_MID00155_FID17671_raFin_3D_tra_1x1x5mm_FULL_randomv1_reco395_SS_MRF_map_it0_ff.mha"
-ff_param_map_new=io.read(filename)
-filename="./data/InVivo/3D/patient.002.v2.bis/meas_MID00159_FID17675_raFin_3D_tra_1x1x5mm_FULL_1400_reco4_SS_MRF_map_it0_wT1.mha"
-t1_param_map_old=io.read(filename)
-filename="./data/InVivo/3D/patient.002.v2.bis/meas_MID00159_FID17675_raFin_3D_tra_1x1x5mm_FULL_1400_reco4_SS_MRF_map_it0_ff.mha"
-ff_param_map_old=io.read(filename)
+folder="./data/KneePhantom/Phantom1/"
+file_mask="maskFull_Control_multislice_13.npy"
+file_dico="dicoMasks_Control_multislice_retained_13.pkl"
 
-nb_slices=int(t1_param_map_new.shape[0])
+mask_full=np.load(folder+file_mask)
 
-sl=int(nb_slices/2)
 
-curr_t1_param_map_new=np.array(t1_param_map_new[sl])
-curr_t1_param_map_old=np.array(t1_param_map_old[sl])
-curr_ff_param_map_new=np.array(ff_param_map_new[sl])
-curr_ff_param_map_old=np.array(ff_param_map_old[sl])
+with open(folder+file_dico,"rb") as file:
+    dico_retained=pickle.load(file)
 
-curr_t1_param_map_new[curr_ff_param_map_new>0.7]=0
-curr_t1_param_map_old[curr_ff_param_map_old>0.7]=0
 
-plt.close("all")
-plt.figure()
-plt.imshow(np.flip(curr_t1_param_map_new.T),cmap="plasma",vmin=0,vmax=2000)
-plt.colorbar()
+#animate_images(mask_full)
 
-plt.figure()
-plt.imshow(np.flip(curr_ff_param_map_new.T),cmap="jet",vmin=0,vmax=1)
-plt.colorbar()
 
-plt.figure()
-plt.imshow(np.flip(curr_t1_param_map_old.T),cmap="plasma",vmin=0,vmax=2000)
-plt.colorbar()
 
-plt.figure()
-plt.imshow(np.flip(curr_ff_param_map_old.T),cmap="jet",vmin=0,vmax=1)
-plt.colorbar()
+keys=list(dico_retained.keys())
+
+volumes_all=np.zeros((len(keys),95,int((mask_full>0).sum())),dtype="complex64")
+
+for num in tqdm(range(len(keys))):
+    mask=dico_retained[keys[num]]
+    #animate_images(mask)
+
+    volumes=np.tile(mask,(95,1,1,1))
+    volumes=volumes.astype("complex64")
+    b1_all_slices=np.ones((1,)+mask.shape)
+
+    radial_traj=Radial3D(total_nspokes=760,undersampling_factor=2,npoint=512,nb_slices=24,incoherent=False,mode="old")
+
+
+    volumes_us=undersampling_operator(volumes,radial_traj,b1_all_slices,density_adj=True,light_memory_usage=True)
+    volumes_all[num]=volumes_us[:,mask_full>0]
+
+
+np.save("volumes_Control_multislice_retained_13.npy",volumes_all,allow_pickle=True)
 
 
 
 
+from utils_simu import *
+
+with open("./mrf_dictconf_SimReco2.json") as f:
+    dict_config = json.load(f)
+
+fat_amp = np.array(dict_config["fat_amp"])
+fat_shift = -np.array(dict_config["fat_cshift"])
+group_size=8
+
+TR_,FA_,TE_=load_sequence_file("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json",3.95,1.87/1000)
+
+params=np.array(keys)
+
+volumes_simu=np.zeros(volumes_all.shape[1:],dtype="complex64")
+
+for j in tqdm(range(params.shape[0])):
+    param=params[j]
+    ff=param[1]
+    df=param[-1]
+    b1=param[-2]
+    wT1=param[0]/1000
+
+    s, s_w, s_f, keys_signals = simulate_gen_eq_signal(TR_, FA_, TE_, ff, df, wT1, 300 / 1000,b1, T_2w=40 / 1000, T_2f=80 / 1000,
+                                                   amp=fat_amp, shift=fat_shift, sigma=None, group_size=group_size,
+                                                   return_fat_water=True)  # ,amp=np.array([1]),shift=np.array([-418]),sigma=None):
+
+    s=np.expand_dims(s.squeeze(),axis=1)
+
+    volumes_simu += s*volumes_all[j]
+
+volumes_simu_image=[makevol(v,mask_full>0) for v in volumes_simu]
+volumes_simu_image=np.array(volumes_simu_image)
 
 
 
-import numpy as np
-
-d = 64                           # dimension
-nb = 100000                      # database size
-nq = 10000                       # nb of queries
-np.random.seed(1234)             # make reproducible
-xb = np.random.random((nb, d)).astype('float32')
-xb[:, 0] += np.arange(nb) / 1000.
-xq = np.random.random((nq, d)).astype('float32')
-xq[:, 0] += np.arange(nq) / 1000.
-
-import faiss
-
-nlist = 3
-m = 8
-k = 10
-quantizer = faiss.IndexFlatL2(d)  # this remains the same
-index = faiss.IndexIVFPQ(quantizer, d, nlist, m, 8)
-                                  # 8 specifies that each sub-vector is encoded as 8 bits
-index.train(xb)
-index.add(xb)
-D, I = index.search(xb[:5], 1) # sanity check
-print(I)
-print(D)
-index.nprobe = 10              # make comparable with experiment above
-D, I = index.search(xq, k)     # search
-print(I[-5:])
+animate_images(volumes_simu_image[:,12])
 
 
 
+output_file=folder+"paramMap_Control_multislice.mat"
+matMap_deformed=loadmat(output_file)
+map_wT1=matMap_deformed["paramMap"][0][0][0]
+map_b1=matMap_deformed["paramMap"][0][0][2]
+map_df=matMap_deformed["paramMap"][0][0][3]
+map_ff=matMap_deformed["paramMap"][0][0][1]
 
-#import matplotlib
-#matplotlib.u<se("TkAgg")
-import numpy as np
-from mrfsim import T1MRF
-from image_series import *
-from dictoptimizers import SimpleDictSearch,GaussianWeighting,BruteDictSearch
-from utils_mrf import *
-import json
-import readTwix as rT
-import time
-import os
-from numpy.lib.format import open_memmap
-from numpy import memmap
-import pickle
-from scipy.io import loadmat,savemat
-from mutools import io
-from sklearn import linear_model
-from scipy.optimize import minimize
-from movements import TranslationBreathing
+dico_gt={}
+dico_gt["wT1"]=map_wT1[mask_full>0]
+dico_gt["df"]=map_df[mask_full>0]
+dico_gt["attB1"]=map_b1[mask_full>0]
+dico_gt["ff"]=map_ff[mask_full>0]
 
-npoint=512
-nb_allspokes=1400
-window=8
-ntimesteps=int(nb_allspokes/window)
+output_file=folder+"paramMap_Control_multislice_masked_13.pkl"
+with open(output_file,"wb") as file:
+    pickle.dump(dico_gt,file)
 
-radial_traj=Radial(total_nspokes=nb_allspokes,npoint=npoint)
-image_size=(int(npoint/2),int(npoint/2))
-volume=np.zeros(image_size,dtype="complex64")
-volume[int(image_size[0]/2),int(image_size[1]/2)]=1
-volumes=np.tile(volume,reps=(ntimesteps,1,1))
-b1_all_slices=np.ones((1,)+image_size)
-
-psf=undersampling_operator(volumes,radial_traj,b1_all_slices)
-
-animate_images(psf)

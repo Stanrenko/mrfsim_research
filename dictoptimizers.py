@@ -477,6 +477,7 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
     if n_clusters_dico is not None:
         return idx_max_all_unique
 
+    idx_max_all_unique=idx_max_all_unique.astype(int)
     params_all_unique = np.array(
         [keys[idx] + (alpha_optim[l],) for l, idx in enumerate(idx_max_all_unique)])
 
