@@ -124,8 +124,6 @@ def cost_function_simul_breaks_random_FA_KneePhantom_3D(params):
     key = "wT1"
     map = all_maps[0][0][key][dico_map_gt["ff"]<0.7]*1000
     map_gt=dico_map_gt[key][dico_map_gt["ff"]<0.7]
-    print(map[0])
-    print(map_gt[0])
     error = np.abs(map - map_gt)
     error_wT1 = np.mean(error/ map_gt)
 
@@ -137,18 +135,14 @@ def cost_function_simul_breaks_random_FA_KneePhantom_3D(params):
     key = "ff"
     map = all_maps[0][0][key]
     map_gt = dico_map_gt[key]
-    print(map[0])
-    print(map_gt[0])
     error = np.abs(map - map_gt)
     error_ff = np.mean(error)
 
     print("FF Cost : {}".format(error_ff))
 
     key = "df"
-    map = all_maps[0][0][key]
-    map_gt = dico_map_gt[key]
-    print(map[0])
-    print(map_gt[0])
+    map = all_maps[0][0][key]/1000
+    map_gt = dico_map_gt[key]/1000
     error = np.abs(map - map_gt)
     error_df = np.mean(error)
 
@@ -157,8 +151,6 @@ def cost_function_simul_breaks_random_FA_KneePhantom_3D(params):
     key = "attB1"
     map = all_maps[0][0][key]
     map_gt = dico_map_gt[key]
-    print(map[0])
-    print(map_gt[0])
     error = np.abs(map - map_gt)
     error_b1 = np.mean(error)
 
