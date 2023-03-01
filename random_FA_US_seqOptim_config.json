@@ -9,6 +9,7 @@
  "bound_min_TE":0.0022,
  "bound_max_TE":0.004,
  "bound_min_FA":0.087266,
+ "num_breaks_TE": 3,
  "H":4,
  "lambda_FA":0,
  "lambda_time":0,
@@ -20,6 +21,7 @@
  "maxiter":1000,
  "npoint": 512,
  "file_phantom": "./data/KneePhantom/Phantom1/paramMap_Control.mat",
- "useGPU": False
+ "useGPU": False,
+ "dumpfile": "x_random_FA_US_H4_allparams_log.pkl"
 }
 

@@ -464,11 +464,11 @@ generate_epg_dico_T1MRFSS(r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_
 
 import pickle
 from utils_simu import *
-with open("./optims/res_simul_random_FA_20221031_144435.pkl","rb") as file:
+with open("./optims/res_simul_random_FA_US_20230123_180436.pkl","rb") as file:
     res=pickle.load(file)
 
 
-with open("./optims/random_FA_opt_config_20221031_144435.json","rb") as file:
+with open("./optims/random_FA_opt_config_20230123_180436.json","rb") as file:
     config=json.load(file)
 
 #cost_function_simul_breaks_random(res.x)
@@ -497,7 +497,7 @@ plt.plot(FA_[1:])
 plt.figure()
 plt.plot(TE_[1:])
 res.x
-generate_epg_dico_T1MRFSS(r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_random_FA_v2.json","./mrf_dictconf_SimReco2_lightDFB1.json",FA_,TE_,4,min_TR_delay,fileseq_basis="./mrf_sequence_adjusted.json")
+generate_epg_dico_T1MRFSS(r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_1_87.json","./mrf_dictconf_SimReco2_light_matching.json",FA_,TE_,3.53,min_TR_delay,fileseq_basis="./mrf_sequence_adjusted.json")
 
 
 

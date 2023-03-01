@@ -128,6 +128,8 @@ class Encoder(nn.Module):
         self.fc_bn=nn.BatchNorm1d(4*output_channels)
         self.fc2 = nn.Linear(4*output_channels, output_channels)
 
+        self.dropout = nn.Dropout(0.25)
+
     def forward(self, x):
         '''
         Function for completing a forward pass of UNet:
@@ -150,8 +152,11 @@ class Encoder(nn.Module):
         #x4 = self.contract4(x3)
         x = x.view(-1,self.hidden_channels*2*48*48)
         x=self.fc1(x)
+        x=self.dropout(x)
+        x = self.final_layer_activation(x)
         x=self.fc_bn(x)
         x=self.fc2(x)
+        x = self.dropout(x)
         x=self.final_layer_activation(x)
         #print(xn.shape)
         #### END CODE HERE ####
@@ -166,7 +171,7 @@ criterion = nn.MSELoss()
 n_epochs = 1500
 input_dim =volumes.shape[1]
 label_dim = labels.shape[1]
-batch_size = 512
+batch_size = 64
 lr = 0.001
 device = 'cuda'
 display_step=19

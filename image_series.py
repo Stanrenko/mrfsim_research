@@ -35,7 +35,10 @@ except:
     pass
 
 import gc
-import h5py
+try:
+    import h5py
+except:
+    pass
 
 DEFAULT_wT2 = 40
 DEFAULT_fT1 = 300

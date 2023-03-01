@@ -81,6 +81,10 @@ all_results_brute={}
 all_results_cf={}
 all_results_matrix={}
 
+df_stats_cf=pd.DataFrame(columns=["NRMSE wT1","NRMSE ff","NRMSE attB1","NRMSE df","SSIM wT1","SSIM ff","SSIM attB1","SSIM df"])
+df_stats_matrix=pd.DataFrame(columns=["NRMSE wT1","NRMSE ff","NRMSE attB1","NRMSE df","SSIM wT1","SSIM ff","SSIM attB1","SSIM df"])
+df_stats_brute=pd.DataFrame(columns=["NRMSE wT1","NRMSE ff","NRMSE attB1","NRMSE df","SSIM wT1","SSIM ff","SSIM attB1","SSIM df"])
+
 
 for num in range(nb_phantom):
     print("################## PROCESSING Phantom {} ##################".format(num))
@@ -273,6 +277,49 @@ for num in range(nb_phantom):
     regression_paramMaps_ROI(m_.paramMap,all_maps_cf[0][0],mask>0,all_maps_cf[0][1]>0,maskROI,adj_wT1=True,title="CF_regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
     regression_paramMaps_ROI(m_.paramMap,all_maps_matrix[0][0],mask>0,all_maps_matrix[0][1]>0,maskROI,adj_wT1=True,title="CF_Clustering_regROI_"+str.split(str.split(filename_volume,"/")[-1],".npy")[0],save=True)
 
+    for k in ["wT1","ff","df","attB1"]:
+        image_brute = makevol(all_maps_brute[0][0][k], mask > 0)
+        image_cf = makevol(all_maps_cf[0][0][k], mask > 0)
+        image_matrix = makevol(all_maps_matrix[0][0][k], mask > 0)
+        image_gt=makevol(m_.paramMap[k], mask > 0)
+
+        ssim_brute = ssim(image_gt, image_brute,win_size=7, K1=0.01, K2=0.03)
+        ssim_cf = ssim(image_gt, image_cf, win_size=7, K1=0.01, K2=0.03)
+        ssim_matrix = ssim(image_gt, image_matrix,win_size=7, K1=0.01, K2=0.03)
+
+        if k == "wT1":
+            image_gt_ff = m_.paramMap["ff"]
+            mask_ff = image_gt_ff < 0.7
+
+
+            nrmse_brute = np.sqrt(
+                np.sum((image_brute[mask>0][mask_ff] - image_gt[mask>0][mask_ff]) ** 2) / np.sum(
+                    image_gt[mask>0][mask_ff]) ** 2)
+
+            nrmse_cf = np.sqrt(np.sum((image_cf[mask>0][mask_ff] - image_gt[mask>0][mask_ff]) ** 2) / np.sum(
+                image_gt[mask>0][mask_ff]) ** 2)
+            nrmse_matrix = np.sqrt(
+                np.sum((image_matrix[mask>0][mask_ff] - image_gt[mask>0][mask_ff]) ** 2) / np.sum(
+                    image_gt[mask>0][mask_ff]) ** 2)
+
+        else:
+            nrmse_brute = np.sqrt(
+                np.sum((image_brute[mask>0]- image_gt[mask>0]) ** 2) / np.sum(
+                    image_gt[mask>0]) ** 2)
+
+            nrmse_cf = np.sqrt(np.sum((image_cf[mask>0] - image_gt[mask>0]) ** 2) / np.sum(
+                image_gt[mask>0]) ** 2)
+            nrmse_matrix = np.sqrt(
+                np.sum((image_matrix[mask>0] - image_gt[mask>0]) ** 2) / np.sum(
+                    image_gt[mask>0]) ** 2)
+
+        df_stats_brute.loc[num, "NRMSE {}".format(k)] = nrmse_brute
+        df_stats_brute.loc[num, "SSIM {}".format(k)] = ssim_brute
+        df_stats_cf.loc[num, "NRMSE {}".format(k)] = nrmse_cf
+        df_stats_cf.loc[num, "SSIM {}".format(k)] = ssim_cf
+        df_stats_matrix.loc[num, "NRMSE {}".format(k)] = nrmse_matrix
+        df_stats_matrix.loc[num, "SSIM {}".format(k)] = ssim_matrix
+
     results = get_ROI_values(m_.paramMap,all_maps_brute[0][0],mask>0,all_maps_brute[0][1]>0,maskROI=maskROI,kept_keys=["attB1","df","wT1","ff"],adj_wT1=False,fat_threshold=0.7,return_std=True)
 
     if all_results_brute=={}:
@@ -297,6 +344,31 @@ for num in range(nb_phantom):
     else:
         for k in all_results_matrix.keys():
             all_results_matrix[k] = np.concatenate([results[k], all_results_matrix[k]], axis=0)
+
+df_stats_brute.to_pickle("df_stats_brute_{}.pkl".format("numerical"))
+df_stats_cf.to_pickle("df_stats_cf_{}.pkl".format("numerical"))
+df_stats_matrix.to_pickle("df_stats_cf_clustering_{}.pkl".format("numerical"))
+
+file_all_results = "{}_ROI_All_results_CF_clustering.pkl".format("Numerical")
+file = open(file_all_results, "wb")
+# dump information to that file
+pickle.dump(all_results_matrix, file)
+# close the file
+file.close()
+
+file_all_results = "{}_ROI_All_results_brute.pkl".format("Numerical")
+file = open(file_all_results, "wb")
+# dump information to that file
+pickle.dump(all_results_brute, file)
+# close the file
+file.close()
+
+file_all_results = "{}_ROI_All_results_cf.pkl".format("Numerical")
+file = open(file_all_results, "wb")
+# dump information to that file
+pickle.dump(all_results_cf, file)
+# close the file
+file.close()
 
 df_comp=pd.DataFrame(columns=["Reference","Proposed","Proposed w/ clustering"])
 df_comp["Reference"]=all_results_brute["ff"][:,2]-all_results_brute["ff"][:,0]
