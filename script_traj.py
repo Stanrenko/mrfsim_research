@@ -103,7 +103,7 @@ dico_gt["df"]=map_df[mask_full>0]
 dico_gt["attB1"]=map_b1[mask_full>0]
 dico_gt["ff"]=map_ff[mask_full>0]
 
-output_file=folder+"paramMap_Control_multislice_masked_13.pkl"
+output_file=folder+"paramMap_Control_multislice_masked_31.pkl"
 with open(output_file,"wb") as file:
     pickle.dump(dico_gt,file)
 
