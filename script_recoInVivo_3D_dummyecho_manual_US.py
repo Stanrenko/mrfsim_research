@@ -143,7 +143,17 @@ dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_2_25_reco4_w8_simmean.dic
 #dictfile="mrf_dictconf_Dico2_Invivo_lightDFB1_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v5_2_25_reco4_w8_simmean.dict"
 
 
-undersampling_factor=4
+localfile="/patient.008.v5/meas_MID00117_FID32355_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+#localfile="/patient.008.v5/meas_MID00118_FID32356_raFin_3D_tra_1x1x5mm_FULL_bmy.dat"
+#localfile="/patient.008.v5/meas_MID00119_FID32357_raFin_2D_tra_1x1x5mm_FULL_bmy.dat"
+
+
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_78_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1_78_reco4_w8_simmean.dict"
+
+
+
+undersampling_factor=2
 
 filename = base_folder+localfile
 
@@ -161,7 +171,7 @@ filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 filename_volume = str.split(filename,".dat") [0]+"_us{}_volumes{}.npy".format(undersampling_factor,"")
 filename_kdata = str.split(filename,".dat") [0]+"_us{}_kdata{}.npy".format(undersampling_factor,"")
 filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
-filename_mask='./data/InVivo/3D/patient.003.v4/meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_mask.npy'
+#filename_mask='./data/InVivo/3D/patient.003.v4/meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_mask.npy'
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
@@ -408,7 +418,7 @@ nb_segments=radial_traj.get_traj().shape[0]
 
 if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     res = 16
-    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage)
+    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage,hanning_filter=True)
     np.save(filename_b1,b1_all_slices)
     del kdata_all_channels_all_slices
     kdata_all_channels_all_slices = np.load(filename_kdata)
@@ -482,8 +492,8 @@ if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
     animate_images(mask)
     del mask
 
-with open("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400.json","r") as file:
-    sequence_config=json.load(file)
+#with open("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400.json","r") as file:
+#    sequence_config=json.load(file)
 
 # TE = np.array(sequence_config["TE"])
 # unique_TE=np.unique(TE)
@@ -517,11 +527,15 @@ volumes_all = np.load(filename_volume)
 #mask=new_mask
 
 #animate_images(mask)
-suffix="_lightDFB1_us_{}".format(undersampling_factor)
+suffix="_2StepsDico_us{}".format(undersampling_factor)
 if not(load_map):
-    niter = 10
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=10,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,mu="Adaptative")#,mu_TV=1,weights_TV=[1.,0.,0.])
-    all_maps=optimizer.search_patterns_test_multi(dictfile,volumes_all,retained_timesteps=None)
+    niter = 5
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,
+                                 threshold_pca=20, log=False, useGPU_dictsearch=True, useGPU_simulation=False,
+                                 gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
+                                 b1=b1_all_slices, mu="Adaptative", weights_TV=[1, 0.2, 0.2], mu_TV=1,
+                                 threshold_ff=0.9, dictfile_light=dictfile_light)
+    all_maps=optimizer.search_patterns_test_multi_2_steps_dico(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
         import pickle
@@ -542,7 +556,7 @@ else:
     all_maps = pickle.load(file)
 
 
-
+return_cost=niter>0
 
 curr_file=file_map
 file = open(curr_file, "rb")
@@ -564,6 +578,18 @@ for iter in list(all_maps.keys()):
     for key in ["ff","wT1","df","attB1"]:
         file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
         io.write(file_mha,map_for_sim[key],tags={"spacing":[dz,dx,dy]})
+
+    if return_cost:
+        file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
+                             "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "_it{}_{}.mha".format(
+            iter, "correlation")
+        io.write(file_mha, makevol(all_maps[iter][2],mask>0), tags={"spacing": [dz, dx, dy]})
+
+        file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
+                             "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "_it{}_{}.mha".format(
+            iter, "phase")
+        io.write(file_mha, makevol(all_maps[iter][3],mask>0), tags={"spacing": [dz, dx, dy]})
+
 
 
 

@@ -332,11 +332,11 @@ from tqdm import tqdm
 import pickle
 from scipy.io import savemat
 
-with open("./mrf_sequence.json") as f:
+with open("./mrf_sequence_adjusted.json") as f:
     sequence_config = json.load(f)
 
 
-with open("./mrf_dictconf_Dico2_Invivo_light_for_matching.json") as f:
+with open("./mrf_dictconf_Dico2_Invivo.json") as f:
     dict_config = json.load(f)
 
 #with open("./mrf_dictconf_SimReco2.json") as f:
@@ -352,14 +352,14 @@ df = dict_config["delta_freqs"]
 df = [- value / 1000 for value in df] # temp
 # df = np.linspace(-0.1, 0.1, 101)
 
-#min_TR_delay=1.84
-#TE_list=np.array(sequence_config["TE"])
-#TR_list=list(TE_list+min_TR_delay)
-#sequence_config["TR"]=TR_list
+min_TR_delay=2.23
+TE_list=np.array(sequence_config["TE"])
+TR_list=list(TE_list+min_TR_delay)
+sequence_config["TR"]=TR_list
 
 seq=T1MRF(**sequence_config)
 
-dictfile = "mrf175_Dico2_Invivo_light_for_matching.dict"
+dictfile = "mrf175_Dico2_Invivo_2_23.dict"
 
 sim_mode="mean"
 overwrite=True

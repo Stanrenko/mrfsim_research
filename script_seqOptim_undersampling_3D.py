@@ -8,7 +8,7 @@ import json
 from image_series import *
 from trajectory import *
 import pickle
-
+import numba as nb
 with open("./mrf_dictconf_SimReco2.json") as f:
     dict_config = json.load(f)
 
@@ -25,9 +25,9 @@ image_size = (int(npoint/2), int(npoint/2))
 nspoke=int(spokes_count/ntimesteps)
 folder="./data/KneePhantom/Phantom1/"
 
-file_dico=folder+"dicoMasks_Control_multislice_retained_13.pkl"
-file_volume="volumes_Control_multislice_retained_13.npy"
-file_map_gt=folder+"paramMap_Control_multislice_masked_13.pkl"
+file_dico=folder+"dicoMasks_Control_multislice_retained_31.pkl"
+file_volume="volumes_Control_multislice_retained_31.npy"
+file_map_gt=folder+"paramMap_Control_multislice_masked_31.pkl"
 
 
 with open(file_dico,"rb") as file:
@@ -35,6 +35,8 @@ with open(file_dico,"rb") as file:
 
 with open(file_map_gt,"rb") as file:
     dico_map_gt=pickle.load(file)
+
+
 
 volumes_all=np.load(file_volume,allow_pickle=True)
 
@@ -46,6 +48,11 @@ fileseq_basis="./mrf_sequence_adjusted.json"
 
 with open(fileseq_basis, "r") as file:
     seq_config_base = json.load(file)
+
+
+mask_size=20000
+total_mask_size=volumes_all.shape[-1]
+mask_local = np.random.choice(range(total_mask_size), mask_size, replace=False)
 
 def cost_function_simul_breaks_random_FA_KneePhantom_3D(params):
     #global result
@@ -67,30 +74,36 @@ def cost_function_simul_breaks_random_FA_KneePhantom_3D(params):
     global lambda_time
     global lambda_FF
     global inversion
+    global mask_size
 
     global seq_config_base
 
     global useGPU
     global ntimesteps
     global params_mrf
+    global mask_local
 
     global volumes_all
 
-    start_time=datetime.now()
+    #start_time=datetime.now()
     group_size = 8
 
     bound_max_FA=params[-1]
     params_for_curve=params[:-1]
     TR_, FA_, TE_ = convert_params_to_sequence_breaks_random_FA(params_for_curve, min_TR_delay,spokes_count,num_breaks_TE,num_params_FA,bound_min_FA,bound_max_FA,inversion)
 
-    volumes_simu = np.zeros(volumes_all.shape[1:], dtype="complex64")
+    volumes_simu = np.zeros((volumes_all.shape[1],mask_size), dtype="complex64")
 
-    for j in tqdm(range(params_mrf.shape[0])):
+    #mask_local=np.random.choice(range(volumes_all.shape[-1]),mask_size,replace=False)
+
+    for j in (range(params_mrf.shape[0])):
         param = params_mrf[j]
         ff = param[1]
         df = param[-1]
         b1 = param[-2]
         wT1 = param[0] / 1000
+
+        #print(wT1)
 
         s = simulate_gen_eq_signal(TR_, FA_, TE_, ff, df, wT1, 300 / 1000, b1, T_2w=40 / 1000,
                                                            T_2f=80 / 1000,
@@ -100,7 +113,7 @@ def cost_function_simul_breaks_random_FA_KneePhantom_3D(params):
 
         s = np.expand_dims(s.squeeze(), axis=1)
 
-        volumes_simu += s * volumes_all[j]
+        volumes_simu += s * volumes_all[j][:,mask_local]
 
     s, s_w, s_f, keys = simulate_gen_eq_signal(TR_, FA_, TE_, FFs, DFs, T1s, 300 / 1000,B1s, T_2w=40 / 1000, T_2f=80 / 1000,
                                                amp=fat_amp, shift=fat_shift, sigma=None, group_size=group_size,
@@ -122,8 +135,8 @@ def cost_function_simul_breaks_random_FA_KneePhantom_3D(params):
     all_maps, matched_signals = dict_optim_bc_cf.search_patterns_test((s_w, s_f, keys), volumes_simu)
 
     key = "wT1"
-    map = all_maps[0][0][key][dico_map_gt["ff"]<0.7]*1000
-    map_gt=dico_map_gt[key][dico_map_gt["ff"]<0.7]
+    map = all_maps[0][0][key][dico_map_gt["ff"][mask_local]<0.7]*1000
+    map_gt=dico_map_gt[key][mask_local][dico_map_gt["ff"][mask_local]<0.7]
     print(map[0])
     print(map_gt[0])
     error = np.abs(map - map_gt)
@@ -136,19 +149,15 @@ def cost_function_simul_breaks_random_FA_KneePhantom_3D(params):
 
     key = "ff"
     map = all_maps[0][0][key]
-    map_gt = dico_map_gt[key]
-    print(map[0])
-    print(map_gt[0])
+    map_gt = dico_map_gt[key][mask_local]
     error = np.abs(map - map_gt)
     error_ff = np.mean(error)
 
     print("FF Cost : {}".format(error_ff))
 
     key = "df"
-    map = all_maps[0][0][key]
-    map_gt = dico_map_gt[key]
-    print(map[0])
-    print(map_gt[0])
+    map = all_maps[0][0][key]/1000
+    map_gt = dico_map_gt[key][mask_local]/1000
     error = np.abs(map - map_gt)
     error_df = np.mean(error)
 
@@ -156,9 +165,7 @@ def cost_function_simul_breaks_random_FA_KneePhantom_3D(params):
 
     key = "attB1"
     map = all_maps[0][0][key]
-    map_gt = dico_map_gt[key]
-    print(map[0])
-    print(map_gt[0])
+    map_gt = dico_map_gt[key][mask_local]
     error = np.abs(map - map_gt)
     error_b1 = np.mean(error)
 
@@ -175,25 +182,29 @@ def cost_function_simul_breaks_random_FA_KneePhantom_3D(params):
 
     result=lambda_T1 * error_wT1 + lambda_FF * error_ff + lambda_DF * error_df + lambda_B1 * error_b1 +lambda_FA * FA_cost + lambda_time * time_cost+lambda_stdT1 * std_wT1
 
-    end_time=datetime.now()
-    print(end_time-start_time)
+    #end_time=datetime.now()
+    #print(end_time-start_time)
 
     return result
 
 
 
 class LogCost(object):
-    def __init__(self,f):
+    def __init__(self,f,total_mask_size,mask_size=10000):
         self.cost_values=[]
         self.it=1
         self.f=f
+        self.mask_size=mask_size
+        self.total_mask_size = total_mask_size
 
     def __call__(self,x,**kwargs):
+        global mask_local
+        mask_local = np.random.choice(range(self.total_mask_size), self.mask_size, replace=False)
         print("############# ITERATION {}###################".format(self.it))
         self.cost_values.append(self.f(x))
         self.it +=1
 
-        with open("x_random_FA_US_3D_H6_log.pkl", "wb") as file:
+        with open("x_random_FA_US_3D_H4_log.pkl", "wb") as file:
             pickle.dump(x, file)
 
     def reset(self):
@@ -236,9 +247,9 @@ lambda_DF=4
 lambda_B1=1
 lambda_stdT1=0
 inversion=True
-useGPU=False
+useGPU=True
 
-log_cost=LogCost(cost_function_simul_breaks_random_FA_KneePhantom_3D)
+log_cost=LogCost(cost_function_simul_breaks_random_FA_KneePhantom_3D,total_mask_size,mask_size)
 
 res=differential_evolution(cost_function_simul_breaks_random_FA_KneePhantom_3D,bounds=bounds,callback=log_cost,constraints=constraints,maxiter=1000)#,constraints=constraints)
 
@@ -253,7 +264,7 @@ import pickle
 with open("res_simul_random_FA_US.pkl","rb") as file:
     res=pickle.load(file)
 
-cost_function_simul_breaks_random_FA_KneePhantom(res.x)
+cost_function_simul_breaks_random_FA_KneePhantom_3D(res.x)
 
 params=res.x
 bound_max_FA=params[-1]
@@ -267,7 +278,7 @@ plt.plot(FA_[1:])
 plt.figure()
 plt.plot(TE_[1:])
 res.x
-generate_epg_dico_T1MRFSS(r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_random_US_v2.json","./mrf_dictconf_SimReco2.json",FA_,TE_,3.73,1.87/1000,fileseq_basis="./mrf_sequence_adjusted.json")
+generate_epg_dico_T1MRFSS(r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_US_3D_v1.json","./mrf_dictconf_SimReco2.json",FA_,TE_,3.92,1.87/1000,fileseq_basis="./mrf_sequence_adjusted.json")
 
 
 

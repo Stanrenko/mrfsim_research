@@ -390,11 +390,20 @@ b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
 #
 # print("Rebuilding Nav Images...")
 images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
+
+
 #
+plt.figure()
+plt.imshow(images_nav_mean.reshape(-1,images_nav_mean.shape[-1])[:10*nb_gating_spokes,:].T)
+
 # print("Estimating Movement...")
 shifts=np.arange(-30,30)
 bottom=-shifts[0]
 top=int(npoint/2)-shifts[-1]
+
+bottom=100
+top=200
+
 displacements = calculate_displacement(images_nav_mean, bottom, top, shifts,lambda_tv=0)
 
 shifts=np.arange(-30,30)
@@ -402,12 +411,17 @@ bottom=-shifts[0]
 top=int(npoint/2)-shifts[-1]
 
 displacements_all_channels=[]
+j=1
 for j in tqdm(range(nb_channels)):
     images_series_rebuilt_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[j],axis=0), nav_traj, nav_image_size, b1=None)
     image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
     curr_displacement=calculate_displacement(image_nav_ch,bottom,top,shifts,lambda_tv=0.001)
     displacements_all_channels.append(curr_displacement)
     # plt.figure()
+
+plt.figure()
+plt.imshow(image_nav_ch.reshape(-1,image_nav_ch.shape[-1])[:10*nb_gating_spokes,:].T)
+
 
 pca=PCAComplex(n_components_=1)
 disp_transf=pca.fit_transform(displacements_all_channels)

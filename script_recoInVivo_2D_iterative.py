@@ -161,7 +161,168 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 
 
 
-sl=0
+sl=int(nb_slices/2)
+
+print("Processing slice {} out of {}".format(sl, nb_slices))
+kdata_all_channels = kdata_all_channels_all_slices[sl, :, :, :]
+b1 = b1_all_slices[sl]
+
+filename_mask = str.split(filename, ".dat")[0] + "_mask_{}.npy".format(sl)
+filename_volume = str.split(filename, ".dat")[0] + "_volumes_{}.npy".format(sl)
+
+print("Building Volumes....")
+if str.split(filename_volume, "/")[-1] not in os.listdir(folder):
+    volumes_all = simulate_radial_undersampled_images_multi(kdata_all_channels, radial_traj, image_size, b1=b1,normalize_kdata=False,
+                                                            density_adj=False,normalize_iterative=True)
+    np.save(filename_volume, volumes_all)
+else:
+    volumes_all = np.load(filename_volume)
+
+print("Building Mask....")
+
+if str.split(filename_mask, "/")[-1] not in os.listdir(folder):
+    mask = build_mask_single_image_multichannel(kdata_all_channels, radial_traj, image_size, b1=b1, density_adj=False,
+                                                threshold_factor=1/25)
+    np.save(filename_mask, mask)
+else:
+    mask = np.load(filename_mask)
+
+#animate_images(volumes_all)
+#volume_rebuilt = build_single_image_multichannel(kdata_all_channels, radial_traj,
+#                                                  image_size, b1=b1, density_adj=False)
+
+#plt.figure()
+#plt.imshow(np.abs(volume_rebuilt))
+
+## Dict mapping
+
+#dictfile = "mrf175_SimReco2_.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_68_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1_68_reco4_w8_simmean.dict"
+
+
+file_map = filename.split(".dat")[0] + "_MRF_map_iterative_sl_{}.pkl".format(sl)
+
+if str.split(file_map,"/")[-1] not in os.listdir(folder):
+    niter = 10
+    start_time = time.time()
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=100, pca=True,
+                                 threshold_pca=20, log=False, useGPU_dictsearch=True, useGPU_simulation=False,
+                                 gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
+                                 b1=b1, threshold_ff=0.9, dictfile_light=dictfile_light, mu="Adaptative",mu_TV=0.1,
+                                 weights_TV=[1., 1.],
+                                 return_cost=return_cost)  # ,mu_TV=1,weights_TV=[1.,0.,0.])
+    all_maps = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, volumes_all, retained_timesteps=None)
+
+    end_time = time.time()
+    print("Time taken for slice {} : {}".format(sl, end_time - start_time))
+    if (save_maps):
+        import pickle
+
+
+        file = open(file_map, "wb")
+        # dump information to that file
+        pickle.dump(all_maps, file)
+        # close the file
+        file.close()
+
+else:
+    import pickle
+
+    file = open(file_map, "rb")
+    all_maps = pickle.load(file)
+    file.close()
+
+
+mask=all_maps[0][1]
+
+plt.close("all")
+k="wT1"
+plt.figure()
+for iter in range(niter+1):
+    plt.figure()
+    plt.title("Iter {}".format(iter))
+    plt.imshow(makevol(all_maps[iter][0][k],mask>0),cmap="inferno")
+    plt.colorbar()
+
+
+
+path = r"/home/cslioussarenko/PythonRepositories"
+sys.path.append(path+"/epgpy")
+sys.path.append(path+"/machines")
+sys.path.append(path+"/mutools")
+sys.path.append(path+"/dicomstack")
+
+from mutools import io
+
+keys = ["ff","wT1","attB1","df"]
+
+
+dx = 1
+dy = 1
+dz = 8
+
+for iter in range(niter+1):
+    for k in tqdm(keys) :
+        map_all_slices = np.zeros((nb_slices,)+image_size)
+
+        for sl in range(nb_slices):
+            file_map = filename.split(".dat")[0] + "_MRF_map_sl_{}.pkl".format(sl)
+            file = open(file_map, "rb")
+            all_maps = pickle.load(file)
+            file.close()
+
+            map_rebuilt = all_maps[iter][0]
+            mask = all_maps[iter][1]
+
+            values_simu = makevol(map_rebuilt[k], mask > 0)
+            map_all_slices[sl]=values_simu
+
+        file_mha = filename.split(".dat")[0] + "_MRF_map_{}.mha".format(k)
+        io.write(file_mha, map_all_slices, tags={"spacing": [dz, dx, dy]})
+
+    if return_cost:
+
+        map_all_slices = np.zeros((nb_slices,) + image_size)
+
+        for sl in range(nb_slices):
+            file_map = filename.split(".dat")[0] + "_MRF_map_sl_{}.pkl".format(sl)
+            file = open(file_map, "rb")
+            all_maps = pickle.load(file)
+            file.close()
+
+            map_rebuilt_correlation = all_maps[iter][2]
+            mask = all_maps[iter][1]
+
+            values_simu = makevol(map_rebuilt_correlation, mask > 0)
+            map_all_slices[sl] = values_simu
+
+        file_mha = filename.split(".dat")[0] + "_MRF_map_{}_correlation.mha".format(k)
+        io.write(file_mha, map_all_slices, tags={"spacing": [dz, dx, dy]})
+
+        map_all_slices = np.zeros((nb_slices,) + image_size)
+
+        for sl in range(nb_slices):
+            file_map = filename.split(".dat")[0] + "_MRF_map_sl_{}.pkl".format(sl)
+            file = open(file_map, "rb")
+            all_maps = pickle.load(file)
+            file.close()
+
+            map_rebuilt_phase = all_maps[iter][3]
+            mask = all_maps[iter][1]
+
+            values_simu = makevol(map_rebuilt_phase, mask > 0)
+            map_all_slices[sl] = values_simu
+
+        file_mha = filename.split(".dat")[0] + "_MRF_map_phase.mha"
+        io.write(file_mha, map_all_slices, tags={"spacing": [dz, dx, dy]})
+
+
+
+
+
+
+
 
 for sl in tqdm(range(nb_slices)):
     print("Processing slice {} out of {}".format(sl, nb_slices))

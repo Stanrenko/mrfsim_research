@@ -410,9 +410,9 @@ for p in patient_names[:]:
                 else:
                     nrmse_cf = np.sqrt(
                         np.sum((image_cf[new_mask]- image_brute[new_mask]) ** 2) / np.sum(
-                            image_brute[new_mask]) ** 2)
+                            image_brute[new_mask]** 2))
                     nrmse_matrix = np.sqrt(np.sum((image_matrix[new_mask] - image_brute[new_mask]) ** 2) / np.sum(
-                        image_brute[new_mask]) ** 2)
+                        image_brute[new_mask] ** 2))
 
                 df_stats_cf.loc[f,"NRMSE {}".format(k)]=nrmse_cf
                 df_stats_cf.loc[f, "SSIM {}".format(k)] = ssim_cf

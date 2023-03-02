@@ -230,7 +230,7 @@ def spherical_golden_angle_means_traj_3D(total_nspoke, npoint, nb_slices, unders
 #     result = np.stack([traj.real,traj.imag, k_z], axis=-1)
 #     return result.reshape(result.shape[0],-1,result.shape[-1])
 
-def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,mode="old",offset=0):
+def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=1,mode="old",offset=0):
     timesteps = int(total_nspoke / nspoke)
     nb_rep = int(nb_slices / undersampling_factor)
 
@@ -2862,14 +2862,14 @@ def undersampling_operator(volumes,trajectory,b1_all_slices,density_adj=True,lig
     for k in tqdm(range(nb_channels)):
         if not(light_memory_usage):
             curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
-            print(curr_volumes.shape)
+            #print(curr_volumes.shape)
             if len(size)==3:
                 curr_kdata = [finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], v) for (t,v) in zip (traj,curr_volumes)]
             else:
                 curr_kdata = [finufft.nufft2d2( t[:, 0], t[:, 1], v) for (t, v) in zip(traj, curr_volumes)]
             del curr_volumes
             curr_kdata=np.array(curr_kdata)
-            print(curr_kdata.shape)
+            #print(curr_kdata.shape)
             if density_adj:
                 curr_kdata=curr_kdata.reshape(ntimesteps,-1,npoint)
                 density = np.abs(np.linspace(-1, 1, npoint))
@@ -2885,21 +2885,21 @@ def undersampling_operator(volumes,trajectory,b1_all_slices,density_adj=True,lig
                 fk = [finufft.nufft2d1(t[:, 0], t[:, 1], kd, size) for (t, kd) in zip(traj, curr_kdata)]
             del curr_kdata
             fk=np.array(fk)
-            print(fk.shape)
+            #print(fk.shape)
             images_series_rebuilt += b1_all_slices[k].conj()* fk
 
         else:
             for ts in tqdm(range(ntimesteps)):
                 curr_volumes = volumes[ts] * b1_all_slices[k]
-                print(curr_volumes.shape)
+                #print(curr_volumes.shape)
                 if len(size) == 3:
                     t=traj[ts]
                     curr_kdata = finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], curr_volumes)
                 else:
                     t = traj[ts]
-                    curr_kdata = finufft.nufft3d2(t[:, 0], t[:, 1], curr_volumes)
+                    curr_kdata = finufft.nufft2d2(t[:, 0], t[:, 1], curr_volumes)
                 del curr_volumes
-                print(curr_kdata.shape)
+                #print(curr_kdata.shape)
                 if density_adj:
                     curr_kdata = curr_kdata.reshape(-1, npoint)
                     density = np.abs(np.linspace(-1, 1, npoint))
@@ -2913,10 +2913,10 @@ def undersampling_operator(volumes,trajectory,b1_all_slices,density_adj=True,lig
                     fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], curr_kdata, size)
                 else:
                     t = traj[ts]
-                    fk = finufft.nufft3d1(t[:, 0], t[:, 1], curr_kdata, size)
+                    fk = finufft.nufft2d1(t[:, 0], t[:, 1], curr_kdata, size)
                 del curr_kdata
 
-                print(fk.shape)
+                #print(fk.shape)
                 images_series_rebuilt[ts] += b1_all_slices[k].conj() * fk
 
 
@@ -2924,58 +2924,155 @@ def undersampling_operator(volumes,trajectory,b1_all_slices,density_adj=True,lig
     return images_series_rebuilt
 
 
-def undersampling_operator_new(volumes,trajectory,b1_all_slices,density_adj=True,weights=None,retained_timesteps=None,ntimesteps=None):
+# def undersampling_operator_new(volumes,trajectory,b1_all_slices,density_adj=True,weights=None,retained_timesteps=None,ntimesteps=None):
+#     """
+#     returns A.H @ W @ A @ volumes where A=F Fourier + sampling operator and W correspond to radial density adjustment
+#     """
+#     if ntimesteps is None:
+#         ntimesteps=volumes.shape[0]
+#     size=volumes.shape[1:]
+#     nb_channels=b1_all_slices.shape[0]
+#
+#     traj = trajectory.get_traj()
+#     traj = traj.reshape(ntimesteps,-1, 3)
+#     if retained_timesteps is not None:
+#         traj=traj[retained_timesteps]
+#         ntimesteps=len(retained_timesteps)
+#
+#     npoint = trajectory.paramDict["npoint"]
+#
+#     num_k_samples = traj.shape[1]
+#
+#     output_shape = (ntimesteps,) + size
+#     images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
+#
+#     for k in tqdm(range(nb_channels)):
+#
+#         curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
+#         print(curr_volumes.shape)
+#         if len(size)==3:
+#             curr_kdata = [finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], v) for (t,v) in zip (traj,curr_volumes)]
+#         else:
+#             curr_kdata = [finufft.nufft2d2( t[:, 0], t[:, 1], v) for (t, v) in zip(traj, curr_volumes)]
+#         curr_kdata=np.array(curr_kdata)
+#         print(curr_kdata.shape)
+#         if density_adj:
+#             curr_kdata=curr_kdata.reshape(ntimesteps,-1,npoint)
+#             density = np.abs(np.linspace(-1, 1, npoint))
+#             density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+#             curr_kdata*=density
+#         curr_kdata = curr_kdata.reshape(ntimesteps, -1)
+#         if weights is not None:
+#             curr_kdata = curr_kdata.reshape(weights.shape +(-1,))
+#             weights = np.expand_dims(weights, axis=-1)
+#             curr_kdata *= weights
+#             curr_kdata = curr_kdata.reshape(ntimesteps, -1)
+#
+#         if len(size) == 3:
+#             fk = [finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kd, size) for (t,kd) in zip(traj,curr_kdata)]
+#         else:
+#             fk = [finufft.nufft2d1(t[:, 0], t[:, 1], kd, size) for (t, kd) in zip(traj, curr_kdata)]
+#         fk=np.array(fk)
+#         print(fk.shape)
+#         images_series_rebuilt += b1_all_slices[k].conj()* fk
+#
+#     images_series_rebuilt /= num_k_samples
+#     return images_series_rebuilt
+
+def undersampling_operator_new(volumes, trajectory, b1_all_slices, density_adj=True, weights=None,
+                               retained_timesteps=None, ntimesteps=None, light_memory_usage=True):
     """
     returns A.H @ W @ A @ volumes where A=F Fourier + sampling operator and W correspond to radial density adjustment
     """
     if ntimesteps is None:
-        ntimesteps=volumes.shape[0]
-    size=volumes.shape[1:]
-    nb_channels=b1_all_slices.shape[0]
+        ntimesteps = volumes.shape[0]
+    size = volumes.shape[1:]
+    nb_channels = b1_all_slices.shape[0]
 
     traj = trajectory.get_traj()
-    traj = traj.reshape(ntimesteps,-1, 3)
+    traj = traj.reshape(ntimesteps, -1, 3)
     if retained_timesteps is not None:
-        traj=traj[retained_timesteps]
-        ntimesteps=len(retained_timesteps)
+        traj = traj[retained_timesteps]
+        ntimesteps = len(retained_timesteps)
 
     npoint = trajectory.paramDict["npoint"]
 
+    if volumes.dtype == "complex64":
+        traj = traj.astype("float32")
+        b1_all_slices = b1_all_slices.astype("complex64")
     num_k_samples = traj.shape[1]
 
     output_shape = (ntimesteps,) + size
     images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
 
     for k in tqdm(range(nb_channels)):
-
-        curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
-        print(curr_volumes.shape)
-        if len(size)==3:
-            curr_kdata = [finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], v) for (t,v) in zip (traj,curr_volumes)]
-        else:
-            curr_kdata = [finufft.nufft2d2( t[:, 0], t[:, 1], v) for (t, v) in zip(traj, curr_volumes)]
-        curr_kdata=np.array(curr_kdata)
-        print(curr_kdata.shape)
-        if density_adj:
-            curr_kdata=curr_kdata.reshape(ntimesteps,-1,npoint)
-            density = np.abs(np.linspace(-1, 1, npoint))
-            density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
-            curr_kdata*=density
-        curr_kdata = curr_kdata.reshape(ntimesteps, -1)
-        if weights is not None:
-            curr_kdata = curr_kdata.reshape(weights.shape +(-1,))
-            weights = np.expand_dims(weights, axis=-1)
-            curr_kdata *= weights
+        if not (light_memory_usage):
+            curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
+            print(curr_volumes.shape)
+            if len(size) == 3:
+                curr_kdata = [finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], v) for (t, v) in zip(traj, curr_volumes)]
+            else:
+                curr_kdata = [finufft.nufft2d2(t[:, 0], t[:, 1], v) for (t, v) in zip(traj, curr_volumes)]
+            curr_kdata = np.array(curr_kdata)
+            print(curr_kdata.shape)
+            if density_adj:
+                curr_kdata = curr_kdata.reshape(ntimesteps, -1, npoint)
+                density = np.abs(np.linspace(-1, 1, npoint))
+                density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+                curr_kdata *= density
             curr_kdata = curr_kdata.reshape(ntimesteps, -1)
+            if weights is not None:
+                curr_kdata = curr_kdata.reshape(weights.shape + (-1,))
+                weights = np.expand_dims(weights, axis=-1)
+                curr_kdata *= weights
+                curr_kdata = curr_kdata.reshape(ntimesteps, -1)
 
-        if len(size) == 3:
-            fk = [finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kd, size) for (t,kd) in zip(traj,curr_kdata)]
+            if len(size) == 3:
+                fk = [finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], kd, size) for (t, kd) in zip(traj, curr_kdata)]
+            else:
+                fk = [finufft.nufft2d1(t[:, 0], t[:, 1], kd, size) for (t, kd) in zip(traj, curr_kdata)]
+            fk = np.array(fk)
+            print(fk.shape)
+            images_series_rebuilt += b1_all_slices[k].conj() * fk
+
         else:
-            fk = [finufft.nufft2d1(t[:, 0], t[:, 1], kd, size) for (t, kd) in zip(traj, curr_kdata)]
-        fk=np.array(fk)
-        print(fk.shape)
-        images_series_rebuilt += b1_all_slices[k].conj()* fk
+            for ts in tqdm(range(ntimesteps)):
+                curr_volumes = volumes[ts] * b1_all_slices[k]
+                print(curr_volumes.shape)
+                if len(size) == 3:
+                    t = traj[ts]
+                    curr_kdata = finufft.nufft3d2(t[:, 2], t[:, 0], t[:, 1], curr_volumes)
+                else:
+                    t = traj[ts]
+                    curr_kdata = finufft.nufft3d2(t[:, 0], t[:, 1], curr_volumes)
+                del curr_volumes
+                print(curr_kdata.shape)
 
+                if density_adj:
+                    curr_kdata = curr_kdata.reshape(-1, npoint)
+                    density = np.abs(np.linspace(-1, 1, npoint))
+                    density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+                    curr_kdata *= density
+
+                if weights is not None:
+                    curr_weights = weights[ts]
+                    curr_kdata = curr_kdata.reshape(curr_weights.shape + (-1,))
+                    curr_weights = np.expand_dims(curr_weights, axis=-1)
+                    curr_kdata *= curr_weights
+                    # curr_kdata = curr_kdata.reshape(ntimesteps, -1)
+
+                curr_kdata = curr_kdata.flatten()
+
+                if len(size) == 3:
+                    t = traj[ts]
+                    fk = finufft.nufft3d1(t[:, 2], t[:, 0], t[:, 1], curr_kdata, size)
+                else:
+                    t = traj[ts]
+                    fk = finufft.nufft3d1(t[:, 0], t[:, 1], curr_kdata, size)
+                del curr_kdata
+
+                print(fk.shape)
+                images_series_rebuilt[ts] += b1_all_slices[k].conj() * fk
     images_series_rebuilt /= num_k_samples
     return images_series_rebuilt
 

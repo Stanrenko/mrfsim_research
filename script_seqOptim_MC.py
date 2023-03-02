@@ -3,10 +3,46 @@ from dictoptimizers import SimpleDictSearch
 
 #generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted.json","mrf_dictconf_SimReco2.json",4,sim_mode="mid_point",start=0,window=int(1400/50))
 
-TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted.json",4,2.21/1000)
+TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json",3.95,2.22/1000)
 #
-generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_2_21.json","mrf_dictconf_Dico2_Invivo_light_for_matching.json",FA_list,TE_list,4,2.21/1000)
+generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_2_22.json","mrf_dictconf_Dico2_Invivo_light_for_matching.json",FA_list,TE_list,3.95,2.22/1000)
 #
+
+
+from utils_simu import *
+from dictoptimizers import SimpleDictSearch
+
+TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted.json",4,1.68/1000)
+#
+generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_1_78.json","mrf_dictconf_Dico2_Invivo_neg_fat_shift.json",FA_list,TE_list,4,1.78/1000)
+#
+
+
+
+from utils_simu import *
+from dictoptimizers import SimpleDictSearch
+
+#generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted.json","mrf_dictconf_SimReco2.json",4,sim_mode="mid_point",start=0,window=int(1400/50))
+
+TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted.json",4,2.23/1000)
+#
+
+dTEs=np.array([-0.25,-0.2,-0.15,-0.1,-0.05,0.05,0.1,0.15,0.2,0.25])/1000
+TE_list_orig=TE_list
+
+min_TR_delay_orig=2.23/1000
+
+for i,dt in enumerate(dTEs):
+    TE_list=list(np.array(TE_list_orig)+dt)
+    min_TR_delay=min_TR_delay_orig-dt
+    if dt<0:
+        dt_label="minus_{}".format(np.abs(dt*1000))
+    else:
+        dt_label=str(dt*1000)
+    generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_2_23_dTE_{}.json".format(dt_label),"mrf_dictconf_Dico2_Invivo.json",FA_list,TE_list,4,min_TR_delay)
+    generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_2_23_dTE_{}.json".format(dt_label),
+                              "mrf_dictconf_Dico2_Invivo_light_for_matching.json", FA_list, TE_list, 4, min_TR_delay)
+    #
 
 
 

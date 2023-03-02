@@ -13,23 +13,19 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 import matplotlib.pyplot as plt
 import numpy as np
 
-
 from mutools import io
 
 folder="./data/KneePhantom/Phantom1/"
-file_mask="maskFull_Control_multislice_13.npy"
-file_dico="dicoMasks_Control_multislice_retained_13.pkl"
+file_mask="maskFull_Control_multislice_31.npy"
+file_dico="dicoMasks_Control_multislice_retained_31.pkl"
 
 mask_full=np.load(folder+file_mask)
-
 
 with open(folder+file_dico,"rb") as file:
     dico_retained=pickle.load(file)
 
 
 #animate_images(mask_full)
-
-
 
 keys=list(dico_retained.keys())
 
@@ -50,7 +46,7 @@ for num in tqdm(range(len(keys))):
     volumes_all[num]=volumes_us[:,mask_full>0]
 
 
-np.save("volumes_Control_multislice_retained_13.npy",volumes_all,allow_pickle=True)
+np.save("volumes_Control_multislice_retained_31.npy",volumes_all,allow_pickle=True)
 
 
 

@@ -74,8 +74,8 @@ gauss_filter=False
 
 #dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_reco3.dict"
 
-#dictfile="./mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_reco3.95_w8_simmean.dict"
 dictfile="./mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_87_reco3.95_w8_simmean.dict"
+#dictfile="./mrf_dictconf_SimReco2_light_matching_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_reco3.95_w8_simmean.dict"
 suffix="_DE_Simu_FF_random_v1_reco3_95"
 with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_1_87.json") as f:
     sequence_config = json.load(f)
@@ -185,7 +185,7 @@ if "Knee3D" in name:
     repeat_slice=1
 nb_slices = nb_filled_slices+2*nb_empty_slices
 
-undersampling_factor=1
+undersampling_factor=2
 
 is_random=False
 frac_center=1.0
@@ -801,10 +801,10 @@ list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","old_760_reco3"]
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","old_760_reco3","DE_Simu_FF_v6_reco3.8"]
 list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","DE_Simu_FF_v6_reco3.8","DE_Simu_FF_random_v4_reco3.9","DE_Simu_FF_random_v5_reco4","DE_Simu_FF_random_v2_reco4","DE_Simu_FF_random_FA_v2_reco4"]
 list_suffix=["fullReco","old_760_reco3","DE_Simu_random_v5_reco4","DE_Simu_FF_random_v1_reco3_95"]
-list_suffix=["fullReco","DE_Simu_FF_random_v1_reco3_95","DE_Simu_FF_random_v2_reco3_53"]
+list_suffix=["fullReco","DE_Simu_FF_random_v1_reco3_95","DE_Simu_FF_random_v2_reco3_53","DE_Simu_FF_random_v1_3D_reco3_92"]
 
 #list_suffix=["fullReco","DE_Simu_FF_v3_reco3.6".format(snr)]
-undersampling_factor=1
+undersampling_factor=2
 #list_suffix=["fullReco_SNR_{}".format(snr)]
 dic_maps={}
 for suffix in list_suffix:
@@ -879,15 +879,15 @@ plt.legend()
 
 min_iter=0
 max_iter=1
-labels=["MRF T1-FF","MRF T1-FF 760 spokes","Optim Gaussian Noise","Optim Undersampling Simu"]
-labels=["v1","v3"]
+labels=["MRF T1-FF","MRF T1-FF 760 spokes ","Optim Gaussian Noise","Optim Undersampling Simu"]
+labels=["orig","v1","v2","v1 3D"]
 maskROI=buildROImask_unique(m.paramMap)
 #maskROI=m.buildROImask()
 
 df_result=pd.DataFrame()
 
 plt.figure()
-k="ff"
+k="attB1"
 for i,key in enumerate(dic_maps.keys()):
     for it in (list(range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter),3))):
         if key=="fullReco_noUS" and it>0:
@@ -900,6 +900,7 @@ for i,key in enumerate(dic_maps.keys()):
         else:
             df_result[labels[i] + " Iteration {}".format(it)]=error
 
+plt.title(k)
 columns=[df_result.columns[-1]]+list(df_result.columns[:-1])
 df_result=df_result[columns]
 df_result.boxplot(grid=False, rot=45, fontsize=10,showfliers=False)

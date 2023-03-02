@@ -557,7 +557,7 @@ if nb_gating_spokes>0:
     shifts = list(range(-20, 20))
     bottom = 50
     top = 150
-    displacements = calculate_displacement(images_nav_mean, bottom, top, shifts,0.)
+    displacements = calculate_displacement(images_nav_mean, bottom, top, shifts)
 
     plt.figure()
     plt.plot(displacements)

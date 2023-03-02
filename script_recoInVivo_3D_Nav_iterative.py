@@ -21,6 +21,7 @@ base_folder = "./data/InVivo/3D"
 import twixtools
 
 localfile="/phantom.001.v1/phantom.001.v1.dat"
+localfile="/patient.008.v4/meas_MID00148_FID28313_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 #localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
 #localfile="/phantom.006.v1/meas_MID00027_FID02798_raFin_3D_tra_1x1x5mm_FULL_FF.dat"#Box at the top border with more outside
 #localfile="/phantom.006.v1/meas_MID00028_FID02799_raFin_3D_tra_1x1x5mm_FULL_new.dat"#Box at the top border with more outside
@@ -304,7 +305,8 @@ dz = z_FOV/nb_slices
 if str.split(filename_kdata,"/")[-1] in os.listdir(folder):
     del data
 
-
+radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
+#radial_traj.adjust_traj_for_window(window)
 
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
     # Density adjustment all slices
@@ -353,7 +355,7 @@ nb_segments=radial_traj.get_traj().shape[0]
 
 if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     res = 16
-    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage)
+    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage,hanning_filter=True)
     np.save(filename_b1,b1_all_slices)
 else:
     b1_all_slices=np.load(filename_b1)
@@ -366,7 +368,7 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
     kdata_all_channels_all_slices=np.load(filename_kdata)
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
     np.save(filename_volume,volumes_all)
     # sl=20
     ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
@@ -377,7 +379,7 @@ if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
      selected_spokes = np.r_[10:400]
      kdata_all_channels_all_slices=np.load(filename_kdata)
      selected_spokes=None
-     mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/10, normalize_kdata=False,light_memory_usage=True,selected_spokes=selected_spokes)
+     mask=build_mask_single_image_multichannel(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,threshold_factor=1/25, normalize_kdata=False,light_memory_usage=True,selected_spokes=selected_spokes)
      np.save(filename_mask,mask)
      animate_images(mask)
      del mask
@@ -431,7 +433,7 @@ if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
 # kdata_all_channels_all_slices=np.ones((nb_channels,nb_segments,nb_slices,npoint),dtype="complex64")
 # kdata_all_channels_all_slices *= density
 
-
+ntimesteps=95
 if nb_gating_spokes>0:
     print("Processing Nav Data...")
     data_for_nav=np.load(filename_nav_save)
@@ -454,7 +456,7 @@ if nb_gating_spokes>0:
     b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
 
 
-    ch=0
+    ch=16
     image_nav_ch =simulate_nav_images_multi(np.expand_dims(data_for_nav[ch],axis=0),nav_traj, nav_image_size)
     #plt.imshow(np.abs(b1_nav[ch].reshape(-1, int(npoint/2))))
 
@@ -474,9 +476,9 @@ if nb_gating_spokes>0:
 
     print("Estimating Movement...")
     shifts = list(range(-20, 20))
-    bottom = 50
-    top = 150
-    displacements = calculate_displacement(images_nav_mean, bottom, top, shifts,0.)
+    bottom = 20
+    top = 100
+    displacements = calculate_displacement(image_nav_ch, bottom, top, shifts)
 
     plt.figure()
     plt.plot(displacements)
@@ -541,7 +543,10 @@ print("Rebuilding Images With Corrected volumes...")
 b1_full = np.ones(image_size)
 b1_full=np.expand_dims(b1_full,axis=0)
 
+b1_full=b1_all_slices
+
 if str.split(filename_volume_corrected,"/")[-1] not in os.listdir(folder):
+    kdata_all_channels_all_slices=np.load(filename_kdata)
     volumes_corrected = simulate_radial_undersampled_images_multi_new(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_full,ntimesteps=ntimesteps,density_adj=False,useGPU=False,light_memory_usage=True,retained_timesteps=retained_timesteps,weights=weights)
     animate_images(volumes_corrected[:,int(nb_slices/2),:,:])
     np.save(filename_volume_corrected,volumes_corrected)
@@ -576,8 +581,7 @@ volumes_full_corrected = simulate_radial_undersampled_images_multi_new(kdata_all
 
 del kdata_all_channels_all_slices
 del b1_all_slices
-
-
+del volumes_corrected
 
 ########################## Dict mapping ########################################
 
@@ -587,7 +591,9 @@ seq = None
 load_map=False
 save_map=True
 
-dictfile = "mrf175_SimReco2_light.dict"
+dictfile = "mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_2_22_reco3.95_w8_simmean.dict"
+dictfile_light = "mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_2_22_reco3.95_w8_simmean.dict"
+
 #dictfile="mrf144w8_SeqFF_PWCR_SimRecoFFDf_light.dict"
 #dictfile="mrf144w8_SeqFF_PWCR_SimRecoFFDf_adjusted_light.dict"
 #dictfile="mrf144w8_SeqFF__SimRecoFFDf_light.dict"
@@ -603,19 +609,27 @@ volumes_all = np.load(filename_volume_corrected)
 
 
 #ani = animate_images(volumes_all[:,4,:,:])
-#ani = animate_images(volumes_corrected[:,4,:,:])
+#ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
+animate_images(mask)
+
+
 #
 # plt.figure()
 # plt.plot(volumes_all[:,sl,200,200])
 
 if not(load_map):
-    niter = 0
-    niter = 1
-    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=10, pca=True,
-                                 threshold_pca=20, log=False, useGPU_dictsearch=False, useGPU_simulation=False,
+    niter = 5
+    if niter>0:
+        b1_all_slices=np.load(filename_b1)
+    else:
+        b1_all_slices=None
+    optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,
+                                 threshold_pca=20, log=False, useGPU_dictsearch=True, useGPU_simulation=False,
                                  gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
-                                 b1=b1_full, mu="Adaptative",weights=weights)
-    all_maps = optimizer.search_patterns_test_multi_mvt(dictfile, volumes_all, retained_timesteps=retained_timesteps)
+                                 b1=b1_all_slices, mu=1,weights_TV=[1,0.2,0.2],mu_TV=1,weights=weights,threshold_ff=0.9,dictfile_light=dictfile_light)
+
+
+    all_maps = optimizer.search_patterns_test_multi_2_steps_dico_mvt(dictfile, volumes_all, retained_timesteps=retained_timesteps)
 
 if(save_map):
         import pickle
@@ -655,5 +669,5 @@ for iter in list(all_maps.keys()):
 
     for key in ["ff","wT1","df","attB1"]:
         file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
-        io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
+        io.write(file_mha,map_for_sim[key],tags={"spacing":[dz,dx,dy]})
 

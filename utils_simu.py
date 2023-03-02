@@ -6,6 +6,7 @@ try:
 except:
     pass
 from itertools import combinations_with_replacement,product
+import numba as nb
 import datetime
 import json
 
@@ -295,6 +296,7 @@ def simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1, T_2,B1, amp=n
     u = np.expand_dims(u_i[:-1], axis=-1)
     s_i = u * np.sin(np.array(FAs)) * E_2
     return s_i
+
 
 def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f,B1, T_2w=40 / 1000, T_2f=80 / 1000,
                            amp=np.array([1]), shift=np.array([-418]), sigma=None, list_deriv=None,noise_size=None,noise_type="Absolute",group_size=None,return_fat_water=False):
@@ -885,6 +887,7 @@ def convert_params_to_sequence_breaks_random(params, min_TR_delay, spokes_count,
     TR_ = list(TR_)
     return TR_, FA_, TE_
 
+#@nb.njit
 def convert_params_to_sequence_breaks_random_FA(params, min_TR_delay, spokes_count,num_breaks_TE,num_params_FA,
                                                  bound_min_FA, bound_max_FA, inversion=True):
     TE_ = np.zeros(spokes_count + 1)

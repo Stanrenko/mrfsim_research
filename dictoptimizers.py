@@ -528,7 +528,7 @@ def match_signals_v2(all_signals,keys,pca_water,pca_fat,array_water_unique,array
 
 
 
-def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique,var_w_total,var_f_total,sig_wf_total,index_water_unique,index_fat_unique,useGPU_dictsearch,unique_keys,d_T1,d_fT1,d_B1,d_DF,labels,split,high_ff=False):
+def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique,var_w_total,var_f_total,sig_wf_total,index_water_unique,index_fat_unique,useGPU_dictsearch,unique_keys,d_T1,d_fT1,d_B1,d_DF,labels,split,high_ff=False,return_cost=False):
     #nb_signals_low_ff = len(ind_low_ff)
     #nb_signals_high_ff = len(ind_high_ff)
     nb_clusters = unique_keys.shape[-1]
@@ -541,6 +541,9 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
     else:
         idx_max_all_unique_low_ff = cp.zeros(nb_signals,dtype="int64")
         alpha_optim_low_ff = cp.zeros(nb_signals)
+        if return_cost:
+            J_optim = cp.zeros(nb_signals)
+            phase_optim=cp.zeros(nb_signals)
 
 
     if not (useGPU_dictsearch):
@@ -673,6 +676,9 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
             all_signals_cluster=cp.asarray(all_signals_current[:, (indices.get()).flatten()])
             idx_max_all_unique_cluster = cp.zeros(nb_signals_cluster,dtype="int64")
             alpha_optim_cluster = cp.zeros(nb_signals_cluster)
+            if return_cost:
+                J_optim_cluster = cp.zeros(nb_signals_cluster)
+                phase_optim_cluster = cp.zeros(nb_signals_cluster)
 
             for j in range(num_group):
                 j_signal = j * split
@@ -751,11 +757,37 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
                 idx_max_all_unique_cluster[j_signal:j_signal_next]=idx_max_all_current_sig
                 alpha_optim_cluster[j_signal:j_signal_next]=current_alpha_all_unique_optim
 
+                if return_cost:
+                    J_optim_cluster[j_signal:j_signal_next] = J_all[idx_max_all_current_sig, cp.arange(J_all.shape[1])] / cp.linalg.norm(all_signals_cluster[:, j_signal:j_signal_next],axis=0)
+                    d = (1 - current_alpha_all_unique_optim) * current_sig_ws_for_phase[idx_max_all_current_sig, cp.arange(J_all.shape[1])] + current_alpha_all_unique_optim * \
+                        current_sig_fs_for_phase[idx_max_all_current_sig, cp.arange(J_all.shape[1])]
+                    phase_adj = -cp.arctan(d.imag / d.real)
+                    cond = cp.sin(phase_adj) * d.imag - cp.cos(phase_adj) * d.real
+                    del d
+                    phase_adj = (phase_adj) * (
+                            1 * (cond) <= 0) + (phase_adj + np.pi) * (
+                                        1 * (cond) > 0)
+                    phase_optim_cluster[j_signal:j_signal_next]=phase_adj
+
+
+
             idx_max_all_unique_low_ff[indices.flatten()] = (retained_signals[idx_max_all_unique_cluster])
             alpha_optim_low_ff[indices.flatten()] = (alpha_optim_cluster)
+            if return_cost:
+                J_optim[indices.flatten()]=J_optim_cluster
+                phase_optim[indices.flatten()] = phase_optim_cluster
+
+
 
         idx_max_all_unique_low_ff=idx_max_all_unique_low_ff.get()
         alpha_optim_low_ff = alpha_optim_low_ff.get()
+        if return_cost:
+            J_optim=J_optim.get()
+            phase_optim=phase_optim.get()
+
+
+    if return_cost:
+        return idx_max_all_unique_low_ff,alpha_optim_low_ff,J_optim,phase_optim
 
     return idx_max_all_unique_low_ff,alpha_optim_low_ff
 
@@ -5879,6 +5911,522 @@ class SimpleDictSearch(Optimizer):
         else:
             return dict(zip(keys_results, values_results))
 
+    def search_patterns_test_multi_2_steps_dico_mvt(self, dictfile, volumes, retained_timesteps=None):
+
+        if self.mask is None:
+            mask = build_mask(volumes)
+        else:
+            mask = self.mask
+
+        verbose = self.verbose
+        niter = self.paramDict["niter"]
+        split = self.paramDict["split"]
+        pca = self.paramDict["pca"]
+        threshold_pca = self.paramDict["threshold_pca"]
+        threshold_ff=self.paramDict["threshold_ff"]
+        dictfile_light=self.paramDict["dictfile_light"]
+        ntimesteps = self.paramDict["ntimesteps"]
+
+
+        if "return_cost" not in self.paramDict:
+            self.paramDict["return_cost"]=False
+        return_cost = self.paramDict["return_cost"]
+
+        if "calculate_matched_signals" not in self.paramDict:
+            self.paramDict["calculate_matched_signals"]=False
+        calculate_matched_signals = self.paramDict["calculate_matched_signals"]
+
+        if "return_matched_signals" not in self.paramDict:
+            self.paramDict["return_matched_signals"]=False
+        return_matched_signals = self.paramDict["return_matched_signals"]
+
+        if niter>0 or return_matched_signals:
+            calculate_matched_signals=True
+
+        if calculate_matched_signals:
+            return_cost=True
+
+        # useAdjPred=self.paramDict["useAdjPred"]
+        if niter > 0:
+            #            seq = self.paramDict["sequence"]
+            trajectory = self.paramDict["trajectory"]
+            gen_mode = self.paramDict["gen_mode"]
+            if "mu" not in self.paramDict:
+                self.paramDict["mu"] = "Adaptative"
+
+            if "dens_adj" in self.paramDict:
+                dens_adj = self.paramDict["dens_adj"]
+            else:
+                dens_adj = True
+            weights = self.paramDict["weights"]
+
+            num_samples = trajectory.get_traj().reshape(ntimesteps, -1, 3).shape[1]
+
+        log = self.paramDict["log"]
+        useGPU_dictsearch = self.paramDict["useGPU_dictsearch"]
+        useGPU_simulation = self.paramDict["useGPU_simulation"]
+
+        movement_correction = self.paramDict["movement_correction"]
+        cond_mvt = self.paramDict["cond"]
+        if pca:
+            pca_file = str.split(dictfile, ".dict")[0] + "_{}pca.pkl".format(threshold_pca)
+            pca_file_name = str.split(pca_file, "/")[-1]
+
+        vars_file = str.split(dictfile, ".dict")[0] + "_vars.pkl".format(threshold_pca)
+        vars_file_name=str.split(vars_file,"/")[-1]
+        path=str.split(os.path.realpath(__file__),"/dictoptimizers.py")[0]
+
+        if movement_correction:
+            if cond_mvt is None:
+                raise ValueError("indices of retained kdata should be given in cond for movement correction")
+
+        if volumes.ndim > 2:
+            all_signals = volumes[:, mask > 0]
+        else:  # already masked
+            all_signals = volumes
+
+        all_signals=all_signals.astype("complex64")
+        nb_signals=all_signals.shape[1]
+
+        if log:
+            now = datetime.now()
+            date_time = now.strftime("%Y%m%d_%H%M%S")
+            with open('./log/signals0_{}.npy'.format(date_time), 'wb') as f:
+                np.save(f, all_signals)
+
+        if "kdata_init" in self.paramDict:
+            kdata_init = self.paramDict["kdata_init"]
+            nb_channels = kdata_init.shape[0]
+            kdata_init = kdata_init.reshape(nb_channels, ntimesteps, -1)
+
+            def J(m, kdata_init, dens_adj, trajectory):
+                kdata = generate_kdata_multi(m, trajectory, self.paramDict["b1"],
+                                             ntimesteps=self.paramDict["ntimesteps"])
+                kdata_error = kdata - kdata_init
+                if dens_adj:
+                    density = np.abs(np.linspace(-1, 1, trajectory.paramDict["npoint"]))
+                    kdata_error = kdata_error.reshape(-1, trajectory.paramDict["npoint"])
+                    density = np.expand_dims(density, axis=0)
+                    kdata_error *= np.sqrt(density)
+
+                return np.linalg.norm(kdata_error) ** 2
+
+        if niter > 0:
+            if "b1" not in self.paramDict:
+                raise ValueError("b1 should be furnished for multi iteration multi channel MRF reconstruction")
+
+            if self.paramDict["mu"] == "Adaptative":
+
+                kdata_all_signals = generate_kdata_multi(volumes, trajectory, self.paramDict["b1"],
+                                                         ntimesteps=ntimesteps)
+                mu_numerator = 0
+                mu_denom = 0
+
+                for ts in tqdm(range(kdata_all_signals.shape[1])):
+                    curr_grad = all_signals[ts]
+                    curr_volumes_grad = kdata_all_signals[:, ts].flatten()
+                    if dens_adj:
+                        density = np.abs(np.linspace(-1, 1, trajectory.paramDict["npoint"]))
+                    else:
+                        density = 1
+                    curr_volumes_grad_adjusted = (density * curr_volumes_grad.reshape(-1,
+                                                                 trajectory.paramDict["npoint"])).flatten()
+                    curr_volumes_grad_adjusted = curr_volumes_grad_adjusted.reshape(
+                        (nb_channels,) + weights.shape[1:] + (-1,))
+                    curr_weights = np.expand_dims(weights[ts], axis=(0, -1))
+                    curr_volumes_grad_adjusted *= curr_weights
+                    curr_volumes_grad_adjusted = curr_volumes_grad_adjusted.flatten()
+                    mu_denom += np.real(
+                        np.dot(
+                            curr_volumes_grad_adjusted.conj(),
+                            curr_volumes_grad))
+                    mu_numerator += np.real(np.dot(curr_grad.conj(), curr_grad))
+
+                del kdata_all_signals
+
+                mu0 = num_samples * mu_numerator / mu_denom
+
+            elif self.paramDict["mu"] == "Brute":
+                mu_list = np.linspace(-1.6, -0, 8)
+                J_list = [J(- mu_ * volumes, kdata_init, True, trajectory) for mu_ in mu_list]
+                J_list = np.array(J_list)
+                mu0 = -mu_list[np.argmin(J_list)]
+
+            else:
+                mu0 = self.paramDict["mu"]
+
+            all_signals *= mu0
+            print("Mu0 : {}".format(mu0))
+            signals0 = copy(all_signals)/mu0
+
+            if "mu_TV" in self.paramDict:
+                mu_TV = self.paramDict["mu_TV"]
+
+                if "weights_TV" not in self.paramDict:
+                    self.paramDict["weights_TV"]=[1.,0.,0.]
+                weights_TV=np.array(self.paramDict["weights_TV"])
+                weights_TV/=np.sum(weights_TV)
+
+        del volumes
+
+        # norm_volumes = np.linalg.norm(volumes, 2, axis=0)
+
+        # norm_signals = np.linalg.norm(signals, 2, axis=0)
+        # Normalize
+        # all_signals = signals / norm_signals
+        #all_signals = signals
+        if type(dictfile) == str:
+            mrfdict = dictsearch.Dictionary()
+            mrfdict.load(dictfile, force=True)
+
+            keys = mrfdict.keys
+            array_water = mrfdict.values[:, :, 0]
+            array_fat = mrfdict.values[:, :, 1]
+            keys=np.array(keys)
+
+            del mrfdict
+        else:  # otherwise dictfile contains (s_w,s_f,keys)
+            array_water = dictfile[0]
+            array_fat = dictfile[1]
+            keys = dictfile[2]
+
+        if retained_timesteps is not None:
+            array_water = array_water[:, retained_timesteps]
+            array_fat = array_fat[:, retained_timesteps]
+
+        print(path)
+        if (vars_file_name not in os.listdir(path)) or ((pca) and (pca_file_name not in os.listdir(path))) or (calculate_matched_signals):
+
+            print("Calculating unique dico signals")
+            array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
+            array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
+
+        nb_water_timesteps = array_water.shape[1]
+        nb_fat_timesteps = array_fat.shape[1]
+
+        if vars_file_name not in os.listdir(path):
+
+            var_w_total = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
+            var_f_total = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
+            sig_wf_total = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(),
+                                  axis=1).real
+            var_w_total = var_w_total[index_water_unique]
+            var_f_total = var_f_total[index_fat_unique]
+            var_w_total = np.reshape(var_w_total, (-1, 1))
+            var_f_total = np.reshape(var_f_total, (-1, 1))
+            sig_wf_total = np.reshape(sig_wf_total, (-1, 1))
+            with open(vars_file,"wb") as file:
+                pickle.dump((var_w_total,var_f_total,sig_wf_total,index_water_unique,index_fat_unique),file)
+
+        else:
+            print("Loading var w / var f / sig wf")
+            with open(vars_file, "rb") as file:
+                (var_w_total,var_f_total,sig_wf_total,index_water_unique,index_fat_unique)=pickle.load(file)
+
+        #del array_water
+        #del array_fat
+
+        if pca:
+            if pca_file_name not in os.listdir(path):
+                pca_water = PCAComplex(n_components_=threshold_pca)
+                pca_fat = PCAComplex(n_components_=threshold_pca)
+
+                pca_water.fit(array_water_unique)
+                pca_fat.fit(array_fat_unique)
+
+                print(
+                    "Water Components Retained {} out of {} timesteps".format(pca_water.n_components_,
+                                                                              nb_water_timesteps))
+                print("Fat Components Retained {} out of {} timesteps".format(pca_fat.n_components_, nb_fat_timesteps))
+
+                transformed_array_water_unique = pca_water.transform(array_water_unique)
+                transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
+                with open(pca_file,"wb") as file:
+                    pickle.dump((pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique),file)
+                if not calculate_matched_signals:
+                    del array_water_unique
+                    del array_fat_unique
+            else:
+                print("Loading pca")
+                with open(pca_file, "rb") as file:
+                    (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique)=pickle.load(file)
+
+        else:
+            pca_water = None
+            pca_fat = None
+            transformed_array_water_unique = None
+            transformed_array_fat_unique = None
+
+
+
+        if useGPU_dictsearch:
+            var_w_total = cp.asarray(var_w_total)
+            var_f_total = cp.asarray(var_f_total)
+            sig_wf_total = cp.asarray(sig_wf_total)
+            keys=cp.asarray(keys)
+
+        values_results = []
+        keys_results = list(range(niter + 1))
+
+        for i in range(niter + 1):
+
+            print("################# ITERATION : Number {} out of {} ####################".format(i, niter))
+            print("Calculating optimal fat fraction and best pattern per signal for iteration {}".format(i))
+
+            #Trick to avoid returning matched signals in the coarse dictionary matching step
+            return_matched_signals_backup=self.paramDict["return_matched_signals"]
+            self.paramDict["return_matched_signals"]=False
+
+            niter_backup=self.paramDict["niter"]
+            self.paramDict["niter"]=0
+
+            all_maps_bc_cf_light = self.search_patterns_test_multi(dictfile_light,all_signals)
+
+            self.paramDict["return_matched_signals"] = return_matched_signals_backup
+            self.paramDict["niter"]=niter_backup
+
+            ind_high_ff = np.argwhere(all_maps_bc_cf_light[0][0]["ff"] >= threshold_ff)
+            ind_low_ff = np.argwhere(all_maps_bc_cf_light[0][0]["ff"] < threshold_ff)
+            all_maps_low_ff = np.array([all_maps_bc_cf_light[0][0][k][ind_low_ff] for k in list(all_maps_bc_cf_light[0][0].keys())[:-1]]).squeeze()
+            all_maps_high_ff = np.array([all_maps_bc_cf_light[0][0][k][ind_high_ff] for k in
+                                        list(all_maps_bc_cf_light[0][0].keys())[:-1]]).squeeze()
+            unique_keys, labels = np.unique(all_maps_low_ff, axis=-1, return_inverse=True)
+            #nb_clusters = unique_keys.shape[-1]
+            unique_keys_high_ff, labels_high_ff = np.unique(all_maps_high_ff, axis=-1, return_inverse=True)
+
+            nb_signals_low_ff = len(ind_low_ff)
+            nb_signals_high_ff = len(ind_high_ff)
+
+            idx_max_all_unique = np.zeros(nb_signals)
+            alpha_optim = np.zeros(nb_signals)
+            if return_cost:
+                J_optim = np.zeros(nb_signals)
+                phase_optim = np.zeros(nb_signals)
+
+            if useGPU_dictsearch:
+                unique_keys=cp.asarray(unique_keys)
+                labels = cp.asarray(labels)
+                unique_keys_high_ff = cp.asarray(unique_keys_high_ff)
+                labels_high_ff = cp.asarray(labels_high_ff)
+
+            all_signals_low_ff = all_signals[:, ind_low_ff.flatten()]
+            all_signals_high_ff = all_signals[:, ind_high_ff.flatten()]
+
+            d_T1 = 400
+            d_fT1 = 100
+            d_B1 = 0.2
+            d_DF = 0.015
+
+            if return_cost:
+                idx_max_all_unique_low_ff, alpha_optim_low_ff,J_optim_low_ff,phase_optim_low_ff = match_signals_v2_clustered_on_dico(all_signals_low_ff,
+                                                                                                   keys, pca_water,
+                                                                                                   pca_fat,
+                                                                                                   transformed_array_water_unique,
+                                                                                                   transformed_array_fat_unique,
+                                                                                                   var_w_total,
+                                                                                                   var_f_total,
+                                                                                                   sig_wf_total,
+                                                                                                   index_water_unique,
+                                                                                                   index_fat_unique,
+                                                                                                   useGPU_dictsearch,
+                                                                                                   unique_keys, d_T1,
+                                                                                                   d_fT1,
+                                                                                                   d_B1, d_DF, labels,
+                                                                                                   split, False,return_cost=True)
+
+            else:
+                idx_max_all_unique_low_ff,alpha_optim_low_ff=match_signals_v2_clustered_on_dico(all_signals_low_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
+                                        transformed_array_fat_unique, var_w_total, var_f_total, sig_wf_total,
+                                        index_water_unique, index_fat_unique, useGPU_dictsearch, unique_keys, d_T1, d_fT1,
+                                        d_B1, d_DF, labels,split,False)
+
+            d_T1 = 400
+            d_fT1 = 100
+            d_B1 = 0.2
+            d_DF = 0.015
+
+
+            if return_cost:
+                idx_max_all_unique_high_ff, alpha_optim_high_ff,J_optim_high_ff,phase_optim_high_ff = match_signals_v2_clustered_on_dico(
+                    all_signals_high_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
+                    transformed_array_fat_unique, var_w_total, var_f_total, sig_wf_total,
+                    index_water_unique, index_fat_unique, useGPU_dictsearch, unique_keys_high_ff, d_T1, d_fT1,
+                    d_B1, d_DF, labels_high_ff, split, True,return_cost=True)
+            else:
+                idx_max_all_unique_high_ff,alpha_optim_high_ff=match_signals_v2_clustered_on_dico(all_signals_high_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
+                                    transformed_array_fat_unique, var_w_total, var_f_total, sig_wf_total,
+                                    index_water_unique, index_fat_unique, useGPU_dictsearch, unique_keys_high_ff, d_T1, d_fT1,
+                                    d_B1, d_DF, labels_high_ff,split,True)
+
+
+
+            idx_max_all_unique[ind_low_ff.flatten()] = idx_max_all_unique_low_ff
+            idx_max_all_unique[ind_high_ff.flatten()] = idx_max_all_unique_high_ff
+
+            alpha_optim[ind_low_ff.flatten()] = alpha_optim_low_ff
+            alpha_optim[ind_high_ff.flatten()] = alpha_optim_high_ff
+
+            if return_cost:
+                J_optim[ind_low_ff.flatten()] = J_optim_low_ff
+                J_optim[ind_high_ff.flatten()] = J_optim_high_ff
+
+                phase_optim[ind_low_ff.flatten()] = phase_optim_low_ff
+                phase_optim[ind_high_ff.flatten()] = phase_optim_high_ff
+
+            if calculate_matched_signals:
+                matched_signals=array_water_unique[index_water_unique, :][idx_max_all_unique.astype(int), :].T * (1 - np.array(alpha_optim)).reshape(1, -1) + array_fat_unique[index_fat_unique, :][idx_max_all_unique.astype(int), :].T * np.array(alpha_optim).reshape(1, -1)
+                matched_signals *=np.linalg.norm(all_signals,axis=0)/np.linalg.norm(matched_signals, axis=0)
+                matched_signals *= J_optim * np.exp(1j * phase_optim)
+
+
+            if useGPU_dictsearch:
+                keys=keys.get()
+
+            keys_for_map = [tuple(k) for k in keys]
+
+            params_all_unique = np.array(
+                [keys_for_map[idx] + (alpha_optim[l],) for l, idx in enumerate(idx_max_all_unique.astype(int))])
+            map_rebuilt = {
+                "wT1": params_all_unique[:, 0],
+                "fT1": params_all_unique[:, 1],
+                "attB1": params_all_unique[:, 2],
+                "df": params_all_unique[:, 3],
+                "ff": params_all_unique[:, 4]
+
+            }
+            if return_cost:
+                if return_matched_signals:
+                    values_results.append((map_rebuilt, mask,J_optim,phase_optim,matched_signals))
+                else:
+                    values_results.append((map_rebuilt, mask,J_optim,phase_optim))
+            else:
+                values_results.append((map_rebuilt, mask))
+
+            # import matplotlib.pyplot as plt;j=np.random.choice(all_signals.shape[1]);plt.plot(all_signals[:,j]);plt.plot(matched_signals[:,j]);
+            print("Maps build for iteration {}".format(i))
+
+            if i == niter:
+                break
+
+            if useGPU_dictsearch:  # Forcing to free the memory
+                mempool = cp.get_default_memory_pool()
+                print("Cupy memory usage {}:".format(mempool.used_bytes()))
+                mempool.free_all_blocks()
+                print("Cupy memory usage {}:".format(mempool.used_bytes()))
+                keys = cp.asarray(keys)
+
+
+
+            print("Generating prediction volumes and undersampled images for iteration {}".format(i))
+
+            matched_signals=matched_signals.astype("complex64")
+            matched_volumes = np.array([makevol(im, mask > 0) for im in matched_signals])
+
+            volumesi = undersampling_operator_new(matched_volumes, trajectory, self.paramDict["b1"],
+                                              density_adj=dens_adj,ntimesteps=ntimesteps,retained_timesteps=retained_timesteps,weights=weights)
+
+            # del images_pred
+
+            # volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
+
+            # correct volumes
+            print("Correcting volumes for iteration {}".format(i))
+
+            signalsi = volumesi[:, mask > 0]
+            # normi= np.linalg.norm(signalsi, axis=0)
+            # signalsi *= norm_signals/normi
+
+            if log:
+                print("Saving signalsi for iteration {}".format(i))
+                with open('./log/signalsi_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+                    np.save(f, np.array(signalsi))
+
+            del volumesi
+
+            grad = signalsi - signals0
+            del signalsi
+
+            if self.paramDict["mu"] == "Adaptative":
+
+                grad_volumes = np.array([makevol(im, mask > 0) for im in grad])
+                kdata_grad = generate_kdata_multi_new(grad_volumes, trajectory, self.paramDict["b1"],
+                                                  ntimesteps=ntimesteps,retained_timesteps=retained_timesteps)
+
+                del grad_volumes
+                mu_numerator = 0
+                mu_denom = 0
+
+                for ts in tqdm(range(kdata_grad.shape[1])):
+                    curr_grad = grad[ts]
+                    curr_kdata_grad = kdata_grad[:, ts].flatten()
+                    if dens_adj:
+                        density = np.abs(np.linspace(-1, 1, trajectory.paramDict["npoint"]))
+                    else:
+                        density = 1
+
+                    curr_kdata_grad_adjusted=(density * curr_kdata_grad.reshape(-1,trajectory.paramDict["npoint"])).flatten()
+                    curr_kdata_grad_adjusted = curr_kdata_grad_adjusted.reshape((nb_channels,)+weights.shape[1:] + (-1,))
+                    curr_weights = np.expand_dims(weights[ts], axis=(0,-1))
+                    curr_kdata_grad_adjusted *= curr_weights
+                    curr_kdata_grad_adjusted=curr_kdata_grad_adjusted.flatten()
+
+                    mu_denom += np.real(np.dot(curr_kdata_grad_adjusted.conj(),curr_kdata_grad))
+                    mu_numerator += np.real(np.dot(curr_grad.conj(), curr_grad))
+                del kdata_grad
+                mu = -num_samples * mu_numerator / mu_denom
+                # mu/=2
+            elif self.paramDict["mu"] == "Brute":
+                grad_volumes = np.array([makevol(im, mask > 0) for im in grad])
+                mu_list = np.linspace(-1.6, -0, 8)
+                J_list = [J(matched_volumes + mu_ * grad_volumes, kdata_init, True, trajectory) for mu_ in mu_list]
+                J_list = np.array(J_list)
+                mu = mu_list[np.argmin(J_list)]
+            else:
+                mu = -self.paramDict["mu"]
+            print("Mu for iter {} : {}".format(i, mu))
+
+            all_signals = matched_signals + mu * grad
+
+            if "mu_TV" not in self.paramDict:
+                del grad
+
+
+            if "mu_TV" in self.paramDict:
+                print("Applying TV regularization")
+                grad_norm = np.linalg.norm(grad, axis=0)
+                del grad
+
+                grad_TV=np.zeros(matched_signals.shape,dtype=matched_signals.dtype)
+                for ts in tqdm(range(ntimesteps)):
+                    matched_volumes_ts =makevol(matched_signals[ts], mask > 0)
+                    for ind_w, w in (enumerate(weights_TV)):
+                        if w > 0:
+                            grad_TV[ts] += (w * grad_J_TV(matched_volumes_ts, ind_w, mask=mask,shift=0))[mask>0]
+
+
+                grad_TV_norm = np.linalg.norm(grad_TV, axis=0)
+                # signals = matched_signals + mu * grad
+
+                all_signals += mu * mu_TV * grad_norm / grad_TV_norm * grad_TV
+                del grad_TV
+                del grad_TV_norm
+
+            del matched_signals
+
+
+            # norm_signals = np.linalg.norm(signals, axis=0)
+            # all_signals_unthresholded = signals / norm_signals
+
+
+
+        if log:
+            print(date_time)
+
+        if self.paramDict["return_matched_signals"]:
+
+            return dict(zip(keys_results, values_results)), matched_signals
+        else:
+            return dict(zip(keys_results, values_results))
 
     def search_patterns_test_multi_grouping(self, dictfile, volumes, retained_timesteps=None):
 
@@ -6298,6 +6846,26 @@ class SimpleDictSearch(Optimizer):
         threshold_ff=self.paramDict["threshold_ff"]
         dictfile_light=self.paramDict["dictfile_light"]
         ntimesteps = self.paramDict["ntimesteps"]
+
+
+        if "return_cost" not in self.paramDict:
+            self.paramDict["return_cost"]=False
+        return_cost = self.paramDict["return_cost"]
+
+        if "calculate_matched_signals" not in self.paramDict:
+            self.paramDict["calculate_matched_signals"]=False
+        calculate_matched_signals = self.paramDict["calculate_matched_signals"]
+
+        if "return_matched_signals" not in self.paramDict:
+            self.paramDict["return_matched_signals"]=False
+        return_matched_signals = self.paramDict["return_matched_signals"]
+
+        if niter>0 or return_matched_signals:
+            calculate_matched_signals=True
+
+        if calculate_matched_signals:
+            return_cost=True
+
         # useAdjPred=self.paramDict["useAdjPred"]
         if niter > 0:
             #            seq = self.paramDict["sequence"]
@@ -6311,7 +6879,8 @@ class SimpleDictSearch(Optimizer):
             else:
                 dens_adj = True
 
-            num_samples = trajectory.get_traj().reshape(ntimesteps, -1, 3).shape[1]
+            dim=trajectory.get_traj().shape[-1]
+            num_samples = trajectory.get_traj().reshape(ntimesteps, -1, dim).shape[1]
 
         log = self.paramDict["log"]
         useGPU_dictsearch = self.paramDict["useGPU_dictsearch"]
@@ -6440,7 +7009,7 @@ class SimpleDictSearch(Optimizer):
             array_fat = array_fat[:, retained_timesteps]
 
         print(path)
-        if (vars_file_name not in os.listdir(path)) or ((pca) and (pca_file_name not in os.listdir(path))):
+        if (vars_file_name not in os.listdir(path)) or ((pca) and (pca_file_name not in os.listdir(path))) or (calculate_matched_signals):
 
             print("Calculating unique dico signals")
             array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
@@ -6488,8 +7057,9 @@ class SimpleDictSearch(Optimizer):
                 transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
                 with open(pca_file,"wb") as file:
                     pickle.dump((pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique),file)
-                del array_water_unique
-                del array_fat_unique
+                if not calculate_matched_signals:
+                    del array_water_unique
+                    del array_fat_unique
             else:
                 print("Loading pca")
                 with open(pca_file, "rb") as file:
@@ -6517,7 +7087,17 @@ class SimpleDictSearch(Optimizer):
             print("################# ITERATION : Number {} out of {} ####################".format(i, niter))
             print("Calculating optimal fat fraction and best pattern per signal for iteration {}".format(i))
 
+            #Trick to avoid returning matched signals in the coarse dictionary matching step
+            return_matched_signals_backup=self.paramDict["return_matched_signals"]
+            self.paramDict["return_matched_signals"]=False
+
+            niter_backup=self.paramDict["niter"]
+            self.paramDict["niter"]=0
+
             all_maps_bc_cf_light = self.search_patterns_test_multi(dictfile_light,all_signals)
+
+            self.paramDict["return_matched_signals"] = return_matched_signals_backup
+            self.paramDict["niter"]=niter_backup
 
             ind_high_ff = np.argwhere(all_maps_bc_cf_light[0][0]["ff"] >= threshold_ff)
             ind_low_ff = np.argwhere(all_maps_bc_cf_light[0][0]["ff"] < threshold_ff)
@@ -6533,6 +7113,9 @@ class SimpleDictSearch(Optimizer):
 
             idx_max_all_unique = np.zeros(nb_signals)
             alpha_optim = np.zeros(nb_signals)
+            if return_cost:
+                J_optim = np.zeros(nb_signals)
+                phase_optim = np.zeros(nb_signals)
 
             if useGPU_dictsearch:
                 unique_keys=cp.asarray(unique_keys)
@@ -6548,20 +7131,46 @@ class SimpleDictSearch(Optimizer):
             d_B1 = 0.2
             d_DF = 0.015
 
-            idx_max_all_unique_low_ff,alpha_optim_low_ff=match_signals_v2_clustered_on_dico(all_signals_low_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
-                                    transformed_array_fat_unique, var_w_total, var_f_total, sig_wf_total,
-                                    index_water_unique, index_fat_unique, useGPU_dictsearch, unique_keys, d_T1, d_fT1,
-                                    d_B1, d_DF, labels,split,False)
+            if return_cost:
+                idx_max_all_unique_low_ff, alpha_optim_low_ff,J_optim_low_ff,phase_optim_low_ff = match_signals_v2_clustered_on_dico(all_signals_low_ff,
+                                                                                                   keys, pca_water,
+                                                                                                   pca_fat,
+                                                                                                   transformed_array_water_unique,
+                                                                                                   transformed_array_fat_unique,
+                                                                                                   var_w_total,
+                                                                                                   var_f_total,
+                                                                                                   sig_wf_total,
+                                                                                                   index_water_unique,
+                                                                                                   index_fat_unique,
+                                                                                                   useGPU_dictsearch,
+                                                                                                   unique_keys, d_T1,
+                                                                                                   d_fT1,
+                                                                                                   d_B1, d_DF, labels,
+                                                                                                   split, False,return_cost=True)
+
+            else:
+                idx_max_all_unique_low_ff,alpha_optim_low_ff=match_signals_v2_clustered_on_dico(all_signals_low_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
+                                        transformed_array_fat_unique, var_w_total, var_f_total, sig_wf_total,
+                                        index_water_unique, index_fat_unique, useGPU_dictsearch, unique_keys, d_T1, d_fT1,
+                                        d_B1, d_DF, labels,split,False)
 
             d_T1 = 400
             d_fT1 = 100
             d_B1 = 0.2
             d_DF = 0.015
 
-            idx_max_all_unique_high_ff,alpha_optim_high_ff=match_signals_v2_clustered_on_dico(all_signals_high_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
+
+            if return_cost:
+                idx_max_all_unique_high_ff, alpha_optim_high_ff,J_optim_high_ff,phase_optim_high_ff = match_signals_v2_clustered_on_dico(
+                    all_signals_high_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
+                    transformed_array_fat_unique, var_w_total, var_f_total, sig_wf_total,
+                    index_water_unique, index_fat_unique, useGPU_dictsearch, unique_keys_high_ff, d_T1, d_fT1,
+                    d_B1, d_DF, labels_high_ff, split, True,return_cost=True)
+            else:
+                idx_max_all_unique_high_ff,alpha_optim_high_ff=match_signals_v2_clustered_on_dico(all_signals_high_ff, keys, pca_water, pca_fat, transformed_array_water_unique,
                                     transformed_array_fat_unique, var_w_total, var_f_total, sig_wf_total,
                                     index_water_unique, index_fat_unique, useGPU_dictsearch, unique_keys_high_ff, d_T1, d_fT1,
-                                    d_B1, d_DF, labels_high_ff,split,False)
+                                    d_B1, d_DF, labels_high_ff,split,True)
 
 
 
@@ -6571,6 +7180,17 @@ class SimpleDictSearch(Optimizer):
             alpha_optim[ind_low_ff.flatten()] = alpha_optim_low_ff
             alpha_optim[ind_high_ff.flatten()] = alpha_optim_high_ff
 
+            if return_cost:
+                J_optim[ind_low_ff.flatten()] = J_optim_low_ff
+                J_optim[ind_high_ff.flatten()] = J_optim_high_ff
+
+                phase_optim[ind_low_ff.flatten()] = phase_optim_low_ff
+                phase_optim[ind_high_ff.flatten()] = phase_optim_high_ff
+
+            if calculate_matched_signals:
+                matched_signals=array_water_unique[index_water_unique, :][idx_max_all_unique.astype(int), :].T * (1 - np.array(alpha_optim)).reshape(1, -1) + array_fat_unique[index_fat_unique, :][idx_max_all_unique.astype(int), :].T * np.array(alpha_optim).reshape(1, -1)
+                matched_signals *=np.linalg.norm(all_signals,axis=0)/np.linalg.norm(matched_signals, axis=0)
+                matched_signals *= J_optim * np.exp(1j * phase_optim)
 
 
             if useGPU_dictsearch:
@@ -6588,8 +7208,13 @@ class SimpleDictSearch(Optimizer):
                 "ff": params_all_unique[:, 4]
 
             }
-
-            values_results.append((map_rebuilt, mask))
+            if return_cost:
+                if return_matched_signals:
+                    values_results.append((map_rebuilt, mask,J_optim,phase_optim,matched_signals))
+                else:
+                    values_results.append((map_rebuilt, mask,J_optim,phase_optim))
+            else:
+                values_results.append((map_rebuilt, mask))
 
             # import matplotlib.pyplot as plt;j=np.random.choice(all_signals.shape[1]);plt.plot(all_signals[:,j]);plt.plot(matched_signals[:,j]);
             print("Maps build for iteration {}".format(i))
@@ -6602,6 +7227,7 @@ class SimpleDictSearch(Optimizer):
                 print("Cupy memory usage {}:".format(mempool.used_bytes()))
                 mempool.free_all_blocks()
                 print("Cupy memory usage {}:".format(mempool.used_bytes()))
+                keys=cp.asarray(keys)
 
 
 
