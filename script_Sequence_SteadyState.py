@@ -34,8 +34,8 @@ dictfile = "mrf175_SimReco2_light.dict"
 with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_optim_FF.json") as f:
     sequence_config = json.load(f)
 
-#with open("./mrf_sequence_adjusted.json") as f:
-#    sequence_config = json.load(f)
+with open("./mrf_sequence_adjusted.json") as f:
+    sequence_config = json.load(f)
 
 with open("./mrf_dictconf_SimReco2_light.json") as f:
     dict_config = json.load(f)
@@ -420,7 +420,7 @@ mrfdict.save(dictfile, overwrite=overwrite)
 import numpy as np
 import pandas as pd
 import json
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json") as f:
+with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_1_87.json") as f:
     sequence_config = json.load(f)
 
 TE=sequence_config["TE"]

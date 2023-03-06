@@ -41,7 +41,7 @@ with open("mrf_sequence.json") as f:
 seq = T1MRF(**sequence_config)
 
 
-nb_phantom = 5
+nb_phantom = 20
 
 ntimesteps=175
 nb_channels=1

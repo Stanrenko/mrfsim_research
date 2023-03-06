@@ -3635,12 +3635,19 @@ def plot_image_grid(list_images,nb_row_col,figsize=(10,10),title="",cmap=None,sa
     else:
         plt.show()
 
-def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256),hanning_filter=False):
+def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256),hanning_filter=False,density_adj=False):
     traj_all = trajectory.get_traj()
     traj_all=traj_all.reshape(-1,traj_all.shape[-1])
     npoint = kdata.shape[-1]
     center_res = int(npoint / 2 - 1)
 
+    nb_channels=kdata.shape[1]
+
+    if density_adj:
+        density = np.abs(np.linspace(-1, 1, npoint))
+        # density=np.expand_dims(axis=0)
+        density = np.expand_dims(density, tuple(range(kdata.ndim - 1)))
+        kdata*=density
 
     kdata_for_sensi = np.zeros(kdata.shape, dtype=np.complex128)
 
@@ -3696,9 +3703,8 @@ def calculate_sensitivity_map_3D(kdata,trajectory,res=16,image_size=(1,256,256),
 
     if density_adj:
         density = np.abs(np.linspace(-1, 1, npoint))
-        # density=np.expand_dims(axis=0)
-        for j in tqdm(range(nb_channels)):
-            kdata[j] = np.array([(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata[j]]).reshape(kdata.shape[1:])
+        density = np.expand_dims(density, tuple(range(kdata.ndim - 1)))
+        kdata*=density
 
     if not(light_memory_usage):
         kdata_for_sensi = np.zeros(kdata.shape, dtype=np.complex128)

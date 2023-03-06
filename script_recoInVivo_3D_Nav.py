@@ -103,7 +103,7 @@ localfile="/phantom.001.v1/phantom.001.v1.dat"
 #localfile="/phantom.006.v2/"
 localfile="/20210113/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read.dat"
 
-
+localfile="/patient.002.v5/meas_MID00021_FID34064_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 filename = base_folder+localfile
 
 #filename="./data/InVivo/3D/20211221_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
@@ -360,10 +360,10 @@ nb_allspokes = data_shape[-3]
 npoint = data_shape[-1]
 nb_slices = data_shape[-2]
 
-nb_channels=data_for_nav.shape[0]
-nb_allspokes = 1400
-npoint = data_for_nav.shape[-1]
-nb_slices = data_for_nav.shape[1]
+#nb_channels=data_for_nav.shape[0]
+#nb_allspokes = 1400
+#npoint_nav = data_for_nav.shape[-1]
+#nb_slices = data_for_nav.shape[1]
 
 
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
@@ -433,7 +433,7 @@ nb_segments=radial_traj.get_traj().shape[0]
 
 if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
     res = 16
-    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage)
+    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage,hanning_filter=True)
     np.save(filename_b1,b1_all_slices)
 else:
     b1_all_slices=np.load(filename_b1)
@@ -446,7 +446,7 @@ plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl
 print("Building Volumes....")
 if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
     kdata_all_channels_all_slices=np.load(filename_kdata)
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_volumes=True)
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
     np.save(filename_volume,volumes_all)
     # sl=20
     ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
@@ -534,19 +534,19 @@ if nb_gating_spokes>0:
     b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
 
 
-    ch=0
+    ch=9
     image_nav_ch =simulate_nav_images_multi(np.expand_dims(data_for_nav[ch],axis=0),nav_traj, nav_image_size)
     #plt.imshow(np.abs(b1_nav[ch].reshape(-1, int(npoint/2))))
 
     plt.figure()
-    plt.imshow(np.abs(image_nav_ch.reshape(-1, int(npoint/2))), cmap="gray")
+    plt.imshow(np.abs(image_nav_ch.reshape(-1, int(npoint/2)))[:5*50].T, cmap="gray")
     plt.figure()
     plt.plot(np.abs(image_nav_ch.reshape(-1, int(npoint/2)))[10])
 
     print("Rebuilding Nav Images...")
     images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
     plt.figure()
-    plt.imshow(np.abs(images_nav_mean.reshape(-1, int(npoint/2))),cmap="gray")
+    plt.imshow(np.abs(images_nav_mean.reshape(-1, int(npoint/2))[:5*50].T),cmap="gray")
     np.save(str.split(filename,".dat")[0]+"_nav_images.npy",images_nav_mean)
 
     plt.figure()
@@ -554,10 +554,10 @@ if nb_gating_spokes>0:
 
 
     print("Estimating Movement...")
-    shifts = list(range(-20, 20))
-    bottom = 50
-    top = 150
-    displacements = calculate_displacement(images_nav_mean, bottom, top, shifts)
+    shifts = list(range(-15, 30))
+    bottom = 15
+    top = int(npoint/2)-30
+    displacements = calculate_displacement(image_nav_ch, bottom, top, shifts)
 
     plt.figure()
     plt.plot(displacements)

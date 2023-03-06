@@ -23,7 +23,7 @@ DEFAULT_RANDOM_OPT_CONFIG="random_seqOptim_config.json"
 DEFAULT_RANDOM_FA_OPT_CONFIG="random_FA_seqOptim_config.json"
 DEFAULT_BREAKS_COMMON_OPT_CONFIG="breaks_common_seqOptim_config.json"
 DEFAULT_RANDOM_FA_US_OPT_CONFIG="random_FA_US_seqOptim_config.json"
-
+DEFAULT_RANDOM_FA_US_OPT_CONFIG_CORREL="random_FA_correl_seqOptim_config.json"
 
 
 @machine
@@ -224,6 +224,62 @@ def optimize_sequence_random_FA_undersampling(optimizer_config):
     optimizer_config["fat_shift"] = list(fat_shift)
 
     with open("./optims/random_FA_opt_config_{}.json".format(date_time), "w") as file:
+        json.dump(optimizer_config, file)
+
+    return
+
+
+
+@machine
+@set_parameter("optimizer_config",type=Config,default=DEFAULT_RANDOM_FA_US_OPT_CONFIG_CORREL,description="Optimizer parameters")
+def optimize_sequence_random_FA_correl(optimizer_config):
+
+    now = datetime.now()
+    date_time = now.strftime("%Y%m%d_%H%M%S")
+
+    with open("./mrf_dictconf_SimReco2.json") as f:
+        dict_config = json.load(f)
+
+    fat_amp = np.array(dict_config["fat_amp"])
+    fat_shift = -np.array(dict_config["fat_cshift"])
+
+    optimizer_config["fat_amp"]=fat_amp
+    optimizer_config["fat_shift"] = fat_shift
+
+    H = optimizer_config["H"]
+    num_params_FA=2*H
+    optimizer_config["num_params_FA"]=num_params_FA
+    num_breaks_TE=optimizer_config["num_breaks_TE"]
+    bound_min_TE=optimizer_config["bound_min_TE"]
+    bound_max_TE = optimizer_config["bound_max_TE"]
+    spokes_count = optimizer_config["spokes_count"]
+
+
+
+
+    bounds=[(100,400)]*(num_breaks_TE)+[(bound_min_TE,bound_max_TE)]*(num_breaks_TE+1)+[(0,1)]*num_params_FA+[(0,4)]+[(15*np.pi/180,70*np.pi/180)]
+
+    from scipy.optimize import LinearConstraint
+    A_TEbreaks = np.zeros((1, len(bounds)))
+    A_TEbreaks[0, :num_breaks_TE] = 1
+    con1 = LinearConstraint(A_TEbreaks, lb=-np.inf, ub=spokes_count - 100)
+    constraints = (con1)
+
+    maxiter = optimizer_config["maxiter"]
+
+    log_cost = LogCost(lambda p:cost_function_simul_breaks_random_FA_correl(p,**optimizer_config),optimizer_config["dumpfile"])
+
+    res = differential_evolution(lambda p:cost_function_simul_breaks_random_FA_correl(p,**optimizer_config), bounds=bounds, callback=log_cost,maxiter=maxiter,constraints=constraints)
+
+    with open("./optims/res_simul_random_FA_US_correl_{}.pkl".format(date_time), "wb") as file:
+        pickle.dump(res, file)
+
+    np.save("./optims/log_cost_{}.npy".format(date_time),log_cost.cost_values)
+
+    optimizer_config["fat_amp"] = list(fat_amp)
+    optimizer_config["fat_shift"] = list(fat_shift)
+
+    with open("./optims/random_FA_correl_opt_config_{}.json".format(date_time), "w") as file:
         json.dump(optimizer_config, file)
 
     return
@@ -438,10 +494,6 @@ def cost_function_simul_breaks_random_FA(params,**kwargs):
     return result
 
 def cost_function_simul_breaks_common(params,**kwargs):
-
-
-
-
 
     sigma = kwargs["sigma"]
     noise_type = kwargs["noise_type"]
@@ -681,6 +733,72 @@ def cost_function_simul_breaks_random_FA_KneePhantom(params,**kwargs):
 
     return result
 
+def cost_function_simul_breaks_random_FA_correl(params,**kwargs):
+    #global result
+
+    DFs = kwargs["DFs"]
+    FFs = kwargs["FFs"]
+    B1s = kwargs["B1s"]
+    T1s = kwargs["T1s"]
+
+    inversion = kwargs["inversion"]
+    min_TR_delay = kwargs["min_TR_delay"]
+    bound_min_FA = kwargs["bound_min_FA"]
+    num_breaks_TE = kwargs["num_breaks_TE"]
+    spokes_count = kwargs["spokes_count"]
+
+    lambda_FA = kwargs["lambda_FA"]
+    lambda_time = kwargs["lambda_time"]
+
+    num_params_FA = kwargs["num_params_FA"]
+
+    fat_amp = kwargs["fat_amp"]
+    fat_shift = kwargs["fat_shift"]
+
+    useGPU=kwargs["useGPU"]
+
+
+    #start_time=datetime.now()
+    group_size = 8
+    #ntimesteps=int(spokes_count/group_size)
+
+    bound_max_FA=params[-1]
+    params_for_curve=params[:-1]
+    TR_, FA_, TE_ = convert_params_to_sequence_breaks_random_FA(params_for_curve, min_TR_delay,spokes_count,num_breaks_TE,num_params_FA,bound_min_FA,bound_max_FA,inversion)
+
+
+    signals= simulate_gen_eq_signal(TR_, FA_, TE_, FFs, DFs, T1s, 300 / 1000,B1s, T_2w=40 / 1000, T_2f=80 / 1000,
+                                               amp=fat_amp, shift=fat_shift, sigma=None, group_size=None,
+                                               return_fat_water=False)  # ,amp=np.array([1]),shift=np.array([-418]),sigma=None):
+
+
+    #print(all_maps)
+    #print(matched_signals.shape)
+
+    signals_for_corr = signals.reshape(signals.shape[0], -1)
+    cov_signal = np.abs(signals_for_corr.conj().T @ signals_for_corr)
+    inverse_std_signal = np.diag(np.sqrt(1 / np.diag(cov_signal)))
+    corr_signal = inverse_std_signal @ cov_signal @ inverse_std_signal
+
+    error_correl=np.linalg.norm(corr_signal-np.eye(corr_signal.shape[0]))
+    #print("Correl Cost : {}".format(error_correl))
+    # num_breaks_TE=len(TE_breaks)
+    FA_cost = np.mean((np.abs(np.diff(FA_[1:]))))
+    # print("FA Cost : {}".format(FA_cost))
+
+    time_cost = np.sum(TR_)
+    #print("Time Cost : {}".format(time_cost))
+    #test_time=time_cost-TR_[-1]
+    #print("Time Test : {}".format(test_time))
+
+    result= error_correl +lambda_FA * FA_cost + lambda_time * time_cost
+
+    #end_time=datetime.now()
+    #print(end_time-start_time)
+
+    return result
+
+
 
 class LogCost(object):
     def __init__(self,f,dumpfile):
@@ -691,6 +809,7 @@ class LogCost(object):
 
     def __call__(self,x,**kwargs):
         print("############# ITERATION {}###################".format(self.it))
+        print("Cost {}".format(self.f(x)))
         self.cost_values.append(self.f(x))
         self.it +=1
 
@@ -706,6 +825,7 @@ toolbox.add_program("optimize_sequence_random", optimize_sequence_random)
 toolbox.add_program("optimize_sequence_random_FA", optimize_sequence_random_FA)
 toolbox.add_program("optimize_sequence_breaks_common", optimize_sequence_breaks_common)
 toolbox.add_program("optimize_sequence_random_FA_undersampling", optimize_sequence_random_FA_undersampling)
+toolbox.add_program("optimize_sequence_random_FA_correl", optimize_sequence_random_FA_correl)
 
 if __name__ == "__main__":
     toolbox.cli()

@@ -1,11 +1,12 @@
+import numpy as np
 from utils_simu import *
 from dictoptimizers import SimpleDictSearch
 
 #generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted.json","mrf_dictconf_SimReco2.json",4,sim_mode="mid_point",start=0,window=int(1400/50))
 
-TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json",3.95,2.22/1000)
+TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_1_87.json",3.53,2.22/1000)
 #
-generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_2_22.json","mrf_dictconf_Dico2_Invivo_light_for_matching.json",FA_list,TE_list,3.95,2.22/1000)
+generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_2_22.json","mrf_dictconf_Dico2_Invivo.json",FA_list,TE_list,3.53,2.22/1000)
 #
 
 
@@ -14,7 +15,7 @@ from dictoptimizers import SimpleDictSearch
 
 TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted.json",4,1.68/1000)
 #
-generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_1_78.json","mrf_dictconf_Dico2_Invivo_neg_fat_shift.json",FA_list,TE_list,4,1.78/1000)
+generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_1_68.json","mrf_dictconf_SimReco2.json",FA_list,TE_list,4,1.68/1000)
 #
 
 
@@ -2049,11 +2050,11 @@ generate_epg_dico_T1MRFSS(r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_
 
 import pickle
 from utils_simu import *
-with open("./optims/res_simul_random_FA_20221031_144435.pkl","rb") as file:
+with open("./optims/res_simul_random_FA_US_correl_20230306_175735.pkl","rb") as file:
     res=pickle.load(file)
 
 
-with open("./optims/random_FA_opt_config_20221031_144435.json","rb") as file:
+with open("./optims/random_FA_correl_opt_config_20230306_175735.json","rb") as file:
     config=json.load(file)
 
 #cost_function_simul_breaks_random(res.x)
@@ -2079,7 +2080,7 @@ plt.plot(FA_[1:])
 plt.figure()
 plt.plot(TE_[1:])
 res.x
-generate_epg_dico_T1MRFSS(r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_random_FA_v2.json","./mrf_dictconf_SimReco2_lightDFB1.json",FA_,TE_,4,min_TR_delay,fileseq_basis="./mrf_sequence_adjusted.json")
+generate_epg_dico_T1MRFSS(r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_correl.json","./mrf_dictconf_SimReco2.json",FA_,TE_,3.75,min_TR_delay,fileseq_basis="./mrf_sequence_adjusted.json")
 
 
 
@@ -2115,3 +2116,85 @@ plt.figure()
 plt.plot(TE_[1:])
 res.x
 generate_epg_dico_T1MRFSS(r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v4.json","./mrf_dictconf_SimReco2_lightDFB1.json",FA_,TE_,3.8,min_TR_delay,fileseq_basis="./mrf_sequence_adjusted.json")
+
+
+
+
+
+from utils_simu import *
+from dictoptimizers import SimpleDictSearch
+
+
+with open("./mrf_sequence_adjusted.json") as f:
+    sequence_config = json.load(f)
+
+with open("./mrf_dictconf_SimReco2_light.json") as f:
+    dict_config = json.load(f)
+
+
+# generate signals
+wT1 = dict_config["water_T1"]
+fT1 = dict_config["fat_T1"]
+wT2 = dict_config["water_T2"]
+fT2 = dict_config["fat_T2"]
+att = dict_config["B1_att"]
+df = dict_config["delta_freqs"]
+df = [- value / 1000 for value in df] # temp
+# df = np.linspace(-0.1, 0.1, 101)
+
+T_reco=4
+TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted.json",T_reco,1.64/1000)
+#
+#signal=simulate_gen_eq(TR_list,FA_list,np.array([2]),np.array([[0.3]]))
+
+T1_w=1
+dTs=np.arange(-500,1000,100)*10**-3
+DFs=[-60,-40,0,30,60]
+FFs=[0.,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1]
+B1s=[0.4,0.6,0.8,1]
+T1s=T1_w+dTs
+
+with open("./mrf_dictconf_SimReco2_light.json") as f:
+    dict_config = json.load(f)
+
+fat_amp = np.array(dict_config["fat_amp"])
+fat_shift = -np.array(dict_config["fat_cshift"])
+
+signals=simulate_gen_eq_signal(TR_list, FA_list, TE_list, FFs, DFs, T1s, 300 / 1000, B1s, T_2w=40 / 1000,
+                                               T_2f=80 / 1000,
+                                               amp=fat_amp, shift=fat_shift, group_size=None,
+                                               return_fat_water=False)
+
+keys = list(product(list(T1s), list([300/1000]), list(B1s), list(DFs),list(FFs)))
+keys=np.array(keys)
+wT1=np.random.choice(T1s)
+B1=np.random.choice(B1s)
+indices=(keys[:,0]==wT1)&(keys[:,-3]==B1)
+
+
+
+signals_for_corr=signals.reshape(signals.shape[0],-1)[:,indices]
+cov_signal = np.abs(signals_for_corr.conj().T@signals_for_corr)
+inverse_std_signal = np.diag(np.sqrt(1/np.diag(cov_signal)))
+corr_signal = inverse_std_signal@cov_signal@inverse_std_signal
+
+import seaborn as sns
+plt.figure()
+sns.heatmap(corr_signal)
+
+
+ff=np.random.choice(FFs)
+df=np.random.choice(DFs)
+indices=(keys[:,-2]==df)&(keys[:,-1]==ff)
+
+
+
+signals_for_corr=signals.reshape(signals.shape[0],-1)[:,indices]
+cov_signal = np.abs(signals_for_corr.conj().T@signals_for_corr)
+inverse_std_signal = np.diag(np.sqrt(1/np.diag(cov_signal)))
+corr_signal = inverse_std_signal@cov_signal@inverse_std_signal
+
+import seaborn as sns
+plt.figure()
+plt.title("FF {} DF {}".format(ff,df))
+sns.heatmap(corr_signal)

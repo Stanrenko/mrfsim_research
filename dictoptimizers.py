@@ -758,7 +758,7 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
                 alpha_optim_cluster[j_signal:j_signal_next]=current_alpha_all_unique_optim
 
                 if return_cost:
-                    J_optim_cluster[j_signal:j_signal_next] = J_all[idx_max_all_current_sig, cp.arange(J_all.shape[1])] / cp.linalg.norm(all_signals_cluster[:, j_signal:j_signal_next],axis=0)
+                    J_optim_cluster[j_signal:j_signal_next] = cp.nan_to_num(J_all[idx_max_all_current_sig, cp.arange(J_all.shape[1])] / cp.linalg.norm(all_signals_cluster[:, j_signal:j_signal_next],axis=0))
                     d = (1 - current_alpha_all_unique_optim) * current_sig_ws_for_phase[idx_max_all_current_sig, cp.arange(J_all.shape[1])] + current_alpha_all_unique_optim * \
                         current_sig_fs_for_phase[idx_max_all_current_sig, cp.arange(J_all.shape[1])]
                     phase_adj = -cp.arctan(d.imag / d.real)
@@ -767,7 +767,7 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
                     phase_adj = (phase_adj) * (
                             1 * (cond) <= 0) + (phase_adj + np.pi) * (
                                         1 * (cond) > 0)
-                    phase_optim_cluster[j_signal:j_signal_next]=phase_adj
+                    phase_optim_cluster[j_signal:j_signal_next]=cp.nan_to_num(phase_adj)
 
 
 
@@ -7209,10 +7209,7 @@ class SimpleDictSearch(Optimizer):
 
             }
             if return_cost:
-                if return_matched_signals:
-                    values_results.append((map_rebuilt, mask,J_optim,phase_optim,matched_signals))
-                else:
-                    values_results.append((map_rebuilt, mask,J_optim,phase_optim))
+                values_results.append((map_rebuilt, mask,J_optim,phase_optim))
             else:
                 values_results.append((map_rebuilt, mask))
 

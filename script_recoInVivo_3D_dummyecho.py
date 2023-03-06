@@ -73,6 +73,22 @@ dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_neg_fat_shift_adjus
 # dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_88_reco4_w8_simmean.dict"
 # dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1_88_reco4_w8_simmean.dict"
 
+localfile="/patient.003.v10/meas_MID00331_FID33652_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/patient.003.v10/meas_MID00332_FID33653_raFin_3D_tra_1x1x5mm_FULL_optim_v2.dat"
+
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_21_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_21_reco4_w8_simmean.dict"
+
+
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_2_22_reco3.53_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_2_22_reco3.53_w8_simmean.dict"
+
+
+localfile="/patient.009.v1/meas_MID00084_FID33958_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+
+
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_21_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_21_reco4_w8_simmean.dict"
 
 #localfile="/patient.001.v1/meas_MID00215_FID60605_raFin_3D_tra_FULl.dat"
 
@@ -89,6 +105,8 @@ folder = "/".join(str.split(filename,"/")[:-1])
 suffix="_allspokes8"
 
 filename_b1 = str.split(filename,".dat") [0]+"_b1{}.npy".format("")
+filename_b1_bart = str.split(filename,".dat") [0]+"_b1_bart{}.npy".format("")
+
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 
 filename_volume = str.split(filename,".dat") [0]+"_volumes{}.npy".format("")
@@ -343,8 +361,8 @@ radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampli
 nb_segments=radial_traj.get_traj().shape[0]
 
 if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
-    res = 16
-    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage,hanning_filter=False)
+    res = 8
+    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage,hanning_filter=True)
     np.save(filename_b1,b1_all_slices)
     del kdata_all_channels_all_slices
     kdata_all_channels_all_slices = np.load(filename_kdata)
@@ -355,6 +373,8 @@ else:
 sl=int(b1_all_slices.shape[1]/2)
 list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
 plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
+
+b1_all_slices=np.load(filename_b1_bart)
 
 if nb_channels==1:
     b1_all_slices=np.ones(b1_all_slices.shape)
@@ -463,7 +483,7 @@ else:
     b1_all_slices=None
 
 #animate_images(mask)
-suffix="_2StepsDico"
+suffix="_2StepsDico_bart_b1"
 if not(load_map):
     #niter = 0
     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,threshold_ff=0.9,dictfile_light=dictfile_light,mu=1,mu_TV=1,weights_TV=[1.,0.,0.],return_cost=return_cost)#,mu_TV=1,weights_TV=[1.,0.,0.])
