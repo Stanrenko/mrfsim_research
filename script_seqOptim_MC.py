@@ -4,11 +4,23 @@ from dictoptimizers import SimpleDictSearch
 
 #generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted.json","mrf_dictconf_SimReco2.json",4,sim_mode="mid_point",start=0,window=int(1400/50))
 
-TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_1_87.json",3.53,2.22/1000)
-#
-generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_2_22.json","mrf_dictconf_Dico2_Invivo.json",FA_list,TE_list,3.53,2.22/1000)
+sequence_file="./mrf_sequence_adjusted_760.json"
+with open(sequence_file,"r") as file:
+    sequence_config=json.load(file)
+# sequence_config["TR"]=list(np.array(sequence_config["TE"])+1.87)
+# with open(sequence_file,"w") as file:
+#     json.dump(sequence_config,file)
+
+min_TR_delay=(sequence_config["TR"][0]-sequence_config["TE"][0])/1000
+#min_TR_delay=1.87/1000
+
+TR_list,FA_list,TE_list=load_sequence_file(sequence_file,4,min_TR_delay)
+
+generate_epg_dico_T1MRFSS(sequence_file,"mrf_dictconf_SimReco2.json",FA_list,TE_list,4,min_TR_delay)
 #
 
+generate_epg_dico_T1MRFSS(sequence_file,"mrf_dictconf_SimReco2_light_matching.json",FA_list,TE_list,4,min_TR_delay)
+#
 
 from utils_simu import *
 from dictoptimizers import SimpleDictSearch
@@ -46,6 +58,8 @@ for i,dt in enumerate(dTEs):
     #
 
 
+from utils_simu import *
+from dictoptimizers import SimpleDictSearch
 
 #https://cds.ismrm.org/protected/16MPresentations/videos/0429/index.html
 
@@ -92,66 +106,48 @@ fileseq_list=[
 ]
 
 fileseq_list=[
-    r"./mrf_sequence_adjusted.json",
+    r"./mrf_sequence_adjusted_1_87.json",
     #r"./mrf_sequence_adjusted.json",
     #r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760.json",
     #r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized.json",
-r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF.json",
-    r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF.json",
+r"./mrf_sequence_adjusted_760.json",
+    r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_correl.json",
 
 
-    r"./mrf_sequence_adjusted_760.json",
+    r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json",
     #"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v5.json",
 #"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v6.json",
 #"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v7.json",
 #    "mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v2.json",
 #"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v3.json",
-"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v4.json",
-"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v5.json",
-"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_random_FA_v1.json",
-"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_random_FA_v2.json",
-"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_random_v6.json",
-    #"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v3.json",
-#"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v4.json"
+"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_1_87.json"
 
 
     #r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v2.json",
 #r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v3.json",
 #r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v6.json",
-
 ]
+#
+# plt.figure()
+# labels=["Original 1400","Original 760","760 Correl optim","760 proposed method v1","760 proposed method v2"]
+# for i,f in enumerate(fileseq_list[1:]):
+#     with open(f) as file:
+#         sequence_config=json.load(file)
+#
+#     plt.plot(np.array(sequence_config["B1"])*sequence_config["FA"],label=labels[1:][i])
+# plt.legend()
+# plt.savefig("SFRMBM2023_Sequence_FAs",dpi=300)
+
+recoveries=[4,4,3.75,3.95,3.53]
 
 
-recoveries=[4,3.9,3,3,3.9,4,4,4,4]
-
-
-
-fileseq_list=[
-    r"./mrf_sequence_adjusted.json",
-    r"./mrf_sequence_adjusted_760.json",
-
-"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_v5.json",
-    "mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json",
-    "mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_US_v1.json"
-    #"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v3.json",
-#"mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_v4.json"
-
-
-    #r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v2.json",
-#r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v3.json",
-#r"./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp1400_optimized_DE_Simu_FF_v6.json",
-
-]
-
-
-recoveries=[4,3,4,3.95,3.9]
-
+animate_images(volumes_all[:,10],cmap="gray")
 
 df_results=pd.DataFrame(index=[f+"_"+str(recoveries[j]) for j,f in enumerate(fileseq_list)],columns=["Error rel wT1","Error abs FF","std wT1","std FF","TR"])
 min_TR_delay=1.87/1000
 l=None
 #plt.figure()
-labels=["MRF T1-FF 1400 Spokes","MRF T1-FF 760 Spokes","Optimized MRF T1-FF","Optimized  US MRF T1-FF Curve","Optimized  US MRF T1-FF PW"]
+labels=["MRF T1-FF 1400 Spokes","MRF T1-FF 760 Spokes","Optimized MRF T1-FF For Correl","Optimized US MRF T1-FF v1","Optimized  US MRF T1-FF v2"]
 for j,fileseq_1 in enumerate(fileseq_list):
     recovery=recoveries[j]
     ind = fileseq_1 + "_" + str(recovery)
@@ -214,6 +210,8 @@ for j,fileseq_1 in enumerate(fileseq_list):
     std_ff = np.mean(np.std(error,axis=-1))
     df_results.loc[ind]=[error_wT1,error_ff,std_wT1,std_ff,np.sum(TR_list_1)]
 df_results
+
+df_results.to_csv("SFRMBM2023_ResultsSquarePhantoms.csv")
 #
 #
 #

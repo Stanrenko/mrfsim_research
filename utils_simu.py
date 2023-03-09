@@ -6,7 +6,10 @@ try:
 except:
     pass
 from itertools import combinations_with_replacement,product
-import numba as nb
+try:
+    import numba as nb
+except:
+    pass
 import datetime
 import json
 

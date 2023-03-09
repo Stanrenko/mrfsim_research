@@ -21,22 +21,32 @@ from mutools import io
 from sklearn import linear_model
 from scipy.optimize import minimize
 from movements import TranslationBreathing
+from utils_simu import *
 
 base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
 base_folder = "./3D"
 
-dictfile = "mrf175_SimReco2_light.dict"
+#dictfile = "mrf175_SimReco2_light.dict"
 dictjson="mrf_dictconf_SimReco2_light.json"
-#dictfile = "mrf175_SimReco2.dict"
-#dictfile = "mrf175_SimReco2_window_1.dict"
-#dictfile = "mrf175_SimReco2_window_21.dict"
-#dictfile = "mrf175_SimReco2_window_55.dict"
-#dictfile = "mrf175_Dico2_Invivo.dict"
+dictfile="mrf_dictconf_SimReco2_adjusted_1_87_reco4_w8_simmean.dict"
+dictfile_light='./mrf_dictconf_SimReco2_light_matching_adjusted_1_87_reco4_w8_simmean.dict'
+suffix="_fullReco"
+with open("./mrf_sequence_adjusted_1_87.json") as f:
+   sequence_config = json.load(f)
+Treco=4000
 
-with open("mrf_sequence.json") as f:
-    sequence_config = json.load(f)
+nrep=2
+rep=nrep-1
+TR_total = np.sum(sequence_config["TR"])
 
-seq = T1MRF(**sequence_config)
+#Treco = TR_total-np.sum(sequence_config["TR"])
+
+##other options
+sequence_config["T_recovery"]=Treco
+sequence_config["nrep"]=nrep
+sequence_config["rep"]=rep
+
+seq=T1MRFSS(**sequence_config)
 
 nb_filled_slices = 16
 nb_empty_slices=2
@@ -152,8 +162,8 @@ else:
 
 m_.build_ref_images(seq)
 
-if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
-    np.save(filename_groundtruth,m_.images_series[::nspoke])
+#if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
+#    np.save(filename_groundtruth,m_.images_series[::nspoke])
 
 # i=0
 # image=m.images_series[i]
@@ -380,8 +390,8 @@ if not(load_map):
     optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=10, pca=True,
                                  threshold_pca=20, log=False, useGPU_dictsearch=False, useGPU_simulation=False,
                                  gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
-                                 b1=b1_all_slices, mu="Adaptative",weights=weights,mu_TV=1,weights_TV=[1.,0.,0.])
-    all_maps = optimizer.search_patterns_test_multi_mvt(dictfile, volumes_all, retained_timesteps=retained_timesteps)
+                                 b1=b1_all_slices, mu="Adaptative",weights=weights,mu_TV=1,weights_TV=[1.,0.,0.],dictfile_light=dictfile_light,threshold_ff=0.9)
+    all_maps = optimizer.search_patterns_test_multi_2_steps_dico_mvt(dictfile, volumes_all, retained_timesteps=retained_timesteps)
 
 if(save_map):
         import pickle

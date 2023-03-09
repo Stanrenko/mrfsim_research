@@ -538,6 +538,9 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
     if not(useGPU_dictsearch):
         idx_max_all_unique_low_ff = np.zeros(nb_signals)
         alpha_optim_low_ff = np.zeros(nb_signals)
+        if return_cost:
+            J_optim = np.zeros(nb_signals)
+            phase_optim=np.zeros(nb_signals)
     else:
         idx_max_all_unique_low_ff = cp.zeros(nb_signals,dtype="int64")
         alpha_optim_low_ff = cp.zeros(nb_signals)
@@ -571,6 +574,9 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
             all_signals_cluster=all_signals_current[:, indices.flatten()]
             idx_max_all_unique_cluster = []
             alpha_optim_cluster = []
+            if return_cost:
+                J_optim_cluster = np.zeros(nb_signals_cluster)
+                phase_optim_cluster = np.zeros(nb_signals_cluster)
 
             for j in range(num_group):
                 j_signal = j * split
@@ -647,6 +653,19 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
                 current_alpha_all_unique_optim = current_alpha_all_unique[idx_max_all_current_sig, np.arange(J_all.shape[1])]
                 idx_max_all_unique_cluster.extend(idx_max_all_current_sig)
                 alpha_optim_cluster.extend(current_alpha_all_unique_optim)
+
+                if return_cost:
+                    J_optim_cluster[j_signal:j_signal_next] = np.nan_to_num(J_all[idx_max_all_current_sig, np.arange(J_all.shape[1])] / np.linalg.norm(all_signals_cluster[:, j_signal:j_signal_next],axis=0))
+                    d = (1 - current_alpha_all_unique_optim) * current_sig_ws_for_phase[idx_max_all_current_sig, np.arange(J_all.shape[1])] + current_alpha_all_unique_optim * \
+                        current_sig_fs_for_phase[idx_max_all_current_sig, np.arange(J_all.shape[1])]
+                    phase_adj = -np.arctan(d.imag / d.real)
+                    cond = np.sin(phase_adj) * d.imag - np.cos(phase_adj) * d.real
+                    del d
+                    phase_adj = (phase_adj) * (
+                            1 * (cond) <= 0) + (phase_adj + np.pi) * (
+                                        1 * (cond) > 0)
+                    phase_optim_cluster[j_signal:j_signal_next]=np.nan_to_num(phase_adj)
+
 
             idx_max_all_unique_low_ff[indices.flatten()] = (retained_signals[idx_max_all_unique_cluster])
             alpha_optim_low_ff[indices.flatten()] = (alpha_optim_cluster)

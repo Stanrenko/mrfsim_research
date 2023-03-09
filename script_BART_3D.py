@@ -646,3 +646,479 @@ plt.figure()
 df_result.boxplot(grid=False, rot=45, fontsize=10,showfliers=False)
 plt.axhline(y=0,linestyle="dashed",color="k",linewidth=0.5)
 plt.title("Std per ROI distribution")
+
+
+
+
+
+
+
+
+
+
+
+
+######SIMU########
+### Movements simulation
+
+#import matplotlib
+#matplotlib.u<se("TkAgg")
+import numpy as np
+from mrfsim import T1MRF
+from image_series import *
+from dictoptimizers import SimpleDictSearch,GaussianWeighting
+from utils_mrf import *
+import json
+import readTwix as rT
+import time
+import os
+from numpy.lib.format import open_memmap
+from numpy import memmap
+import pickle
+from scipy.io import loadmat,savemat
+from mutools import io
+from sklearn import linear_model
+from scipy.optimize import minimize
+from movements import TranslationBreathing
+from utils_simu import *
+
+base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
+base_folder = "./3D"
+
+#dictfile = "mrf175_SimReco2_light.dict"
+dictjson="mrf_dictconf_SimReco2_light.json"
+dictfile="mrf_dictconf_SimReco2_adjusted_1_87_reco4_w8_simmean.dict"
+dictfile_light='./mrf_dictconf_SimReco2_light_matching_adjusted_1_87_reco4_w8_simmean.dict'
+suffix="_fullReco"
+with open("./mrf_sequence_adjusted_1_87.json") as f:
+   sequence_config = json.load(f)
+Treco=4000
+
+nrep=2
+rep=nrep-1
+TR_total = np.sum(sequence_config["TR"])
+
+#Treco = TR_total-np.sum(sequence_config["TR"])
+
+##other options
+sequence_config["T_recovery"]=Treco
+sequence_config["nrep"]=nrep
+sequence_config["rep"]=rep
+
+seq=T1MRFSS(**sequence_config)
+
+nb_filled_slices = 16
+nb_empty_slices=2
+repeat_slice=16
+nb_slices = nb_filled_slices+2*nb_empty_slices
+
+undersampling_factor=1
+
+name = "SquareSimu3DMT"
+
+
+use_GPU = False
+light_memory_usage=True
+gen_mode="other"
+
+
+localfile="/"+name
+filename = base_folder+localfile
+
+#filename="./data/InVivo/3D/20211221_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
+#filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
+#filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
+
+folder = "/".join(str.split(filename,"/")[:-1])
+
+suffix=""
+
+filename_paramMap=filename+"_paramMap_sl{}_rp{}.pkl".format(nb_slices,repeat_slice)
+filename_paramMask=filename+"_paramMask_sl{}_rp{}.npy".format(nb_slices,repeat_slice)
+filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
+
+filename_kdata = filename+"_kdata_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_kdata_gt = filename+"_kdata_mvt_gt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_nav = filename+"_nav_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
+filename_volume = filename+"_volumes_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_volume_corrected = filename+"_volumes_corrected_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
+filename_mask= filename+"_mask_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_mask_corrected= filename+"_mask_corrected_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
+file_map = filename + "_mvt_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,suffix)
+
+
+
+#filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
+
+
+
+ntimesteps=175
+nb_channels=1
+nb_allspokes = 1400
+npoint = 128
+
+
+
+incoherent=True
+mode="old"
+
+image_size = (nb_slices, int(npoint/2), int(npoint/2))
+nb_segments=nb_allspokes
+nspoke=int(nb_segments/ntimesteps)
+size = image_size[1:]
+
+with open(dictjson) as f:
+    dict_config = json.load(f)
+dict_config["ff"]=np.arange(0.,1.05,0.05)
+
+if "Square" in name:
+    region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
+    mask_reduction_factor=1/4
+
+
+    m_ = RandomMap3D(name,dict_config,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,undersampling_factor=undersampling_factor,repeat_slice=repeat_slice,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor,gen_mode=gen_mode)
+
+# elif name=="KneePhantom":
+#     num =1
+#     file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(name,num)
+#
+#     m = MapFromFile(name,image_size=image_size,file=file_matlab_paramMap,rounding=True,gen_mode="other")
+
+else:
+    raise ValueError("Unknown Name")
+
+
+
+if str.split(filename_paramMap,"/")[-1] not in os.listdir(folder):
+    m_.buildParamMap()
+    with open(filename_paramMap, "wb" ) as file:
+        pickle.dump(m_.paramMap, file)
+
+    map_rebuilt = m_.paramMap
+    mask = m_.mask
+
+    keys_simu = list(map_rebuilt.keys())
+    values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+    map_for_sim = dict(zip(keys_simu, values_simu))
+
+    np.save(filename_paramMask,mask)
+
+    for key in ["ff", "wT1", "df", "attB1"]:
+        file_mha = "/".join(["/".join(str.split(filename_paramMap, "/")[:-1]),
+                             "_".join(str.split(str.split(filename_paramMap, "/")[-1], ".")[:-1])]) + "_{}.mha".format(
+                                                                                                                   key)
+        io.write(file_mha, map_for_sim[key], tags={"spacing": [5, 1, 1]})
+
+else:
+    with open(filename_paramMap, "rb") as file:
+        m_.paramMap=pickle.load(file)
+    m_.mask=np.load(filename_paramMask)
+
+
+
+m_.build_ref_images(seq)
+
+#if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
+#    np.save(filename_groundtruth,m_.images_series[::nspoke])
+
+# i=0
+# image=m.images_series[i]
+
+
+# file_mha = "/".join(["/".join(str.split(filename_volume, "/")[:-1]),
+#                              "_".join(str.split(str.split(filename_volume, "/")[-1], ".")[:-1])]) + "_ideal_ts{}.mha".format(
+#                                                                                                                    i)
+# io.write(file_mha, np.abs(image), tags={"spacing": [5, 1, 1]})
+
+
+radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,is_random=False)
+
+nb_channels=1
+
+
+direction=np.array([0.0,8.0,0.0])
+move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
+
+m_.add_movements([move])
+
+
+if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
+
+    #images = copy(m.images_series)
+    data=m_.generate_kdata(radial_traj,useGPU=use_GPU)
+    data=np.array(data)
+    data=np.expand_dims(data,axis=0)
+    np.save(filename_kdata, data)
+
+else:
+    #kdata_all_channels_all_slices = open_memmap(filename_kdata)
+    data = np.load(filename_kdata)
+
+nb_segments=radial_traj.get_traj().shape[0]
+
+b1_full = np.ones(image_size)
+b1_all_slices=np.expand_dims(b1_full,axis=0)
+
+
+
+print("Processing Nav Data...")
+
+nb_gating_spokes=50
+ts_between_spokes=int(nb_allspokes/50)
+timesteps = list(np.arange(1400)[::ts_between_spokes])
+
+if str.split(filename_nav,"/")[-1] not in os.listdir(folder):
+
+    nav_z=Navigator3D(direction=[1,0,0.0],applied_timesteps=timesteps,npoint=npoint)
+    kdata_nav = m_.generate_kdata(nav_z,useGPU=use_GPU)
+
+    kdata_nav=np.array(kdata_nav)
+
+    data_for_nav = np.expand_dims(kdata_nav,axis=0)
+    data_for_nav =  np.moveaxis(data_for_nav,1,2)
+    data_for_nav = data_for_nav.astype("complex64")
+    np.save(filename_nav,data_for_nav)
+
+else:
+    data_for_nav=np.load(filename_nav)
+
+npoint_nav=data_for_nav.shape[-1]
+nb_slices_nav=data_for_nav.shape[1]
+nb_gating_spokes=data_for_nav.shape[-2]
+
+all_timesteps = np.arange(nb_allspokes)
+nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
+
+nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint_nav, nb_slices=nb_slices_nav,
+                       applied_timesteps=list(nav_timesteps))
+
+nav_image_size = (int(npoint_nav / 2),)
+
+print("Calculating Sensitivity Maps for Nav Images...")
+b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
+b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
+
+print("Rebuilding Nav Images...")
+images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
+
+
+print("Estimating Movement...")
+shifts = list(range(-10, 10))
+bottom = 10
+top = 54
+displacements = calculate_displacement(images_nav_mean, bottom, top, shifts)
+
+displacement_for_binning = displacements
+bin_width = 2
+max_bin = np.max(displacement_for_binning)
+min_bin = np.min(displacement_for_binning)
+plt.figure();plt.plot(displacements)
+
+maxi = 0
+for j in range(bin_width):
+    min_bin = np.min(displacement_for_binning) + j
+    bins = np.arange(min_bin, max_bin + bin_width, bin_width)
+    #print(bins)
+    categories = np.digitize(displacement_for_binning, bins)
+    df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, columns=["displacement", "cat"])
+    df_groups = df_cat.groupby("cat").count()
+    curr_max = df_groups.displacement.max()
+    if curr_max > maxi:
+        maxi = curr_max
+        df_groups_max=copy(df_groups)
+        min_bin_max=min_bin
+        max_bin_max=max_bin
+        idx_cat = df_groups.displacement.idxmax()
+        retained_nav_spokes = (categories == idx_cat)
+
+retained_nav_spokes_index = np.argwhere(retained_nav_spokes).flatten()
+spoke_groups = np.argmin(np.abs(np.arange(0, nb_segments * nb_slices, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_slices,nb_segments / nb_gating_spokes).reshape(1,-1)),axis=-1)
+
+if not (nb_segments == nb_gating_spokes):
+    spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
+    spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
+        nb_segments / nb_gating_spokes / 2) + 1:] - 1
+    spoke_groups = spoke_groups.flatten()
+
+included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
+displacements_real=m_.list_movements[0].paramDict["transformation"](m_.t.reshape(-1,1))[:,1]
+#plt.figure();plt.plot(displacements_real[::(int(nb_allspokes/nb_gating_spokes))]);plt.plot(displacements+5,marker='x')
+#plt.figure();plt.plot(displacements_real);plt.plot(included_spokes)
+included_spokes=displacements_real>6
+
+included_spokes[::int(nb_segments/nb_gating_spokes)]=False
+
+weights, retained_timesteps = correct_mvt_kdata_zero_filled(radial_traj, included_spokes, ntimesteps)
+
+
+traj_python=radial_traj.get_traj()
+traj_python=np.transpose(traj_python)
+
+
+import cfl
+
+traj_python_for_bart=traj_python.astype("complex64")
+#traj_python_for_bart[:2,:,:]=traj_python
+traj_python_for_bart[:2,:,:]=traj_python_for_bart[:2,:,:]/np.max(traj_python_for_bart[:2,:,:])*int(npoint/4)
+traj_python_for_bart[2,:,:]=traj_python_for_bart[2,:,:]/np.max(traj_python_for_bart[2,:,:])*int(nb_slices/2)
+
+cfl.writecfl("traj_simu",traj_python_for_bart)
+
+
+
+kdata_multi_for_bart_full=data.reshape(nb_channels,nb_allspokes,-1).T
+kdata_multi_for_bart_full=np.expand_dims(kdata_multi_for_bart_full,axis=0)
+cfl.writecfl("kdata_multi_full_simu",kdata_multi_for_bart_full)
+
+#sens done in Bart espirit
+#bart fft -u $(bart bitmask 0 1) coil_img ksp
+#bart ecalib -m1 ksp sens
+#sens=cfl.readcfl("sens")
+import os
+sens=cfl.readcfl("sens")
+b1_all_slices_for_bart=np.moveaxis(b1_all_slices,1,-1)
+b1_all_slices_for_bart=np.moveaxis(b1_all_slices_for_bart,0,-1)
+
+cfl.writecfl("sens_simu",b1_all_slices_for_bart)
+
+
+#Dynamic reconstruction
+traj=cfl.readcfl("traj_simu")
+traj_reshaped = traj.reshape(3,-1,175,8)
+traj_reshaped=np.moveaxis(traj_reshaped,-1,-2)
+traj_reshaped=np.expand_dims(traj_reshaped,axis=(3,4,5,6,7,8,9))
+cfl.writecfl("traj_simu_reshaped",traj_reshaped)
+
+
+kdata_multi_for_bart_reshaped=kdata_multi_for_bart_full.reshape(1,-1,175,8,nb_channels)
+kdata_multi_for_bart_reshaped=np.moveaxis(kdata_multi_for_bart_reshaped,2,-1)
+kdata_multi_for_bart_reshaped=np.expand_dims(kdata_multi_for_bart_reshaped,axis=(4,5,6,7,8,9))
+cfl.writecfl("kdata_multi_for_bart_simu_reshaped",kdata_multi_for_bart_reshaped)
+
+
+weights_for_bart=np.tile(np.expand_dims(weights,axis=-1),tuple(np.ones(weights_for_bart.ndim).astype(int))+(npoint,))
+weights_for_bart=weights_for_bart.reshape(nb_channels,175,8,-1)
+weights_for_bart=np.moveaxis(weights_for_bart,0,-1)
+weights_for_bart=np.moveaxis(weights_for_bart,0,-1)
+weights_for_bart=np.moveaxis(weights_for_bart,0,1)
+
+weights_for_bart=np.expand_dims(weights_for_bart,axis=(0,4,5,6,7,8,9))
+cfl.writecfl("weights_simu",weights_for_bart)
+
+
+
+import cfl
+iter=0
+
+bart_command="bart pics {} -i1 -RT:$(bart bitmask 10):0:0.01 -t traj_reshaped kdata_multi_for_bart_reshaped sens out{}"#looks like the best for now
+#bart_command="bart pics {} -i1 -RT:$(bart bitmask 0 1 2):0:0.0001 -t traj_reshaped kdata_multi_for_bart_reshaped sens out{}"
+#bart_command="bart pics {} -i1 -s 0.01 -p dens_adj_bart -RL:$(bart bitmask 0 1 2):$(bart bitmask 0 1 2):0.00001 -t traj_reshaped kdata_multi_for_bart_reshaped sens out{}"# does not work well
+#bart_command="bart pics {} -i1 -s 0.01 -p dens_adj_bart -RL:$(bart bitmask 0 1 2):0:0.0000001 -t traj_reshaped kdata_multi_for_bart_reshaped sens out{}"#does not work well
+#bart_command="bart pics {} -m -p dens_adj_bart -i1 -t traj_reshaped kdata_multi_for_bart_reshaped sens out{}"#second best
+bart_command="bart pics {} -i1 -t traj_reshaped kdata_multi_for_bart_reshaped sens out{}"#second best
+
+#bart_command="bart pics {} -m -p dens_adj_bart -i1 -t traj_reshaped kdata_multi_for_bart_reshaped_cc sens_cc out{}"#second best
+bart_command="bart pics --no-toeplitz --lowmem-stack=8 {} -m -i1 -RT:$(bart bitmask 2):0:0.0001 -t traj_simu_reshaped kdata_multi_for_bart_simu_reshaped sens_simu out{}"#second best
+bart_command="bart pics {} -p weights_simu -m -i1 -RT:$(bart bitmask 2):0:0.0001 -t traj_simu_reshaped kdata_multi_for_bart_simu_reshaped sens_simu out{}"#second best
+bart_command="bart pics {} -p weights_simu -i1 -t traj_simu_reshaped kdata_multi_for_bart_simu_reshaped sens_simu out{}"#second best
+
+
+#bart_command="bart pics {} -m -i1 -RW:$(bart bitmask 0 1 2):0:0.001 -t traj_reshaped kdata_multi_for_bart_reshaped sens out{}"
+#bart_command="bart pics -B basis_used {} -i1 -t traj_reshaped_sbreco kdata_multi_for_bart_reshaped_sbreco sens out{}"#looks like the best for now
+#bart_command="bart pics -m -C1 -B basis_used {} -i1 -t traj_reshaped_sbreco kdata_multi_for_bart_reshaped_sbreco sens out{}"#looks like the best for now
+
+
+#traj_reshaped_sbreco=cfl.readcfl("traj_reshaped_sbreco")
+#kdata_multi_for_bart_reshaped_sbreco=cfl.readcfl("kdata_multi_for_bart_reshaped_sbreco")
+
+os.system(bart_command.format("",iter))
+out=cfl.readcfl("out{}".format(iter))
+
+sl=int(nb_slices/2)
+animate_images(np.moveaxis(out[:,:,sl].squeeze(),-1,0))
+
+mask = np.load(filename_mask_corrected)
+
+optimizer = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=radial_traj, split=100, pca=True,
+                                     threshold_pca=15, log=False, useGPU_dictsearch=False, useGPU_simulation=False,
+                                     gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
+                                     b1=b1_all_slices, threshold_ff=0.9, dictfile_light=dictfile_light,
+                                     return_matched_signals=True)  # ,mu_TV=1,weights_TV=[1.,0.,0.])
+#np.matmul(out.squeeze(),basis.squeeze().T.conj()).shape
+
+return_cost=True
+
+niter=50
+all_maps_bart_all_iter={}
+
+for iter in tqdm(range(1,niter+1)):
+    if "basis_used" in bart_command:
+        out=np.matmul(out.squeeze(),basis.squeeze().T)
+    all_maps_bart,matched_signals = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, np.moveaxis(np.moveaxis(out.squeeze(),-1,0),-1,1),retained_timesteps=None)
+
+    all_maps_bart_all_iter[iter-1]=all_maps_bart[0]
+
+    # all_maps_bart, matched_signals = optimizer.search_patterns_test_multi(dictfile, np.moveaxis(out.squeeze(), -1, 0))
+    # all_maps_bart_all_iter[iter - 1] = all_maps_bart[0]
+
+
+    if iter==niter:
+        break
+
+    if "basis_used" in bart_command:
+        matched_signals = np.matmul(basis.squeeze().T.conj(), matched_signals)
+    matched_signals=[makevol(s,mask>0) for s in matched_signals]
+
+    matched_signals=np.array(matched_signals)
+    matched_signals_bart=np.moveaxis(matched_signals,0,-1)
+    matched_signals_bart = np.moveaxis(matched_signals_bart, 0, -2)
+    if "basis_used" in bart_command:
+        matched_signals_bart = np.expand_dims(matched_signals_bart, axis=(3, 4,5))
+    else:
+        matched_signals_bart=np.expand_dims(matched_signals_bart,axis=(3,4,5,6,7,8,9))
+    cfl.writecfl("image_start",matched_signals_bart)
+
+    os.system(bart_command.format("-W image_start", iter))
+    out=cfl.readcfl("out{}".format(iter))
+
+curr_file = filename.split(".dat")[0] + "{}_MRF_map.pkl".format("_bart_admm_reg_z")
+
+import pickle
+with open(curr_file,"wb") as file:
+    pickle.dump(all_maps_bart_all_iter,file)
+
+all_maps = all_maps_bart_all_iter
+
+dx=1
+dy=1
+dz=5
+for iter in list(all_maps.keys()):
+
+    map_rebuilt=all_maps[iter][0]
+    mask=all_maps[iter][1]
+
+    keys_simu = list(map_rebuilt.keys())
+    values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+    map_for_sim = dict(zip(keys_simu, values_simu))
+
+    #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+    #map_Python.buildParamMap()
+
+
+    for key in ["ff","wT1","df","attB1"]:
+        file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
+        io.write(file_mha,map_for_sim[key],tags={"spacing":[dz,dx,dy]})
+
+    if return_cost:
+        file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
+                             "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "_it{}_{}.mha".format(
+            iter, "correlation")
+        io.write(file_mha, makevol(all_maps[iter][2],mask>0), tags={"spacing": [dz, dx, dy]})
+
+        file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
+                             "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "_it{}_{}.mha".format(
+            iter, "phase")
+        io.write(file_mha, makevol(all_maps[iter][3],mask>0), tags={"spacing": [dz, dx, dy]})

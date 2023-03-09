@@ -803,6 +803,8 @@ list_suffix=["fullReco".format(snr),"DE_Simu_FF_reco3","DE_Simu_FF_v6_reco3.8","
 list_suffix=["fullReco","old_760_reco3","DE_Simu_random_v5_reco4","DE_Simu_FF_random_v1_reco3_95"]
 list_suffix=["fullReco","DE_Simu_FF_random_v1_reco3_95","DE_Simu_FF_random_v2_reco3_53","DE_Simu_FF_random_v1_3D_reco3_92"]
 
+list_suffix=["fullReco","old_760_reco3","DE_Simu_FF_random_v1_reco3_95"]
+
 #list_suffix=["fullReco","DE_Simu_FF_v3_reco3.6".format(snr)]
 undersampling_factor=2
 #list_suffix=["fullReco_SNR_{}".format(snr)]
