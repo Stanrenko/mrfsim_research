@@ -69,7 +69,7 @@ medfilter=False
 #name = "SquareSimu3D_SS_FF0_1"
 name = "SquareSimu3D_SS_SimReco2"
 name = "KneePhantomFat"
-
+#name = "KneePhantom"
 
 
 dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_1_87_reco3.53_w8_simmean.dict"
@@ -474,6 +474,8 @@ name="KneePhantomFat"
 list_suffix=["fullReco_T1MRF_adjusted","fullReco_Brute","DE_Simu_FF_reco3","DE_Simu_FF_v2_reco3"]
 list_suffix=["fullReco","old_760_reco3","random_FA_correl_reco375","random_FA_v1_reco395","random_FA_v2_reco353"]
 list_suffix=["fullReco","old_760_reco4","random_FA_correl_reco375","random_FA_v1_reco395","random_FA_v2_reco353"]
+list_suffix=["fullReco","old_760_reco4","random_FA_v1_reco395","random_FA_v2_reco353"]
+
 file_maps=[]
 for suffix in list_suffix:
     if "760" in suffix:
@@ -534,11 +536,11 @@ df_result=pd.DataFrame()
 min_iter=0
 max_iter=1
 plt.figure()
-k="df"
+k="attB1"
 maskROI=buildROImask_unique(m.paramMap,key="wT1")
 #maskROI=m.buildROImask()
 labels=["Original 1400","Original 760 reco 3","760 Correl optim","760 proposed method v1","760 proposed method v2"]
-labels=["Original 1400","Original 760","760 Correl optim","760 proposed method v1","760 proposed method v2"]
+labels=["Original 1400","Original 760","760 proposed method v1","760 proposed method v2"]
 for i,key in enumerate(dic_maps.keys()):
     for it in (list(range(min_iter,np.minimum(len(dic_maps[key].keys()),max_iter),3))):
         if key=="fullReco_noUS" and it>0:
