@@ -24,10 +24,10 @@ files=["/patient.003.v1/meas_MID00125_FID02111_raFin_3D_tra_1x1x5mm_FULL_1.dat",
 "/patient.003.v1/meas_MID00127_FID02113_raFin_3D_tra_1x1x5mm_FULL_3.dat",
 "/patient.003.v1/meas_MID00128_FID02114_raFin_3D_tra_1x1x5mm_FULL_4.dat"]
 
-files=["/patient.004.v1/meas_MID00022_FID03367_raFin_3D_tra_1x1x5mm_FULL_1.dat",
-"/patient.004.v1/meas_MID00023_FID03368_raFin_3D_tra_1x1x5mm_FULL_2.dat",
-"/patient.004.v1/meas_MID00024_FID03369_raFin_3D_tra_1x1x5mm_FULL_3.dat",
-"/patient.004.v1/meas_MID00025_FID03370_raFin_3D_tra_1x1x5mm_FULL_4.dat"]
+# files=["/patient.004.v1/meas_MID00022_FID03367_raFin_3D_tra_1x1x5mm_FULL_1.dat",
+# "/patient.004.v1/meas_MID00023_FID03368_raFin_3D_tra_1x1x5mm_FULL_2.dat",
+# "/patient.004.v1/meas_MID00024_FID03369_raFin_3D_tra_1x1x5mm_FULL_3.dat",
+# "/patient.004.v1/meas_MID00025_FID03370_raFin_3D_tra_1x1x5mm_FULL_4.dat"]
 
 folder = base_folder+"/".join(str.split(files[0],"/")[:-1])
 

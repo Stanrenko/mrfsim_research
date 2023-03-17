@@ -165,7 +165,7 @@ from utils_mrf import *
 from mutools import io
 
 
-folder ="./data/InVivo/3D/patient.003.v7/"
+folder ="./data/InVivo/3D/patient.008.v6/"
 
 #meas_MID00360_FID09597_raFin_3D_tra_1x1x5mm_FULL_1400_DE_FF_reco4_allspokes8_MRF_map
 file_maps=[
@@ -218,13 +218,11 @@ file_maps=[
 
 
 file_maps=[
-    "meas_MID00021_FID18400_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395_2StepsDico_MRF_map.pkl",
-    "meas_MID00025_FID18404_raFin_3D_tra_1x1x5mm_FULL_new_2StepsDico_MRF_map.pkl",
-"meas_MID00022_FID18401_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395_US2_2StepsDico_MRF_map.pkl",
-"meas_MID00022_FID18401_raFin_3D_tra_1x1x5mm_FULL_optim_reco_395_US2_MRF_map.pkl",
-"meas_MID00026_FID18405_raFin_3D_tra_1x1x5mm_FULL_new_US2_2StepsDico_MRF_map.pkl",
-"meas_MID00026_FID18405_raFin_3D_tra_1x1x5mm_FULL_new_US2_MRF_map.pkl"
-
+    "meas_MID00021_FID34675_raFin_3D_tra_1x1x5mm_FULL_new_reco4_MRF_map.pkl",
+    "meas_MID00022_FID34676_raFin_3D_tra_1x1x5mm_FULL_760_reco4_MRF_map.pkl",
+    "meas_MID00023_FID34677_raFin_3D_tra_1x1x5mm_FULL_760_correl_reco375_MRF_map.pkl",
+    "meas_MID00024_FID34678_raFin_3D_tra_1x1x5mm_FULL_760_v1_reco395_MRF_map.pkl",
+    "meas_MID00025_FID34679_raFin_3D_tra_1x1x5mm_FULL_760_v2_reco353_MRF_map.pkl"
     ]
 
 file_ROI=folder+"roi.mha"
@@ -236,14 +234,10 @@ for map_file in file_maps:
         all_maps = pickle.load(file)
     dico_maps[map_file]=all_maps
 
-
 ROI_data=io.read(file_ROI)
-
 all_maps_1=dico_maps[file_maps[0]]
 maskROI=np.array(ROI_data)[all_maps_1[0][1]>0]
 #maskROI = buildROImask(all_maps_1[0][0],max_clusters=10)
-
-
 
 #regression_paramMaps_ROI(all_maps_1[0][0],all_maps_2[0][0],all_maps_1[0][1]>0,all_maps_2[0][1]>0,save=True,fontsize=5,mode="Standard",adj_wT1=False,maskROI=maskROI,title="No Reco vs Full Reco")
 #regression_paramMaps_ROI(all_maps_1[0][0],all_maps_2_optim[0][0],all_maps_1[0][1]>0,all_maps_2_optim[0][1]>0,save=True,fontsize=5,mode="Standard",adj_wT1=False,maskROI=maskROI,title="No Reco Optim vs Full Reco"e)
@@ -277,10 +271,10 @@ for key in list(dico_values.keys())[1:]:
     #plt.title("{} : {} vs Reference Sequence".format(k,key))
 
 
-labels=["Optim","Current","Optim US 2","Optim US 2 Traditional Matching","Current US 2","Current US 2 Traditional Matching"]
+labels=["MRF T1-FF","MRF T1-FF 760 spokes","760 Correl Optim","760 proposed v1","760 proposed v2"]
 
 plt.figure()
-k="df"
+k="ff"
 plt.title(k +" roi mean")
 for i,key in enumerate(dico_values.keys()):
     values=dico_values[key][k].sort_values(by=["Obs Mean"])
@@ -290,6 +284,10 @@ for i,key in enumerate(dico_values.keys()):
     else:
         plt.plot(values[["Pred Mean"]],'o',label=labels[i])#,marker="x")
 plt.legend()
+
+
+
+
 
 
 

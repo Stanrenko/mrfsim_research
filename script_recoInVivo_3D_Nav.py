@@ -1,4 +1,4 @@
-
+import matplotlib.pyplot as plt
 #import matplotlib
 #matplotlib.u<se("TkAgg")
 from mrfsim import T1MRF
@@ -104,6 +104,11 @@ localfile="/phantom.001.v1/phantom.001.v1.dat"
 localfile="/20210113/meas_MID00163_FID49558_raFin_3D_tra_1x1x5mm_FULL_50GS_read.dat"
 
 localfile="/patient.002.v5/meas_MID00021_FID34064_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+
+localfile="/patient.003.v12/meas_MID00020_FID36427_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_28_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_28_reco4_w8_simmean.dict"
+
 filename = base_folder+localfile
 
 #filename="./data/InVivo/3D/20211221_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
@@ -534,7 +539,7 @@ if nb_gating_spokes>0:
     b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
 
 
-    ch=9
+    ch=7
     image_nav_ch =simulate_nav_images_multi(np.expand_dims(data_for_nav[ch],axis=0),nav_traj, nav_image_size)
     #plt.imshow(np.abs(b1_nav[ch].reshape(-1, int(npoint/2))))
 
@@ -557,10 +562,53 @@ if nb_gating_spokes>0:
     shifts = list(range(-15, 30))
     bottom = 15
     top = int(npoint/2)-30
-    displacements = calculate_displacement(image_nav_ch, bottom, top, shifts)
+    displacements = calculate_displacement(image_nav_ch, bottom, top, shifts,lambda_tv=0.01)
 
     plt.figure()
     plt.plot(displacements)
+
+    displacements_pt=np.load("pilot_tone_mvt_test_ch_13.npy")
+
+    rep=1
+    resp_pt=displacements_pt[(rep*nb_gating_spokes):(rep+1)*nb_gating_spokes]
+    resp_pt=(resp_pt-np.min(resp_pt))/(np.max(resp_pt)-np.min(resp_pt))
+    resp_nav=-displacements[(rep*nb_gating_spokes):(rep+1)*nb_gating_spokes]
+    resp_nav = (resp_nav - np.min(resp_nav)) / (np.max(resp_nav) - np.min(resp_nav))
+
+    plt.figure()
+    plt.plot(resp_pt)
+    plt.plot(resp_nav)
+
+
+    max_slices=8
+    displacements_resized=displacements.reshape(nb_slices,nb_gating_spokes)[:max_slices]
+    displacements_pt_resized = -displacements_pt.reshape(max_slices, nb_gating_spokes)
+
+    displacements_resized=(displacements_resized-np.min(displacements_resized,axis=-1,keepdims=True))/(np.max(displacements_resized,axis=-1,keepdims=True)-np.min(displacements_resized,axis=-1,keepdims=True))
+    displacements_pt_resized = (displacements_pt_resized - np.min(displacements_pt_resized, axis=-1, keepdims=True)) / (
+                np.max(displacements_pt_resized, axis=-1, keepdims=True) - np.min(displacements_pt_resized, axis=-1,
+                                                                               keepdims=True))
+
+    plt.figure()
+    fig,ax=plt.subplots(4,2)
+    axli = ax.flatten()
+
+    for rep in range(max_slices):
+        axli[rep].plot(displacements_resized[rep])
+        axli[rep].plot(displacements_pt_resized[rep])
+
+    import scipy
+    corr=np.corrcoef(np.concatenate([displacements_resized,displacements_pt_resized],axis=0))
+    corr.shape
+
+    corr[:8,8:]
+    plt.figure()
+    import seaborn as sns
+    sns.heatmap(corr[:8,8:])
+
+
+    np.save("image_nav_ch_siemens_sfrmbm.npy",image_nav_ch)
+
 
     displacement_for_binning = displacements
     bin_width = 5
