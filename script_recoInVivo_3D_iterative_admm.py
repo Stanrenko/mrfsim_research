@@ -328,6 +328,7 @@ weights, retained_timesteps = correct_mvt_kdata_zero_filled(radial_traj, include
 
 def J_admm(m, kdata_init, dens_adj, trajectory,mu,m_adj,b1_all_slices,weights=None):
     ntimesteps=m.shape[0]
+    n_samples=trajectory.get_traj().reshape(ntimesteps,-1,3).shape[1]
     kdata = generate_kdata_multi(m, trajectory, b1_all_slices, ntimesteps=ntimesteps)
     kdata_error = kdata - kdata_init
     if dens_adj:
@@ -335,11 +336,13 @@ def J_admm(m, kdata_init, dens_adj, trajectory,mu,m_adj,b1_all_slices,weights=No
         kdata_error = kdata_error.reshape(-1, trajectory.paramDict["npoint"])
         density = np.expand_dims(density, axis=0)
         kdata_error *= np.sqrt(density)
-        kdata_error=kdata_error.reshape(kdata.shape[0],kdata.shape[1],trajectory.paramDict["nspoke"],-1,trajectory.paramDict["npoint"])
+
     if weights is not None:
+        kdata_error = kdata_error.reshape(kdata.shape[0], kdata.shape[1], trajectory.paramDict["nspoke"], -1,
+                                          trajectory.paramDict["npoint"])
         kdata_error*=np.sqrt(np.expand_dims(weights,axis=(0,-1)))
 
-    return np.linalg.norm(kdata_error) ** 2+mu*np.linalg.norm(m-m_adj) ** 2
+    return (np.linalg.norm(kdata_error) ** 2)/n_samples+mu*np.linalg.norm(m-m_adj) ** 2
 
 def grad_J_admm(m,signals_0,dens_adj,trajectory,mu,m_adj,b1_all_slices,mask,weights=None,retained_timesteps=None):
     ntimesteps = m.shape[0]
@@ -411,7 +414,7 @@ def conjgrad(J,grad_J,m0,mask,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,t0=1,
             J_m_next = J(m_vol_t)
 
         m = m + t * d_m
-        m_vol=np.array([makevol(im, mask > 0) for im in (m + t * d_m)])
+        m_vol=np.array([makevol(im, mask > 0) for im in (m)])
         g_prev = g
         g = grad_J(m_vol)
         gamma = np.linalg.norm(g) ** 2 / np.linalg.norm(g_prev) ** 2
@@ -433,103 +436,94 @@ kdata_init=data.reshape(nb_channels,ntimesteps,-1)
 dens_adj=True
 trajectory=radial_traj
 mu=0
+
+#weights_test=np.ones_like(weights)
+weights_test=weights
+kdata_all_channels_all_slices=np.load(filename_kdata)
+#volumes_corrected_test = simulate_radial_undersampled_images_multi_new(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,ntimesteps=ntimesteps,density_adj=dens_adj,useGPU=False,light_memory_usage=True,retained_timesteps=retained_timesteps,weights=weights_test)
 signals_0=volumes_corrected[:,mask>0]
 
-J=lambda m:J_admm(m, kdata_init, dens_adj, trajectory,mu,m_adj,b1_all_slices,weights=weights)
-grad_J=lambda m:grad_J_admm(m,signals_0,dens_adj,trajectory,mu,m_adj,b1_all_slices,mask,weights=weights,retained_timesteps=retained_timesteps)
 
-J_list=[]
-num=5
-max_t = 0.0001
-m=volumes_corrected
-J_m=J(m)
-n_samples=radial_traj.get_traj().reshape(ntimesteps,-1,3).shape[1]
-g=grad_J(m)*n_samples
-d_m=-g
-d_m_vol=np.array([makevol(im,mask>0) for im in d_m])
-slope = np.real(np.dot(g.flatten(),d_m.conj().flatten()))
-t_array=np.arange(0,max_t,max_t/num)
+J=lambda m:J_admm(m, kdata_init, dens_adj, trajectory,mu,m_adj,b1_all_slices,weights=weights_test)
+grad_J=lambda m:grad_J_admm(m,signals_0,dens_adj,trajectory,mu,m_adj,b1_all_slices,mask,weights=weights_test,retained_timesteps=retained_timesteps)
 
-for t in tqdm(t_array):
-     J_list.append(J(m+t*d_m_vol))
-plt.figure()
-plt.plot(J_list)
-plt.plot(list(range(num)),J_m+slope*t_array)
+
 
 #
-# J(volumes_corrected)
-# d=grad_J(volumes_corrected)
+# J_list=[]
+# num=5
+# max_t = 0.1
+# m=volumes_corrected
+# n_samples=radial_traj.get_traj().reshape(ntimesteps,-1,3).shape[1]
 #
-# d_vol=np.array([makevol(im,mask>0) for im in d])
+# J_m=J(m)
+# #n_samples=radial_traj.get_traj().reshape(ntimesteps,-1,3).shape[1]
+# g=grad_J(m)
+# d_m=-g
+# d_m_vol=np.array([makevol(im,mask>0) for im in d_m])
+# slope = np.real(np.dot(g.flatten(),d_m.conj().flatten()))
+# slope=-np.linalg.norm(d_m.flatten())**2
+# t_array=np.arange(0,max_t,max_t/num)
 #
-# animate_images(d_vol[:,int(nb_slices/2)])
+# for t in tqdm(t_array):
+#      J_list.append(J(m+t*d_m_vol))
+#
+# plt.close("all")
+# plt.figure()
+# plt.plot(t_array,J_list)
+# plt.plot(t_array,J_m+slope*t_array)
+niter_admm=4
+signals_0=volumes_corrected[:,mask>0]
+niter_cg=4
+mu=1
 
-signals_init=np.zeros(signals_0.shape,dtype=signals_0.dtype)
-
-signals=conjgrad(J,grad_J,signals_init,mask,maxiter=10,plot=True)
-
-
-
-
-
-
-
-
-mask = np.load(filename_mask_corrected)
 
 optimizer = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=radial_traj, split=100, pca=True,
                                      threshold_pca=15, log=False, useGPU_dictsearch=False, useGPU_simulation=False,
                                      gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
                                      b1=b1_all_slices, threshold_ff=0.9, dictfile_light=dictfile_light,
-                                     return_matched_signals=True)  # ,mu_TV=1,weights_TV=[1.,0.,0.])
-#np.matmul(out.squeeze(),basis.squeeze().T.conj()).shape
+                                     return_matched_signals=True)
 
+
+signals_init = np.zeros_like(signals_0)
+v_curr=np.zeros_like(signals_0)
+matched_signals=np.zeros_like(signals_0)
+
+all_maps_admm={}
+
+
+
+for iter in range(niter_admm):
+
+
+
+
+    m_adj=matched_signals-v_curr
+    m_adj=np.array([makevol(im,mask>0) for im in m_adj])
+
+
+    J=lambda m:J_admm(m, kdata_init, dens_adj, trajectory,mu,m_adj,b1_all_slices,weights=weights_test)
+    grad_J=lambda m:grad_J_admm(m,signals_0,dens_adj,trajectory,mu,m_adj,b1_all_slices,mask,weights=weights_test,retained_timesteps=retained_timesteps)
+
+    signals=conjgrad(J,grad_J,signals_init,mask,maxiter=niter_cg,plot=True)
+
+    all_maps, matched_signals = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, signals+v_curr,
+                                                                                       retained_timesteps=None)
+
+    all_maps_admm[iter] = all_maps[0]
+
+    v_curr+=signals-matched_signals
+    signals_init=signals
+
+
+
+
+curr_file=file_map
 return_cost=True
-
-niter=50
-all_maps_bart_all_iter={}
-
-for iter in tqdm(range(1,niter+1)):
-    if "basis_used" in bart_command:
-        out=np.matmul(out.squeeze(),basis.squeeze().T)
-    all_maps_bart,matched_signals = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, np.moveaxis(np.moveaxis(out.squeeze(),-1,0),-1,1),retained_timesteps=None)
-
-    all_maps_bart_all_iter[iter-1]=all_maps_bart[0]
-
-    # all_maps_bart, matched_signals = optimizer.search_patterns_test_multi(dictfile, np.moveaxis(out.squeeze(), -1, 0))
-    # all_maps_bart_all_iter[iter - 1] = all_maps_bart[0]
-
-
-    if iter==niter:
-        break
-
-    if "basis_used" in bart_command:
-        matched_signals = np.matmul(basis.squeeze().T.conj(), matched_signals)
-    matched_signals=[makevol(s,mask>0) for s in matched_signals]
-
-    matched_signals=np.array(matched_signals)
-    matched_signals_bart=np.moveaxis(matched_signals,0,-1)
-    matched_signals_bart = np.moveaxis(matched_signals_bart, 0, -2)
-    if "basis_used" in bart_command:
-        matched_signals_bart = np.expand_dims(matched_signals_bart, axis=(3, 4,5))
-    else:
-        matched_signals_bart=np.expand_dims(matched_signals_bart,axis=(3,4,5,6,7,8,9))
-    cfl.writecfl("image_start",matched_signals_bart)
-
-    os.system(bart_command.format("-W image_start", iter))
-    out=cfl.readcfl("out{}".format(iter))
-
-curr_file = filename.split(".dat")[0] + "{}_MRF_map.pkl".format("_bart_admm_reg_z")
-
-import pickle
-with open(curr_file,"wb") as file:
-    pickle.dump(all_maps_bart_all_iter,file)
-
-all_maps = all_maps_bart_all_iter
-
 dx=1
 dy=1
 dz=5
+all_maps=all_maps_admm
 for iter in list(all_maps.keys()):
 
     map_rebuilt=all_maps[iter][0]
