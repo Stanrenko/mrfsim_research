@@ -83,13 +83,18 @@ filename_nav = filename+"_nav_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slic
 
 filename_volume = filename+"_volumes_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 filename_volume_corrected = filename+"_volumes_corrected_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_volume_corrected_autofocus = filename+"_volumes_corrected_autofocus_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
 
 filename_mask= filename+"_mask_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 filename_mask_corrected= filename+"_mask_corrected_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_mask_corrected_autofocus= filename+"_mask_corrected_autofocus_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
+filename_displacements_real= filename+"_displacements_real_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
 
 file_map = filename + "_mvt_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,suffix)
 
-filename_displacements_real= filename+"_displacements_real_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 
 
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
@@ -169,8 +174,10 @@ else:
     m_.mask=np.load(filename_paramMask)
 
 
-
-m_.build_ref_images(seq)
+if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
+    m_.build_ref_images(seq)
+else:
+    m_.build_timeline(list(seq.TR))
 
 if "Knee" in name:
     m_.change_resolution(int(npoint/npoint_backup))
@@ -273,7 +280,7 @@ displacement_for_binning = displacements_real[::28]
 bin_width = 2
 max_bin = np.max(displacement_for_binning)
 min_bin = np.min(displacement_for_binning)
-plt.figure();plt.plot(displacement_for_binning)
+plt.figure();plt.plot(displacements)
 
 maxi = 0
 for j in range(bin_width):
@@ -305,7 +312,7 @@ included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups
 displacements_real=m_.list_movements[0].paramDict["transformation"](m_.t.reshape(-1,1))[:,1]
 #plt.figure();plt.plot(displacements_real[::(int(nb_allspokes/nb_gating_spokes))]);plt.plot(displacements+5,marker='x')
 #plt.figure();plt.plot(displacements_real);plt.plot(included_spokes)
-#included_spokes=displacements_real>6
+included_spokes=displacements_real>6
 
 included_spokes[::int(nb_segments/nb_gating_spokes)]=False
 
@@ -365,275 +372,103 @@ else:
     mask=np.load(filename_mask)
 
 
-
-def J_admm(m, kdata_init, dens_adj, trajectory,mu,m_adj,b1_all_slices,weights=None,retained_timesteps=None):
-    ntimesteps=m.shape[0]
-    n_samples=trajectory.get_traj().reshape(ntimesteps,-1,3).shape[1]
-    kdata = generate_kdata_multi_new(m, trajectory, b1_all_slices, ntimesteps=ntimesteps,retained_timesteps=retained_timesteps)
-    kdata_error = kdata - kdata_init
-    if dens_adj:
-        density = np.abs(np.linspace(-1, 1, trajectory.paramDict["npoint"]))
-        kdata_error = kdata_error.reshape(-1, trajectory.paramDict["npoint"])
-        density = np.expand_dims(density, axis=0)
-        kdata_error *= np.sqrt(density)
-
-    if weights is not None:
-        kdata_error = kdata_error.reshape(kdata.shape[0], kdata.shape[1], trajectory.paramDict["nspoke"], -1,
-                                          trajectory.paramDict["npoint"])
-        kdata_error*=np.sqrt(np.expand_dims(weights,axis=(0,-1)))
-
-    return (np.linalg.norm(kdata_error) ** 2)/n_samples+mu*np.linalg.norm(m-m_adj) ** 2
-
-def grad_J_admm(m,signals_0,dens_adj,trajectory,mu,m_adj,b1_all_slices,mask,weights=None,retained_timesteps=None):
-    ntimesteps = m.shape[0]
-    volumesi = undersampling_operator_new(m, trajectory, b1_all_slices,density_adj=dens_adj,ntimesteps=ntimesteps,retained_timesteps=retained_timesteps,weights=weights)
-
-    signalsi = volumesi[:, mask > 0]
-    signals_adj = m_adj[:, mask > 0]
-    signals=m[:,mask>0]
-    grad = 2*(signalsi - signals_0 + mu*(signals-signals_adj))
-
-    return grad
-
-def conjgrad(J,grad_J,m0,mask,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,t0=1,log=False,plot=False,filename_save=None,max_t_iter=5):
-    '''
-        J : function from W (domain of m) to R
-        grad_J : function from W to W - gradient of J
-        m0 : initial value of m
-        '''
-    k = 0
-    m = m0
-    if log or plot:
-        now = datetime.now()
-        date_time = now.strftime("%Y%m%d_%H%M%S")
-        norm_g_list = []
-
-    m_vol = np.array([makevol(im, mask > 0) for im in m])
-
-    g = grad_J(m_vol)
-    d_m = -g
-    t0_curr=t0
-
-    # store = [m]
-
-    if plot:
-        plt.ion()
-        fig, axs = plt.subplots(1, 2, figsize=(30, 10))
-        axs[0].set_title("Evolution of cost function")
-    while (np.linalg.norm(g) > tolgrad) and (k < maxiter):
-        norm_g = np.linalg.norm(g)
-        if log:
-            print("################ Iter {} ##################".format(k))
-            norm_g_list.append(norm_g)
-        print("Grad norm for iter {}: {}".format(k, norm_g))
-        if k % 10 == 0:
-            print(k)
-            if filename_save is not None:
-                np.save(filename_save, m)
-        t = t0_curr
-        J_m = J(m_vol)
-        print("J for iter {}: {}".format(k, J_m))
-        m_vol_t=np.array([makevol(im, mask > 0) for im in (m+t*d_m)])
-        J_m_next = J(m_vol_t)
-        slope = np.real(np.dot(g.flatten(), d_m.flatten()))
-        if plot:
-            axs[0].scatter(k, J_m, c="r", marker="+")
-            axs[1].cla()
-            axs[1].set_title("Line search for iteration {}".format(k))
-            t_array = np.arange(0., t0, t0 / 100)
-            axs[1].plot(t_array, J_m + t_array * slope)
-            axs[1].scatter(0, J_m, c="b", marker="x")
-            plt.savefig('./figures/conjgrad_plot_{}.png'.format(date_time))
-
-        while (J_m_next > J_m + alpha * t * slope):
-            print(t)
-            t = beta * t
-            if plot:
-                axs[1].scatter(t, J_m_next, c="b", marker="x")
-                plt.savefig('./figures/conjgrad_plot_{}.png'.format(date_time))
-            m_vol_t = np.array([makevol(im, mask > 0) for im in (m + t * d_m)])
-            J_m_next = J(m_vol_t)
-            t0_curr = t
-            print("t {} vs threshold {}:".format(t,t0*(beta)**max_t_iter))
-            if t<(t0*(beta)**max_t_iter):
-                break
-
-
-        m = m + t * d_m
-        m_vol=np.array([makevol(im, mask > 0) for im in (m)])
-        g_prev = g
-        g = grad_J(m_vol)
-        gamma = np.linalg.norm(g) ** 2 / np.linalg.norm(g_prev) ** 2
-        d_m = -g + gamma * d_m
-        k = k + 1
-        # store.append(m)
-
-    if log:
-        norm_g_list = np.array(norm_g_list)
-        np.save('./logs/conjgrad_{}.npy'.format(date_time), norm_g_list)
-
-    return m
-
-v0=np.zeros_like(volumes_all)
-m_tilde_0=np.zeros_like(volumes_all)
-m_adj=m_tilde_0-v0
-
-kdata_init=data.reshape(nb_channels,ntimesteps,-1)
-dens_adj=True
-trajectory=radial_traj
-mu=1
-
-#weights_test=weights
-kdata_all_channels_all_slices=np.load(filename_kdata)
-#volumes_corrected_test = simulate_radial_undersampled_images_multi_new(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,ntimesteps=ntimesteps,density_adj=dens_adj,useGPU=False,light_memory_usage=True,retained_timesteps=retained_timesteps,weights=weights_test)
-signals_0=volumes_all[:,mask>0]
-
-
-J=lambda m:J_admm(m, kdata_init, dens_adj, trajectory,mu,m_adj,b1_all_slices,weights=None)
-grad_J=lambda m:grad_J_admm(m,signals_0,dens_adj,trajectory,mu,m_adj,b1_all_slices,mask,weights=None,retained_timesteps=None)
+displacements_extrapolated = np.array([displacements[j] for j in spoke_groups])
 
 
 
 
-
-num=5
-max_t = 0.01
-m=volumes_corrected
-
-n_samples=radial_traj.get_traj().reshape(ntimesteps,-1,3).shape[1]
-
-J_m=J(m)
-J_list=[J_m]
-#n_samples=radial_traj.get_traj().reshape(ntimesteps,-1,3).shape[1]
-g=grad_J(m)
-d_m=-g
-d_m_vol=np.array([makevol(im,mask>0) for im in d_m])
-slope = np.real(np.dot(g.flatten(),d_m.conj().flatten()))
-slope=-np.linalg.norm(d_m.flatten())**2
-t_array=np.arange(0,max_t,max_t/num)[1:]
-
-for t in tqdm(t_array):
-     J_list.append(J(m+t*d_m_vol))
-
-plt.close("all")
+displacements_real=(m_.list_movements[0].paramDict["transformation"])(m_.t.reshape(-1,1))[:,1]
+#plt.figure()
+#plt.plot(displacements_real)
 plt.figure()
-t_array_plot=np.array([0]+list(t_array))
-plt.plot(t_array_plot,J_list)
-plt.plot(t_array_plot,J_m+slope*t_array_plot)
+plt.plot(displacements)
+plt.plot(displacements_real[::28])
 
 
+np.save(filename_displacements_real,displacements_real[::28])
 
+x = np.arange(-1, 1.1, 0.5)
+y = np.arange(-1, 1.1, 0.5)
 
-dm_s=np.zeros_like(signals_0[0])
+entropy_all = []
+ent_min = np.inf
 
-eps=1/10000
-i=np.random.randint(len(signals_0[0]))
-dm_s[i]=eps
+displacements_entropy=displacements_real
+all_volumes_modif=[]
+for dx in tqdm(x):
+    entropy_x = []
+    for dy in y:
+        alpha = np.array([dx, dy, 0])
+        dr = np.expand_dims(alpha, axis=(0, 1)) * np.expand_dims(displacements_entropy.reshape(nb_slices, 1400).T, axis=(2))
+        modif = np.exp(
+            1j * np.sum((radial_traj.get_traj().reshape(1400, -1, npoint, 3) * np.expand_dims(dr, axis=2)), axis=-1))
+        modif=modif.reshape(data.shape)
+        data_modif = data * modif
+        volume_full_modif = \
+        simulate_radial_undersampled_images_multi(data_modif, radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)[0]
+        ent = calc_grad_entropy(volume_full_modif)
+        entropy_x.append(ent)
+        all_volumes_modif.append(volume_full_modif)
+        if ent < ent_min:
+            modif_final = modif
+            alpha_min = alpha
+            ent_min = ent
 
-dm=makevol(dm_s,mask>0)
+    entropy_all.append(entropy_x)
 
-
-grad_J_TV_curr=grad_J_TV(volumes_all[0],0,mask=mask,shift=0)
-J_TV_m_curr=J_TV(volumes_all[0],0,mask=mask,shift=0)
-J_TV_m_curr_dm=J_TV(volumes_all[0]+dm,0,mask=mask,shift=0)
-
-print(np.real(np.dot(grad_J_TV_curr.flatten(),dm.flatten())))
-
-print(J_TV_m_curr_dm-J_TV_m_curr)
-
-
+sl=int(nb_slices/2)
+ind=0
 plt.figure()
-plt.plot(delta_m[:,128,128])
+plot_image_grid(list(np.abs(np.array(all_volumes_modif)[:,sl])),nb_row_col=(5,5))
+
+X, Y = np.meshgrid(x, y)
+
+fig = plt.figure(figsize=(15,15))
+ax = fig.gca(projection='3d')
+surf = ax.plot_surface(X, Y, np.array(entropy_all), rstride=1, cstride=1, cmap='hot', linewidth=0, antialiased=False)
 
 
-kdata_init=data.reshape(nb_channels,ntimesteps,-1)
-dens_adj=True
-trajectory=radial_traj
 
-weights_test=(weights>0)*1
-kdata_all_channels_all_slices=np.load(filename_kdata)
-volumes_corrected = simulate_radial_undersampled_images_multi_new(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,ntimesteps=ntimesteps,density_adj=True,useGPU=False,light_memory_usage=True,retained_timesteps=retained_timesteps,weights=weights_test)
+#volumes for slice taking into account coil sensi
+print("Building Volumes Corrected....")
+if str.split(filename_volume_corrected_autofocus,"/")[-1] not in os.listdir(folder):
+    data_modif = kdata_all_channels_all_slices*modif_final
+    volumes_all_modif=simulate_radial_undersampled_images_multi(data_modif,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
+    np.save(filename_volume_corrected_autofocus,volumes_all_modif)
+    # sl=20
+    ani = animate_images(volumes_all_modif[:,int(nb_slices/2),:,:])
+    #del volumes_all_modif
+
+print("Building Mask Corrected....")
+if str.split(filename_mask_corrected_autofocus,"/")[-1] not in os.listdir(folder):
+    selected_spokes = np.r_[10:400]
+    selected_spokes=None
+    data_modif = kdata_all_channels_all_slices * modif_final
+    mask_modif=build_mask_single_image_multichannel(data_modif,radial_traj,image_size,b1=b1_all_slices,density_adj=True,threshold_factor=1/25, normalize_kdata=False,light_memory_usage=True,selected_spokes=selected_spokes)
+    np.save(filename_mask_corrected_autofocus,mask_modif)
+    animate_images(mask_modif)
+    del mask_modif
 
 
-niter_admm=1
-signals_0=volumes_corrected[:,mask>0]
-niter_cg=10
-mu=0
-
-
-optimizer = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=radial_traj, split=100, pca=True,
+optimizer = SimpleDictSearch(mask=mask_modif, niter=0, seq=None, trajectory=radial_traj, split=100, pca=True,
                                      threshold_pca=15, log=False, useGPU_dictsearch=False, useGPU_simulation=False,
                                      gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
                                      b1=b1_all_slices, threshold_ff=0.9, dictfile_light=dictfile_light,
                                      return_matched_signals=True)
 
 
-weights_TV=np.array([1,0.,0.])
-weights_TV/=np.sum(weights_TV)
-mu_TV=10
 
+all_maps_usual, matched_signals = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, volumes_all_modif,
+                                                                                        retained_timesteps=retained_timesteps)
 
-
-#J_TV(m[0],0,mask=mask,shift=0)
-
-def J(m):
-    J_Fourier = J_admm(m, kdata_init, dens_adj, trajectory,mu,m_adj,b1_all_slices,weights=weights_test,retained_timesteps=retained_timesteps)
-    J_reg = 0
-    for ts in tqdm(range(ntimesteps)):
-        for ind_w, w in (enumerate(weights_TV)):
-            if w > 0:
-                J_reg += np.real((w * J_TV(m[ts], ind_w, mask=mask, shift=0)))
-    print(J_Fourier)
-    print(J_reg)
-    return J_Fourier + mu_TV * J_reg
-
-def grad_J(m):
-    grad_J_Fourier = grad_J_admm(m,signals_0,dens_adj,trajectory,mu,m_adj,b1_all_slices,mask,weights=weights_test,retained_timesteps=retained_timesteps)
-    grad_TV = np.zeros_like(grad_J_Fourier)
-    for ts in tqdm(range(ntimesteps)):
-        for ind_w, w in (enumerate(weights_TV)):
-            if w > 0:
-                grad_TV[ts] += (w * grad_J_TV(m[ts], ind_w, mask=mask, shift=0))[mask > 0]
-    return grad_J_Fourier + mu_TV * grad_TV
-
-signals_init = volumes_corrected[:,mask>0]
-v_curr=np.zeros_like(signals_0)
-matched_signals=np.zeros_like(signals_0)
-
-all_maps_admm={}
-
-#all_maps_usual, matched_signals = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, volumes_all,
-#                                                                                        retained_timesteps=retained_timesteps)
-
-
-for iter in range(niter_admm):
-
-    m_adj=matched_signals-v_curr
-    m_adj=np.array([makevol(im,mask>0) for im in m_adj])
-
-    signals=conjgrad(J,grad_J,signals_init,mask,maxiter=niter_cg,plot=True,t0=0.01)
-
-    all_maps, matched_signals = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, signals+v_curr,
-                                                                                       retained_timesteps=None)
-
-    all_maps_admm[iter] = all_maps[0]
-
-    v_curr+=signals-matched_signals
-    signals_init=matched_signals.astype("complex64")
-
-
-
-
-#signals_vol=np.array([makevol(im,mask>0) for im in signals])
-#animate_images(signals_vol[:,int(nb_slices/2)])
 
 curr_file=file_map
 return_cost=True
 dx=1
 dy=1
 dz=5
-all_maps=all_maps_admm
-suffix="_cg10_dispreal_weights1_mutv10"
+all_maps=all_maps_usual
+suffix="_autofocus_dispreal"
 for iter in list(all_maps.keys()):
 
     map_rebuilt=all_maps[iter][0]
@@ -670,12 +505,8 @@ for iter in list(all_maps.keys()):
 
 
 
-
-
-
-
 ######SIMU########
-### No motion
+### Movements simulation
 
 #import matplotlib
 #matplotlib.u<se("TkAgg")
@@ -728,10 +559,10 @@ nb_empty_slices=2
 repeat_slice=16
 nb_slices = nb_filled_slices+2*nb_empty_slices
 
-undersampling_factor=2
+undersampling_factor=1
 
-name = "KneePhantom_fullsize_nomotion_incoherent"
-
+name = "SquareSimu3DMT"
+name = "Knee3DMT"
 
 use_GPU = False
 light_memory_usage=True
@@ -759,9 +590,15 @@ filename_nav = filename+"_nav_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slic
 
 filename_volume = filename+"_volumes_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 filename_volume_corrected = filename+"_volumes_corrected_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_volume_corrected_autofocus = filename+"_volumes_corrected_autofocus_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
 
 filename_mask= filename+"_mask_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
 filename_mask_corrected= filename+"_mask_corrected_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_mask_corrected_autofocus= filename+"_mask_corrected_autofocus_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
+filename_displacements_real= filename+"_displacements_real_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
 
 file_map = filename + "_mvt_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,suffix)
 
@@ -774,7 +611,7 @@ file_map = filename + "_mvt_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repea
 ntimesteps=175
 nb_channels=1
 nb_allspokes = 1400
-npoint = 512
+npoint = 256
 
 if "Knee" in name:
     npoint_backup=npoint
@@ -782,7 +619,7 @@ if "Knee" in name:
 
 
 
-incoherent=True
+incoherent=False
 mode="old"
 
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
@@ -801,6 +638,12 @@ if "Square" in name:
 
     m_ = RandomMap3D(name,dict_config,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,undersampling_factor=undersampling_factor,repeat_slice=repeat_slice,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor,gen_mode=gen_mode)
 
+# elif name=="KneePhantom":
+#     num =1
+#     file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(name,num)
+#
+#     m = MapFromFile(name,image_size=image_size,file=file_matlab_paramMap,rounding=True,gen_mode="other")
+
 elif "Knee" in name:
     num =1
     file_matlab_paramMap = "./data/KneePhantom/Phantom{}/paramMap_Control.mat".format(num)
@@ -808,6 +651,7 @@ elif "Knee" in name:
 
 else:
     raise ValueError("Unknown Name")
+
 
 
 
@@ -837,36 +681,27 @@ else:
     m_.mask=np.load(filename_paramMask)
 
 
-m_.build_ref_images(seq)
+if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
+    m_.build_ref_images(seq)
+else:
+    m_.build_timeline(list(seq.TR))
 
 if "Knee" in name:
     m_.change_resolution(int(npoint/npoint_backup))
     npoint=npoint_backup
 
-animate_images(m_.images_series[:,int(nb_slices/2)])
-
-#if str.split(filename_groundtruth,"/")[-1] not in os.listdir(folder):
-#    np.save(filename_groundtruth,m_.images_series[::nspoke])
-
-# i=0
-# image=m.images_series[i]
-
-
-# file_mha = "/".join(["/".join(str.split(filename_volume, "/")[:-1]),
-#                              "_".join(str.split(str.split(filename_volume, "/")[-1], ".")[:-1])]) + "_ideal_ts{}.mha".format(
-#                                                                                                                    i)
-# io.write(file_mha, np.abs(image), tags={"spacing": [5, 1, 1]})
-
+image_size = (nb_slices, int(npoint/2), int(npoint/2))
+size = image_size[1:]
 
 radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,is_random=False)
 
 nb_channels=1
 
 
-# direction=np.array([0.0,8.0,0.0])
-# move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
-#
-# m_.add_movements([move])
+direction=np.array([0.0,10,0.0])
+move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
+
+m_.add_movements([move])
 
 
 if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
@@ -883,295 +718,275 @@ else:
 
 nb_segments=radial_traj.get_traj().shape[0]
 
-b1_full = np.ones(m_.image_size)
+b1_full = np.ones(image_size)
 b1_all_slices=np.expand_dims(b1_full,axis=0)
 
 
-print("Building Volumes....")
-if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
-    #del kdata_all_channels_all_slices
-    kdata_all_channels_all_slices = np.load(filename_kdata)
 
-    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,m_.image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
-    np.save(filename_volume,volumes_all)
-    # sl=10
-    # ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
+print("Processing Nav Data...")
+
+nb_gating_spokes=50
+ts_between_spokes=int(nb_allspokes/50)
+timesteps = list(np.arange(1400)[::ts_between_spokes])
+
+if str.split(filename_nav,"/")[-1] not in os.listdir(folder):
+
+    nav_z=Navigator3D(direction=[1,0,0.0],applied_timesteps=timesteps,npoint=npoint)
+    kdata_nav = m_.generate_kdata(nav_z,useGPU=use_GPU)
+
+    kdata_nav=np.array(kdata_nav)
+
+    data_for_nav = np.expand_dims(kdata_nav,axis=0)
+    data_for_nav =  np.moveaxis(data_for_nav,1,2)
+    data_for_nav = data_for_nav.astype("complex64")
+    np.save(filename_nav,data_for_nav)
+
 else:
-    volumes_all=np.load(filename_volume)
+    data_for_nav=np.load(filename_nav)
+
+nb_gating_spokes=data_for_nav.shape[-2]
+displacements_real=(m_.list_movements[0].paramDict["transformation"])(m_.t.reshape(-1,1))[:,1]
+
+displacement_for_binning = displacements_real[::28]
+bin_width = 2
+max_bin = np.max(displacement_for_binning)
+min_bin = np.min(displacement_for_binning)
+plt.figure();plt.plot(displacement_for_binning)
+
+min_bin = np.min(displacement_for_binning)
+bins = np.arange(min_bin, max_bin + bin_width, bin_width)
+    #print(bins)
+categories = np.digitize(displacement_for_binning, bins)
+df_cat = pd.DataFrame(data=np.array([displacement_for_binning, categories]).T, columns=["displacement", "cat"])
+df_groups = df_cat.groupby("cat").count()
 
 
+group_1=(categories==1)
+#group_2=(categories==2)|(categories==3)|(categories==4)
+group_3=(categories==5)
 
-##volumes for slice taking into account coil sensi
-print("Building Mask....")
-if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
-    mask=m_.mask
-    np.save(filename_mask,mask)
+groups=[group_1,group_3]
+
+nb_part=nb_slices
+dico_traj_retained = {}
+for j, g in tqdm(enumerate(groups)):
+    print("######################  BUILDING FULL VOLUME AND MASK FOR GROUP {} ##########################".format(j))
+    retained_nav_spokes_index = np.argwhere(g).flatten()
+    spoke_groups = np.argmin(np.abs(
+        np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
+                                                                          nb_segments / nb_gating_spokes).reshape(1,
+                                                                                                                  -1)),
+        axis=-1)
+
+    spoke_groups=spoke_groups.reshape(nb_slices, nb_segments)
+    spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:]=spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:]-1 #adjustment for change of partition
+    spoke_groups=spoke_groups.flatten()
+
+    included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
+    #included_spokes[::int(nb_segments / nb_gating_spokes)] = False
+    #print(np.sum(included_spokes))
+
+    weights, retained_timesteps = correct_mvt_kdata_zero_filled(radial_traj, included_spokes, ntimesteps)
+    print(len(retained_timesteps))
+
+    #print(traj_retained_final_volume.shape[1]/800)
+
+    dico_traj_retained[j] = weights
+
+L0=10
+filename_phi=str.split(dictfile,".dict") [0]+"_phi_L0_{}.npy".format(L0)
+
+
+if filename_phi not in os.listdir():
+    mrfdict = dictsearch.Dictionary()
+    keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.1))
+
+    import dask.array as da
+    u,s,vh = da.linalg.svd(da.asarray(values))
+
+    vh=np.array(vh)
+    s=np.array(s)
+
+    L0=10
+    phi=vh[:L0]
+    np.save(filename_phi,phi)
 else:
-    mask=np.load(filename_mask)
+    phi=np.load(filename_phi)
 
+all_volumes_singular=[]
 
+for gr in tqdm(dico_traj_retained.keys()):
+    data=np.load(filename_kdata)
+    weights = np.expand_dims((dico_traj_retained[gr]>0)*1,axis=(0,-1))
+    traj=radial_traj.get_traj().reshape(ntimesteps,-1,3)
+    kdata_all_channels_all_slices=data.reshape(nb_channels,ntimesteps,8,-1,npoint)
+    kdata_all_channels_all_slices*=weights
+    kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,-1)
+    kdata_singular=np.zeros((nb_channels,)+traj.shape[:-1]+(L0,),dtype=kdata_all_channels_all_slices.dtype)
+    for ts in tqdm(range(ntimesteps)):
+        kdata_singular[:,ts,:,:]=kdata_all_channels_all_slices[:,ts,:,None]@(phi.conj().T[ts][None,:])
 
-def J_admm(m, kdata_init, dens_adj, trajectory,mu,m_adj,b1_all_slices,weights=None):
-    ntimesteps=m.shape[0]
-    n_samples=trajectory.get_traj().reshape(ntimesteps,-1,3).shape[1]
-    kdata = generate_kdata_multi(m, trajectory, b1_all_slices, ntimesteps=ntimesteps)
-    kdata_error = kdata - kdata_init
-    if dens_adj:
-        density = np.abs(np.linspace(-1, 1, trajectory.paramDict["npoint"]))
-        kdata_error = kdata_error.reshape(-1, trajectory.paramDict["npoint"])
-        density = np.expand_dims(density, axis=0)
-        kdata_error *= np.sqrt(density)
+    kdata_singular=np.moveaxis(kdata_singular,-1,1)
 
-    if weights is not None:
-        kdata_error = kdata_error.reshape(kdata.shape[0], kdata.shape[1], trajectory.paramDict["nspoke"], -1,
-                                          trajectory.paramDict["npoint"])
-        kdata_error*=np.sqrt(np.expand_dims(weights,axis=(0,-1)))
+    kdata_singular=kdata_singular.reshape(nb_channels,L0,-1)
+    volumes_singular = simulate_radial_undersampled_singular_images_multi(kdata_singular, radial_traj, image_size,
+                                                                          density_adj=True, b1=b1_all_slices, light_memory_usage=True)
+    all_volumes_singular.append(volumes_singular)
 
-    return (np.linalg.norm(kdata_error) ** 2)/n_samples+mu*np.linalg.norm(m-m_adj) ** 2
+all_volumes_singular=np.array(all_volumes_singular)
 
-def grad_J_admm(m,signals_0,dens_adj,trajectory,mu,m_adj,b1_all_slices,mask,weights=None,retained_timesteps=None):
-    ntimesteps = m.shape[0]
-    volumesi = undersampling_operator_new(m, trajectory, b1_all_slices,density_adj=dens_adj,ntimesteps=ntimesteps,retained_timesteps=retained_timesteps,weights=weights)
+sl=int(nb_slices/2)
 
-    signalsi = volumesi[:, mask > 0]
-    signals_adj = m_adj[:, mask > 0]
-    signals=m[:,mask>0]
-    grad = 2*(signalsi - signals_0 + mu*(signals-signals_adj))
-
-    return grad
-
-def conjgrad(J,grad_J,m0,mask,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,t0=1,log=False,plot=False,filename_save=None,max_t_iter=5):
-    '''
-        J : function from W (domain of m) to R
-        grad_J : function from W to W - gradient of J
-        m0 : initial value of m
-        '''
-    k = 0
-    m = m0
-    if log or plot:
-        now = datetime.now()
-        date_time = now.strftime("%Y%m%d_%H%M%S")
-        norm_g_list = []
-
-    m_vol = np.array([makevol(im, mask > 0) for im in m])
-
-    g = grad_J(m_vol)
-    d_m = -g
-    t0_curr=t0
-
-    # store = [m]
-
-    if plot:
-        plt.ion()
-        fig, axs = plt.subplots(1, 2, figsize=(30, 10))
-        axs[0].set_title("Evolution of cost function")
-    while (np.linalg.norm(g) > tolgrad) and (k < maxiter):
-        norm_g = np.linalg.norm(g)
-        if log:
-            print("################ Iter {} ##################".format(k))
-            norm_g_list.append(norm_g)
-        print("Grad norm for iter {}: {}".format(k, norm_g))
-        if k % 10 == 0:
-            print(k)
-            if filename_save is not None:
-                np.save(filename_save, m)
-        t = t0_curr
-        J_m = J(m_vol)
-        print("J for iter {}: {}".format(k, J_m))
-        m_vol_t=np.array([makevol(im, mask > 0) for im in (m+t*d_m)])
-        J_m_next = J(m_vol_t)
-        slope = np.real(np.dot(g.flatten(), d_m.flatten()))
-        if plot:
-            axs[0].scatter(k, J_m, c="r", marker="+")
-            axs[1].cla()
-            axs[1].set_title("Line search for iteration {}".format(k))
-            t_array = np.arange(0., t0, t0 / 100)
-            axs[1].plot(t_array, J_m + t_array * slope)
-            axs[1].scatter(0, J_m, c="b", marker="x")
-            plt.savefig('./figures/conjgrad_plot_{}.png'.format(date_time))
-
-        while (J_m_next > J_m + alpha * t * slope):
-            print(t)
-            t = beta * t
-            if plot:
-                axs[1].scatter(t, J_m_next, c="b", marker="x")
-                plt.savefig('./figures/conjgrad_plot_{}.png'.format(date_time))
-            m_vol_t = np.array([makevol(im, mask > 0) for im in (m + t * d_m)])
-            J_m_next = J(m_vol_t)
-            t0_curr = t
-            print("t {} vs threshold {}:".format(t,t0*(beta)**max_t_iter))
-            if t<(t0*(beta)**max_t_iter):
-                break
-
-
-        m = m + t * d_m
-        m_vol=np.array([makevol(im, mask > 0) for im in (m)])
-        g_prev = g
-        g = grad_J(m_vol)
-        gamma = np.linalg.norm(g) ** 2 / np.linalg.norm(g_prev) ** 2
-        d_m = -g + gamma * d_m
-        k = k + 1
-        # store.append(m)
-
-    if log:
-        norm_g_list = np.array(norm_g_list)
-        np.save('./logs/conjgrad_{}.npy'.format(date_time), norm_g_list)
-
-    return m
-
-v0=np.zeros_like(volumes_all)
-m_tilde_0=np.zeros_like(volumes_all)
-m_adj=m_tilde_0-v0
-
-kdata_init=data.reshape(nb_channels,ntimesteps,-1)
-dens_adj=True
-trajectory=radial_traj
-mu=1
-
-#weights_test=weights
-kdata_all_channels_all_slices=np.load(filename_kdata)
-#volumes_corrected_test = simulate_radial_undersampled_images_multi_new(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,ntimesteps=ntimesteps,density_adj=dens_adj,useGPU=False,light_memory_usage=True,retained_timesteps=retained_timesteps,weights=weights_test)
-signals_0=volumes_all[:,mask>0]
-
-
-J=lambda m:J_admm(m, kdata_init, dens_adj, trajectory,mu,m_adj,b1_all_slices,weights=None)
-grad_J=lambda m:grad_J_admm(m,signals_0,dens_adj,trajectory,mu,m_adj,b1_all_slices,mask,weights=None,retained_timesteps=None)
+plot_image_grid(np.abs(all_volumes_singular[:,:,sl]).reshape((-1,)+image_size[1:]),nb_row_col=(len(groups),L0))
 
 
 
 
+import SimpleITK as sitk
 
-num=5
-max_t = 0.001
-m=volumes_all
+def command_iteration(method):
+    if method.GetOptimizerIteration() == 0:
+        print("Estimated Scales: ", method.GetOptimizerScales())
+    print(
+        f"{method.GetOptimizerIteration():3} "
+        + f"= {method.GetMetricValue():7.5f} "
+        + f": {method.GetOptimizerPosition()}"
+    )
 
-n_samples=radial_traj.get_traj().reshape(ntimesteps,-1,3).shape[1]
+comp=0
+fixed = sitk.GetImageFromArray(np.abs(all_volumes_singular[1,comp,sl]))
+#fixed.SetOrigin((0, 0, 0))
+#fixed.SetSpacing(spacing)
 
-J_m=J(m)
-J_list=[J_m]
-#n_samples=radial_traj.get_traj().reshape(ntimesteps,-1,3).shape[1]
-g=grad_J(m)
-d_m=-g
-d_m_vol=np.array([makevol(im,mask>0) for im in d_m])
-slope = np.real(np.dot(g.flatten(),d_m.conj().flatten()))
-slope=-np.linalg.norm(d_m.flatten())**2
-t_array=np.arange(0,max_t,max_t/num)[1:]
-
-for t in tqdm(t_array):
-     J_list.append(J(m+t*d_m_vol))
-
-plt.close("all")
-plt.figure()
-t_array_plot=np.array([0]+list(t_array))
-plt.plot(t_array_plot,J_list)
-plt.plot(t_array_plot,J_m+slope*t_array_plot)
+moving = sitk.GetImageFromArray(np.abs(all_volumes_singular[0,comp,sl]))
+#moving.SetOrigin((0, 0, 0))
+#moving.SetSpacing(spacing)
 
 
 
+R = sitk.ImageRegistrationMethod()
 
-dm_s=np.zeros_like(signals_0[0])
+R.SetMetricAsCorrelation()
 
-eps=1/10000
-i=np.random.randint(len(signals_0[0]))
-dm_s[i]=eps
-
-dm=makevol(dm_s,mask>0)
-
-
-grad_J_TV_curr=grad_J_TV(volumes_all[0],0,mask=mask,shift=0)
-J_TV_m_curr=J_TV(volumes_all[0],0,mask=mask,shift=0)
-J_TV_m_curr_dm=J_TV(volumes_all[0]+dm,0,mask=mask,shift=0)
-
-print(np.real(np.dot(grad_J_TV_curr.flatten(),dm.flatten())))
-
-print(J_TV_m_curr_dm-J_TV_m_curr)
+R.SetOptimizerAsRegularStepGradientDescent(
+        learningRate=2.0,
+        minStep=1e-4,
+        numberOfIterations=500,
+        gradientMagnitudeTolerance=1e-8,
+    )
+R.SetOptimizerScalesFromIndexShift()
 
 
-plt.figure()
-plt.plot(delta_m[:,128,128])
+
+dimension = 2
+offset = [2]*dimension # use a Python trick to create the offset list based on the dimension
+transform = sitk.TranslationTransform(dimension, offset)
+
+tx = transform
+
+R.SetInitialTransform(tx)
+
+R.SetInterpolator(sitk.sitkLinear)
+
+R.AddCommand(sitk.sitkIterationEvent, lambda: command_iteration(R))
+
+outTx = R.Execute(fixed, moving)
 
 
-kdata_init=data.reshape(nb_channels,ntimesteps,-1)
-dens_adj=True
-trajectory=radial_traj
+print("-------")
+print(outTx)
+print(f"Optimizer stop condition: {R.GetOptimizerStopConditionDescription()}")
+print(f" Iteration: {R.GetOptimizerIteration()}")
+print(f" Metric value: {R.GetMetricValue()}")
 
-niter_admm=1
-signals_0=volumes_all[:,mask>0]
-niter_cg=10
-mu=1
+#sitk.WriteTransform(outTx, args[3])
+
+resampler = sitk.ResampleImageFilter()
+resampler.SetReferenceImage(fixed)
+resampler.SetInterpolator(sitk.sitkLinear)
+
+resampler.SetTransform(outTx)
+
+out = resampler.Execute(moving)
+
+simg1 = sitk.Cast(sitk.RescaleIntensity(fixed), sitk.sitkUInt8)
+simg2 = sitk.Cast(sitk.RescaleIntensity(out), sitk.sitkUInt8)
+cimg = sitk.Compose(simg1, simg2, simg1 // 2.0 + simg2 // 2.0)
 
 
-optimizer = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=radial_traj, split=100, pca=True,
+animate_images([sitk.GetArrayFromImage(fixed),sitk.GetArrayFromImage(moving)])
+animate_images([sitk.GetArrayFromImage(fixed),sitk.GetArrayFromImage(out)])
+
+resampler_inverse = sitk.ResampleImageFilter()
+resampler_inverse.SetReferenceImage(fixed)
+resampler_inverse.SetInterpolator(sitk.sitkLinear)
+
+inverseTx=outTx.GetInverse()
+resampler_inverse.SetTransform(inverseTx)
+animate_images([sitk.GetArrayFromImage(resampler.Execute(fixed)),sitk.GetArrayFromImage(moving)])
+
+
+Mn=inverseTx
+Mn_H = outTx
+
+
+dico_transform={}
+dico_transform[0]=(Mn,Mn_H)
+dico_transform[1]=(sitk.sitkIdentity,sitk.sitkIdentity)
+
+
+def applyTransform(array,transform):
+    resampler = sitk.ResampleImageFilter()
+    resampler.SetReferenceImage(fixed)
+    resampler.SetInterpolator(sitk.sitkLinear)
+
+    resampler.SetTransform(transform)
+
+    return sitk.GetArrayFromImage(resampler.Execute(sitk.GetImageFromArray(array)))
+
+
+
+
+
+if str.split(filename_volume_singular,"/")[-1] not in os.listdir(folder):
+    traj=radial_traj.get_traj().reshape(ntimesteps,-1,3)
+    kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,-1)
+
+    kdata_singular=np.zeros((nb_channels,)+traj.shape[:-1]+(L0,),dtype=kdata_all_channels_all_slices.dtype)
+    for ts in tqdm(range(ntimesteps)):
+        kdata_singular[:,ts,:,:]=kdata_all_channels_all_slices[:,ts,:,None]@(phi.conj().T[ts][None,:])
+
+    kdata_singular=np.moveaxis(kdata_singular,-1,1)
+
+    kdata_singular=kdata_singular.reshape(nb_channels,L0,-1)
+
+
+
+
+
+
+
+
+
+optimizer = SimpleDictSearch(mask=mask_modif, niter=0, seq=None, trajectory=radial_traj, split=100, pca=True,
                                      threshold_pca=15, log=False, useGPU_dictsearch=False, useGPU_simulation=False,
                                      gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
                                      b1=b1_all_slices, threshold_ff=0.9, dictfile_light=dictfile_light,
                                      return_matched_signals=True)
 
 
-weights_TV=np.array([1,0.,0.])
-weights_TV/=np.sum(weights_TV)
-mu_TV=1
 
-#J_TV(m[0],0,mask=mask,shift=0)
+all_maps_usual, matched_signals = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, volumes_all_modif,
+                                                                                        retained_timesteps=retained_timesteps)
 
-def J(m):
-    J_Fourier = J_admm(m, kdata_init, dens_adj, trajectory,mu,m_adj,b1_all_slices,weights=None)
-    J_reg = 0
-    for ts in tqdm(range(ntimesteps)):
-        for ind_w, w in (enumerate(weights_TV)):
-            if w > 0:
-                J_reg += np.real((w * J_TV(m[ts], ind_w, mask=mask, shift=0)))
-    print(J_Fourier)
-    print(J_reg)
-    return J_Fourier + mu_TV * J_reg
-
-def grad_J(m):
-    grad_J_Fourier = grad_J_admm(m,signals_0,dens_adj,trajectory,mu,m_adj,b1_all_slices,mask,weights=None,retained_timesteps=None)
-    grad_TV = np.zeros_like(grad_J_Fourier)
-    for ts in tqdm(range(ntimesteps)):
-        for ind_w, w in (enumerate(weights_TV)):
-            if w > 0:
-                grad_TV[ts] += (w * grad_J_TV(m[ts], ind_w, mask=mask, shift=0))[mask > 0]
-    return grad_J_Fourier + mu_TV * grad_TV
-
-signals_init = volumes_all[:,mask>0]
-v_curr=np.zeros_like(signals_0)
-matched_signals=np.zeros_like(signals_0)
-
-all_maps_admm={}
-
-# all_maps_usual, matched_signals = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, volumes_all,
-#                                                                                        retained_timesteps=None)
-
-
-for iter in range(niter_admm):
-
-    m_adj=matched_signals-v_curr
-    m_adj=np.array([makevol(im,mask>0) for im in m_adj])
-
-    signals=conjgrad(J,grad_J,signals_init,mask,maxiter=niter_cg,plot=True,t0=0.001)
-
-    all_maps, matched_signals = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, signals+v_curr,
-                                                                                       retained_timesteps=None)
-
-    all_maps_admm[iter] = all_maps[0]
-
-    v_curr+=signals-matched_signals
-    signals_init=matched_signals.astype("complex64")
-
-
-
-
-signals_vol=np.array([makevol(im,mask>0) for im in signals])
-animate_images(signals_vol[:,int(nb_slices/2)])
 
 curr_file=file_map
 return_cost=True
 dx=1
 dy=1
 dz=5
-all_maps=all_maps_admm
-suffix="_cg10"
+all_maps=all_maps_usual
+suffix="_autofocus_dispreal"
 for iter in list(all_maps.keys()):
 
     map_rebuilt=all_maps[iter][0]
@@ -1199,4 +1014,3 @@ for iter in list(all_maps.keys()):
                              "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "{}_it{}_{}.mha".format(suffix,
             iter, "phase")
         io.write(file_mha, makevol(all_maps[iter][3],mask>0), tags={"spacing": [dz, dx, dy]})
-

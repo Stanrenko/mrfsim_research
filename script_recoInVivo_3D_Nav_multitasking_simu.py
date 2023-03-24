@@ -905,7 +905,7 @@ data_reshaped = data.reshape(data.shape[0],-1,npoint)
 data_gt_reshaped = data_gt.reshape(data.shape[0],-1,npoint)
 
 
-
+(m_.list_movements[0].paramDict["transformation"])(m_.t)
 
 group_1=(categories==1)|(categories==2)
 group_2=(categories==3)|(categories==4)

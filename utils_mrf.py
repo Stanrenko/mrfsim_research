@@ -4814,7 +4814,7 @@ def grad_J(m,traj,data,npoint,nspoke,nb_slices,density_adj=True,useGPU=False,sca
 
 
 
-def psi(t,alpha=1e-13):
+def psiTV(t,alpha=1e-13):
     return np.sqrt(t+alpha**2)
 
 def delta(m,axis,shift=1):
@@ -4835,22 +4835,23 @@ def J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None,shift=1):
             raise ValueError("should provide mask or weights for calculating weighing mask")
 
         if mask is not None:
-            bound_inf = np.min(np.argwhere(mask>0)[:,axis])
+            bound_inf = np.min(np.argwhere(mask > 0)[:, axis])
             bound_sup = np.max(np.argwhere(mask > 0)[:, axis])
-            weights=np.ones(delta_m.shape,dtype=delta_m.dtype)
-            idx=[np.s_[:], np.s_[:],np.s_[:],np.s_[:]]
-            idx[axis+1]=np.s_[:bound_inf]
-            weights[tuple(idx)]=0
+            weights = np.ones(delta_m.shape, dtype=delta_m.dtype)
 
-            idx = [np.s_[:], np.s_[:], np.s_[:], np.s_[:]]
-            idx[axis + 1] = np.s_[bound_sup:]
+            idx = [np.s_[:]] * weights.ndim
+            idx[axis + shift] = np.s_[:bound_inf]
+            weights[tuple(idx)] = 0
+
+            idx = [np.s_[:]] * weights.ndim
+            idx[axis + shift] = np.s_[bound_sup:]
             weights[tuple(idx)] = 0
 
     else:
         weights=1
 
 
-    return np.sum(weights*psi(np.abs(delta_m)**2,alpha))
+    return np.sum(weights*psiTV(np.abs(delta_m)**2,alpha))
 
 def grad_J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None,shift=1):
 
@@ -4879,6 +4880,6 @@ def grad_J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None,shift=1
     else:
         weights = 1
 
-    W = psi(np.abs(delta_m)**2,alpha)
+    W = psiTV(np.abs(delta_m)**2,alpha)
 
     return delta_adjoint(weights*delta_m/W,axis,shift)

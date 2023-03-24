@@ -791,16 +791,29 @@ class ImageSeries(object):
     def change_resolution(self,compression_factor=2):
         print("WARNING : Compression is irreversible")
         kept_indices=int(compression_factor)
-        self.images_series = self.images_series[:,::kept_indices,::kept_indices]
-        self.cached_images_series=self.images_series
-        new_mask=self.mask[::kept_indices,::kept_indices]
+        if len(self.image_size)==2:
+            self.images_series = self.images_series[:,::kept_indices,::kept_indices]
+            self.cached_images_series=self.images_series
+            new_mask=self.mask[::kept_indices,::kept_indices]
 
-        for param in self.paramMap.keys():
-            values_on_mask=self.paramMap[param]
-            values=makevol(values_on_mask,self.mask>0)
-            values=values[::kept_indices,::kept_indices]
-            new_values_on_mask=values[new_mask>0]
-            self.paramMap[param]=new_values_on_mask
+            for param in self.paramMap.keys():
+                values_on_mask=self.paramMap[param]
+                values=makevol(values_on_mask,self.mask>0)
+                values=values[::kept_indices,::kept_indices]
+                new_values_on_mask=values[new_mask>0]
+                self.paramMap[param]=new_values_on_mask
+
+        else:
+            self.images_series = self.images_series[:, :,::kept_indices, ::kept_indices]
+            self.cached_images_series = self.images_series
+            new_mask = self.mask[:,::kept_indices, ::kept_indices]
+
+            for param in self.paramMap.keys():
+                values_on_mask = self.paramMap[param]
+                values = makevol(values_on_mask, self.mask > 0)
+                values = values[:,::kept_indices, ::kept_indices]
+                new_values_on_mask = values[new_mask > 0]
+                self.paramMap[param] = new_values_on_mask
 
         self.mask=new_mask
         self.image_size = self.images_series.shape[1:]
