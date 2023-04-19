@@ -1534,7 +1534,84 @@ sns.histplot(corr_signal,stat="probability")
 
 
 
+import numpy as np
+#import matplotlib
+#matplotlib.u<se("TkAgg")
+from mrfsim import T1MRF
+from image_series import *
+from dictoptimizers import SimpleDictSearch
+from utils_mrf import *
+import json
+import readTwix as rT
+import time
+import os
+from numpy.lib.format import open_memmap
+from numpy import memmap
+import pickle
+from scipy.io import loadmat,savemat
+import twixtools
+from mutools import io
+import cv2
+import scipy
+base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
+base_folder = "./data/InVivo/3D"
+
+file=base_folder+"/patient.003.v13/all_volumes_singular_orig_test_weighted.npy"
+volumes_singular=np.load(file)
 
 
 
+sl=28
+plot_image_grid(np.abs(volumes_singular[:,:,sl]).reshape(-1,400,400),nb_row_col=(4,10))
+
+
+mask=np.load("./data/InVivo/3D/patient.003.v13/meas_MID00021_FID42448_raFin_3D_tra_1x1x5mm_FULL_new_mask.npy")
+
+
+sl_inf=28+5
+sl_sup=28+20
+
+variance_explained=0.9
+all_pixels=np.argwhere(mask[sl_inf:sl_sup]>0)
+
+pixels_group=[]
+patches_group=[]
+
+dico_pixel_group={}
+
+gr=2
+volumes_all=volumes_singular[gr][:,sl_inf:sl_sup]
+volume_oop=volumes_all[0]
+
+for j,pixel in tqdm(enumerate(all_pixels[:])):
+    #print(pixel)
+    all_patches_retained, pixels = select_similar_patches(tuple(pixel), volumes_all, volume_oop, window=(3, 10, 10),
+                                                          sliding_window=(6, 10, 10), steps=(3, 3, 3),
+                                                          L=10)
+    shape=all_patches_retained.shape
+    all_patches_retained = all_patches_retained.reshape(shape[0], shape[1],
+                                                        -1)
+    all_patches_retained = np.moveaxis(all_patches_retained, 0, -1)
+    res=compute_low_rank_tensor(all_patches_retained,variance_explained)
+    res=np.moveaxis(all_patches_retained,-1,0)
+    res=res.reshape(res.shape[0],res.shape[1],-1)
+    res = np.moveaxis(res, 1, -1)
+    res=res.reshape(-1,res.shape[-1])
+
+    #print(res.shape)
+    #res=res.reshape(shape)
+
+    patches_group.append(res)
+
+    pixels=np.moveaxis(pixels,1,-1)
+    pixels = pixels.reshape(-1, pixels.shape[-1])
+    #print(pixels.shape)
+
+
+
+    for i,pixel_patches in enumerate(pixels):
+        if tuple(pixel_patches) not in dico_pixel_group.keys():
+            dico_pixel_group[tuple(pixel_patches)]=np.zeros(len(all_pixels))
+
+        dico_pixel_group[tuple(pixel_patches)][j]=i+1
 

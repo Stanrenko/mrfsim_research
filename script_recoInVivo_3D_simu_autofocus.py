@@ -148,7 +148,7 @@ else:
 
 
 
-if str.split(filename_paramMap,"/")[-1] not in os.listdir(folder):
+if (str.split(filename_paramMap,"/")[-1] not in os.listdir(folder)) or (("Knee" in name)and(npoint_backup<npoint)):
     m_.buildParamMap()
     with open(filename_paramMap, "wb" ) as file:
         pickle.dump(m_.paramMap, file)
@@ -174,12 +174,12 @@ else:
     m_.mask=np.load(filename_paramMask)
 
 
-if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
+if (str.split(filename_kdata,"/")[-1] not in os.listdir(folder))or (("Knee" in name)and(npoint_backup<npoint)):
     m_.build_ref_images(seq)
 else:
     m_.build_timeline(list(seq.TR))
 
-if "Knee" in name:
+if (("Knee" in name)and(npoint_backup<npoint)):
     m_.change_resolution(int(npoint/npoint_backup))
     npoint=npoint_backup
 
@@ -655,7 +655,7 @@ else:
 
 
 
-if str.split(filename_paramMap,"/")[-1] not in os.listdir(folder):
+if (str.split(filename_paramMap,"/")[-1] not in os.listdir(folder)):
     m_.buildParamMap()
     with open(filename_paramMap, "wb" ) as file:
         pickle.dump(m_.paramMap, file)
@@ -681,7 +681,7 @@ else:
     m_.mask=np.load(filename_paramMask)
 
 
-if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
+if (str.split(filename_kdata,"/")[-1] not in os.listdir(folder)) or (("Knee" in name)and(npoint_backup<npoint)):
     m_.build_ref_images(seq)
 else:
     m_.build_timeline(list(seq.TR))
@@ -842,6 +842,11 @@ plot_image_grid(np.abs(all_volumes_singular[:,:,sl]).reshape((-1,)+image_size[1:
 
 
 
+
+
+
+
+
 import SimpleITK as sitk
 
 def command_iteration(method):
@@ -948,6 +953,62 @@ def applyTransform(array,transform):
 
 
 
+gr=0
+volumes_all=all_volumes_singular[gr]
+volume_oop=all_volumes_singular[gr][0]
+mask=m_.mask
+
+variance_explained=0.7
+all_pixels=np.argwhere(mask>0)
+
+pixels_group=[]
+patches_group=[]
+
+dico_pixel_group={}
+
+
+
+for j,pixel in tqdm(enumerate(all_pixels[:])):
+    #print(pixel)
+    all_patches_retained, pixels = select_similar_patches(tuple(pixel), volumes_all, volume_oop, window=(5, 10, 10),sliding_window=(10,20,20),steps=(3,3,3),
+                                                          L=10)
+    shape=all_patches_retained.shape
+    all_patches_retained = all_patches_retained.reshape(shape[0], shape[1],
+                                                        -1)
+    all_patches_retained = np.moveaxis(all_patches_retained, 0, -1)
+    res=compute_low_rank_tensor(all_patches_retained,variance_explained)
+    res=np.moveaxis(all_patches_retained,-1,0)
+    res=res.reshape(res.shape[0],res.shape[1],-1)
+    res = np.moveaxis(res, 1, -1)
+    res=res.reshape(-1,res.shape[-1])
+
+    #print(res.shape)
+    #res=res.reshape(shape)
+
+    patches_group.append(res)
+
+    pixels=np.moveaxis(pixels,1,-1)
+    pixels = pixels.reshape(-1, pixels.shape[-1])
+    #print(pixels.shape)
+
+
+
+    for i,pixel_patches in enumerate(pixels):
+        if tuple(pixel_patches) not in dico_pixel_group.keys():
+            dico_pixel_group[tuple(pixel_patches)]=np.zeros(len(all_pixels))
+
+        dico_pixel_group[tuple(pixel_patches)][j]=i+1
+
+
+
+
+patches_group=np.array(patches_group)
+pixels_group=np.array(pixels_group)
+
+
+
+
+
 if str.split(filename_volume_singular,"/")[-1] not in os.listdir(folder):
     traj=radial_traj.get_traj().reshape(ntimesteps,-1,3)
     kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,-1)
@@ -1014,3 +1075,316 @@ for iter in list(all_maps.keys()):
                              "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "{}_it{}_{}.mha".format(suffix,
             iter, "phase")
         io.write(file_mha, makevol(all_maps[iter][3],mask>0), tags={"spacing": [dz, dx, dy]})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+######SIMU########
+### Movements simulation
+
+#import matplotlib
+#matplotlib.u<se("TkAgg")
+import numpy as np
+from mrfsim import T1MRF
+from image_series import *
+from dictoptimizers import SimpleDictSearch,GaussianWeighting
+from utils_mrf import *
+import json
+import readTwix as rT
+import time
+import os
+from numpy.lib.format import open_memmap
+from numpy import memmap
+import pickle
+from scipy.io import loadmat,savemat
+from mutools import io
+from sklearn import linear_model
+from scipy.optimize import minimize
+from movements import TranslationBreathing
+from utils_simu import *
+
+base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
+base_folder = "./3D"
+
+#dictfile = "mrf175_SimReco2_light.dict"
+dictjson="mrf_dictconf_SimReco2_light.json"
+dictfile="mrf_dictconf_SimReco2_adjusted_1_87_reco4_w8_simmean.dict"
+dictfile_light='./mrf_dictconf_SimReco2_light_matching_adjusted_1_87_reco4_w8_simmean.dict'
+suffix="_fullReco"
+with open("./mrf_sequence_adjusted_1_87.json") as f:
+   sequence_config = json.load(f)
+Treco=4000
+
+nrep=2
+rep=nrep-1
+TR_total = np.sum(sequence_config["TR"])
+
+#Treco = TR_total-np.sum(sequence_config["TR"])
+
+##other options
+sequence_config["T_recovery"]=Treco
+sequence_config["nrep"]=nrep
+sequence_config["rep"]=rep
+
+seq=T1MRFSS(**sequence_config)
+
+nb_filled_slices = 16
+nb_empty_slices=2
+repeat_slice=16
+nb_slices = nb_filled_slices+2*nb_empty_slices
+
+undersampling_factor=1
+
+name = "SquareSimu3DMT"
+name = "Knee3D_2DPlus1"
+
+use_GPU = False
+light_memory_usage=True
+gen_mode="other"
+
+
+localfile="/"+name
+filename = base_folder+localfile
+
+#filename="./data/InVivo/3D/20211221_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
+#filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
+#filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
+
+folder = "/".join(str.split(filename,"/")[:-1])
+
+suffix=""
+
+filename_paramMap=filename+"_paramMap_sl{}_rp{}.pkl".format(nb_slices,repeat_slice)
+filename_paramMask=filename+"_paramMask_sl{}_rp{}.npy".format(nb_slices,repeat_slice)
+filename_groundtruth = filename+"_groundtruth_volumes_sl{}_rp{}{}.npy".format(nb_slices,repeat_slice,"")
+
+filename_kdata = filename+"_kdata_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_kdata_gt = filename+"_kdata_mvt_gt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_nav = filename+"_nav_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
+filename_volume = filename+"_volumes_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_volume_corrected = filename+"_volumes_corrected_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_volume_corrected_autofocus = filename+"_volumes_corrected_autofocus_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
+
+filename_mask= filename+"_mask_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_mask_corrected= filename+"_mask_corrected_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+filename_mask_corrected_autofocus= filename+"_mask_corrected_autofocus_mvt_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
+filename_displacements_real= filename+"_displacements_real_sl{}_rp{}_us{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,"")
+
+
+file_map = filename + "_mvt_sl{}_rp{}_us{}{}_MRF_map.pkl".format(nb_slices,repeat_slice,undersampling_factor,suffix)
+
+
+
+#filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
+
+
+
+ntimesteps=175
+nb_channels=1
+nb_allspokes = 1400
+npoint = 256
+
+if "Knee" in name:
+    npoint_backup=npoint
+    npoint=512
+
+
+
+incoherent=False
+mode="old"
+
+image_size = (nb_slices, int(npoint/2), int(npoint/2))
+nb_segments=nb_allspokes
+nspoke=int(nb_segments/ntimesteps)
+size = image_size[1:]
+
+with open(dictjson) as f:
+    dict_config = json.load(f)
+dict_config["ff"]=np.arange(0.,1.05,0.05)
+
+if "Square" in name:
+    region_size=16 #size of the regions with uniform values for params in pixel number (square regions)
+    mask_reduction_factor=1/4
+
+
+    m_ = RandomMap3D(name,dict_config,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,undersampling_factor=undersampling_factor,repeat_slice=repeat_slice,resting_time=4000,image_size=size,region_size=region_size,mask_reduction_factor=mask_reduction_factor,gen_mode=gen_mode)
+
+# elif name=="KneePhantom":
+#     num =1
+#     file_matlab_paramMap = "./data/{}/Phantom{}/paramMap.mat".format(name,num)
+#
+#     m = MapFromFile(name,image_size=image_size,file=file_matlab_paramMap,rounding=True,gen_mode="other")
+
+elif "Knee" in name:
+    num =1
+    file_matlab_paramMap = "./data/KneePhantom/Phantom{}/paramMap_Control.mat".format(num)
+    m_ = MapFromFile3D(name,nb_slices=nb_filled_slices,nb_empty_slices=nb_empty_slices,image_size=image_size,file=file_matlab_paramMap,rounding=True,gen_mode="other",undersampling_factor=undersampling_factor,resting_time=4000)
+
+else:
+    raise ValueError("Unknown Name")
+
+
+
+
+if (str.split(filename_paramMap,"/")[-1] not in os.listdir(folder)) or (("Knee" in name)and(npoint_backup<npoint)):
+    m_.buildParamMap()
+    with open(filename_paramMap, "wb" ) as file:
+        pickle.dump(m_.paramMap, file)
+
+    map_rebuilt = m_.paramMap
+    mask = m_.mask
+
+    keys_simu = list(map_rebuilt.keys())
+    values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+    map_for_sim = dict(zip(keys_simu, values_simu))
+
+    np.save(filename_paramMask,mask)
+
+    for key in ["ff", "wT1", "df", "attB1"]:
+        file_mha = "/".join(["/".join(str.split(filename_paramMap, "/")[:-1]),
+                             "_".join(str.split(str.split(filename_paramMap, "/")[-1], ".")[:-1])]) + "_{}.mha".format(
+                                                                                                                   key)
+        io.write(file_mha, map_for_sim[key], tags={"spacing": [5, 1, 1]})
+
+else:
+    with open(filename_paramMap, "rb") as file:
+        m_.paramMap=pickle.load(file)
+    m_.mask=np.load(filename_paramMask)
+
+
+if (str.split(filename_kdata,"/")[-1] not in os.listdir(folder))or (("Knee" in name)and(npoint_backup<npoint)):
+    m_.build_ref_images(seq)
+else:
+    m_.build_timeline(list(seq.TR))
+
+if (("Knee" in name)and(npoint_backup<npoint)):
+    m_.change_resolution(int(npoint/npoint_backup))
+    npoint=npoint_backup
+
+image_size = (nb_slices, int(npoint/2), int(npoint/2))
+size = image_size[1:]
+
+
+
+
+radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode,is_random=False)
+
+nb_channels=1
+
+
+# direction=np.array([0.0,10,0.0])
+# move = TranslationBreathing(direction,T=4000,frac_exp=0.7)
+#
+# m_.add_movements([move])
+
+
+if str.split(filename_kdata,"/")[-1] not in os.listdir(folder):
+
+    #images = copy(m.images_series)
+    data=m_.generate_kdata(radial_traj,useGPU=use_GPU)
+    data=np.array(data)
+    data=np.expand_dims(data,axis=0)
+    np.save(filename_kdata, data)
+
+else:
+    #kdata_all_channels_all_slices = open_memmap(filename_kdata)
+    data = np.load(filename_kdata)
+
+nb_segments=radial_traj.get_traj().shape[0]
+
+b1_full = np.ones(image_size)
+b1_all_slices=np.expand_dims(b1_full,axis=0)
+
+
+
+print("Building Volumes....")
+if str.split(filename_volume,"/")[-1] not in os.listdir(folder):
+    #del kdata_all_channels_all_slices
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+
+    volumes_all=simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,m_.image_size,b1=b1_all_slices,density_adj=True,ntimesteps=ntimesteps,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=light_memory_usage,normalize_iterative=True)
+    np.save(filename_volume,volumes_all)
+    # sl=10
+    # ani = animate_images(volumes_all[:,int(nb_slices/2),:,:])
+else:
+    volumes_all=np.load(filename_volume)
+
+##volumes for slice taking into account coil sensi
+print("Building Mask....")
+if str.split(filename_mask,"/")[-1] not in os.listdir(folder):
+    mask=m_.mask
+    np.save(filename_mask,mask)
+else:
+    mask=np.load(filename_mask)
+
+
+data=data.reshape(nb_channels,ntimesteps,-1,nb_slices,npoint)
+density = np.abs(np.linspace(-1, 1, npoint))
+density = np.expand_dims(density,tuple(range(data.ndim-1)))
+
+data_dens_adj=data*density
+data_zkxky=np.fft.fftshift(np.fft.ifft(np.fft.ifftshift(data_dens_adj,axes=3),axis=3),axes=3)
+
+data_zkxky=np.moveaxis(data_zkxky,3,1)
+data_zkxky=data_zkxky.reshape(nb_channels*nb_slices,ntimesteps,-1)
+data_zkxky=data_zkxky.astype("complex64")
+
+radial_traj_2D=Radial(total_nspokes=nb_allspokes,npoint=npoint)
+traj=radial_traj_2D.get_traj_for_reconstruction(ntimesteps).astype("float32")
+volumes_2Dplus1=np.zeros((ntimesteps,)+image_size,dtype=np.complex64)
+
+for ts in tqdm(range(ntimesteps)):
+    t=traj[ts]
+    #for sl in tqdm(range(nb_slices)):
+    volumes_2Dplus1[ts]=finufft.nufft2d1(t[:,0],t[:,1],data_zkxky[:,ts],image_size[1:])
+
+
+animate_images(volumes_2Dplus1[:,int(nb_slices/2)])
+
+
+ts=np.random.randint(ntimesteps)
+sl=np.random.randint(nb_slices)
+
+
+plt.close("all")
+fig,ax=plt.subplots(1,3)
+metric=np.real
+im0=ax[0].imshow(metric(volumes_all[ts,sl]/np.linalg.norm(volumes_all[ts,sl])))
+fig.colorbar(im0,ax=ax[0])
+im1=ax[1].imshow(metric(volumes_2Dplus1[ts,sl]/np.linalg.norm(volumes_2Dplus1[ts,sl])))
+fig.colorbar(im1,ax=ax[1])
+im2=ax[2].imshow(metric(volumes_2Dplus1[ts,sl]/np.linalg.norm(volumes_2Dplus1[ts,sl]))-metric(volumes_all[ts,sl]/np.linalg.norm(volumes_all[ts,sl])))
+fig.colorbar(im2,ax=ax[2])
+
+
+signals=volumes_all[:,mask>0]
+signals_2Dplus1=volumes_2Dplus1[:,mask>0]
+
+
+
+num=np.random.randint(int(mask.sum()))
+signal=signals[:,num]
+signal_2Dplus1=signals_2Dplus1[:,num]
+
+signal/=np.linalg.norm(signal)
+signal_2Dplus1/=np.linalg.norm(signal_2Dplus1)
+
+
+plt.figure()
+plt.plot(signal,label="3D")
+plt.plot(signal_2Dplus1,label="2Dplus1")
+plt.legend()
