@@ -163,8 +163,10 @@ def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersa
     #traj = np.reshape(all_spokes, (-1, nspoke * npoint))
 
     k_z = np.zeros((timesteps, nb_rep))
-    all_slices = np.linspace(-np.pi, np.pi, nb_slices)
+    #all_slices = np.linspace(-np.pi, np.pi, nb_slices)
+    all_slices=np.arange(-np.pi, np.pi, 2 * np.pi / nb_slices)
     k_z[0, :] = all_slices[::undersampling_factor]
+
     for j in range(1, k_z.shape[0]):
         k_z[j, :] = np.sort(np.roll(all_slices, -j)[::undersampling_factor])
 
@@ -4542,10 +4544,10 @@ def select_patch(k,volume,window=(2,5,5)):
     #print(pixels)
     return patch,pixels
 
-def select_similar_patches(k,volume,volume_ref,window=(2,5,5),L=10,sliding_window=(3,3,3),quantile=None):
+def select_similar_patches(k,volume,volume_ref,window=(2,5,5),L=10,sliding_window=(2,10,10),steps=(3,3,3),quantile=None):
     original_patch,_=select_patch(k,volume_ref,window)
     array_k=np.array(k).reshape(-1,1)
-    zxy = np.mgrid[-sliding_window[0]:(sliding_window[0]+1):1, -sliding_window[1]:(sliding_window[1]+1):1, -sliding_window[2]:(sliding_window[2]+1):1].reshape(3, -1)
+    zxy = np.mgrid[-sliding_window[0]:(sliding_window[0]+1):steps[0], -sliding_window[1]:(sliding_window[1]+1):steps[1], -sliding_window[2]:(sliding_window[2]+1):steps[2]].reshape(3, -1)
     k_s = array_k + zxy
     shape=volume.shape[-3:]
     k_s[0, :] = np.maximum(0, k_s[0, :])
