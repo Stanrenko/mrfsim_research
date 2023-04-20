@@ -55,6 +55,13 @@ filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
 
+
+localfile="/patient.008.v7/meas_MID00020_FID37032_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2.26_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2.26_reco4_w8_simmean.dict"
+
+
+
 return_cost=True
 
 if str.split(filename_seqParams,"/")[-1] not in os.listdir(folder):

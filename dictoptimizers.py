@@ -2910,15 +2910,10 @@ class SimpleDictSearch(Optimizer):
 
             all_signals =signals_for_matching/norm_signals
 
-
-
         if log:
             print(date_time)
 
         return dict(zip(keys_results, values_results))
-
-
-
 
     def search_patterns_MRF_denoising(self, dictfile, volumes, retained_timesteps=None):
 
@@ -3091,7 +3086,6 @@ class SimpleDictSearch(Optimizer):
                         sig_fs_all_unique = (cp.matmul(cp.asarray(transformed_array_fat_unique),
                                                        cp.asarray(transformed_all_signals_fat).conj())).get()
                     else:
-
                         sig_ws_all_unique = (cp.matmul(cp.asarray(array_water_unique),
                                                        cp.asarray(all_signals)[:, j_signal:j_signal_next].conj())).get()
                         sig_fs_all_unique = (cp.matmul(cp.asarray(array_fat_unique),

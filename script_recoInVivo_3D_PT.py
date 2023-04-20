@@ -117,6 +117,18 @@ dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_28_reco4_w8_simmean.dict"
 dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_28_reco4_w8_simmean.dict"
 
 
+
+
+localfile="/patient.008.v7/meas_MID00020_FID37032_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_26_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_26_reco4_w8_simmean.dict"
+
+
+localfile="/patient.003.v13/meas_MID00021_FID42448_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_33_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_33_reco4_w8_simmean.dict"
+
+
 #
 # dictfile="mrf_dictconf_Dico2_Invivo_adjusted_760_2.22_reco4_w8_simmean.dict"
 # dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_760_2.22_reco4_w8_simmean.dict"
@@ -153,8 +165,10 @@ filename_b1_bart = str.split(filename,".dat") [0]+"_b1_bart{}.npy".format("")
 filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 
 filename_volume = str.split(filename,".dat") [0]+"_volumes{}.npy".format("")
-filename_kdata = str.split(filename,".dat") [0]+"_kdataa_no_dens_adj{}.npy".format("")
+filename_kdata = str.split(filename,".dat") [0]+"_kdata_no_dens_adj{}.npy".format("")
 filename_kdata_pt_corr = str.split(filename,".dat") [0]+"_kdata_no_dens_adj_pt_corr{}.npy".format("")
+filename_displacement_pt = str.split(filename,".dat") [0]+"_displacement_pt{}.npy".format("")
+
 
 #filename_kdata_no_dens_adj = str.split(filename,".dat") [0]+"_kdata_no_dens_adj.npy".format("")
 filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
@@ -489,6 +503,7 @@ plt.close("all")
 fig,ax=plt.subplots(6,6)
 axli=ax.flatten()
 all_radial_proj_all_ch_no_corr=[]
+sl=int(nb_slices/2)
 for ch in range(nb_channels):
     kdata_PT=kdata_all_channels_all_slices[ch]
     traj_PT=radial_traj.get_traj().reshape(nb_allspokes,nb_slices,-1,3)
@@ -510,79 +525,79 @@ for ch in range(nb_channels):
 all_radial_proj_all_ch_no_corr[ch].shape
 plt.figure()
 plt.imshow(all_radial_proj_all_ch_no_corr[ch])
+#
+#
+# ch=0
+# j=5
+# kdata_PT=kdata_all_channels_all_slices[ch]
+# radial_proj=np.abs(np.fft.fft(kdata_PT[j][sl]))
+# plt.figure()
+# plt.plot(radial_proj)
+#
+# fmin=560
+# fmax=700
+#
+# fopt=freqs[fmin+np.argmax(np.abs(radial_proj[fmin:fmax]))]
+# fnon= lambda f: -np.abs(np.sum(np.conj(kdata_PT[j][sl])*np.exp(2*1j*np.pi*f/npoint*np.arange(npoint))))
+# x= minimize(fnon,x0=fopt,bounds=[(freqs[fmin],freqs[fmax])],tol=1e-8)
+# x
+#
+# fnon= lambda f: np.abs(np.sum(2*1j*np.pi*f/npoint*np.arange(npoint)*np.conj(kdata_PT[j][sl])*np.exp(2*1j*np.pi*f/npoint*np.arange(npoint))))
+#
+#
+#
+# fmin=550
+# fmax=700
+# freqs=np.fft.fftshift(np.fft.fftfreq(npoint))*npoint
+# #f=fopt
+# from scipy.optimize import minimize
+# tol=1e-8
+#
+#
+#
+# ch_opt=16
+#
+#
+# import cupy as cp
+# fs_hat=cp.zeros(nb_allspokes,nb_slices)
+#
+# kdata_with_pt=cp.asarray(kdata_all_channels_all_slices)
+#
+# f_min = 180
+# f_max = 280
+# f_list = cp.arange(f_min, f_max, 0.1)
+#
+#
+#
+# for ts in tqdm(range(nb_allspokes)):
+#     for sl in range(nb_slices):
+#         fun_correl=lambda f : -cp.abs(cp.sum(kdata_with_pt[ch_opt,ts,sl].conj()*cp.exp(2*1j*np.pi*f*cp.arange(npoint)/npoint)))
+#
+#
+#         cost=cp.array([fun_correl(f) for f in f_list])
+#         #cost_padded=np.array([cost[0]]+cost+[cost[-1]])
+#         #cost=np.maximum(cost_padded[1:-1]-0.5*(cost_padded[:-2]+cost_padded[2:]),0)
+#
+#         #x = minimize(fun_correl, x0=(f_min+f_max)/2, bounds=[(f_min, f_max)], tol=1e-8)
+#
+#         f_opt=f_list[cp.argmin(cost)]
+#         #f_opt=x.x[0]
+#         fs_hat[ts,sl]=f_opt
+#
+#
+# fs_hat=fs_hat.get()
+#
 
 
-ch=21
-j=5
-kdata_PT=kdata_all_channels_all_slices[ch]
-radial_proj=np.abs(np.fft.fft(kdata_PT[j][sl]))
-plt.figure()
-plt.plot(radial_proj)
-
-fmin=560
-fmax=700
-
-fopt=freqs[fmin+np.argmax(np.abs(radial_proj[fmin:fmax]))]
-fnon= lambda f: -np.abs(np.sum(np.conj(kdata_PT[j][sl])*np.exp(2*1j*np.pi*f/npoint*np.arange(npoint))))
-x= minimize(fnon,x0=fopt,bounds=[(freqs[fmin],freqs[fmax])],tol=1e-8)
-x
-
-fnon= lambda f: np.abs(np.sum(2*1j*np.pi*f/npoint*np.arange(npoint)*np.conj(kdata_PT[j][sl])*np.exp(2*1j*np.pi*f/npoint*np.arange(npoint))))
-
-
-
-fmin=550
-fmax=700
-freqs=np.fft.fftshift(np.fft.fftfreq(npoint))*npoint
-#f=fopt
-from scipy.optimize import minimize
-tol=1e-8
-
-
-
-ch_opt=21
-
-
-import cupy as cp
-fs_hat=cp.zeros(nb_allspokes,nb_slices)
-
-kdata_with_pt=cp.asarray(kdata_all_channels_all_slices)
-
-f_min = 180
-f_max = 280
-f_list = cp.arange(f_min, f_max, 0.1)
-
-
-
-for ts in tqdm(range(nb_allspokes)):
-    for sl in range(nb_slices):
-        fun_correl=lambda f : -cp.abs(cp.sum(kdata_with_pt[ch_opt,ts,sl].conj()*cp.exp(2*1j*np.pi*f*cp.arange(npoint)/npoint)))
-
-
-        cost=cp.array([fun_correl(f) for f in f_list])
-        #cost_padded=np.array([cost[0]]+cost+[cost[-1]])
-        #cost=np.maximum(cost_padded[1:-1]-0.5*(cost_padded[:-2]+cost_padded[2:]),0)
-
-        #x = minimize(fun_correl, x0=(f_min+f_max)/2, bounds=[(f_min, f_max)], tol=1e-8)
-
-        f_opt=f_list[cp.argmin(cost)]
-        #f_opt=x.x[0]
-        fs_hat[ts,sl]=f_opt
-
-
-fs_hat=fs_hat.get()
-
-
-
-max_slices=8
+max_slices=nb_slices
 fs_hat=np.zeros((nb_allspokes,max_slices))
 
 kdata_with_pt=np.load(filename_kdata)
 
-ch_opt=7
+ch_opt=16
 f_min = 200
-f_max = 250
-f_list = np.arange(f_min, f_max, 0.01)
+f_max = 270
+f_list = np.arange(f_min, f_max, 0.001)
 
 
 
@@ -599,55 +614,55 @@ for ts in tqdm(range(nb_allspokes)):
 
     #f_opt=x.x[0]
     fs_hat[ts,:]=f_list[np.argmin(fun_correl_matrix,axis=0)].squeeze()
-
-
-fs_hat=np.zeros((nb_allspokes,nb_slices))
-
-kdata_with_pt=np.load(filename_kdata)
-
-ch_opt=31
-f_min = 150
-f_max = 350
-f_list = np.arange(f_min, f_max, 0.1)
-
-for ts in tqdm(range(nb_allspokes)):
-    f_list = np.expand_dims(np.arange(f_min, f_max, 0.1), axis=(1, 2))
-    npoint_list = np.expand_dims(np.arange(npoint), axis=(0, 1))
-    fun_correl_matrix = np.pad(-np.abs(np.sum(np.expand_dims(kdata_with_pt[ch_opt, ts].conj(), axis=0) * np.exp(
-        2 * 1j * np.pi * f_list * npoint_list / npoint), axis=-1)),((1,1),(0,0)))
-
-    fun_correl_matrix=np.maximum(fun_correl_matrix[1:-1]-0.5*(fun_correl_matrix[2:]+fun_correl_matrix[:-2]),0)
-    #cost_padded=np.array([cost[0]]+cost+[cost[-1]])
-    #cost=np.maximum(cost_padded[1:-1]-0.5*(cost_padded[:-2]+cost_padded[2:]),0)
-
-    #x = minimize(fun_correl, x0=(f_min+f_max)/2, bounds=[(f_min, f_max)], tol=1e-8)
-
-    #f_opt=x.x[0]
-    fs_hat[ts,:]=f_list[np.argmax(fun_correl_matrix,axis=0)].squeeze()
-
-
-f_list = np.expand_dims(np.arange(f_min, f_max, 0.1),axis=(1,2))
-npoint_list=np.expand_dims(np.arange(npoint),axis=(0,1))
-fun_correl_matrix=-np.abs(np.sum(np.expand_dims(kdata_with_pt[ch_opt,sl].conj(),axis=0)*np.exp(2*1j*np.pi*f_list*npoint_list/npoint),axis=-1))
-
-f_list[np.argmin(fun_correl_matrix,axis=0)].squeeze()
-
-
-ts=-10
-sl=-1
-ch=ch_opt
-
-from scipy.optimize import fminbound
-
-fun_correl=lambda f : -np.abs(np.sum(kdata_with_pt[ch,ts,sl].conj()*np.exp(2*1j*np.pi*f*np.arange(npoint)/npoint)))
-x = fminbound(fun_correl, f_min, f_max, tol=1e-8)
-
-plt.figure()
-plt.plot(f_list,[fun_correl(f) for f in f_list])
-plt.axvline(x.x,c="r")
-
-plt.figure()
-plt.plot(f_list,[fun_correl(f) for f in f_list])
+#
+#
+# fs_hat=np.zeros((nb_allspokes,nb_slices))
+#
+# kdata_with_pt=np.load(filename_kdata)
+#
+# ch_opt=31
+# f_min = 150
+# f_max = 350
+# f_list = np.arange(f_min, f_max, 0.1)
+#
+# for ts in tqdm(range(nb_allspokes)):
+#     f_list = np.expand_dims(np.arange(f_min, f_max, 0.1), axis=(1, 2))
+#     npoint_list = np.expand_dims(np.arange(npoint), axis=(0, 1))
+#     fun_correl_matrix = np.pad(-np.abs(np.sum(np.expand_dims(kdata_with_pt[ch_opt, ts].conj(), axis=0) * np.exp(
+#         2 * 1j * np.pi * f_list * npoint_list / npoint), axis=-1)),((1,1),(0,0)))
+#
+#     fun_correl_matrix=np.maximum(fun_correl_matrix[1:-1]-0.5*(fun_correl_matrix[2:]+fun_correl_matrix[:-2]),0)
+#     #cost_padded=np.array([cost[0]]+cost+[cost[-1]])
+#     #cost=np.maximum(cost_padded[1:-1]-0.5*(cost_padded[:-2]+cost_padded[2:]),0)
+#
+#     #x = minimize(fun_correl, x0=(f_min+f_max)/2, bounds=[(f_min, f_max)], tol=1e-8)
+#
+#     #f_opt=x.x[0]
+#     fs_hat[ts,:]=f_list[np.argmax(fun_correl_matrix,axis=0)].squeeze()
+#
+#
+# f_list = np.expand_dims(np.arange(f_min, f_max, 0.1),axis=(1,2))
+# npoint_list=np.expand_dims(np.arange(npoint),axis=(0,1))
+# fun_correl_matrix=-np.abs(np.sum(np.expand_dims(kdata_with_pt[ch_opt,sl].conj(),axis=0)*np.exp(2*1j*np.pi*f_list*npoint_list/npoint),axis=-1))
+#
+# f_list[np.argmin(fun_correl_matrix,axis=0)].squeeze()
+#
+#
+# ts=-10
+# sl=-1
+# ch=ch_opt
+#
+# from scipy.optimize import fminbound
+#
+# fun_correl=lambda f : -np.abs(np.sum(kdata_with_pt[ch,ts,sl].conj()*np.exp(2*1j*np.pi*f*np.arange(npoint)/npoint)))
+# x = fminbound(fun_correl, f_min, f_max, tol=1e-8)
+#
+# plt.figure()
+# plt.plot(f_list,[fun_correl(f) for f in f_list])
+# plt.axvline(x.x,c="r")
+#
+# plt.figure()
+# plt.plot(f_list,[fun_correl(f) for f in f_list])
 
 # fs_hat_bis=np.zeros((nb_allspokes,nb_slices))
 #
@@ -773,18 +788,19 @@ for ch in range(nb_channels):
 ch=np.random.randint(nb_channels)
 plt.figure()
 plt.title("Radial Projection Corrected from PT ch {} sl {}".format(ch,sl))
-plt.imshow(all_radial_proj_all_ch[21],vmin=0,vmax=0.002)
+plt.imshow(all_radial_proj_all_ch[ch],vmin=0,vmax=0.001)
 
 plt.figure()
 plt.title("Radial Projection ch {} sl {}".format(ch,sl))
-plt.imshow(all_radial_proj_all_ch_no_corr[ch],vmin=0,vmax=0.002)
+plt.imshow(all_radial_proj_all_ch_no_corr[ch],vmin=0,vmax=0.001)
+
 
 ch=np.random.randint(nb_channels)
 sl=np.random.randint(max_slices)
-sl=0
+#sl=2
 ch=ch_opt
 plt.figure()
-plt.plot(As_hat[ch,::28,sl])
+plt.plot(As_hat[ch,:,sl])
 
 
 As_hat_normalized=np.zeros(As_hat.shape)
@@ -810,8 +826,8 @@ for ch in tqdm(range(nb_channels)):
 
 ch=np.random.randint(nb_channels)
 sl=np.random.randint(max_slices)
-ch=3
-sl=0
+#ch=3
+#sl=0
 plt.figure()
 plt.plot(As_hat_normalized[ch,:,sl])
 plt.plot(As_hat_filtered[ch,:,sl])
@@ -821,23 +837,32 @@ plt.figure()
 plt.plot(As_hat_filtered[:,:,sl].T,label=np.arange(nb_channels))
 plt.legend()
 
-ch=13
+ch=16
 plt.figure()
 plt.plot(As_hat_filtered[ch,::28,sl])
 
 sl=3
 
 
-explained_variances_all_slices=[]
-movement_all_slices=[]
-for sl in tqdm(range(max_slices)):
-    data_for_pca=As_hat_filtered[:,:,sl]
-    from sklearn.decomposition import PCA
-    pca=PCA(n_components=1)
-    pca.fit(data_for_pca.T)
-    pcs=pca.components_@data_for_pca
-    explained_variances_all_slices.append(pca.explained_variance_ratio_)
-    movement_all_slices.append(pcs[0])
+data_for_pca=np.moveaxis(As_hat_filtered,-1,-2)
+data_for_pca=data_for_pca.reshape(nb_channels,-1)
+
+from sklearn.decomposition import PCA
+pca=PCA(n_components=1)
+pca.fit(data_for_pca.T)
+pcs=pca.components_@data_for_pca
+explained_variances_all_slices=pca.explained_variance_ratio_
+movement_all_slices=pcs[0]
+
+#
+# for sl in tqdm(range(max_slices)):
+#     data_for_pca=As_hat_filtered[:,:,sl]
+#     from sklearn.decomposition import PCA
+#     pca=PCA(n_components=1)
+#     pca.fit(data_for_pca.T)
+#     pcs=pca.components_@data_for_pca
+#     explained_variances_all_slices.append(pca.explained_variance_ratio_)
+#     movement_all_slices.append(pcs[0])
 
 
 movement_all_slices=np.array(movement_all_slices)
@@ -846,9 +871,13 @@ plt.figure()
 plt.plot(movement_all_slices.flatten())
 
 plt.figure()
+plt.plot(data_for_pca[ch_opt])
+
+
+plt.figure()
 plt.plot(As_hat_filtered[ch_opt,::28,:].T.flatten())
 
-np.save("pilot_tone_mvt_test_ch_13.npy",As_hat_filtered[ch,::28,:].T.flatten())
+np.save(filename_displacement_pt,movement_all_slices.reshape(max_slices,nb_allspokes)[:,::28])
 
 
 

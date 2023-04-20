@@ -925,9 +925,12 @@ inverseTx=outTx.GetInverse()
 resampler_inverse.SetTransform(inverseTx)
 animate_images([sitk.GetArrayFromImage(resampler.Execute(fixed)),sitk.GetArrayFromImage(moving)])
 
-
 Mn=inverseTx
 Mn_H = outTx
+
+
+
+
 
 
 dico_transform={}

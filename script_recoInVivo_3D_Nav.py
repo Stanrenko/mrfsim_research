@@ -109,6 +109,13 @@ localfile="/patient.003.v12/meas_MID00020_FID36427_raFin_3D_tra_1x1x5mm_FULL_new
 dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_28_reco4_w8_simmean.dict"
 dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_28_reco4_w8_simmean.dict"
 
+
+
+localfile="/patient.008.v7/meas_MID00020_FID37032_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_26_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_26_reco4_w8_simmean.dict"
+
+
 filename = base_folder+localfile
 
 #filename="./data/InVivo/3D/20211221_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
@@ -562,17 +569,22 @@ if nb_gating_spokes>0:
     shifts = list(range(-15, 30))
     bottom = 15
     top = int(npoint/2)-30
-    displacements = calculate_displacement(image_nav_ch, bottom, top, shifts,lambda_tv=0.01)
+    displacements_1_ch = calculate_displacement(image_nav_ch, bottom, top, shifts,lambda_tv=0.01)
 
     plt.figure()
     plt.plot(displacements)
 
-    displacements_pt=np.load("pilot_tone_mvt_test_ch_13.npy")
+    displacements=np.load("diplacement_navallch_postproc.npy")
 
-    rep=1
+    displacements_pt=np.load("pilot_tone_mvt_test_pca_allslices.npy")
+    displacements_pt=displacements_pt.flatten()
+
+    max_slices = nb_slices
+
+    rep=np.random.randint(max_slices)
     resp_pt=displacements_pt[(rep*nb_gating_spokes):(rep+1)*nb_gating_spokes]
     resp_pt=(resp_pt-np.min(resp_pt))/(np.max(resp_pt)-np.min(resp_pt))
-    resp_nav=-displacements[(rep*nb_gating_spokes):(rep+1)*nb_gating_spokes]
+    resp_nav=displacements[(rep*nb_gating_spokes):(rep+1)*nb_gating_spokes]
     resp_nav = (resp_nav - np.min(resp_nav)) / (np.max(resp_nav) - np.min(resp_nav))
 
     plt.figure()
@@ -580,34 +592,49 @@ if nb_gating_spokes>0:
     plt.plot(resp_nav)
 
 
-    max_slices=8
+    max_slices=nb_slices
     displacements_resized=displacements.reshape(nb_slices,nb_gating_spokes)[:max_slices]
-    displacements_pt_resized = -displacements_pt.reshape(max_slices, nb_gating_spokes)
+    displacements_pt_resized =displacements_pt.reshape(max_slices, nb_gating_spokes)
 
     displacements_resized=(displacements_resized-np.min(displacements_resized,axis=-1,keepdims=True))/(np.max(displacements_resized,axis=-1,keepdims=True)-np.min(displacements_resized,axis=-1,keepdims=True))
     displacements_pt_resized = (displacements_pt_resized - np.min(displacements_pt_resized, axis=-1, keepdims=True)) / (
                 np.max(displacements_pt_resized, axis=-1, keepdims=True) - np.min(displacements_pt_resized, axis=-1,
                                                                                keepdims=True))
 
+    displacements_1_ch_resized = displacements_1_ch.reshape(max_slices, nb_gating_spokes)
+    displacements_1_ch_resized = (displacements_1_ch_resized - np.min(displacements_1_ch_resized, axis=-1, keepdims=True)) / (
+            np.max(displacements_1_ch_resized, axis=-1, keepdims=True) - np.min(displacements_1_ch_resized, axis=-1,
+                                                                              keepdims=True))
+
     plt.figure()
-    fig,ax=plt.subplots(4,2)
+    fig,ax=plt.subplots(8,7,sharex=True,sharey=True)
     axli = ax.flatten()
 
     for rep in range(max_slices):
         axli[rep].plot(displacements_resized[rep])
         axli[rep].plot(displacements_pt_resized[rep])
 
+    plt.figure()
+    fig, ax = plt.subplots(8, 6, sharex=True, sharey=True)
+    axli = ax.flatten()
+
+    for rep in range(max_slices):
+        axli[rep].plot(displacements_1_ch_resized[rep])
+        axli[rep].plot(displacements_resized[rep])
+
+    #plt.tight_layout()
+
     import scipy
     corr=np.corrcoef(np.concatenate([displacements_resized,displacements_pt_resized],axis=0))
-    corr.shape
 
-    corr[:8,8:]
+    corr[corr<0.8]=0
+
     plt.figure()
     import seaborn as sns
-    sns.heatmap(corr[:8,8:])
+    sns.heatmap(corr[:max_slices,max_slices:])
 
 
-    np.save("image_nav_ch_siemens_sfrmbm.npy",image_nav_ch)
+    #np.save("image_nav_ch_siemens_sfrmbm.npy",image_nav_ch)
 
 
     displacement_for_binning = displacements

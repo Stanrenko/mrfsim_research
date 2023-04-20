@@ -23,6 +23,8 @@ import twixtools
 localfile="/phantom.001.v1/phantom.001.v1.dat"
 localfile="/patient.008.v4/meas_MID00148_FID28313_raFin_3D_tra_1x1x5mm_FULL_new.dat"
 localfile="/patient.002.v5/meas_MID00021_FID34064_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/patient.008.v7/meas_MID00020_FID37032_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+
 #localfile="/phantom.001.v1/meas_MID00030_FID51057_raFin_3D_phantom_mvt_0"
 #localfile="/phantom.006.v1/meas_MID00027_FID02798_raFin_3D_tra_1x1x5mm_FULL_FF.dat"#Box at the top border with more outside
 #localfile="/phantom.006.v1/meas_MID00028_FID02799_raFin_3D_tra_1x1x5mm_FULL_new.dat"#Box at the top border with more outside
@@ -451,11 +453,11 @@ if nb_gating_spokes>0:
     nav_image_size = (int(npoint / 2),)
 
     print("Calculating Sensitivity Maps for Nav Images...")
-    b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
-    b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
+    #b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
+    #b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
 
 
-    ch=9
+    ch=7
     image_nav_ch =simulate_nav_images_multi(np.expand_dims(data_for_nav[ch],axis=0),nav_traj, nav_image_size)
     #plt.imshow(np.abs(b1_nav[ch].reshape(-1, int(npoint/2))))
 
@@ -465,12 +467,12 @@ if nb_gating_spokes>0:
     plt.plot(np.abs(image_nav_ch.reshape(-1, int(npoint/2)))[10])
 
     print("Rebuilding Nav Images...")
-    images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
-    plt.figure()
-    plt.imshow(np.abs(images_nav_mean.reshape(-1, int(npoint/2))),cmap="gray")
+    #images_nav_mean = np.abs(simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1_nav_mean))
+    #plt.figure()
+    #plt.imshow(np.abs(images_nav_mean.reshape(-1, int(npoint/2))),cmap="gray")
 
-    plt.figure()
-    plt.plot(np.abs(images_nav_mean.reshape(-1, int(npoint/2)))[10,:])
+    #plt.figure()
+    #plt.plot(np.abs(images_nav_mean.reshape(-1, int(npoint/2)))[10,:])
 
 
     print("Estimating Movement...")
@@ -562,9 +564,21 @@ volumes_full_corrected = simulate_radial_undersampled_images_multi_new(kdata_all
 # animate_images(volumes_full_corrected)
 #
 kdata_all_channels_all_slices=np.load(filename_kdata)
-volumes_full= simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=False,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_iterative=True)[0]
+volumes_full= simulate_radial_undersampled_images_multi(kdata_all_channels_all_slices,radial_traj,image_size,b1=b1_all_slices,density_adj=True,ntimesteps=1,useGPU=False,normalize_kdata=False,memmap_file=None,light_memory_usage=True,normalize_iterative=True)[0]
 animate_images(volumes_full)
-animate_multiple_images(volumes_full,volumes_full_corrected)
+animate_multiple_images(volumes_full,volumes_full_corrected,cmap="gray")
+
+plt.close("all")
+sl=np.random.randint(nb_slices)
+plt.figure()
+plt.imshow(np.abs(volumes_full[sl]),cmap="gray")
+plt.title("Orig")
+
+plt.figure()
+plt.imshow(np.abs(volumes_full_corrected[sl]),cmap="gray")
+plt.title("Corrected")
+
+
 
 # kdata_all_channels_all_slices=np.load(filename_kdata)
 # weights_one=np.ones(weights.shape)
@@ -591,8 +605,8 @@ seq = None
 load_map=False
 save_map=True
 
-dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_21_reco4_w8_simmean.dict"
-dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_21_reco4_w8_simmean.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2.26_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2.26_reco4_w8_simmean.dict"
 
 #dictfile="mrf144w8_SeqFF_PWCR_SimRecoFFDf_light.dict"
 #dictfile="mrf144w8_SeqFF_PWCR_SimRecoFFDf_adjusted_light.dict"
@@ -605,6 +619,7 @@ dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_21_reco4
 
 mask = np.load(filename_mask)
 volumes_all = np.load(filename_volume)
+#volumes_all = np.load(filename_volume)
 #volumes_all = np.load(filename_volume_corrected)
 #volumes_corrected=np.load(filename_volume_corrected)
 
@@ -633,9 +648,9 @@ if not(load_map):
     #                             b1=b1_all_slices, mu=1,weights_TV=[1,0.2,0.2],mu_TV=1,weights=weights,threshold_ff=0.9,dictfile_light=dictfile_light)
 
     optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=seq, trajectory=radial_traj, split=100, pca=True,
-                                 threshold_pca=20, log=False, useGPU_dictsearch=True, useGPU_simulation=False,
+                                 threshold_pca=15, log=False, useGPU_dictsearch=True, useGPU_simulation=False,
                                  gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
-                                 b1=b1_all_slices, mu=1, weights_TV=[1, 0.2, 0.2], mu_TV=1,
+                                 b1=b1_all_slices, mu="Adaptative", weights_TV=[1, 0.2, 0.2], mu_TV=1,
                                  threshold_ff=0.9, dictfile_light=dictfile_light)
 
     all_maps = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, volumes_all, retained_timesteps=None)

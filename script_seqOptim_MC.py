@@ -5,7 +5,7 @@ from dictoptimizers import SimpleDictSearch
 #generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted.json","mrf_dictconf_SimReco2.json",4,sim_mode="mid_point",start=0,window=int(1400/50))
 
 sequence_file="./mrf_sequence_adjusted.json"
-sequence_file="./mrf_sequence_adjusted_760.json"
+#sequence_file="./mrf_sequence_adjusted_760.json"
 #sequence_file="./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_correl.json"
 #sequence_file="./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json"
 #sequence_file="./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2.json"
@@ -17,7 +17,7 @@ with open(sequence_file,"r") as file:
 # with open(sequence_file,"w") as file:
 #     json.dump(sequence_config,file)
 
-min_TR_delay=2.22
+min_TR_delay=2.33
 reco=4
 
 TR_list,FA_list,TE_list=load_sequence_file(sequence_file,reco,min_TR_delay/1000)
