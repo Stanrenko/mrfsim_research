@@ -131,6 +131,11 @@ dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_optimized_
 
 
 
+localfile="/patient.003.v13/meas_MID00021_FID42448_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2.26_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2.26_reco4_w8_simmean.dict"
+
+
 
 #localfile="/patient.001.v1/meas_MID00215_FID60605_raFin_3D_tra_FULl.dat"
 
@@ -154,7 +159,7 @@ filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 filename_volume = str.split(filename,".dat") [0]+"_volumes{}.npy".format("")
 filename_kdata = str.split(filename,".dat") [0]+"_kdata{}.npy".format("")
 filename_mask= str.split(filename,".dat") [0]+"_mask{}.npy".format("")
-filename_mask='./data/InVivo/3D/patient.008.v6/meas_MID00021_FID34675_raFin_3D_tra_1x1x5mm_FULL_new_reco4_mask.npy'
+#filename_mask='./data/InVivo/3D/patient.008.v6/meas_MID00021_FID34675_raFin_3D_tra_1x1x5mm_FULL_new_reco4_mask.npy'
 #filename_mask='./data/InVivo/3D/patient.001.v1/meas_MID00215_FID60605_raFin_3D_tra_FULl_mask.npy'
 #filename_mask='./data/InVivo/3D/patient.003.v3/meas_MID00021_FID13878_raFin_3D_tra_1x1x5mm_FULL_1400_old_full_mask.npy'
 #filename_mask='./data/InVivo/3D/patient.003.v4/meas_MID00060_FID14882_raFin_3D_tra_1x1x5mm_FULL_1400_old_mask.npy'
@@ -532,12 +537,14 @@ if niter>0:
     b1_all_slices=np.load(filename_b1)
 else:
     b1_all_slices=None
+    radial_traj=None
+    ntimesteps=175
 return_cost=False
 #animate_images(mask)
 suffix=""
 if not(load_map):
     #niter = 0
-    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=20,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,threshold_ff=0.9,dictfile_light=dictfile_light,mu=1,mu_TV=1,weights_TV=[1.,0.,0.],return_cost=return_cost)#,mu_TV=1,weights_TV=[1.,0.,0.])
+    optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=radial_traj,split=100,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,threshold_ff=0.9,dictfile_light=dictfile_light,mu=1,mu_TV=1,weights_TV=[1.,0.,0.],return_cost=return_cost)#,mu_TV=1,weights_TV=[1.,0.,0.])
     all_maps=optimizer.search_patterns_test_multi_2_steps_dico(dictfile,volumes_all,retained_timesteps=None)
 
     if(save_map):
@@ -754,7 +761,98 @@ for dt in dTEs:
 
 
 
+from scipy.io import loadmat,savemat
+import pickle
+import numpy as np
+from Transformers import PCAComplex
+from mutools.optim.dictsearch import dictsearch
+
+dictfile="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2.26_reco4_w8_simmean.dict"
+pca_count=15
+
+mrfdict = dictsearch.Dictionary()
+mrfdict.load(dictfile, force=True)
+keys = mrfdict.keys
+
+pca_file_name=str.split(dictfile,".dict")[0]+"_{}pca_simple.pkl".format(pca_count)
+vars_file_name=str.split(dictfile,".dict")[0]+"_vars_simple.pkl"
+
+pca_out="pca_file_Dico2_Invivo_light_2_26_reco4_15pca.mat"
+vars_out="pca_file_Dico2_Invivo_light_2_26_reco4_vars.mat"
+
+with open(pca_file_name, "rb") as file:
+    (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique) = pickle.load(file)
+
+with open(vars_file_name, "rb") as file:
+    (var_w, var_f, sig_wf,index_water_unique,index_fat_unique) = pickle.load(file)
+
+savemat(pca_out,{"PCA_FAT":pca_fat.components_,"PCA_WATER":pca_water.components_,"TRANSF_FAT":transformed_array_fat_unique,"TRANSF_WATER":transformed_array_water_unique})
+savemat(vars_out,{"VAR_W":var_w,"VAR_F":var_f,"SIG_WF":sig_wf,"INDEX_WATER":index_water_unique,"INDEX_FAT":index_fat_unique,"KEYS":keys})
 
 
 
 
+
+
+from scipy.io import loadmat,savemat
+import pickle
+import numpy as np
+from Transformers import PCAComplex
+from mutools.optim.dictsearch import dictsearch
+
+
+
+
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1.14_reco5_w8_simmean.dict"
+pca_count=15
+
+pca_out="pca_file_Dico2_Invivo_1_14_reco5_2steps_{}pca.mat".format(pca_count)
+vars_out="pca_file_Dico2_Invivo_1_14_reco5_2steps_vars.mat"
+
+
+mrfdict = dictsearch.Dictionary()
+mrfdict.load(dictfile, force=True)
+keys = mrfdict.keys
+
+pca_file_name=str.split(dictfile,".dict")[0]+"_{}pca.pkl".format(pca_count)
+vars_file_name=str.split(dictfile,".dict")[0]+"_vars.pkl"
+
+with open(pca_file_name, "rb") as file:
+    (pca_water, pca_fat, transformed_array_water_unique, transformed_array_fat_unique) = pickle.load(file)
+
+with open(vars_file_name, "rb") as file:
+    (var_w, var_f, sig_wf,index_water_unique,index_fat_unique) = pickle.load(file)
+
+
+dict_pca={"PCA_FAT":pca_fat.components_,"PCA_WATER":pca_water.components_,"TRANSF_FAT":transformed_array_fat_unique,"TRANSF_WATER":transformed_array_water_unique}
+dict_var={"VAR_W":var_w,"VAR_F":var_f,"SIG_WF":sig_wf,"INDEX_WATER":index_water_unique,"INDEX_FAT":index_fat_unique,"KEYS":keys}
+
+
+
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1.14_reco5_w8_simmean.dict"
+pca_count=15
+
+mrfdict = dictsearch.Dictionary()
+mrfdict.load(dictfile_light, force=True)
+keys_light = mrfdict.keys
+
+pca_file_name=str.split(dictfile_light,".dict")[0]+"_{}pca_simple.pkl".format(pca_count)
+vars_file_name=str.split(dictfile_light,".dict")[0]+"_vars_simple.pkl"
+
+
+with open(pca_file_name, "rb") as file:
+    (pca_water_light, pca_fat_light, transformed_array_water_unique_light, transformed_array_fat_unique_light) = pickle.load(file)
+
+with open(vars_file_name, "rb") as file:
+    (var_w_light, var_f_light, sig_wf_light,index_water_unique_light,index_fat_unique_light) = pickle.load(file)
+
+
+dict_pca_light={"PCA_FAT_LIGHT":pca_fat_light.components_,"PCA_WATER_LIGHT":pca_water_light.components_,"TRANSF_FAT_LIGHT":transformed_array_fat_unique_light,"TRANSF_WATER_LIGHT":transformed_array_water_unique_light}
+dict_var_light={"VAR_W_LIGHT":var_w_light,"VAR_F_LIGHT":var_f_light,"SIG_WF_LIGHT":sig_wf_light,"INDEX_WATER_LIGHT":index_water_unique_light,"INDEX_FAT_LIGHT":index_fat_unique_light,"KEYS_LIGHT":keys_light}
+
+dict_var.update(dict_var_light)
+dict_pca.update(dict_pca_light)
+
+
+savemat(pca_out,dict_pca)
+savemat(vars_out,dict_var)

@@ -673,6 +673,7 @@ save_map=True
 
 mask = np.load(filename_mask)
 volumes_all = np.load(filename_volume_2Dplus1)
+volumes_all = np.load(filename_volume)
 
 
 
@@ -689,7 +690,7 @@ else:
     b1_all_slices=None
 return_cost=False
 #animate_images(mask)
-suffix="_2Dplus1_pca10"
+suffix=""
 if not(load_map):
     #niter = 0
     optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=seq,trajectory=None,split=100,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,threshold_ff=0.9,dictfile_light=dictfile_light,mu=1,mu_TV=1,weights_TV=[1.,0.,0.],return_cost=return_cost)#,mu_TV=1,weights_TV=[1.,0.,0.])

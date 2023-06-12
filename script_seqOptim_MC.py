@@ -17,8 +17,9 @@ with open(sequence_file,"r") as file:
 # with open(sequence_file,"w") as file:
 #     json.dump(sequence_config,file)
 
-min_TR_delay=2.33
-reco=4
+min_TR_delay=1.14
+reco=5
+
 
 TR_list,FA_list,TE_list=load_sequence_file(sequence_file,reco,min_TR_delay/1000)
 

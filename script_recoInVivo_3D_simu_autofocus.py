@@ -1362,7 +1362,6 @@ animate_images(volumes_2Dplus1[:,int(nb_slices/2)])
 ts=np.random.randint(ntimesteps)
 sl=np.random.randint(nb_slices)
 
-
 plt.close("all")
 fig,ax=plt.subplots(1,3)
 metric=np.real

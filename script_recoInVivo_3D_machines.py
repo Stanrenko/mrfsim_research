@@ -35,6 +35,8 @@ sys.path.append(path+"/dicomstack")
 from machines import machine, Toolbox, Config, set_parameter, set_output, printer, file_handler, Parameter, RejectException, get_context
 
 DEFAULT_OPT_CONFIG="opt_config.json"
+DEFAULT_OPT_CONFIG_2STEPS="opt_config_twosteps.json"
+
 
 @machine
 @set_parameter("filename", str, default=None, description="Siemens K-space data .dat file")
@@ -993,17 +995,41 @@ def build_mask(filename_kdata,filename_traj,sampling_mode,undersampling_factor,d
 @machine
 @set_parameter("filename_volume", str, default=None, description="MRF time series")
 @set_parameter("filename_mask", str, default=None, description="Mask")
+@set_parameter("filename_b1", str, default=None, description="B1")
+@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
 @set_parameter("filename", str, default=None, description="filename for parameters")
 @set_parameter("undersampling_factor", int, default=None, description="Kz undersampling factor")
 @set_parameter("dictfile", str, default=None, description="Dictionary file")
-@set_parameter("optimizer_config",type=Config,default=DEFAULT_OPT_CONFIG,description="Optimizer parameters")
+@set_parameter("dictfile_light", str, default=None, description="Light Dictionary file for 2 steps matching")
+@set_parameter("optimizer_config",type=Config,default=DEFAULT_OPT_CONFIG_2STEPS,description="Optimizer parameters")
 @set_parameter("slices",type=Config,default=None,description="Slices to consider for pattern matching")
-def build_maps(filename_volume,filename_mask,filename,undersampling_factor,dictfile,optimizer_config,slices):
+def build_maps(filename_volume,filename_mask,filename_b1,filename_weights,filename,undersampling_factor,dictfile,dictfile_light,optimizer_config,slices):
+
+
     opt_type = optimizer_config["type"]
+    print(opt_type)
 
     file_map = filename_volume.split(".npy")[0] + "_{}_MRF_map.pkl".format(opt_type)
     volumes_all = np.load(filename_volume)
     mask=np.load(filename_mask)
+
+    print(volumes_all.shape)
+
+    ##filename_mask_full = filename_mask.split(".npy")[0] + "_full.npy"
+    ##x_min=np.min(np.argwhere(mask>0)[:,1])
+    ##y_min=np.min(np.argwhere(mask>0)[:,2])
+
+    ##x_max=np.max(np.argwhere(mask>0)[:,1])
+    ##y_max=np.max(np.argwhere(mask>0)[:,2])
+
+    ##mask[:,x_min:(x_max+1),y_min:(y_max+1)]=1
+    ##np.save(filename_mask_full,mask)
+
+    if volumes_all.ndim>=5:# first bin is the respiratory bin
+        offset=1
+    else:
+        offset=0
+    ntimesteps=volumes_all.shape[offset]
 
     if filename is None:
         filename = filename_volume.split("_volumes.npy")[0] + ".dat"
@@ -1018,8 +1044,8 @@ def build_maps(filename_volume,filename_mask,filename,undersampling_factor,dictf
     #nb_part = dico_seqParams["nb_part"]
 
 
-    npoint=2*volumes_all.shape[2]
-    nb_slices=volumes_all.shape[1]
+    npoint=2*volumes_all.shape[offset+2]
+    nb_slices=volumes_all.shape[offset+1]
     dx = x_FOV / (npoint / 2)
     dy = y_FOV / (npoint / 2)
     dz = z_FOV / nb_slices
@@ -1052,6 +1078,8 @@ def build_maps(filename_volume,filename_mask,filename,undersampling_factor,dictf
     else:
         niter=0
 
+    print(opt_type)
+
     if opt_type=="CF":
         optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=None, split=split, pca=True,
                                      threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
@@ -1069,6 +1097,12 @@ def build_maps(filename_volume,filename_mask,filename,undersampling_factor,dictf
                                  threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU
                                  )
         all_maps = optimizer.search_patterns(dictfile, volumes_all)
+
+    if opt_type=="CF_twosteps":
+        optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=None, split=split, pca=True,
+                                     threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
+                                     useGPU_simulation=False, gen_mode="other",threshold_ff=0.9,dictfile_light=dictfile_light,ntimesteps=ntimesteps)
+        all_maps = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, volumes_all)
 
     elif opt_type=="CF_iterative":
         niter=optimizer_config["niter"]
@@ -1125,35 +1159,260 @@ def build_maps(filename_volume,filename_mask,filename,undersampling_factor,dictf
         all_maps = optimizer.search_patterns_test_multi(dictfile, volumes_all)
 
 
-    file = open(file_map, "wb")
-    pickle.dump(all_maps, file)
+    elif opt_type=="CF_iterative_2Dplus1":
+
+        
+        clustering=optimizer_config["clustering"]
+        niter=optimizer_config["niter"]
+        mu=optimizer_config["mu"]
+        mu_TV=optimizer_config["mu_TV"]
+        weights_TV=optimizer_config["weights_TV"]
+        nspoke=optimizer_config["nspoke"]
+        volumes_type=optimizer_config["volumes_type"]
+        return_matched_signals=optimizer_config["return_matched_signals"]
+        radial_traj=Radial(total_nspokes=nspoke,npoint=npoint)
+        mu_bins=optimizer_config["mu_bins"]
+
+        L0=volumes_all.shape[0]
+        filename_phi=str.split(dictfile,".dict") [0]+"_phi_L0_{}.npy".format(L0)
+
+        if filename_phi not in os.listdir():
+            mrfdict = dictsearch.Dictionary()
+            keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.1))
+
+            import dask.array as da
+            u,s,vh = da.linalg.svd(da.asarray(values))
+
+            vh=np.array(vh)
+            s=np.array(s)
+
+            L0=10
+            phi=vh[:L0]
+            np.save(filename_phi,phi.astype("complex64"))
+            del mrfdict
+            del keys
+            del values
+            del u
+            del s
+            del vh
+        else:
+            phi=np.load(filename_phi)
+
+        mrfdict = dictsearch.Dictionary()
+        mrfdict.load(dictfile, force=True)
+        keys = mrfdict.keys
+        array_water = mrfdict.values[:, :, 0]
+        array_fat = mrfdict.values[:, :, 1]
+        array_water_projected=array_water@phi.T.conj()
+        array_fat_projected=array_fat@phi.T.conj()
+
+
+        mrfdict_light = dictsearch.Dictionary()
+        mrfdict_light.load(dictfile_light, force=True)
+        keys_light = mrfdict_light.keys
+        array_water = mrfdict_light.values[:, :, 0]
+        array_fat = mrfdict_light.values[:, :, 1]
+        array_water_light_projected=array_water@phi.T.conj()
+        array_fat_light_projected=array_fat@phi.T.conj()
+
+        b1_all_slices=np.load(filename_b1)
+        weights=np.load(filename_weights)
+
+        optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=None,trajectory=radial_traj,split=split,pca=True,threshold_pca=threshold_pca,log=False,useGPU_dictsearch=useGPU,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,threshold_ff=0.9,dictfile_light=(array_water_light_projected,array_fat_light_projected,keys_light),mu=1,mu_TV=mu_TV,weights_TV=weights_TV,weights=weights,volumes_type=volumes_type,return_matched_signals=return_matched_signals,clustering=clustering,mu_bins=mu_bins)
+        all_maps=optimizer.search_patterns_test_multi_2_steps_dico((array_water_projected,array_fat_projected,keys),volumes_all,retained_timesteps=None)
+
+
+
+
+    curr_file=file_map
+    file = open(curr_file, "wb")
+    pickle.dump(all_maps,file)
     file.close()
 
     for iter in list(all_maps.keys()):
 
-        map_rebuilt = all_maps[iter][0]
-        mask = all_maps[iter][1]
+        map_rebuilt=all_maps[iter][0]
+        mask=all_maps[iter][1]
+
+        map_rebuilt["wT1"][map_rebuilt["ff"] > 0.7] = 0.0
 
         keys_simu = list(map_rebuilt.keys())
         values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
         map_for_sim = dict(zip(keys_simu, values_simu))
 
-        for key in ["ff", "wT1", "df", "attB1"]:
-            file_mha = "/".join(["/".join(str.split(file_map, "/")[:-1]),
-                                 "_".join(str.split(str.split(file_map, "/")[-1], ".")[:-1])]) + "_it{}_{}.mha".format(
-                iter, key)
-            io.write(file_mha, map_for_sim[key], tags={"spacing": [dz, dx, dy]})
+        #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+        #map_Python.buildParamMap()
+
+
+        for key in ["ff","wT1","df","attB1"]:
+            file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
+            io.write(file_mha,map_for_sim[key],tags={"spacing":[dz,dx,dy]})
 
     return
+
+@machine
+@set_parameter("file_map",str,default=None,description="map file (.pkl)")
+@set_parameter("config_image_maps",type=Config,default=None,description="Image Config")
+@set_parameter("suffix", str, default="", description="suffix")
+def generate_image_maps(file_map,config_image_maps,suffix):
+    return_cost=config_image_maps["return_cost"]
+    return_matched_signals=config_image_maps["return_matched_signals"]
+    #keys=list(all_maps.keys())
+    keys=config_image_maps["keys"]
+    list_l=config_image_maps["singular_volumes_outputted"]
+
+    distances=config_image_maps["image_distances"]
+    dx=distances[0]
+    dy=distances[1]
+    dz=distances[2]
+    gr_list=config_image_maps["gr_list"]
+
+    for gr in tqdm(gr_list):
+        
+        #file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format("")
+        curr_file=file_map
+        file = open(curr_file, "rb")
+        all_maps = pickle.load(file)
+        file.close()
+
+
+        for iter in keys:
+
+            map_rebuilt=all_maps[iter][0]
+            mask=all_maps[iter][1]
+
+            map_rebuilt["wT1"][map_rebuilt["ff"] > 0.7] = 0.0
+
+            keys_simu = list(map_rebuilt.keys())
+            values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+            map_for_sim = dict(zip(keys_simu, values_simu))
+
+            #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+            #map_Python.buildParamMap()
+
+
+            for key in ["ff","wT1","df","attB1"]:
+                file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "{}_it{}_{}.mha".format(suffix,iter,key)
+                if file_mha.startswith("/"):
+                    file_mha=file_mha[1:]
+                io.write(file_mha,map_for_sim[key],tags={"spacing":[dz,dx,dy]})
+
+            
+
+            if return_matched_signals:
+                for l in list_l:
+                    matched_volumes=makevol(all_maps[iter][-1][l],mask>0)
+                    #print(matched_volumes)
+                    file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
+                                        "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "{}_it{}_l{}_{}.mha".format(suffix,
+                        iter,l, "matchedvolumes")
+                    if file_mha.startswith("/"):
+                        file_mha=file_mha[1:]
+                    io.write(file_mha, np.abs(matched_volumes), tags={"spacing": [dz, dx, dy]})
+
+
+            if return_cost:
+                try:
+                    file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
+                                        "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "{}_it{}_{}.mha".format(suffix,
+                        iter, "correlation")
+                    if file_mha.startswith("/"):
+                        file_mha=file_mha[1:]
+                    io.write(file_mha, makevol(all_maps[iter][2],mask>0), tags={"spacing": [dz, dx, dy]})
+
+                    file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
+                                        "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "{}_it{}_{}.mha".format(suffix,
+                        iter, "phase")
+                    if file_mha.startswith("/"):
+                        file_mha=file_mha[1:]
+                    io.write(file_mha, makevol(all_maps[iter][3],mask>0), tags={"spacing": [dz, dx, dy]})
+                except:
+                    continue
+    return
+
+@machine
+@set_parameter("file_volume",str,default=None,description="volume file (.mha)")
+@set_parameter("nb_gr",int,default=4,description="number of respiratory bins")
+@set_parameter("sl", int, default=None, description="suffix")
+def generate_movement_gif(file_volume,nb_gr,sl):
+    
+    all_matched_volumes=[]
+    #print(file_volume)
+    for gr in np.arange(nb_gr):
+        file_mha= file_volume.format(gr)
+        matched_volume=io.read(file_mha)
+        matched_volume=np.array(matched_volume)
+        all_matched_volumes.append(matched_volume)
+
+    all_matched_volumes=np.array(all_matched_volumes)
+
+
+    moving_image=np.concatenate([all_matched_volumes[:,sl],all_matched_volumes[1:-1,sl][::-1]],axis=0)
+
+    animate_images(moving_image,interval=10)
+
+    from PIL import Image
+    gif=[]
+    volume_for_gif = np.abs(moving_image)
+    for i in range(volume_for_gif.shape[0]):
+        img = Image.fromarray(np.uint8(volume_for_gif[i]/np.max(volume_for_gif[i])*255), 'L')
+        img=img.convert("P")
+        gif.append(img)
+
+    filename_gif = str.split(file_volume.format(nb_gr),".mha") [0]+"_sl{}_moving_singular.gif".format(sl)
+    gif[0].save(filename_gif,save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
+    print(filename_gif)
+    return
+
+@machine
+@set_parameter("file_map",str,default=None,description="map file (.pkl)")
+@set_parameter("config_image_maps",type=Config,default=None,description="Image Config")
+@set_parameter("suffix", str, default="", description="suffix")
+def generate_matchedvolumes_allgroups(file_map,config_image_maps,suffix):
+    curr_file=file_map
+    file = open(curr_file, "rb")
+    all_maps = pickle.load(file)
+    file.close()
+
+    distances=config_image_maps["image_distances"]
+    dx=distances[0]
+    dy=distances[1]
+    dz=distances[2]
+
+
+    keys=config_image_maps["keys"]
+
+    matched_signals=all_maps[keys[0]][-1]
+    nb_singular_images=matched_signals.shape[0]
+    mask=all_maps[keys[0]][1]
+    nb_signals=mask.sum()
+
+    matched_signals=matched_signals.reshape(nb_singular_images,-1,nb_signals)
+    nb_gr=matched_signals.shape[1]
+
+
+    l_list=config_image_maps["singular_volumes_outputted"]
+
+
+    for gr in range(nb_gr):
+        for l in l_list:
+            for iter in keys:
+                matched_signals=all_maps[iter][-1]
+                matched_signals=matched_signals.reshape(nb_singular_images,-1,nb_signals)
+                matched_volumes=makevol(matched_signals[l][gr],mask>0)
+                file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
+                                            "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "{}_gr{}_it{}_l{}_{}.mha".format(suffix,gr,
+                            iter,l, "matchedvolumes")
+                if file_mha.startswith("/"):
+                    file_mha=file_mha[1:]
+                io.write(file_mha, np.abs(matched_volumes), tags={"spacing": [dz, dx, dy]})
 
 
 
 @machine
-
 @set_parameter("files_config",type=Config,default=None,description="Files to consider for aggregate kdata reconstruction")
 @set_parameter("disp_config",type=Config,default=None,description="Parameters for movement identification")
 @set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
-
 def build_data_nacq(files_config,disp_config,undersampling_factor):
 
     base_folder = "./data/InVivo/3D"
@@ -1314,6 +1573,9 @@ toolbox.add_program("calib_and_estimate_kdata_grappa", calib_and_estimate_kdata_
 toolbox.add_program("build_data_autofocus", build_data_autofocus)
 toolbox.add_program("aggregate_kdata", aggregate_kdata)
 toolbox.add_program("build_maps", build_maps)
+toolbox.add_program("generate_image_maps", generate_image_maps)
+toolbox.add_program("generate_movement_gif", generate_movement_gif)
+toolbox.add_program("generate_matchedvolumes_allgroups", generate_matchedvolumes_allgroups)
 toolbox.add_program("build_data_nacq", build_data_nacq)
 
 if __name__ == "__main__":
