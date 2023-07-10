@@ -1,70 +1,70 @@
-import numpy as np
-from utils_simu import *
-from dictoptimizers import SimpleDictSearch
-
-#generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted.json","mrf_dictconf_SimReco2.json",4,sim_mode="mid_point",start=0,window=int(1400/50))
-
-sequence_file="./mrf_sequence_adjusted.json"
-#sequence_file="./mrf_sequence_adjusted_760.json"
-#sequence_file="./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_correl.json"
-#sequence_file="./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json"
-#sequence_file="./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2.json"
-
-
-with open(sequence_file,"r") as file:
-    sequence_config=json.load(file)
-# sequence_config["TR"]=list(np.array(sequence_config["TE"])+1.87)
-# with open(sequence_file,"w") as file:
-#     json.dump(sequence_config,file)
-
-min_TR_delay=1.14
-reco=5
-
-
-TR_list,FA_list,TE_list=load_sequence_file(sequence_file,reco,min_TR_delay/1000)
-
-new_sequence_file=str.split(sequence_file,".json")[0]+"_{}.json".format(np.round(min_TR_delay,2))
-
-generate_epg_dico_T1MRFSS(new_sequence_file,"mrf_dictconf_Dico2_Invivo.json",FA_list,TE_list,reco,min_TR_delay/1000)
+# import numpy as np
+# from utils_simu import *
+# from dictoptimizers import SimpleDictSearch
 #
-
-generate_epg_dico_T1MRFSS(new_sequence_file,"mrf_dictconf_Dico2_Invivo_light_for_matching.json",FA_list,TE_list,reco,min_TR_delay/1000)
+# #generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted.json","mrf_dictconf_SimReco2.json",4,sim_mode="mid_point",start=0,window=int(1400/50))
 #
-
-from utils_simu import *
-from dictoptimizers import SimpleDictSearch
-
-TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted.json",4,1.68/1000)
+# sequence_file="./mrf_sequence_adjusted.json"
+# #sequence_file="./mrf_sequence_adjusted_760.json"
+# #sequence_file="./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_correl.json"
+# #sequence_file="./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json"
+# #sequence_file="./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2.json"
 #
-generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_1_68.json","mrf_dictconf_SimReco2.json",FA_list,TE_list,4,1.68/1000)
 #
-
-
-
-from utils_simu import *
-from dictoptimizers import SimpleDictSearch
-
-#generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted.json","mrf_dictconf_SimReco2.json",4,sim_mode="mid_point",start=0,window=int(1400/50))
-
-TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted.json",4,2.23/1000)
+# with open(sequence_file,"r") as file:
+#     sequence_config=json.load(file)
+# # sequence_config["TR"]=list(np.array(sequence_config["TE"])+1.87)
+# # with open(sequence_file,"w") as file:
+# #     json.dump(sequence_config,file)
 #
-
-dTEs=np.array([-0.25,-0.2,-0.15,-0.1,-0.05,0.05,0.1,0.15,0.2,0.25])/1000
-TE_list_orig=TE_list
-
-min_TR_delay_orig=2.23/1000
-
-for i,dt in enumerate(dTEs):
-    TE_list=list(np.array(TE_list_orig)+dt)
-    min_TR_delay=min_TR_delay_orig-dt
-    if dt<0:
-        dt_label="minus_{}".format(np.abs(dt*1000))
-    else:
-        dt_label=str(dt*1000)
-    generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_2_23_dTE_{}.json".format(dt_label),"mrf_dictconf_Dico2_Invivo.json",FA_list,TE_list,4,min_TR_delay)
-    generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_2_23_dTE_{}.json".format(dt_label),
-                              "mrf_dictconf_Dico2_Invivo_light_for_matching.json", FA_list, TE_list, 4, min_TR_delay)
-    #
+# min_TR_delay=1.14
+# reco=5
+#
+#
+# TR_list,FA_list,TE_list=load_sequence_file(sequence_file,reco,min_TR_delay/1000)
+#
+# new_sequence_file=str.split(sequence_file,".json")[0]+"_{}.json".format(np.round(min_TR_delay,2))
+#
+# generate_epg_dico_T1MRFSS(new_sequence_file,"mrf_dictconf_Dico2_Invivo.json",FA_list,TE_list,reco,min_TR_delay/1000)
+# #
+#
+# generate_epg_dico_T1MRFSS(new_sequence_file,"mrf_dictconf_Dico2_Invivo_light_for_matching.json",FA_list,TE_list,reco,min_TR_delay/1000)
+# #
+#
+# from utils_simu import *
+# from dictoptimizers import SimpleDictSearch
+#
+# TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted.json",4,1.68/1000)
+# #
+# generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_1_68.json","mrf_dictconf_SimReco2.json",FA_list,TE_list,4,1.68/1000)
+# #
+#
+#
+#
+# from utils_simu import *
+# from dictoptimizers import SimpleDictSearch
+#
+# #generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted.json","mrf_dictconf_SimReco2.json",4,sim_mode="mid_point",start=0,window=int(1400/50))
+#
+# TR_list,FA_list,TE_list=load_sequence_file("./mrf_sequence_adjusted.json",4,2.23/1000)
+# #
+#
+# dTEs=np.array([-0.25,-0.2,-0.15,-0.1,-0.05,0.05,0.1,0.15,0.2,0.25])/1000
+# TE_list_orig=TE_list
+#
+# min_TR_delay_orig=2.23/1000
+#
+# for i,dt in enumerate(dTEs):
+#     TE_list=list(np.array(TE_list_orig)+dt)
+#     min_TR_delay=min_TR_delay_orig-dt
+#     if dt<0:
+#         dt_label="minus_{}".format(np.abs(dt*1000))
+#     else:
+#         dt_label=str(dt*1000)
+#     generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_2_23_dTE_{}.json".format(dt_label),"mrf_dictconf_Dico2_Invivo.json",FA_list,TE_list,4,min_TR_delay)
+#     generate_epg_dico_T1MRFSS("./mrf_sequence_adjusted_2_23_dTE_{}.json".format(dt_label),
+#                               "mrf_dictconf_Dico2_Invivo_light_for_matching.json", FA_list, TE_list, 4, min_TR_delay)
+#     #
 
 
 from utils_simu import *
@@ -85,7 +85,9 @@ dTs=np.arange(-500,1000,100)*10**-3
 DFs=[-30,0,30]
 #DFs=[-60,-30,0,30,60]
 FFs=[0.,0.1,0.2,0.3,0.4,0.5,0.95]
+FFs=[0.4]
 B1=[0.5,0.7,1]
+B1=[1]
 #DFs=[-60,-30,0,30,60]
 #FFs=[0.,0.1,0.2,0.3,0.4,0.5,0.6,0.7]
 recovery=0
@@ -148,9 +150,6 @@ r"./mrf_sequence_adjusted_760.json",
 # plt.savefig("SFRMBM2023_Sequence_FAs",dpi=300)
 
 recoveries=[4,4,3.75,3.95,3.53]
-
-
-animate_images(volumes_all[:,10],cmap="gray")
 
 df_results=pd.DataFrame(index=[f+"_"+str(recoveries[j]) for j,f in enumerate(fileseq_list)],columns=["Error rel wT1","Error abs FF","std wT1","std FF","TR"])
 min_TR_delay=1.87/1000

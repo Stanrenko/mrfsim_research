@@ -3625,7 +3625,7 @@ class SimpleDictSearch(Optimizer):
 
                 del cov
                 lambd = np.squeeze(M_inv@cov_adjusted)
-                del cov_adjusted
+                #del cov_adjusted
                 J_all = np.linalg.norm(
                     np.einsum('ijk,ilk->ijl', array_dict, lambd) * np.expand_dims(np.exp(1j * phi.squeeze()),
                                                                                   axis=1) - np.expand_dims(
@@ -3673,23 +3673,29 @@ class SimpleDictSearch(Optimizer):
 
                 lambd[select[:,0],select[:,1],:] = np.expand_dims((ind_min_J == 0),axis=-1) * np.stack([lambd_w[select[:,0],select[:,1],0],np.zeros(lambd_w[select[:,0],select[:,1],0].shape)],axis=-1) + \
                         np.expand_dims((ind_min_J == 1),axis=-1) * np.stack([np.zeros(lambd_f[select[:,0],select[:,1],0].shape),lambd_f[select[:,0],select[:,1],0]],axis=-1)
-                # lambd[np.all(lambd < -epsilon, axis=-1)] = 0
-                # epsilon = 1e-8
-                #
-                # while True:
-                #
-                #
-                #     ispos = lambd > -epsilon
-                #     numpos = np.count_nonzero(ispos, axis=-1)
-                #     minpos = np.min(numpos)
-                #     if minpos == lambd.shape[-1]:
-                #         break
-                #
-                #     select = np.nonzero(numpos == minpos)
-                #     active = np.nonzero(ispos[select])[1].reshape(-1, minpos)
-                #     lambd[select]=0
-                #     lambd[select[0],select[1],np.squeeze(active.T)]=np.squeeze((np.squeeze(M_inv[select[0]]) @ cov_adjusted[select]))[np.arange(len(select[0])), np.squeeze(active.T)]
-                #
+                epsilon = 1e-8
+                lambd[np.all(lambd < -epsilon, axis=-1)] = 0
+
+
+                while True:
+
+
+                    ispos = lambd > -epsilon
+                    numpos = np.count_nonzero(ispos, axis=-1)
+                    minpos = np.min(numpos)
+                    if minpos == lambd.shape[-1]:
+                        break
+
+                    select = np.nonzero(numpos == minpos)
+                    active = np.nonzero(ispos[select])[1].reshape(-1, minpos)
+                    lambd[select]=0
+                    if np.array(select).shape[-1]==1:
+                        lambd[select[0], select[1], np.squeeze(active.T)] = \
+                        (np.squeeze(M_inv[select[0]]) @ cov_adjusted[select])[
+                            np.arange(len(select[0])), np.squeeze(active.T)]
+                    else:
+                        lambd[select[0],select[1],np.squeeze(active.T)]=np.squeeze((np.squeeze(M_inv[select[0]]) @ cov_adjusted[select]))[np.arange(len(select[0])), np.squeeze(active.T)]
+
 
 
 

@@ -1,118 +1,91 @@
-""" test trajectory simulation with NUFFT """
 
-import itertools
-from pathlib import Path
-import numpy as np
-from scipy.io import loadmat
-from matplotlib import pyplot as plt
-import finufft
 
-from epgpy import epg
+
+
+
+#import matplotlib
+#matplotlib.u<se("TkAgg")
+from mrfsim import T1MRF
+from image_series import *
+from dictoptimizers import SimpleDictSearch,BruteDictSearch
+from utils_mrf import *
+
+import json
+import readTwix as rT
+import time
+import os
+from numpy.lib.format import open_memmap
+from numpy import memmap
+import pickle
+from scipy.io import loadmat,savemat
+import twixtools
 from mutools import io
+import cv2
+import scipy
 
-
-DATADIR = Path("data")
-
-
-# image series
-# imgs = loadmat(DATADIR / "ImgSeries0.mat")["ImgSeries"]
-imgs8 = loadmat(DATADIR / "ImgSeries8Spokes_block.mat")["ImgSeries"]
-
-# constants
-wT2 = 40
-fT2 = 80
-fat_amp = [0.0586, 0.0109, 0.0618, 0.1412, 0.66, 0.0673]
-fat_cshift = [-101.1, 208.3, 281.0, 305.7, 395.6, 446.2]
-
-# phantom
-gtparams = loadmat(DATADIR / "paramMap.mat")["paramMap"]
-wt1map = gtparams["T1"][0, 0]
-dfmap = gtparams["Df"][0, 0]
-famap = gtparams["B1"][0, 0]
-ffmap = gtparams["FF"][0, 0]
-mask = wt1map > 0
-ft1map = [350] * mask
+import numpy as np
 
 
 
-# MRF sequence
-class T1MRF:
-    def __init__(self, FA, TI, TE, TR, B1):
-        """ build sequence """
-        seqlen = len(TE)
-        self.inversion = epg.T(180, 0) # perfect inversion
-        seq = [epg.Offset(TI)]
-        for i in range(seqlen):
-            echo = [
-                epg.T(FA * B1[i], 90),
-                epg.Wait(TE[i]),
-                epg.ADC,
-                epg.Wait(TR[i] - TE[i]),
-                epg.SPOILER,
-            ]
-            seq.extend(echo)
-        self._seq = seq
-
-    def __call__(self, T1, T2, g, att, **kwargs):
-        """ simulate sequence """
-        seq = [self.inversion, epg.modify(self._seq, T1=T1, T2=T2, att=att, g=g)]
-        return np.asarray(epg.simulate(seq, **kwargs))
+base_folder = "./3D"
 
 
-# generate images
-config = io.config.read("mrf_sequence.json")
-mrfseq = T1MRF(**config)
+suffix="_fullReco"
+nb_filled_slices = 8
+nb_empty_slices=2
+repeat_slice=1
+nb_slices = nb_filled_slices+2*nb_empty_slices
 
-# water signal
-wsig = mrfseq(T1=wt1map[mask], T2=wT2, att=famap[mask], g=-dfmap[mask]/1000)
+nb_allspokes = 1400
+nspoke=8
 
-# fat signal
-opts = {"eval": "dot(signal, wfat)", "args": {"wfat": fat_amp}}
-fsig = mrfseq(T1=ft1map[mask], T2=fT2, att=famap[mask], g=-(np.c_[dfmap[mask]] + fat_cshift)/1000, **opts)
 
-# merge signals
-sig = wsig * (1 - ffmap[mask]) + fsig * ffmap[mask]
+undersampling_factor=1
 
-# make volumes
-def makevol(values, mask):
-    """ fill volume """
-    values = np.asarray(values)
-    new = np.zeros(mask.shape, dtype=values.dtype)
-    new[mask] = values
-    return new
 
-OUTDIR = Path("outdir")
-OUTDIR.mkdir(exist_ok=True)
-# io.write(OUTDIR / 'sig0', makevol(np.abs(sig[0]), mask))
+name = "SquareSimu3D_SS_SimReco2"
 
-# load trajectory
-kspace = loadmat(DATADIR / "KSpaceData.mat")
-traj = kspace["KSpaceTraj"].T
-kdata = kspace["KSpaceData"].T
+localfile="/"+name
+filename = base_folder+localfile
 
-npoint = traj.shape[1]
-density = np.abs(np.linspace(-1, 1, npoint))
+folder = "/".join(str.split(filename,"/")[:-1])
 
-# simdata
-kdata2 = np.array([
-    finufft.nufft2d2(t.real, t.imag, makevol(s, mask))
-    for t,s in zip(traj * np.pi * 2, sig)
-])
 
-# undersampled volume
-uvol0 = finufft.nufft2d1(
-    traj[0:8].real.ravel() * 2 * np.pi,
-    traj[0:8].imag.ravel() * 2 * np.pi,
-    (kdata[0:8] * density**0.5 * 255).ravel(),
-    mask.shape,
-)
-io.write(OUTDIR / "uvol0", np.abs(uvol0))
+filename_paramMap=filename+"_paramMap_sl{}_rp{}{}.pkl".format(nb_slices,repeat_slice,"")
+filename_mask= filename+"_mask_sl{}_rp{}_us{}{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
 
-uvol = finufft.nufft2d1(
-    traj[0:8].real.ravel() * 2 * np.pi,
-    traj[0:8].imag.ravel() * 2 * np.pi,
-    (kdata2[0:8] * density / 255 * np.sqrt(mask.size)).ravel(),
-    # kdata[0:8].ravel(),
-    mask.shape,
-)
-io.write(OUTDIR / "uvol", np.abs(uvol))
+filename_volume = filename+"_volumes_sl{}_rp{}_us{}_{}w{}{}.npy".format(nb_slices,repeat_slice,undersampling_factor,nb_allspokes,nspoke,suffix)
+dictfile='./mrf175_SimReco2_light.dict'
+
+
+mask=np.load(filename_mask)
+volumes_all=np.load(filename_volume)
+with open(filename_paramMap, "rb") as file:
+    paramMap=pickle.load(file)
+
+pca = True
+threshold_pca_bc = 20
+threshold_pca_brute=20
+
+nb_signals=volumes_all[:,mask>0].shape[1]
+
+splits = [10]
+return_matched_signals = False
+
+useGPU = False
+
+all_times_matrix = []
+
+for split in splits:
+    # dict_optim_brute=BruteDictSearch(FF_list=np.arange(0,1.01,0.01),mask=mask,split=split,pca=pca,threshold_pca=threshold_pca_brute,log=False,useGPU_dictsearch=useGPU,ntimesteps=None,log_phase=False,return_matched_signals=return_matched_signals)
+    dict_optim_bc = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=None, split=split, pca=pca,
+                                     threshold_pca=threshold_pca_bc, log=False, useGPU_dictsearch=useGPU,
+                                     useGPU_simulation=False,
+                                     gen_mode="other", movement_correction=False, cond=None, ntimesteps=None,
+                                     return_matched_signals=return_matched_signals)
+    # dict_optim_bc_matrix = dict_optim_bc_cf
+    start_time = time.time()
+    all_maps_bc_matrix = dict_optim_bc.search_patterns_matrix(dictfile, volumes_all)
+    end_time = time.time()
+
+    all_times_matrix.append((end_time - start_time) / nb_signals)

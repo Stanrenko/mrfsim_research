@@ -68,7 +68,7 @@ medfilter=False
 
 #name = "SquareSimu3D_SS_FF0_1"
 name = "SquareSimu3D_SS_SimReco2"
-name = "KneePhantomFat"
+#name = "KneePhantomFat"
 #name = "KneePhantom"
 
 
@@ -101,12 +101,12 @@ Treco=3530
 #    sequence_config = json.load(f)
 # Treco=3750
 
-# dictfile="mrf_dictconf_SimReco2_adjusted_1_87_reco4_w8_simmean.dict"
-# dictfile_light='./mrf_dictconf_SimReco2_light_matching_adjusted_1_87_reco4_w8_simmean.dict'
-# suffix="_fullReco"
-# with open("./mrf_sequence_adjusted_1_87.json") as f:
-#    sequence_config = json.load(f)
-# Treco=4000
+dictfile="mrf_dictconf_SimReco2_adjusted_1_87_reco4_w8_simmean.dict"
+dictfile_light='./mrf_dictconf_SimReco2_light_matching_adjusted_1_87_reco4_w8_simmean.dict'
+suffix="_fullReco"
+with open("./mrf_sequence_adjusted_1_87.json") as f:
+   sequence_config = json.load(f)
+Treco=4000
 
 nb_allspokes = len(sequence_config["TE"])
 nspoke=8
@@ -168,7 +168,7 @@ seq=T1MRFSS(**sequence_config)
 
 
 
-nb_filled_slices = 16
+nb_filled_slices = 8
 nb_empty_slices=2
 repeat_slice=1
 nb_slices = nb_filled_slices+2*nb_empty_slices
@@ -210,7 +210,7 @@ file_map = filename + "_sl{}_rp{}_us{}{}w{}{}_MRF_map.pkl".format(nb_slices,repe
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 nb_channels=1
-npoint = 512
+npoint = 128
 
 
 
