@@ -6,7 +6,9 @@ from scipy import ndimage
 import sys
 path = r"/home/cslioussarenko/PythonRepositories"
 #path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
-sys.path.append(path+"/epgpy_v3/epgpy")
+#sys.path.append(path+"/epgpy_v3/epgpy")
+sys.path.append(path+"/epgpy")
+
 sys.path.append(path+"/machines")
 sys.path.append(path+"/mutools")
 sys.path.append(path+"/dicomstack")
@@ -17,7 +19,7 @@ sys.path.append(path+"/dicomstack")
 
 try:
     import matplotlib
-    matplotlib.use('Qt5Agg')
+    matplotlib.use('Agg')
     from matplotlib import pyplot as plt
 except:
     try:
@@ -38,7 +40,7 @@ from machines import machine, Toolbox, Config, set_parameter, set_output, printe
 # mutools
 from mutools import io
 from mutools.tables import aggregate
-from mutools.optim.dictsearch import dictsearch, groupmatch, utils
+from mutools.optim.dictsearch import dictsearch #groupmatch, utils
 #from mutools.toolbox.main import GetResults, handlers_common
 
 DEFAULT_SEQUENCE = "mrf_sequence.json"

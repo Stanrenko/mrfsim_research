@@ -31,15 +31,50 @@ dictfile = "mrf175_SimReco2_light.dict"
 #dictfile = "mrf175_CS.dict"
 
 
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_optim_FF.json") as f:
+
+with open('./mrf_sequence_random_FA_variablesp_time_0_1_allparams_2.22.json') as f:
     sequence_config = json.load(f)
 
-with open("./mrf_sequence_adjusted.json") as f:
-    sequence_config = json.load(f)
+
+
+# with open(r"./mrf_sequence_adjusted_optimized_Body_v1_2_22.json") as f:
+#     sequence_config = json.load(f)
+
+#with open("./mrf_ff_sequence_adjusted_respi_TEoop20_1.24.json") as f:
+#    sequence_config = json.load(f)
+
+#with open("./mrf_sequence_adjusted.json") as f:
+#    sequence_config = json.load(f)
+
+
+#
+# TEs=np.array(sequence_config["TE"])
+#
+# pattern_length=56
+# num_TEs=len(TEs)
+# pattern=[]
+# for i in range(pattern_length):
+#     pattern.append(TEs[i*int(num_TEs/pattern_length)])
+#
+# TEs_new=pattern*int(num_TEs/pattern_length)
+#
+# plt.figure()
+# plt.plot(TEs_new)
+# len(TEs_new)
+#
+# sequence_config["TE"]=TEs_new
+# sequence_config["TR"]=list(np.array(TEs_new)+1.24)
+
+#sequence_config["TE"]=[2.39]*len(sequence_config["TE"])
+
+#sequence_config["TR"]=list(np.array(sequence_config["TE"])+1.24)
 
 with open("./mrf_dictconf_SimReco2_light.json") as f:
     dict_config = json.load(f)
 
+
+plt.figure()
+plt.plot(sequence_config["TE"])
 
 # generate signals
 wT1 = dict_config["water_T1"]
@@ -54,10 +89,18 @@ df = [- value / 1000 for value in df] # temp
 rep=4
 TR_total = np.sum(sequence_config["TR"])
 
-Treco = 3000
+Treco = 0.160
 # other options
 sequence_config["T_recovery"]=Treco
 sequence_config["nrep"]=rep
+
+plt.figure()
+plt.plot(sequence_config["TE"])
+
+plt.figure()
+plt.plot(sequence_config["B1"])
+
+sequence_config["FA"]
 
 
 nb_allspokes=len(sequence_config["TE"])
@@ -66,6 +109,16 @@ seq=T1MRFSS(**sequence_config)
 
 water = seq(T1=wT1, T2=wT2, att=[[att]], g=[[[df]]])
 
+
+fat_amp = dict_config["fat_amp"]
+fat_cs = dict_config["fat_cshift"]
+fat_cs = [- value / 1000 for value in fat_cs] # temp
+
+eval = "dot(signal, amps)"
+args = {"amps": fat_amp}
+# merge df and fat_cs df to dict
+fatdf = [[cs + f for cs in fat_cs] for f in df]
+fat = seq(T1=[fT1], T2=fT2, att=[[att]], g=[[[fatdf]]], eval=eval, args=args)
 
 indices=[]
 for i in range(1,water.ndim):
@@ -84,23 +137,88 @@ ax[0].set_title("Real Part")
 ax[1].plot(np.imag(water[:,-1,0,0,4]))
 ax[1].set_title("Imag Part")
 
+
+#plt.close("all")
+att_choice=np.random.choice(water.shape[3])
+df_choice=np.random.choice(water.shape[4])
+
+indices=np.zeros(4,dtype="int")
+indices[0]=-1
+indices[1]=0
+indices[2]=-1
+indices[3]=4
+plt.figure()
+plt.title("Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(wT1[indices[0]], att[indices[2]], df[indices[3]]))
+plt.plot(np.real(water[::nb_allspokes,indices[0],indices[1],indices[2],indices[3]]))
+
+fig,ax=plt.subplots(4,1)
+fig.suptitle("T1 {} B1 {} Df {}".format(wT1[indices[0]],att[indices[2]],df[indices[3]]))
+ax[0].plot(np.real(water[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,nb_allspokes)).T)
+ax[0].set_title("Real Part")
+ax[1].plot(np.imag(water[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,nb_allspokes)).T)
+ax[1].set_title("Imag Part")
+ax[2].plot(np.abs(water[:, indices[0], indices[1], indices[2], indices[3]].reshape(rep, nb_allspokes)).T)
+ax[2].set_title("Mag Part")
+ax[3].plot(np.angle(water[:, indices[0], indices[1], indices[2], indices[3]].reshape(rep, nb_allspokes)).T)
+ax[3].set_title("Phase Part")
+
+
 plt.close("all")
 num_sig=5
+att_choice=np.random.choice(water.shape[3])
+df_choice=np.random.choice(water.shape[4])
 for j in range(num_sig):
     indices=[]
     for i in range(1,water.ndim):
         indices.append(np.random.choice(water.shape[i]))
 
+    indices[2]=att_choice
+    indices[3]=df_choice
     plt.figure()
     plt.title("Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(wT1[indices[0]], att[indices[2]], df[indices[3]]))
     plt.plot(np.real(water[::nb_allspokes,indices[0],indices[1],indices[2],indices[3]]))
 
-    fig,ax=plt.subplots(2,1)
+    fig,ax=plt.subplots(4,1)
     fig.suptitle("T1 {} B1 {} Df {}".format(wT1[indices[0]],att[indices[2]],df[indices[3]]))
     ax[0].plot(np.real(water[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,nb_allspokes)).T)
     ax[0].set_title("Real Part")
     ax[1].plot(np.imag(water[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,nb_allspokes)).T)
     ax[1].set_title("Imag Part")
+    ax[2].plot(np.abs(water[:, indices[0], indices[1], indices[2], indices[3]].reshape(rep, nb_allspokes)).T)
+    ax[2].set_title("Mag Part")
+    ax[3].plot(np.angle(water[:, indices[0], indices[1], indices[2], indices[3]].reshape(rep, nb_allspokes)).T)
+    ax[3].set_title("Phase Part")
+
+
+
+
+plt.close("all")
+num_sig=5
+att_choice=np.random.choice(water.shape[3])
+df_choice=np.random.choice(water.shape[4])
+for j in range(num_sig):
+    indices=[]
+    for i in range(1,water.ndim):
+        indices.append(np.random.choice(fat.shape[i]))
+
+    indices[2]=att_choice
+    indices[3]=df_choice
+    plt.figure()
+    plt.title("Starting point readout as a function of rep : T1 {} B1 {} Df {}".format(fT1[indices[0]], att[indices[2]], df[indices[3]]))
+    plt.plot(np.real(water[::nb_allspokes,indices[0],indices[1],indices[2],indices[3]]))
+
+    fig,ax=plt.subplots(4,1)
+    fig.suptitle("T1 {} B1 {} Df {}".format(fT1[indices[0]],att[indices[2]],df[indices[3]]))
+    ax[0].plot(np.real(fat[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,nb_allspokes)).T)
+    ax[0].set_title("Real Part")
+    ax[1].plot(np.imag(fat[:,indices[0],indices[1],indices[2],indices[3]].reshape(rep,nb_allspokes)).T)
+    ax[1].set_title("Imag Part")
+    ax[2].plot(np.abs(fat[:, indices[0], indices[1], indices[2], indices[3]].reshape(rep, nb_allspokes)).T)
+    ax[2].set_title("Mag Part")
+    ax[3].plot(np.angle(fat[:, indices[0], indices[1], indices[2], indices[3]].reshape(rep, nb_allspokes)).T)
+    ax[3].set_title("Phase Part")
+
+
 
 plt.close("all")
 num_sig=5
@@ -413,14 +531,20 @@ mrfdict.save(dictfile, overwrite=overwrite)
 import numpy as np
 import pandas as pd
 import json
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_correl.json") as f:
+with open("./mrf_sequence_adjusted.json") as f:
     sequence_config = json.load(f)
 
 TE=sequence_config["TE"]
+#TE=[2]*len(sequence_config["TE"])
 TE=np.array(TE)
+TE_new=np.zeros(1024)
 
-TE=np.maximum(TE,2.2)
-TE=np.round(TE,2)
+for j in range(1024):
+    TE_new[j]=TE[int(1400/1024*j)]
+
+
+#TE=np.maximum(TE,2.2)
+TE=np.round(TE_new,2)
 #TE=np.maximum(np.round(TE,2),2.2)
 
 TE_file="TE_temp.text"
@@ -432,8 +556,17 @@ with open(TE_file,"w") as file:
 #pd.DataFrame(np.maximum(np.round(TE,2),2.2)).to_clipboard()
 
 FA=sequence_config["B1"]
+
 FA=np.array(FA)
-FA=np.round(FA,3)
+
+FA_new=np.zeros(1024)
+
+for j in range(1024):
+    FA_new[j]=FA[int(1400/1024*j)]
+
+
+
+FA=np.round(FA_new,3)
 #pd.DataFrame(np.round(FA,3)).to_clipboard(excel=False,index=False)
 
 FA_file="FA_temp.text"
@@ -445,6 +578,14 @@ print(np.min(np.array(TE)))
 print(np.max(np.array(TE)))
 print(np.min(np.array(FA)))
 print(np.max(np.array(FA)))
+
+
+sequence_config["TE"]=list(TE)
+sequence_config["TR"]=list(TE+1.87)
+sequence_config["B1"]=list(FA)
+
+with open("./mrf_sequence_1024.json","w") as f:
+    json.dump(sequence_config,f)
 
 from utils_simu import *
 generate_epg_dico_T1MRFSS_from_sequence_file("mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1.json","./mrf_dictconf_Dico2_Invivo.json",3.95)

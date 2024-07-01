@@ -1,0 +1,17 @@
+{
+    "type": "CF_iterative_2Dplus1",
+    "pca":10,
+    "split":500,
+    "useGPU": True,
+    "niter": 0,
+    "mu":1,
+    "mu_TV":0.5,
+    "weights_TV":[1.0,0.1,0.1],
+    "volumes_type":"Singular",
+    "nspoke":1400,
+    "return_matched_signals":False,
+    "return_cost":True,
+    "clustering":True,
+    "mu_bins":None,
+    "log":False
+}

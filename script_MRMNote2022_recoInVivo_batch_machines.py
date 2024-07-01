@@ -1,5 +1,6 @@
 
 from utils_simu import *
+from utils_reco import *
 from dictoptimizers import SimpleDictSearch
 import json
 from scipy.optimize import differential_evolution
@@ -31,7 +32,7 @@ from machines import machine, Toolbox, Config, set_parameter, set_output, printe
 
 DEFAULT_RUN_CONFIG=r"MRMNote2022_config.json"
 
-
+#["CL1KB","CL1KF","CL1KN","MNAV","MNAW","MNAX","MNAZ","MNBC","MNBE","MNBF","MNBG","MNBH","MNBI"],
 @machine
 @set_parameter("run_config",type=Config,default=DEFAULT_RUN_CONFIG,description="Optimizer parameters")
 def run_batch(run_config):
@@ -194,22 +195,27 @@ def run_batch(run_config):
                 file_map_cf=str.split(filename_base, ".dat")[0] + "_MRF_map_cf_sl{}.pkl".format(sl)
                 file_map_matrix = str.split(filename_base, ".dat")[0] + "_MRF_map_cf_clustering_sl{}.pkl".format(sl)
                 file_map_brute = str.split(filename_base, ".dat")[0] + "_MRF_map_brute_sl{}.pkl".format(sl)
+                file_map_brute_raw = str.split(filename_base, ".dat")[0] + "_MRF_map_brute_raw_sl{}.pkl".format(sl)
+
 
                 niter = 0
 
 
 
-                optimizer_clustering = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=100, pca=True,
+                optimizer_clustering = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=2000, pca=True,
                                              threshold_pca=15, log=False, useGPU_dictsearch=useGPU, useGPU_simulation=False,
                                              gen_mode="other",dictfile_light=dictfile_light,threshold_ff=0.9,ntimesteps=ntimesteps)
 
-                optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=100,
+                optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=100
+                                             ,
                                                     pca=True,
                                                     threshold_pca=15, log=False, useGPU_dictsearch=useGPU,
                                                     useGPU_simulation=False,
                                                     gen_mode="other",ntimesteps=ntimesteps)
 
-                optimizer_brute = BruteDictSearch(FF_list=np.arange(0,1.05,0.05),mask=mask,split=1,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=useGPU,n_clusters_dico=1000,pruning=0.05,ntimesteps=ntimesteps)
+                optimizer_brute = BruteDictSearch(FF_list=np.arange(0,1.05,0.05),mask=mask,split=1,pca=True,threshold_pca=30,log=False,useGPU_dictsearch=useGPU,n_clusters_dico=100,pruning=0.05,ntimesteps=ntimesteps,dictfile_light=dictfile_light)
+                #optimizer_brute = BruteDictSearch(FF_list=np.arange(0,1.05,0.05),mask=mask,split=1,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=useGPU,n_clusters_dico=1000,pruning=0.05,ntimesteps=ntimesteps)
+                #optimizer_brute_raw = BruteDictSearch(FF_list=np.arange(0,1.05,0.05),mask=mask,split=10,pca=True,threshold_pca=30,log=False,useGPU_dictsearch=True,n_clusters_dico=None,ntimesteps=ntimesteps)
 
                 #all_maps = optimizer.search_patterns(dictfile, volumes_all)
                 import pickle
@@ -250,7 +256,7 @@ def run_batch(run_config):
                 if not (str.split(file_map_brute,"/")[-1] in os.listdir(target_folder)):
 
                     start_time = time.time()
-                    all_maps_brute = optimizer_brute.search_patterns(dictfile, volumes_all)
+                    all_maps_brute = optimizer_brute.search_patterns_new_clustering(dictfile, volumes_all)
                     end_time = time.time()
                     dtime = (end_time - start_time) / mask.sum()*1000
                     print("Brute Time taken per pixel for slice {} : {} ms".format(sl, dtime))
@@ -262,6 +268,18 @@ def run_batch(run_config):
                 else:
                     with open(file_map_brute, "rb") as file:
                         all_maps_brute = pickle.load(file)
+
+                #if not (str.split(file_map_brute_raw,"/")[-1] in os.listdir(target_folder)):
+                #    print("Raw brute matching")
+
+                #    start_time = time.time()
+                #    all_maps_brute = optimizer_brute_raw.search_patterns(dictfile, volumes_all)
+                #    end_time = time.time()
+                #    dtime = (end_time - start_time) / mask.sum()*1000
+                #    print("Brute Time raw taken per pixel for slice {} : {} ms".format(sl, dtime))
+                #    #times_brute.append(dtime)
+
+
 
                 np.save( target_folder + "/" + "times_cf.npy",np.array(times_cf))
                 np.save( target_folder + "/" + "times_cf_clustering.npy",np.array(times_matrix))

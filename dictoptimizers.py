@@ -1,7 +1,8 @@
 import numpy as np
 from scipy import ndimage
 from scipy.ndimage import affine_transform
-from utils_mrf import translation_breathing,build_mask_single_image,build_mask,simulate_radial_undersampled_images,read_mrf_dict,create_cuda_context,correct_mvt_kdata,simulate_radial_undersampled_images_multi,simulate_radial_undersampled_singular_images_multi,generate_kdata_multi,generate_kdata_singular_multi,undersampling_operator_singular,undersampling_operator,grad_J_TV,J_TV,generate_kdata_multi_new,undersampling_operator_new,undersampling_operator_singular_new
+from utils_mrf import translation_breathing,build_mask_single_image,build_mask_from_volume,simulate_radial_undersampled_images,read_mrf_dict,create_cuda_context,correct_mvt_kdata,simulate_radial_undersampled_images_multi,simulate_radial_undersampled_singular_images_multi,generate_kdata_multi,generate_kdata_singular_multi,undersampling_operator_singular,undersampling_operator,grad_J_TV,J_TV,generate_kdata_multi_new,undersampling_operator_new,undersampling_operator_singular_new
+from utils_reco import *
 from Transformers import PCAComplex
 from mutools.optim.dictsearch import dictsearch
 from tqdm import tqdm
@@ -685,6 +686,10 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
                                         1 * (cond) > 0)
                     phase_optim_cluster[j_signal:j_signal_next]=np.nan_to_num(phase_adj)
 
+
+            if return_cost:
+                J_optim[indices.flatten()]=J_optim_cluster
+                phase_optim[indices.flatten()] = phase_optim_cluster
 
             idx_max_all_unique_low_ff[indices.flatten()] = (retained_signals[idx_max_all_unique_cluster])
             alpha_optim_low_ff[indices.flatten()] = (alpha_optim_cluster)
@@ -2379,7 +2384,7 @@ class SimpleDictSearch(Optimizer):
 
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -2940,7 +2945,7 @@ class SimpleDictSearch(Optimizer):
         sig_0=gw.sig
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -3477,7 +3482,7 @@ class SimpleDictSearch(Optimizer):
     def search_patterns_matrix(self, dictfile, volumes, retained_timesteps=None):
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -3625,7 +3630,7 @@ class SimpleDictSearch(Optimizer):
 
                 del cov
                 lambd = np.squeeze(M_inv@cov_adjusted)
-                del cov_adjusted
+                #del cov_adjusted
                 J_all = np.linalg.norm(
                     np.einsum('ijk,ilk->ijl', array_dict, lambd) * np.expand_dims(np.exp(1j * phi.squeeze()),
                                                                                   axis=1) - np.expand_dims(
@@ -3673,23 +3678,26 @@ class SimpleDictSearch(Optimizer):
 
                 lambd[select[:,0],select[:,1],:] = np.expand_dims((ind_min_J == 0),axis=-1) * np.stack([lambd_w[select[:,0],select[:,1],0],np.zeros(lambd_w[select[:,0],select[:,1],0].shape)],axis=-1) + \
                         np.expand_dims((ind_min_J == 1),axis=-1) * np.stack([np.zeros(lambd_f[select[:,0],select[:,1],0].shape),lambd_f[select[:,0],select[:,1],0]],axis=-1)
-                # lambd[np.all(lambd < -epsilon, axis=-1)] = 0
-                # epsilon = 1e-8
-                #
-                # while True:
-                #
-                #
-                #     ispos = lambd > -epsilon
-                #     numpos = np.count_nonzero(ispos, axis=-1)
-                #     minpos = np.min(numpos)
-                #     if minpos == lambd.shape[-1]:
-                #         break
-                #
-                #     select = np.nonzero(numpos == minpos)
-                #     active = np.nonzero(ispos[select])[1].reshape(-1, minpos)
-                #     lambd[select]=0
-                #     lambd[select[0],select[1],np.squeeze(active.T)]=np.squeeze((np.squeeze(M_inv[select[0]]) @ cov_adjusted[select]))[np.arange(len(select[0])), np.squeeze(active.T)]
-                #
+                epsilon = 1e-8
+                lambd[np.all(lambd < -epsilon, axis=-1)] = 0
+
+                while True:
+
+                    ispos = lambd > -epsilon
+                    numpos = np.count_nonzero(ispos, axis=-1)
+                    minpos = np.min(numpos)
+                    if minpos == lambd.shape[-1]:
+                        break
+
+                    select = np.nonzero(numpos == minpos)
+                    active = np.nonzero(ispos[select])[1].reshape(-1, minpos)
+                    lambd[select]=0
+                    if np.array(select).shape[-1]>1:
+                        lambd[select[0],select[1],np.squeeze(active.T)]=np.squeeze((np.squeeze(M_inv[select[0]]) @ cov_adjusted[select]))[np.arange(len(select[0])), np.squeeze(active.T)]
+                    else:
+                        lambd[select[0], select[1], np.squeeze(active.T)] = \
+                        (np.squeeze(M_inv[select[0]]) @ cov_adjusted[select])[
+                            np.arange(len(select[0])), np.squeeze(active.T)]
 
 
 
@@ -3727,7 +3735,7 @@ class SimpleDictSearch(Optimizer):
                 lambd = cp.matmul(M_inv,cov_adjusted)[:,:,:,0]
                 phi=phi[:,:,0, 0]
 
-                del cov_adjusted
+                #del cov_adjusted
                 J_all = cp.linalg.norm(
                     cp.einsum('ijk,ilk->ijl', array_dict, lambd) * cp.expand_dims(cp.exp(1j * phi),
                                                         axis=1)- cp.expand_dims(transformed_all_signals, axis=0),
@@ -3798,6 +3806,30 @@ class SimpleDictSearch(Optimizer):
                                                        cp.expand_dims((ind_min_J == 1), axis=-1) * cp.stack(
                     [cp.zeros(lambd_f[select[:, 0], select[:, 1], 0].shape), lambd_f[select[:, 0], select[:, 1], 0]],
                     axis=-1)
+
+
+                epsilon = 1e-8
+                lambd[cp.all(lambd < -epsilon, axis=-1)] = 0
+
+                while True:
+
+                    ispos = lambd > -epsilon
+                    numpos = cp.count_nonzero(ispos, axis=-1)
+                    minpos = cp.min(numpos)
+                    if minpos == lambd.shape[-1]:
+                        break
+
+                    select = cp.nonzero(numpos == minpos)
+                    active = cp.nonzero(ispos[select])[1].reshape(-1, minpos)
+                    lambd[select] = 0
+                    if select.shape[-1] > 1:
+                        lambd[select[0], select[1], cp.squeeze(active.T)] = \
+                        cp.squeeze((cp.squeeze(M_inv[select[0]]) @ cov_adjusted[select]))[
+                            cp.arange(len(select[0])), cp.squeeze(active.T)]
+                    else:
+                        lambd[select[0], select[1], cp.squeeze(active.T)] = \
+                            (cp.squeeze(M_inv[select[0]]) @ cov_adjusted[select])[
+                                cp.arange(len(select[0])), cp.squeeze(active.T)]
 
                 current_alpha_all_unique = lambd[:, :, -1] / cp.sum(lambd, axis=-1)
 
@@ -3886,7 +3918,7 @@ class SimpleDictSearch(Optimizer):
     def search_patterns_test(self, dictfile, volumes, retained_timesteps=None):
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -4240,7 +4272,7 @@ class SimpleDictSearch(Optimizer):
     def search_patterns_test_multi_CSA(self, dictfile, volumes, retained_timesteps=None):
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -4629,7 +4661,7 @@ class SimpleDictSearch(Optimizer):
     def search_patterns_test_multi(self, dictfile, volumes, retained_timesteps=None):
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -4685,11 +4717,11 @@ class SimpleDictSearch(Optimizer):
 
         all_signals=all_signals.astype("complex64")
 
-        if log:
-            now = datetime.now()
-            date_time = now.strftime("%Y%m%d_%H%M%S")
-            with open('./log/signals0_{}.npy'.format(date_time), 'wb') as f:
-                np.save(f, all_signals)
+        # if log:
+        #     now = datetime.now()
+        #     date_time = now.strftime("%Y%m%d_%H%M%S")
+        #     with open('./log/signals0_{}.npy'.format(date_time), 'wb') as f:
+        #         np.save(f, all_signals)
 
         if "kdata_init" in self.paramDict:
             kdata_init = self.paramDict["kdata_init"]
@@ -4869,10 +4901,10 @@ class SimpleDictSearch(Optimizer):
 
         for i in range(niter + 1):
 
-            if log:
-                print("Saving signals for iteration {}".format(i))
-                with open('./log/signals_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                    np.save(f, np.array(all_signals))
+            # if log:
+            #     print("Saving signals for iteration {}".format(i))
+            #     with open('./log/signals_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+            #         np.save(f, np.array(all_signals))
 
             print("################# ITERATION : Number {} out of {} ####################".format(i, niter))
             print("Calculating optimal fat fraction and best pattern per signal for iteration {}".format(i))
@@ -4902,10 +4934,10 @@ class SimpleDictSearch(Optimizer):
                                                                                       log_phase,
                                                                                       return_matched_signals=True)
 
-                if log:
-                    print("Saving matched signals for iteration {}".format(i))
-                    with open('./log/matched_signals_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                        np.save(f, matched_signals.astype(np.complex64))
+                # if log:
+                #     print("Saving matched signals for iteration {}".format(i))
+                #     with open('./log/matched_signals_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+                #         np.save(f, matched_signals.astype(np.complex64))
 
             # import matplotlib.pyplot as plt;j=np.random.choice(all_signals.shape[1]);plt.plot(all_signals[:,j]);plt.plot(matched_signals[:,j]);
             print("Maps build for iteration {}".format(i))
@@ -4916,9 +4948,9 @@ class SimpleDictSearch(Optimizer):
             else:
                 values_results.append((map_rebuilt, mask, phase_optim))
 
-            if log:
-                with open('./log/maps_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                    pickle.dump({int(i): (map_rebuilt, mask)}, f)
+            # if log:
+            #     with open('./log/maps_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+            #         pickle.dump({int(i): (map_rebuilt, mask)}, f)
 
             if i == niter:
                 break
@@ -4958,10 +4990,10 @@ class SimpleDictSearch(Optimizer):
             # normi= np.linalg.norm(signalsi, axis=0)
             # signalsi *= norm_signals/normi
 
-            if log:
-                print("Saving signalsi for iteration {}".format(i))
-                with open('./log/signalsi_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                    np.save(f, np.array(signalsi))
+            # if log:
+            #     print("Saving signalsi for iteration {}".format(i))
+            #     with open('./log/signalsi_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+            #         np.save(f, np.array(signalsi))
 
             del volumesi
 
@@ -5099,8 +5131,7 @@ class SimpleDictSearch(Optimizer):
 
 
 
-        if log:
-            print(date_time)
+        
 
         if self.paramDict["return_matched_signals"]:
 
@@ -5113,7 +5144,7 @@ class SimpleDictSearch(Optimizer):
     def search_patterns_test_multi_grouping(self, dictfile, volumes, retained_timesteps=None):
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -5514,7 +5545,7 @@ class SimpleDictSearch(Optimizer):
     def search_patterns_test_multi_mvt(self, dictfile, volumes, retained_timesteps=None):
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -5954,7 +5985,7 @@ class SimpleDictSearch(Optimizer):
     def search_patterns_test_multi_2_steps_dico_mvt(self, dictfile, volumes, retained_timesteps=None):
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -6255,7 +6286,7 @@ class SimpleDictSearch(Optimizer):
             d_T1 = 400
             d_fT1 = 100
             d_B1 = 0.2
-            d_DF = 0.015
+            d_DF = 0.030#0.015
 
             if return_cost:
                 idx_max_all_unique_low_ff, alpha_optim_low_ff,J_optim_low_ff,phase_optim_low_ff = match_signals_v2_clustered_on_dico(all_signals_low_ff,
@@ -6283,7 +6314,7 @@ class SimpleDictSearch(Optimizer):
             d_T1 = 400
             d_fT1 = 100
             d_B1 = 0.2
-            d_DF = 0.015
+            d_DF = 0.030#0.015
 
 
             if return_cost:
@@ -6472,7 +6503,7 @@ class SimpleDictSearch(Optimizer):
     def search_patterns_test_multi_grouping(self, dictfile, volumes, retained_timesteps=None):
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -6875,30 +6906,72 @@ class SimpleDictSearch(Optimizer):
     def search_patterns_test_multi_2_steps_dico(self, dictfile, volumes, retained_timesteps=None):
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
         verbose = self.verbose
 
+        if "index_ref_def" not in self.paramDict:
+            self.paramDict["index_ref_def"]=None
+
+
+
+        if "nb_rep_center_part" not in self.paramDict:
+            self.paramDict["nb_rep_center_part"]=1
+
+        nb_rep_center_part=self.paramDict["nb_rep_center_part"]
+
         if "volumes_type" not in self.paramDict:
             self.paramDict["volumes_type"]="Normal"
 
+        if ("deformation_map" in self.paramDict)and(self.paramDict["deformation_map"] is not None):
+            deformation_map = self.paramDict["deformation_map"]
+            if self.paramDict["index_ref_def"] is not None:
+                change_deformation_map_ref(deformation_map,self.paramDict["index_ref_def"])
+            nbins = deformation_map.shape[1]
+            inv_deformation_map = np.zeros_like(deformation_map)
+            for gr in range(nbins):
+                inv_deformation_map[:, gr] = calculate_inverse_deformation_map(deformation_map[:, gr])
+            #self.paramDict["multibins"] = True
+
+        else:
+            self.paramDict["deformation_map"] = None
+
+
+
         if "weights" not in self.paramDict:
-            self.paramDict["weights"]=None
+            self.paramDict["weights"]=1
         
         if "clustering" not in self.paramDict:
             self.paramDict["clustering"]=True
 
         volumes_type=self.paramDict["volumes_type"]
         weights=self.paramDict["weights"]
+        
+        if (self.paramDict["weights"] is not None)and not(type(self.paramDict["weights"])==int):
+            nbins=self.paramDict["weights"].shape[0]
+            print("Weights shape : {}".format(self.paramDict["weights"].shape))
+
         niter = self.paramDict["niter"]
         split = self.paramDict["split"]
         pca = self.paramDict["pca"]
+
+        if volumes.ndim==5:
+            ntimesteps=volumes.shape[1]
+        else:
+            ntimesteps=volumes.shape[0]
+
         threshold_pca = self.paramDict["threshold_pca"]
+        
+        threshold_pca=np.minimum(ntimesteps,threshold_pca)
+
+        
         threshold_ff=self.paramDict["threshold_ff"]
         dictfile_light=self.paramDict["dictfile_light"]
-        ntimesteps = self.paramDict["ntimesteps"]
+
+
+        # ntimesteps = self.paramDict["ntimesteps"]
 
 
         if "return_cost" not in self.paramDict:
@@ -6913,7 +6986,7 @@ class SimpleDictSearch(Optimizer):
             self.paramDict["return_matched_signals"]=False
         return_matched_signals = self.paramDict["return_matched_signals"]
 
-        if niter>0 or return_matched_signals:
+        if niter>0 or return_matched_signals or return_cost:
             calculate_matched_signals=True
 
         if calculate_matched_signals:
@@ -6936,11 +7009,19 @@ class SimpleDictSearch(Optimizer):
             num_samples = trajectory.get_traj().reshape(ntimesteps, -1, dim).shape[1]
 
         log = self.paramDict["log"]
+        if log:
+            now = datetime.now()
+            date_time = now.strftime("%Y%m%d_%H%M%S")
+            filemap_log="map_MRF_{}.pkl".format(date_time)
+
         useGPU_dictsearch = self.paramDict["useGPU_dictsearch"]
         useGPU_simulation = self.paramDict["useGPU_simulation"]
 
+        
         if "multibins" not in self.paramDict:
             self.paramDict["multibins"]=False
+
+
 
         movement_correction = self.paramDict["movement_correction"]
         cond_mvt = self.paramDict["cond"]
@@ -6973,14 +7054,15 @@ class SimpleDictSearch(Optimizer):
         else:  # already masked
             all_signals = volumes
 
+        if self.paramDict["multibins"]:
+            if ("mu_bins" not in self.paramDict) or (self.paramDict["mu_bins"] is None):
+                print("mu_bins not in parameters, setting it to 0.0")
+                self.paramDict["mu_bins"]=0.0
+
+        print(all_signals.shape)
         all_signals=all_signals.astype("complex64")
         nb_signals=all_signals.shape[1]
 
-        if log:
-            now = datetime.now()
-            date_time = now.strftime("%Y%m%d_%H%M%S")
-            with open('./log/signals0_{}.npy'.format(date_time), 'wb') as f:
-                np.save(f, all_signals)
 
         if "kdata_init" in self.paramDict:
             kdata_init = self.paramDict["kdata_init"]
@@ -7041,6 +7123,7 @@ class SimpleDictSearch(Optimizer):
             print("Mu0 : {}".format(mu0))
             signals0 = copy(all_signals)/mu0
 
+            print("multibins : {}".format(self.paramDict["multibins"]))
             if self.paramDict["multibins"]:
                 signals0=signals0.reshape(ntimesteps,nbins,-1)
                 signals0=np.moveaxis(signals0,1,0)
@@ -7075,6 +7158,7 @@ class SimpleDictSearch(Optimizer):
             array_water = dictfile[0]
             array_fat = dictfile[1]
             keys = dictfile[2]
+            keys=np.array(keys)
 
         if retained_timesteps is not None:
             array_water = array_water[:, retained_timesteps]
@@ -7131,9 +7215,9 @@ class SimpleDictSearch(Optimizer):
                 if type(dictfile) == str:
                     with open(pca_file,"wb") as file:
                         pickle.dump((pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique),file)
-                if not calculate_matched_signals:
-                    del array_water_unique
-                    del array_fat_unique
+                #if not calculate_matched_signals:
+                #    del array_water_unique
+                #    del array_fat_unique
             else:
                 print("Loading pca")
                 with open(pca_file, "rb") as file:
@@ -7204,7 +7288,7 @@ class SimpleDictSearch(Optimizer):
                 d_T1 = 400
                 d_fT1 = 100
                 d_B1 = 0.2
-                d_DF = 0.015
+                d_DF = 0.030  # 0.015
 
                 if return_cost:
                     idx_max_all_unique_low_ff, alpha_optim_low_ff,J_optim_low_ff,phase_optim_low_ff = match_signals_v2_clustered_on_dico(all_signals_low_ff,
@@ -7232,7 +7316,7 @@ class SimpleDictSearch(Optimizer):
                 d_T1 = 400
                 d_fT1 = 100
                 d_B1 = 0.2
-                d_DF = 0.015
+                d_DF = 0.030  # 0.015
 
 
                 if return_cost:
@@ -7261,11 +7345,17 @@ class SimpleDictSearch(Optimizer):
 
                     phase_optim[ind_low_ff.flatten()] = phase_optim_low_ff
                     phase_optim[ind_high_ff.flatten()] = phase_optim_high_ff
+                    matched_signals = array_water_unique[index_water_unique, :][idx_max_all_unique.astype(int), :].T * (
+                                1 - np.array(alpha_optim)).reshape(1, -1) + array_fat_unique[index_fat_unique, :][
+                                                                            idx_max_all_unique.astype(int),
+                                                                            :].T * np.array(alpha_optim).reshape(1, -1)
+                    rho_optim= J_optim*np.linalg.norm(all_signals,axis=0)/np.linalg.norm(matched_signals, axis=0)
 
                 if calculate_matched_signals:
                     matched_signals=array_water_unique[index_water_unique, :][idx_max_all_unique.astype(int), :].T * (1 - np.array(alpha_optim)).reshape(1, -1) + array_fat_unique[index_fat_unique, :][idx_max_all_unique.astype(int), :].T * np.array(alpha_optim).reshape(1, -1)
                     matched_signals *=np.linalg.norm(all_signals,axis=0)/np.linalg.norm(matched_signals, axis=0)
                     matched_signals *= J_optim * np.exp(1j * phase_optim)
+
 
 
                 if useGPU_dictsearch:
@@ -7285,9 +7375,9 @@ class SimpleDictSearch(Optimizer):
                 }
                 if return_cost:
                     if not(return_matched_signals):
-                        values_results.append((map_rebuilt, mask,J_optim,phase_optim))
+                        values_results.append((map_rebuilt, mask,J_optim,phase_optim,rho_optim))
                     else:
-                        values_results.append((map_rebuilt, mask,J_optim,phase_optim,matched_signals))
+                        values_results.append((map_rebuilt, mask,J_optim,phase_optim,rho_optim,matched_signals))
                 else:
                     values_results.append((map_rebuilt, mask))
 
@@ -7319,7 +7409,12 @@ class SimpleDictSearch(Optimizer):
 
             # import matplotlib.pyplot as plt;j=np.random.choice(all_signals.shape[1]);plt.plot(all_signals[:,j]);plt.plot(matched_signals[:,j]);
             print("Maps build for iteration {}".format(i))
-
+            
+            if log:
+                print("Logging map {}".format(filemap_log))
+                keys_temp=list(range(len(values_results)))
+                with open(filemap_log,"wb") as file:
+                    pickle.dump(dict(zip(keys_temp,values_results)),file)
             if i == niter:
                 break
 
@@ -7339,14 +7434,14 @@ class SimpleDictSearch(Optimizer):
 
             
 
-            if not self.paramDict["multibins"]:
+            if (not self.paramDict["multibins"])and(self.paramDict["deformation_map"] is None):
                 matched_volumes = np.array([makevol(im, mask > 0) for im in matched_signals])
                 if volumes_type=="Normal":
                     volumesi = undersampling_operator(matched_volumes, trajectory, self.paramDict["b1"],
                                                 density_adj=dens_adj,light_memory_usage=True)
                     
                 elif volumes_type=="Singular":
-                    volumesi=undersampling_operator_singular_new(matched_volumes,trajectory, self.paramDict["b1"],ntimesteps,density_adj=dens_adj,weights=weights,retained_timesteps=retained_timesteps)
+                    volumesi=undersampling_operator_singular_new(matched_volumes,trajectory, self.paramDict["b1"],ntimesteps,density_adj=dens_adj,weights=weights,retained_timesteps=retained_timesteps,nb_rep_center_part=nb_rep_center_part)
 
                 del matched_volumes
 
@@ -7361,10 +7456,7 @@ class SimpleDictSearch(Optimizer):
                 # normi= np.linalg.norm(signalsi, axis=0)
                 # signalsi *= norm_signals/normi
 
-                if log:
-                    print("Saving signalsi for iteration {}".format(i))
-                    with open('./log/signalsi_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                        np.save(f, np.array(signalsi))
+
 
                 del volumesi
 
@@ -7438,7 +7530,126 @@ class SimpleDictSearch(Optimizer):
 
                 # norm_signals = np.linalg.norm(signals, axis=0)
                 # all_signals_unthresholded = signals / norm_signals
-            
+
+
+            elif (not self.paramDict["multibins"])and(self.paramDict["deformation_map"] is not None):
+
+                matched_volumes = np.array([makevol(im, mask > 0) for im in matched_signals])
+
+                for gr in range(nbins):
+                    deformed_volumes=np.zeros_like(matched_volumes)
+                    for ts in range(ntimesteps):
+                        deformed_volumes[ts]=apply_deformation_to_complex_volume(matched_volumes[ts],inv_deformation_map[:,gr])
+
+                    
+                    if volumes_type == "Normal":
+                        
+                        volumesi = undersampling_operator(deformed_volumes, trajectory, self.paramDict["b1"],
+                                                          density_adj=dens_adj, light_memory_usage=True)
+
+                    elif volumes_type == "Singular":
+                        print(deformed_volumes.shape)
+                        print(weights.shape)
+                        print(ntimesteps)
+                        print(retained_timesteps)
+                        volumesi = undersampling_operator_singular_new(deformed_volumes, trajectory, self.paramDict["b1"],
+                                                                       ntimesteps, density_adj=dens_adj, weights=weights[gr],
+                                                                       retained_timesteps=retained_timesteps,nb_rep_center_part=nb_rep_center_part)
+                    
+                    for ts in range(ntimesteps):
+                        volumesi[ts]=apply_deformation_to_complex_volume(volumesi[ts],deformation_map[:,gr])
+
+                    if gr==0:
+                        final_volumesi=volumesi
+                    else:
+                        final_volumesi += volumesi
+
+                del matched_volumes
+                del volumesi
+
+                # del images_pred
+
+                # volumesi = volumesi / np.linalg.norm(volumesi, 2, axis=0)
+
+                # correct volumes
+                print("Correcting volumes for iteration {}".format(i))
+
+                signalsi = final_volumesi[:, mask > 0]
+                # normi= np.linalg.norm(signalsi, axis=0)
+                # signalsi *= norm_signals/normi
+
+
+                del final_volumesi
+
+                
+
+                grad = signalsi - signals0
+                del signalsi
+
+                if self.paramDict["mu"] == "Adaptative":
+
+                    grad_volumes = np.array([makevol(im, mask > 0) for im in grad])
+                    kdata_grad = generate_kdata_multi(grad_volumes, trajectory, self.paramDict["b1"],
+                                                      ntimesteps=ntimesteps)
+
+                    del grad_volumes
+                    mu_numerator = 0
+                    mu_denom = 0
+
+                    for ts in tqdm(range(kdata_grad.shape[1])):
+                        curr_grad = grad[ts]
+                        curr_kdata_grad = kdata_grad[:, ts].flatten()
+                        if dens_adj:
+                            density = np.abs(np.linspace(-1, 1, trajectory.paramDict["npoint"]))
+                        else:
+                            density = 1
+
+                        mu_denom += np.real(
+                            np.dot((density * curr_kdata_grad.reshape(-1,
+                                                                      trajectory.paramDict["npoint"])).flatten().conj(),
+                                   curr_kdata_grad))
+                        mu_numerator += np.real(np.dot(curr_grad.conj(), curr_grad))
+                    del kdata_grad
+                    mu = -num_samples * mu_numerator / mu_denom
+                    # mu/=2
+                elif self.paramDict["mu"] == "Brute":
+                    grad_volumes = np.array([makevol(im, mask > 0) for im in grad])
+                    mu_list = np.linspace(-1.6, -0, 8)
+                    J_list = [J(matched_volumes + mu_ * grad_volumes, kdata_init, True, trajectory) for mu_ in mu_list]
+                    J_list = np.array(J_list)
+                    mu = mu_list[np.argmin(J_list)]
+                else:
+                    mu = -self.paramDict["mu"]
+                print("Mu for iter {} : {}".format(i, mu))
+
+                all_signals = matched_signals + mu * grad
+
+                if "mu_TV" not in self.paramDict:
+                    del grad
+
+                if "mu_TV" in self.paramDict:
+                    print("Applying TV regularization")
+                    grad_norm = np.linalg.norm(grad, axis=0)
+                    del grad
+
+                    grad_TV = np.zeros(matched_signals.shape, dtype=matched_signals.dtype)
+                    for ts in tqdm(range(ntimesteps)):
+                        matched_volumes_ts = makevol(matched_signals[ts], mask > 0)
+                        for ind_w, w in (enumerate(weights_TV)):
+                            if w > 0:
+                                grad_TV[ts] += (w * grad_J_TV(matched_volumes_ts, ind_w, mask=mask, shift=0))[mask > 0]
+
+                    grad_TV_norm = np.linalg.norm(grad_TV, axis=0)
+                    # signals = matched_signals + mu * grad
+
+                    all_signals += mu * mu_TV * grad_norm / grad_TV_norm * grad_TV
+                    del grad_TV
+                    del grad_TV_norm
+
+                del matched_signals
+
+
+
             else:#multibins
                 mu = -self.paramDict["mu"]
                 print("Multi-bins reconstruction")
@@ -7458,7 +7669,8 @@ class SimpleDictSearch(Optimizer):
                                                     density_adj=dens_adj,light_memory_usage=True)
                         
                     elif volumes_type=="Singular":
-                        volumesi=undersampling_operator_singular_new(matched_volumes,trajectory, self.paramDict["b1"],ntimesteps,density_adj=dens_adj,weights=weights[gr],retained_timesteps=retained_timesteps)
+                        print("Building undersampled singular volumes for multibin reco")
+                        volumesi=undersampling_operator_singular_new(matched_volumes,trajectory, self.paramDict["b1"],ntimesteps,density_adj=dens_adj,weights=weights[gr],retained_timesteps=retained_timesteps,nb_rep_center_part=nb_rep_center_part)
 
                     del matched_volumes
 
@@ -7473,10 +7685,6 @@ class SimpleDictSearch(Optimizer):
                     # normi= np.linalg.norm(signalsi, axis=0)
                     # signalsi *= norm_signals/normi
 
-                    if log:
-                        print("Saving signalsi for iteration {}".format(i))
-                        with open('./log/signalsi_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                            np.save(f, np.array(signalsi))
 
                     del volumesi
 
@@ -7515,7 +7723,7 @@ class SimpleDictSearch(Optimizer):
                         del grad_TV_norm
 
                 all_grad_norm=np.sqrt(all_grad_norm)
-                if "mu_bins" in self.paramDict:
+                if ("mu_bins" in self.paramDict)and(self.paramDict["mu_bins"] is not None):
                     grad_TV_bins=grad_J_TV(matched_signals,0,is_weighted=False,shift=0)
                     #grad_TV_bins_norm=np.linalg.norm(grad_TV_bins,axis=(0,1))
                     grad_TV_bins_norm = np.linalg.norm(grad_TV_bins)
@@ -7539,9 +7747,6 @@ class SimpleDictSearch(Optimizer):
 
 
 
-        if log:
-            print(date_time)
-
         #if self.paramDict["return_matched_signals"]:
 
         #    return dict(zip(keys_results, values_results)), matched_signals
@@ -7556,7 +7761,7 @@ class SimpleDictSearch(Optimizer):
     def search_patterns_test_multi_singular(self, dictfile, volumes, retained_timesteps=None):
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -7595,11 +7800,11 @@ class SimpleDictSearch(Optimizer):
         else:#already masked
             signals=volumes
 
-        if log:
-            now = datetime.now()
-            date_time = now.strftime("%Y%m%d_%H%M%S")
-            with open('./log/signals0_{}.npy'.format(date_time), 'wb') as f:
-                np.save(f, signals)
+        # if log:
+        #     now = datetime.now()
+        #     date_time = now.strftime("%Y%m%d_%H%M%S")
+        #     with open('./log/signals0_{}.npy'.format(date_time), 'wb') as f:
+        #         np.save(f, signals)
 
         #del volumes
 
@@ -7721,10 +7926,10 @@ class SimpleDictSearch(Optimizer):
 
         for i in range(niter + 1):
 
-            if log:
-                print("Saving signals for iteration {}".format(i))
-                with open('./log/signals_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                    np.save(f, np.array(all_signals))
+            # if log:
+            #     print("Saving signals for iteration {}".format(i))
+            #     with open('./log/signals_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+            #         np.save(f, np.array(all_signals))
 
             print("################# ITERATION : Number {} out of {} ####################".format(i, niter))
             print("Calculating optimal fat fraction and best pattern per signal for iteration {}".format(i))
@@ -7744,10 +7949,10 @@ class SimpleDictSearch(Optimizer):
 
 
 
-                if log:
-                    print("Saving matched signals for iteration {}".format(i))
-                    with open('./log/matched_signals_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
-                        np.save(f, matched_signals.astype(np.complex64))
+                # if log:
+                #     print("Saving matched signals for iteration {}".format(i))
+                #     with open('./log/matched_signals_it_{}_{}.npy'.format(int(i), date_time), 'wb') as f:
+                #         np.save(f, matched_signals.astype(np.complex64))
 
             #import matplotlib.pyplot as plt;j=np.random.choice(all_signals.shape[1]);plt.plot(all_signals[:,j]);plt.plot(matched_signals[:,j]);
             print("Maps build for iteration {}".format(i))
@@ -7893,7 +8098,7 @@ class SimpleDictSearch(Optimizer):
     def search_patterns_test_multi_CS(self, dictfile, volumes, retained_timesteps=None):
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -8388,11 +8593,14 @@ class BruteDictSearch(Optimizer):
         if "ignore_rho" not in self.paramDict:
             self.paramDict["ignore_rho"]=False
 
+        if "dictfile_light" not in self.paramDict:
+            self.paramDict["dictfile_light"]=None
+
     def search_patterns(self,dictfile,volumes,retained_timesteps=None):
 
 
         if self.mask is None:
-            mask = build_mask(volumes)
+            mask = build_mask_from_volume(volumes)
         else:
             mask = self.mask
 
@@ -8529,6 +8737,7 @@ class BruteDictSearch(Optimizer):
 
 
         if n_clusters_dico is None:
+            print("Standard Dictionary matching without group matching")
             num_group = int(nb_signals / split) + 1
 
             idx_max_all_unique = []
@@ -8574,7 +8783,6 @@ class BruteDictSearch(Optimizer):
 
 
                     if pca:
-
                         transformed_all_signals = cp.transpose(
                             pca.transform(cp.transpose(cp.asarray(all_signals[:, j_signal:j_signal_next]))))
 
@@ -8628,8 +8836,8 @@ class BruteDictSearch(Optimizer):
                     end = datetime.now()
 
                 else:
-
-                    J_all=lambd**2*cp.expand_dims(var,axis=-1) - 2*lambd*sig
+                    
+                    J_all=lambd**2*cp.expand_dims(cp.asarray(var),axis=-1) - 2*lambd*sig
 
                     J_all = J_all.get()
 
@@ -8841,3 +9049,226 @@ class BruteDictSearch(Optimizer):
 
             return dict(zip(keys_results, values_results))
 
+
+    def search_patterns_new_clustering(self,dictfile,volumes,retained_timesteps=None):
+
+
+            if self.mask is None:
+                mask = build_mask_from_volume(volumes)
+            else:
+                mask = self.mask
+
+
+            if "dictfile_light" not in self.paramDict:
+                raise ValueError("dictfile_light should be a member for this mathing method")
+
+            split=self.paramDict["split"]
+            pca=self.paramDict["pca"]
+            threshold_pca=self.paramDict["threshold_pca"]
+            #useAdjPred=self.paramDict["useAdjPred"]
+            log=self.paramDict["log"]
+            useGPU_dictsearch=self.paramDict["useGPU_dictsearch"]
+
+
+            remove_duplicates = self.paramDict["remove_duplicate_signals"]
+            #adj_phase=self.paramDict["adj_phase"]
+            self.paramDict["n_clusters_dico"]=None
+            self.paramDict["pruning"]=None
+
+            if pca:
+                pca_file = str.split(dictfile, ".dict")[0] + "_{}pca_brute.pkl".format(threshold_pca)
+                pca_file_name = str.split(pca_file, "/")[-1]
+
+            path = str.split(os.path.realpath(__file__), "/dictoptimizers.py")[0]
+           
+            
+            keys,values=read_mrf_dict(dictfile,self.paramDict["FF"])
+
+            keys=cp.asarray(keys)
+
+            if volumes.ndim > 2:
+                signals = volumes[:, mask > 0]
+            else:  # already masked
+                signals = volumes
+
+            if log:
+                now = datetime.now()
+                date_time = now.strftime("%Y%m%d_%H%M%S")
+                with open('./log/volumes0_{}.npy'.format(date_time), 'wb') as f:
+                    np.save(f, volumes)
+
+
+            del volumes
+
+
+            #norm_volumes = np.linalg.norm(volumes, 2, axis=0)
+
+            norm_signals=np.linalg.norm(signals, 2, axis=0)
+            all_signals = signals/norm_signals
+
+
+
+            if retained_timesteps is not None:
+                values=values[:,retained_timesteps]
+
+            if pca:
+                if pca_file_name not in os.listdir(path):
+                    pca = PCAComplex(n_components_=threshold_pca)
+                    pca.fit(values)
+                    transformed_values = pca.transform(values)
+                    with open(pca_file, "wb") as file:
+                        pickle.dump((pca,transformed_values), file)
+                else:
+                    with open(pca_file,"rb") as file:
+                        (pca,transformed_values)=pickle.load(file)
+
+            else:
+                transformed_values=values
+
+            var_total = np.sum(transformed_values * transformed_values.conj(), axis=1).real
+
+
+            values_results = []
+            keys_results = [0]
+
+
+            print("Calculating optimal fat fraction and best pattern per signal")
+            nb_signals = all_signals.shape[1]
+
+            
+            num_group = int(nb_signals / split) + 1
+            idx_max_all_unique=np.zeros(nb_signals,dtype="int64")
+
+        #Trick to avoid returning matched signals in the coarse dictionary matching step
+            return_matched_signals_backup=self.paramDict["return_matched_signals"]
+            self.paramDict["return_matched_signals"]=False
+
+            all_maps_bc_cf_light = self.search_patterns(self.paramDict["dictfile_light"],all_signals)
+
+            self.paramDict["return_matched_signals"] = return_matched_signals_backup
+
+
+            print("Calculating clusters")
+            all_maps = np.array([all_maps_bc_cf_light[0][0][k] for k in list(all_maps_bc_cf_light[0][0].keys())[:-1]]).squeeze()
+            unique_keys, labels = np.unique(all_maps, axis=-1, return_inverse=True)
+
+            unique_keys=cp.asarray(unique_keys)
+            labels = cp.asarray(labels)
+    
+            d_T1 = 400
+            d_fT1 = 100
+            d_B1 = 0.2
+            d_DF = 0.015
+
+            nb_clusters = unique_keys.shape[-1]
+
+            print("Performing standard dictionary matching on clustered signals")
+            print(nb_clusters)
+
+            for cl in tqdm(range(nb_clusters)):
+
+                indices = cp.argwhere(labels == cl)
+                nb_signals_cluster=len(indices)
+                num_group = int(nb_signals_cluster / split) + 1
+                #print("nb_signals_cluster {}".format(nb_signals_cluster))
+
+                #print(keys[:10])
+                # if j_signal==nb_signals:
+                #    break
+                keys_T1 = (keys[:, 0] < unique_keys[:, cl][0] + d_T1) & ((keys[:, 0] > unique_keys[:, cl][0] - d_T1))
+                keys_fT1 = (keys[:, 1] < unique_keys[:, cl][1] + d_fT1) & ((keys[:, 1] > unique_keys[:, cl][1] - d_fT1))
+                keys_B1 = (keys[:, 2] < unique_keys[:, cl][2] + d_B1) & ((keys[:, 2] > unique_keys[:, cl][2] - d_B1))
+                keys_DF = (keys[:, 3] < unique_keys[:, cl][3] + d_DF) & ((keys[:, 3] > unique_keys[:, cl][3] - d_DF))
+                retained_signals_indices = cp.argwhere(keys_T1 & keys_fT1 & keys_B1 & keys_DF).flatten()
+
+
+                var = var_total[retained_signals_indices.get()]
+
+                all_signals_cluster=cp.asarray(all_signals[:, (indices.get()).flatten()])
+                idx_max_all_unique_cluster = cp.zeros(nb_signals_cluster,dtype="int64")
+                
+                retained_signals_dico =cp.asarray(transformed_values[retained_signals_indices.get()])
+
+                
+  
+                for j in tqdm(range(num_group)):
+                    j_signal = j * split
+                    j_signal_next = np.minimum((j + 1) * split, nb_signals_cluster)
+                    if j_signal>=nb_signals_cluster:
+                        break
+
+                        
+                    #print("Applying PCA on clustered signal")
+                    transformed_all_signals = cp.transpose(
+                                    pca.transform(cp.transpose(cp.asarray(all_signals_cluster[:, j_signal:j_signal_next]))))
+
+                    #print("transformed_all_signals shape {}".format(transformed_all_signals.shape))
+
+                                # if len(idx_max_all_clusters) == 0:
+                                #     idx_max_all_clusters = idx_max_all_clusters_current
+                                # else:
+                                #     idx_max_all_clusters = np.append(idx_max_all_unique, idx_max_all_clusters_current, axis=1)
+                    
+                    
+                    var_current = cp.asarray(var)
+                    #print("Var current shape {}".format(var_current.shape))
+                    
+                    sig = cp.matmul(retained_signals_dico.conj(), transformed_all_signals)
+                    #print("sig.shape {}".format(sig.shape))
+
+                    phi = 0.5 * cp.angle(sig ** 2 / cp.expand_dims(cp.real(var_current), axis=-1))
+                    #print("phi.shape {}".format(phi.shape))
+
+                    sig = cp.real(cp.matmul(retained_signals_dico.conj(), transformed_all_signals) * cp.exp(
+                                    -1j * phi))
+                    
+                    #print("sig.shape {}".format(sig.shape))
+
+                    lambd = sig / cp.expand_dims(cp.real(var_current), axis=-1)
+
+                    #print("lambd.shape {}".format(lambd.shape))
+
+
+                    J_all = lambd ** 2 * cp.expand_dims(var_current, axis=-1) - 2 * lambd * sig
+                    idx_max_all_current = cp.argmin(J_all, axis=0)
+                    idx_max_all_unique_cluster[j_signal:j_signal_next] = idx_max_all_current
+                        
+                
+                        # idx_max_all_unique = np.argmax(J_all, axis=0)
+                    del J_all
+                    
+                idx_max_all_unique[indices.get().flatten()] = (retained_signals_indices[idx_max_all_unique_cluster]).get()
+
+
+
+
+            print("Building the maps for iteration")
+
+            # del sig_ws_all_unique
+            # del sig_fs_all_unique
+
+            keys=keys.get()
+            keys_for_map = [tuple(k) for k in keys]
+
+            params_all_unique = np.array(
+                [keys_for_map[idx]  for l, idx in enumerate(idx_max_all_unique)])
+
+
+            params_all = params_all_unique
+
+
+            del params_all_unique
+
+            map_rebuilt = {
+                "wT1": params_all[:, 0],
+                "fT1": params_all[:, 1],
+                "attB1": params_all[:, 2],
+                "df": params_all[:, 3],
+                "ff": params_all[:, 4]
+
+            }
+
+            values_results.append((map_rebuilt, mask))
+
+            
+            return dict(zip(keys_results, values_results))

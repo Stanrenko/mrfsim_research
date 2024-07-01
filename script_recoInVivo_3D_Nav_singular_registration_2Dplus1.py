@@ -5,6 +5,7 @@ from mrfsim import T1MRF
 from image_series import *
 from dictoptimizers import SimpleDictSearch,BruteDictSearch
 from utils_mrf import *
+from utils_reco import *
 import json
 import readTwix as rT
 import time
@@ -121,6 +122,18 @@ dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2.33_reco4_w8_simmean.dict"
 dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2.33_reco4_w8_simmean.dict"
 
 
+#localfile="/patient.002.v6/meas_MID00180_FID52166_raFin_3D_tra_3x3x5mm_FULL_new_IP.dat"
+
+localfile="/patient.009.v2/meas_MID00148_FID57318_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+
+localfile="/patient.002.v8/meas_MID00024_FID57922_raFin_3D_tra_1x1x5mm_FULL_new_MRF.dat"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2.22_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2.22_reco4_w8_simmean.dict"
+
+localfile="/patient.002.v9/meas_MID00023_FID59524_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2.22_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2.22_reco4_w8_simmean.dict"
+
 filename = base_folder+localfile
 
 #filename="./data/InVivo/3D/20211221_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
@@ -159,7 +172,7 @@ filename_kdata_pt_corr = str.split(filename,".dat") [0]+"_kdata_no_dens_adj_pt_c
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 
-pt=True
+pt=False
 density_adj_radial=True
 use_GPU = False
 light_memory_usage=True
@@ -209,7 +222,7 @@ except:
 use_navigator_dll=dico_seqParams["use_navigator_dll"]
 
 if use_navigator_dll:
-    meas_sampling_mode=dico_seqParams["alFree"][14]
+    meas_sampling_mode=dico_seqParams["alFree"][15]
     nb_gating_spokes = dico_seqParams["alFree"][6]
 else:
     meas_sampling_mode = dico_seqParams["alFree"][12]
@@ -337,31 +350,7 @@ else :
     data = np.load(filename_save)
     if nb_gating_spokes>0:
         data_for_nav=np.load(filename_nav_save)
-#
-# if str.split(filename_save,"/")[-1] not in os.listdir(folder):
-#     Parsed_File = rT.map_VBVD(filename)
-#     idx_ok = rT.detect_TwixImg(Parsed_File)
-#     start_time = time.time()
-#     RawData = Parsed_File[str(idx_ok)]["image"].readImage()
-#     #test=Parsed_File["0"]["noise"].readImage()
-#     #test = np.squeeze(test)
-#
-#     elapsed_time = time.time()
-#     elapsed_time = elapsed_time - start_time
-#     progress_str = "Data read in %f s \n" % round(elapsed_time, 2)
-#     print(progress_str)
-#     ## Random map simulation
-#
-#     data = np.squeeze(RawData)
-#     data = np.moveaxis(data, 0, -1)
-#
-#     np.save(filename_save,data)
-#
-# else :
-#     data = np.load(filename_save)
 
-#data = np.moveaxis(data, 0, -1)
-# data=np.moveaxis(data,-2,-1)
 
 try:
     del twix
@@ -384,12 +373,6 @@ nb_allspokes = data_shape[-3]
 npoint = data_shape[-1]
 nb_slices = data_shape[-2]
 
-#nb_channels=data_for_nav.shape[0]
-#nb_allspokes = 1400
-#npoint_nav = data_for_nav.shape[-1]
-#nb_slices = data_for_nav.shape[1]
-
-
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
 undersampling_factor=1
 
@@ -401,9 +384,6 @@ if nb_gating_spokes>0:
 dx = x_FOV/(npoint/2)
 dy = y_FOV/(npoint/2)
 dz = z_FOV/nb_slices
-
-#file_name_nav_mat=str.split(filename,".dat") [0]+"_nav.mat"
-#savemat(file_name_nav_mat,{"Kdata":data_for_nav})
 
 if str.split(filename_kdata,"/")[-1] in os.listdir(folder):
     del data
@@ -440,16 +420,6 @@ kdata_shape=kdata_all_channels_all_slices.shape
 ntimesteps=int(nb_allspokes/window)
 #kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,-1,nb_slices,npoint)
 
-#
-# cond_gating_spokes=np.ones(nb_segments).astype(bool)
-# cond_gating_spokes[::int(nb_segments/nb_gating_spokes)]=False
-# kdata_retained_no_gating_spokes_list=[]
-# for i in tqdm(range(nb_channels)):
-#     kdata_retained_no_gating_spokes,traj_retained_no_gating_spokes,retained_timesteps=correct_mvt_kdata(kdata_all_channels_all_slices[i].reshape(nb_segments,-1),radial_traj.get_traj(),cond_gating_spokes,175,density_adj=False)
-#     kdata_retained_no_gating_spokes_list.append(kdata_retained_no_gating_spokes)
-#
-# radial_traj.traj_for_reconstruction=traj_retained_no_gating_spokes
-# Coil sensi estimation for all slices
 
 
 radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampling_factor,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode=mode)
@@ -462,55 +432,49 @@ radial_traj_2D=Radial(total_nspokes=nb_allspokes,npoint=npoint)
 
 import scipy as sp
 
-# data_numpy_zkxky=np.fft.fftshift(sp.fft.ifft(np.fft.ifftshift(kdata_all_channels_all_slices,axes=2),axis=2,workers=24),axes=2).astype("complex64")
-# data_numpy_zkxky=data_numpy_zkxky.reshape(nb_channels,ntimesteps,-1,nb_slices,npoint)
-# data_numpy_zkxky=np.moveaxis(data_numpy_zkxky,-2,1)
+data_numpy_zkxky=np.fft.fftshift(sp.fft.ifft(np.fft.ifftshift(kdata_all_channels_all_slices,axes=2),axis=2,workers=24),axes=2).astype("complex64")
+data_numpy_zkxky=data_numpy_zkxky.reshape(nb_channels,ntimesteps,-1,nb_slices,npoint)
+data_numpy_zkxky=np.moveaxis(data_numpy_zkxky,-2,1)
 
-#sl=int(nb_slices/2)
-#data_numpy_zkxky_slice=data_numpy_zkxky[:,sl]
-#data_numpy_zkxky_slice=data_numpy_zkxky_slice.reshape(nb_channels,ntimesteps,-1)
 
-#=data_numpy_zkxky_slice.reshape(nb_channels,-1)
+from copy import deepcopy
+n_comp=16
+data_numpy_zkxky_for_pca_all=np.zeros((n_comp,nb_slices,ntimesteps,8,npoint),dtype=data_numpy_zkxky.dtype)
+pca_dict={}
+for sl in tqdm(range(nb_slices)):
+    data_numpy_zkxky_slice=data_numpy_zkxky[:,sl]
+    data_numpy_zkxky_slice=data_numpy_zkxky_slice.reshape(nb_channels,ntimesteps,-1)
 
-#pca=PCAComplex(n_components_=None)
+    data_numpy_zkxky_for_pca=data_numpy_zkxky_slice.reshape(nb_channels,-1)
 
-#pca.fit(data_numpy_zkxky_for_pca.T)
+    pca=PCAComplex(n_components_=n_comp)
 
-# from copy import deepcopy
-# n_comp=16
-# data_numpy_zkxky_for_pca_all=np.zeros((n_comp,nb_slices,ntimesteps,8,npoint),dtype=data_numpy_zkxky.dtype)
-# pca_dict={}
-# for sl in tqdm(range(nb_slices)):
-#     data_numpy_zkxky_slice=data_numpy_zkxky[:,sl]
-#     data_numpy_zkxky_slice=data_numpy_zkxky_slice.reshape(nb_channels,ntimesteps,-1)
-#
-#     data_numpy_zkxky_for_pca=data_numpy_zkxky_slice.reshape(nb_channels,-1)
-#
-#     pca=PCAComplex(n_components_=n_comp)
-#
-#     pca.fit(data_numpy_zkxky_for_pca.T)
-#
-#     pca_dict[sl]=deepcopy(pca)
-#
-#     data_numpy_zkxky_for_pca_transformed=pca.transform(data_numpy_zkxky_for_pca.T)
-#     data_numpy_zkxky_for_pca_transformed=data_numpy_zkxky_for_pca_transformed.T
-#
-#     data_numpy_zkxky_for_pca_all[:,sl,:,:,:]=data_numpy_zkxky_for_pca_transformed.reshape(n_comp,ntimesteps,-1,npoint)
-#
+    pca.fit(data_numpy_zkxky_for_pca.T)
 
-# filename_kdata2Dplus1_pca  = str.split(filename,".dat") [0]+"_kdata2Dplus1_pca{}.npy".format(n_comp)
+    pca_dict[sl]=deepcopy(pca)
+
+    data_numpy_zkxky_for_pca_transformed=pca.transform(data_numpy_zkxky_for_pca.T)
+    data_numpy_zkxky_for_pca_transformed=data_numpy_zkxky_for_pca_transformed.T
+
+    data_numpy_zkxky_for_pca_all[:,sl,:,:,:]=data_numpy_zkxky_for_pca_transformed.reshape(n_comp,ntimesteps,-1,npoint)
+
+
+filename_kdata2Dplus1_pca  = str.split(filename,".dat") [0]+"_kdata2Dplus1_pca{}.npy".format(n_comp)
 #
 n_comp=16
 filename_virtualcoils= str.split(filename,".dat") [0]+"_virtualcoils_{}.pkl".format(n_comp)
-# import pickle
-# with open(filename_virtualcoils,"wb") as file:
-#     pickle.dump(pca_dict,file)
-# np.save(filename_kdata2Dplus1_pca,data_numpy_zkxky_for_pca_all)
+import pickle
+with open(filename_virtualcoils,"wb") as file:
+    pickle.dump(pca_dict,file)
+np.save(filename_kdata2Dplus1_pca,data_numpy_zkxky_for_pca_all)
 #
 # filename_kdata2Dplus1= str.split(filename,".dat") [0]+"_kdata2Dplus1{}.npy".format("")
 # np.save(filename_kdata2Dplus1,data_numpy_zkxky)
 #
 #
+
+
+
 import pickle
 with open(filename_virtualcoils,"rb") as file:
     pca_dict=pickle.load(file)
@@ -528,16 +492,16 @@ b1_all_slices_2Dplus1_pca=calculate_sensitivity_map(np.moveaxis(data_numpy_zkxky
 b1_all_slices_2Dplus1_pca=np.moveaxis(b1_all_slices_2Dplus1_pca,1,0)
 sl=int(nb_slices/2)
 plot_image_grid(np.abs(b1_all_slices_2Dplus1_pca[:,sl]),nb_row_col=(6,6))
-#
-#
-# filename_b12Dplus1 = str.split(filename,".dat") [0]+"_b12Dplus1_{}.npy".format(n_comp)
-# np.save(filename_b12Dplus1,b1_all_slices_2Dplus1_pca)
-#
-#
-# filename_b12Dplus1 = str.split(filename,".dat") [0]+"_b12Dplus1_{}.npy".format(n_comp)
-# b1_all_slices_2Dplus1_pca=np.load(filename_b12Dplus1)
-#
-# b1_all_slices=np.load(filename_b1)
+
+
+filename_b12Dplus1 = str.split(filename,".dat") [0]+"_b12Dplus1_{}.npy".format(n_comp)
+np.save(filename_b12Dplus1,b1_all_slices_2Dplus1_pca)
+
+
+filename_b12Dplus1 = str.split(filename,".dat") [0]+"_b12Dplus1_{}.npy".format(n_comp)
+b1_all_slices_2Dplus1_pca=np.load(filename_b12Dplus1)
+
+b1_all_slices=np.load(filename_b1)
 #
 # filename_kdata2Dplus1= str.split(filename,".dat") [0]+"_kdata2Dplus1{}.npy".format("")
 # data_numpy_zkxky_for_pca_all=np.load(filename_kdata2Dplus1)
@@ -715,23 +679,38 @@ if nb_gating_spokes>0:
 
 
 
+
         print("Estimating Movement...")
-        shifts = list(range(-15, 30))
-        bottom = 15
-        top = int(npoint_nav / 2) - 30
+        shifts = list(range(-20, 20))
+        bottom = -shifts[0]
+        top = int(npoint_nav / 2+10) -shifts[-1]
         displacements_all_channels = []
 
-        #image_nav_all_channels = []
+        image_nav_all_channels = []
         for j in range(nb_channels):
             images_series_rebuilt_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[j], axis=0), nav_traj,
                                                                      nav_image_size, b1=None)
+
+            images_series_rebuilt_nav_ch = np.pad(images_series_rebuilt_nav_ch, pad_width=((0, 0), (0, 0), (5, 5)), mode="edge")
+
             image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
-            displacements = calculate_displacement(image_nav_ch, bottom, top, shifts, lambda_tv=0.001)
+            displacements = calculate_displacement(image_nav_ch, bottom, top, shifts, lambda_tv=0.0001)
             displacements_all_channels.append(displacements)
+            image_nav_all_channels.append(image_nav_ch)
 
         displacements_all_channels=np.array(displacements_all_channels)
+        image_nav_all_channels = np.array(image_nav_all_channels)
+        np.save("image_nav_all_channels.npy",image_nav_all_channels)
+
+
+
+
+            # j=1
+            # images_series_rebuilt_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[j], axis=0), nav_traj,
+            #                                                          nav_image_size, b1=None)
+            # image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
             # plt.figure()
-            # plt.imshow(image_nav_ch.reshape(-1, int(npoint / 2)).T, cmap="gray")
+            # plt.imshow(image_nav_ch.reshape(-1, int(npoint_nav / 2))[:3*nb_gating_spokes].T, cmap="gray")
             # plt.title("Image channel {}".format(j))
 
         # plt.close("all")
@@ -751,7 +730,10 @@ if nb_gating_spokes>0:
                 if np.max(signal) == np.min(signal):
                     signal = 0.5 * np.ones_like(signal)
                 else:
-                    signal = (signal - np.min(signal)) / (np.max(signal) - np.min(signal))
+                    min=np.min(signal)
+                    max=np.max(signal)
+                    signal = (signal - min) / (max- min)
+
                 As_hat_normalized[ch, sl, :] = signal
                 # mean=np.mean(signal)
                 # std=np.std(signal)
@@ -759,16 +741,43 @@ if nb_gating_spokes>0:
                 # signal[ind]=signal[ind-1]
                 signal_filtered = savgol_filter(signal, 3, 2)
                 signal_filtered = lowess(signal_filtered, np.arange(len(signal_filtered)), frac=0.1)[:, 1]
-                As_hat_filtered[ch, sl, :] = signal_filtered
+                As_hat_filtered[ch, sl, :] = min+(max-min)*signal_filtered
+                #As_hat_filtered[ch, sl, :]=signal_filtered
 
         data_for_pca = As_hat_filtered.reshape(nb_channels, -1)
-        from sklearn.decomposition import PCA
+        plt.figure();plt.plot(data_for_pca.T)
 
-        pca = PCA(n_components=1)
-        pca.fit(data_for_pca.T)
-        pcs = pca.components_ @ data_for_pca
-        explained_variances_all_slices = pca.explained_variance_ratio_
-        displacements = pcs[0]
+        #from sklearn.decomposition import PCA
+
+        #pca = PCA(n_components=1)
+        data_mean=np.mean(data_for_pca,axis=0,keepdims=True)
+        data_for_pca_centered=data_for_pca-data_mean
+        #pca.fit(data_for_pca_centered)
+        #pcs = pca.components_
+        #explained_variances_all_slices = pca.explained_variance_ratio_
+        #displacements = pcs[0]
+        displacements=data_mean[0]
+
+        ch = 0
+        displacements=data_for_pca[ch]
+        #displacements = displacements_all_channels[ch].flatten()
+
+        image_nav_all_channels = image_nav_all_channels.reshape(nb_channels,-1, image_nav_all_channels.shape[-1])
+        start_cycle = 0
+        end_cycle = 60
+        pixel_start = 60
+        bottom_plot = 0
+        top_plot = npoint_nav
+        factor_disp = 1
+        disp_0 = displacements[0]
+
+
+        plt.figure()
+        plt.imshow(image_nav_all_channels[ch,(start_cycle * nb_gating_spokes):(end_cycle * nb_gating_spokes),
+                   bottom_plot:top_plot].T, cmap="gray")
+        plt.plot(factor_disp * displacements[(start_cycle * nb_gating_spokes):(
+                end_cycle * nb_gating_spokes)] - disp_0 + pixel_start - bottom_plot, linewidth=5, c="y")
+
         np.save(filename_displacement,displacements)
     else:
         displacements=np.load(filename_displacement)
@@ -804,7 +813,7 @@ group_2=(categories==2)
 group_3=(categories==3)
 group_4=(categories==4)
 group_5=(categories==5)
-
+#group_6=(categories==6)
 
 groups=[group_1,group_2,group_3,group_4,group_5]
 
@@ -1356,8 +1365,8 @@ for gr in tqdm(dico_traj_retained.keys()):
     # data=copy(kdata_all_channels_all_slices)
     # weights = np.expand_dims((dico_traj_retained[gr]>0)*1,axis=(0,-1))
     weights = np.expand_dims(dico_traj_retained[gr], axis=(-1))
-    # weights=1*(weights>0)
-    weights=np.ones_like(weights)
+    #weights=1*(weights>0)
+    #weights=np.ones_like(weights)
 
     # data=data.reshape(nb_channels,ntimesteps,8,-1,npoint)
     # data*=weights
@@ -2656,3 +2665,107 @@ for i in range(volume_for_gif.shape[0]):
 
 filename_gif = str.split(file_map,".npy") [0]+"_moving_singular_l1_sl{}.gif".format(sl)
 gif[0].save(filename_gif,save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import scipy as sp
+
+output_shape =  image_size
+traj_reco = radial_traj_2D.get_traj_for_reconstruction(1).astype("float32")
+traj_reco = traj_reco.reshape(-1, 2)
+kdata_all_channels_all_slices=np.load(filename_kdata)
+for gr in tqdm(dico_traj_retained.keys()):
+    # data=copy(kdata_all_channels_all_slices)
+    # weights = np.expand_dims((dico_traj_retained[gr]>0)*1,axis=(0,-1))
+    weights = np.expand_dims(dico_traj_retained[gr], axis=(-1))
+    #weights=1*(weights>0)
+    #weights=np.ones_like(weights)
+
+    # data=data.reshape(nb_channels,ntimesteps,8,-1,npoint)
+    # data*=weights
+    data = np.zeros((nb_channels, ntimesteps, 8, nb_slices, npoint), dtype=kdata_all_channels_all_slices.dtype)
+
+    # for ch in tqdm(range(nb_channels)):
+    data = np.fft.fftshift(
+        sp.fft.ifft(np.fft.ifftshift(kdata_all_channels_all_slices * weights, axes=2), axis=2, workers=24), axes=2)
+
+    data = data.reshape((nb_channels, ntimesteps, 8, nb_slices, -1))
+    data = np.moveaxis(data, -2, 1)
+
+    # data_pca = np.zeros((n_comp, nb_slices, ntimesteps, 8, npoint), dtype=data.dtype)
+    images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
+
+    # data_curr_transformed_all=cp.zeros((nb_slices,n_comp,ntimesteps,window*npoint))
+
+    for sl in tqdm(range(nb_slices)):
+        data_curr = data[:, sl]
+        data_curr = data_curr.reshape(nb_channels, -1)
+        pca = pca_dict[sl]
+
+        print("PCA")
+        data_curr_transformed = pca.transform(data_curr.T)
+        data_curr_transformed = data_curr_transformed.T
+
+        # data_pca[:, sl, :, :, :] = data_curr_transformed.reshape(n_comp, ntimesteps,-1, npoint)
+        data_curr_transformed = data_curr_transformed.reshape(n_comp, ntimesteps, -1).astype('complex64')
+
+        for j in tqdm(range(n_comp)):
+            kdata_singular = data_curr_transformed[j].flatten()
+            fk = finufft.nufft2d1(traj_reco[:, 0], traj_reco[:, 1], kdata_singular, image_size[1:])
+            images_series_rebuilt[sl] += b1_all_slices_2Dplus1_pca[j, sl].conj() * fk
+
+
+    io.write(str.split(filename,".dat") [0]+"_binnedvolume_pca{}_gr{}.mha".format(n_comp,gr), np.abs(images_series_rebuilt), tags={"spacing": [dz, dx, dy]})
+
+
+
+
+all_matched_volumes=[]
+for gr in range(5):
+    curr_vol=np.array(io.read(str.split(filename,".dat") [0]+"_binnedvolume_pca{}_gr{}.mha".format(n_comp,gr)))
+    all_matched_volumes.append(curr_vol)
+
+#all_matched_volumes=np.flip(np.array(all_matched_volumes))
+all_matched_volumes=np.array(all_matched_volumes)
+np.save(str.split(filename,".dat") [0]+"_allvolumes_pca{}.npy".format(n_comp),all_matched_volumes)
+
+all_matched_volumes=np.load(str.split(filename,".dat") [0]+"_allvolumes_pca{}.npy".format(16))
+
+
+
+sl=20
+moving_image=np.concatenate([all_matched_volumes[:,sl],all_matched_volumes[1:-1,sl][::-1]],axis=0)
+
+animate_images(moving_image,interval=10)
+
+
+
+from PIL import Image
+gif=[]
+volume_for_gif = np.abs(moving_image)
+for i in range(volume_for_gif.shape[0]):
+    img = Image.fromarray((np.uint8(volume_for_gif[i]/np.max(volume_for_gif[i])*255)), 'L')
+    img=img.convert("P")
+    gif.append(img)
+
+filename_gif = str.split(filename_volume,".npy") [0]+"_moving_sl{}.gif".format(sl)
+gif[0].save(filename_gif,save_all=True, append_images=gif[1:], optimize=False, duration=200, loop=0)
+

@@ -57,8 +57,7 @@ class PCAComplex(BaseEstimator,TransformerMixin):
         #    cp=None
 
         xp = cp.get_array_module(X)
-
-
+        
         check_is_fitted(self,'explained_variance_ratio_')
 
         #X = X.copy()  # This is so we do not make changes to the

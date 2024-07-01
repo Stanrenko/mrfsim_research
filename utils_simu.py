@@ -302,11 +302,12 @@ def simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1, T_2,B1, amp=n
 
 
 def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f,B1, T_2w=40 / 1000, T_2f=80 / 1000,
-                           amp=np.array([1]), shift=np.array([-418]), sigma=None, list_deriv=None,noise_size=None,noise_type="Absolute",group_size=None,return_fat_water=False):
+                           amp=np.array([1]), shift=np.array([-418]), sigma=None, list_deriv=None,noise_size=None,noise_type="Absolute",group_size=None,return_fat_water=False,return_combined_signal=True):
     T_1w = np.array(T_1w)
     T_1f = np.array(T_1f)
     df = np.array(df)
-    FF = np.array(FF)
+    if return_combined_signal:
+        FF = np.array(FF)
     B1 = np.array(B1)
 
     if (np.array(T_1w).shape == ()):
@@ -315,8 +316,10 @@ def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f,B1, T_2
         T_1f = np.array([T_1f])
     if (np.array(df).shape == ()):
         df = np.array([df])
-    if (np.array(FF).shape == ()):
-        FF = np.array([FF])
+
+    if return_combined_signal:
+        if (np.array(FF).shape == ()):
+            FF = np.array([FF])
     if (np.array(B1).shape == ()):
         B1 = np.array([B1])
 
@@ -326,8 +329,10 @@ def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f,B1, T_2
         T_1f = np.squeeze(T_1f)
     if not (df.shape == (1,)):
         df = np.squeeze(df)
-    if not (FF.shape == (1,)):
-        FF = np.squeeze(FF)
+
+    if return_combined_signal:
+        if not (FF.shape == (1,)):
+            FF = np.squeeze(FF)
 
     if not (B1.shape == (1,)):
         B1 = np.squeeze(B1)
@@ -340,7 +345,8 @@ def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f,B1, T_2
     T_1f = np.expand_dims(T_1f, axis=0)
     B1=np.expand_dims(B1, axis=(0, 1))
     df = np.expand_dims(df, axis=(0, 1,2))
-    FF = np.expand_dims(FF, axis=(0, 1, 2,3))
+    if return_combined_signal:
+        FF = np.expand_dims(FF, axis=(0, 1, 2,3))
 
 
     s_iw = simulate_gen_eq_transverse(TR_list, FA_list, TE_list, df, T_1w, T_2w,B1)[1:]
@@ -354,7 +360,10 @@ def simulate_gen_eq_signal(TR_list, FA_list, TE_list, FF, df, T_1w, T_1f,B1, T_2
         s_if = np.array([np.mean(gp, axis=0) for gp in groupby(s_if, group_size)])
 
 
-    s_i = FF * s_if + (1 - FF) * s_iw
+    if return_combined_signal:
+        s_i = FF * s_if + (1 - FF) * s_iw
+    else:
+        s_i=None
 
 
 
@@ -418,7 +427,6 @@ def convert_dico_to_jac(dico_deriv):
     jac = np.stack(list(dico_deriv.values()), axis=-1)
     return jac
 
-
 def get_correl_all(TR_, FA_, TE_, DFs, FFs, Ts, sigma=None, T_1f=300 / 1000, T_2w=40 / 1000, T_2f=80 / 1000,
                    amp=np.array([1]), shift=np.array([-418])):
     orig_signal = simulate_gen_eq_signal(TR_, FA_, TE_, FFs, DFs, Ts, T_1f, T_2w, T_2f, amp, shift)
@@ -481,7 +489,7 @@ def load_sequence_file(fileseq,recovery,min_TR_delay):
     return TR_list,FA_list,TE_list
 
 
-def write_seq_file(fileseq,FA_list,TE_list,min_TR_delay,fileseq_basis="./mrf_sequence_adjusted.json"):
+def write_seq_file(fileseq,FA_list,TE_list,min_TR_delay,fileseq_basis="./mrf_sequence_adjusted.json",TI=None):
     with open(fileseq_basis,"r") as file:
         seq_config = json.load(file)
 
@@ -489,7 +497,8 @@ def write_seq_file(fileseq,FA_list,TE_list,min_TR_delay,fileseq_basis="./mrf_seq
     seq_config_new["B1"] = list(np.array(FA_list[1:]) * 180 / np.pi / 5)
     seq_config_new["TR"] = list((np.array(TE_list[1:])+min_TR_delay) * 10 ** 3)
     seq_config_new["TE"] = list(np.array(TE_list[1:]) * 10 ** 3)
-
+    if TI is not None:
+        seq_config_new["TI"]=TI
 
     with open(fileseq, "w") as file:
         json.dump(seq_config_new, file)
@@ -529,13 +538,13 @@ def generate_FA(T, H=10):
     return FA_traj
 
 
-def generate_epg_dico_T1MRFSS(fileseq,filedictconf,FA_list,TE_list,recovery,min_TR_delay,rep=2,overwrite=True,sim_mode="mean",fileseq_basis="./mrf_sequence_adjusted.json"):
+def generate_epg_dico_T1MRFSS(fileseq,filedictconf,FA_list,TE_list,recovery,min_TR_delay,rep=3,overwrite=True,sim_mode="mean",fileseq_basis="./mrf_sequence_adjusted.json",TI=None):
     print("Generating sequence file {}".format(fileseq))
-    write_seq_file(fileseq,FA_list,TE_list,min_TR_delay,fileseq_basis=fileseq_basis)
+    write_seq_file(fileseq,FA_list,TE_list,min_TR_delay,fileseq_basis=fileseq_basis,TI=TI)
     generate_epg_dico_T1MRFSS_from_sequence_file(fileseq,filedictconf,recovery,rep,overwrite,sim_mode)
 
 
-def generate_epg_dico_T1MRFSS_NoInv(fileseq,filedictconf,FA_list,TE_list,recovery,min_TR_delay,rep=2,overwrite=True,sim_mode="mean",fileseq_basis="./mrf_sequence_adjusted.json"):
+def generate_epg_dico_T1MRFSS_NoInv(fileseq,filedictconf,FA_list,TE_list,recovery,min_TR_delay,rep=3,overwrite=True,sim_mode="mean",fileseq_basis="./mrf_sequence_adjusted.json",TI=None):
     print("Generating sequence file {}".format(fileseq))
     write_seq_file(fileseq,FA_list,TE_list,min_TR_delay,fileseq_basis=fileseq_basis)
     generate_epg_dico_T1MRFSS_NoInv_from_sequence_file(fileseq,filedictconf,recovery,rep,overwrite,sim_mode)
@@ -642,7 +651,7 @@ def generate_epg_dico_T1MRFSS_NoInv_from_sequence_file(fileseq,filedictconf,reco
     prefix_dico=str.split(filedictconf,".json")[0]
     suffix_seq=str.split(fileseq,"_sequence")[1]
     suffix_seq=str.split(suffix_seq,".json")[0]
-    dictfile=prefix_dico+suffix_seq+"_reco{}.dict".format(str(recovery))
+    dictfile=prefix_dico+suffix_seq+"_reco{}_noInv.dict".format(str(recovery))
 
     print("Generating dictionary {} from {}".format(dictfile,fileseq))
 
@@ -819,7 +828,7 @@ def convert_params_to_sequence_breaks_common(params, min_TR_delay, num_breaks_TE
     TE_ = np.zeros(spokes_count + 1)
     # print(num_breaks_TE)
     # print(num_breaks_FA)
-    TE_breaks = params[:(num_breaks_FA + num_breaks_TE)][:3].astype(int)
+    TE_breaks = params[:(num_breaks_FA + num_breaks_TE)].astype(int)
     FA_breaks = params[:(num_breaks_FA + num_breaks_TE)].astype(int)
 
     TE_breaks = [0] + list(np.cumsum(TE_breaks)[[0,2]]) + [spokes_count]
@@ -852,7 +861,7 @@ def generate_random_curve(T, params_rho,params_phi,bound_min,bound_max):
     rho = (params_rho * np.logspace(-0.5, -2.5, H)).reshape(-1, 1)
     phi = (params_phi * 2 * np.pi).reshape(-1, 1)
 
-    t = np.arange(0, 2 * np.pi, 2 * np.pi / T).reshape(1, -1)
+    t = np.arange(0, 2 * np.pi-np.pi/T, 2 * np.pi / T).reshape(1, -1)
 
     traj = np.sum(rho * np.sin(np.arange(1, H + 1).reshape(-1, 1) @ t + phi), axis=0)
     traj_min = np.min(traj)
@@ -898,6 +907,11 @@ def convert_params_to_sequence_breaks_random_FA(params, min_TR_delay, spokes_cou
     # print(num_breaks_FA)
     TE_breaks = params[:num_breaks_TE].astype(int)
     TE_breaks = [0] + list(np.cumsum(TE_breaks)) + [spokes_count]
+
+    TE_breaks=np.unique([te for te in TE_breaks if te<=spokes_count])
+    num_breaks_TE=len(TE_breaks)-2
+
+    print(TE_breaks)
     # print(TE_breaks)
     # print(FA_breaks)
     for j in range(num_breaks_TE + 1):
@@ -909,6 +923,7 @@ def convert_params_to_sequence_breaks_random_FA(params, min_TR_delay, spokes_cou
     FA_ = [np.pi] + list(FA_)
 
     #TE_ = [0] + list(TE_)
+    TE_=list(TE_)
 
     TR_ = np.zeros(spokes_count + 1)
     TR_[0] = 8.32 / 1000
@@ -919,5 +934,73 @@ def convert_params_to_sequence_breaks_random_FA(params, min_TR_delay, spokes_cou
 
     TR_[1:] = np.array(TE_[1:]) + min_TR_delay
     TR_[-1] = TR_[-1] + params[-1]
+    TR_ = list(TR_)
+    return TR_, FA_, TE_
+
+
+def convert_params_to_sequence_breaks_proportional_random_FA(params, min_TR_delay, spokes_count,num_breaks_TE,num_params_FA,
+                                                 bound_min_FA, bound_max_FA, inversion=True):
+    
+    print("Generating Random Curve")
+    TE_ = np.zeros(spokes_count + 1)
+    # print(num_breaks_TE)
+    # print(num_breaks_FA)
+    print(params[:num_breaks_TE])
+    TE_breaks = (spokes_count*(np.sort(params[:num_breaks_TE]))).astype(int)
+    TE_breaks = [0] + list(TE_breaks) + [spokes_count]
+
+    #TE_breaks=np.unique(TE_breaks)
+    #num_breaks_TE_local=len(TE_breaks)-2
+    
+    print(TE_breaks)
+    # print(TE_breaks)
+    # print(FA_breaks)
+    for j in range(num_breaks_TE + 1):
+        TE_[(TE_breaks[j] + 1):(TE_breaks[j + 1] + 1)] = params[num_breaks_TE + j]
+
+    params_FA = params[(2*num_breaks_TE+1):(2*num_breaks_TE+1+num_params_FA)]
+    nb_params_FA = int(len(params_FA) / 2)
+    FA_ = generate_random_curve(spokes_count, params_FA[:int(nb_params_FA)], params_FA[int(nb_params_FA):],bound_min_FA,bound_max_FA)
+    FA_ = [np.pi] + list(FA_)
+
+    #TE_ = [0] + list(TE_)
+    TE_=list(TE_)
+
+    TR_ = np.zeros(spokes_count + 1)
+    TR_[0] = 8.32 / 1000
+
+    if not (inversion):
+        FA_[0] = 0
+        TR_[0] = 0
+
+    TR_[1:] = np.array(TE_[1:]) + min_TR_delay
+    TR_[-1] = TR_[-1] + params[-1]
+    TR_ = list(TR_)
+    return TR_, FA_, TE_
+
+def convert_params_to_sequence_breaks_FF_single_FA(params, min_TR_delay, spokes_count,num_breaks_TE,FA, inversion=False):
+    TE_ = np.zeros(spokes_count + 1)
+    # print(num_breaks_TE)
+    # print(num_breaks_FA)
+    TE_breaks = params[:num_breaks_TE].astype(int)
+    TE_breaks = [0] + list(np.cumsum(TE_breaks)) + [spokes_count]
+    # print(TE_breaks)
+    # print(FA_breaks)
+    for j in range(num_breaks_TE + 1):
+        TE_[(TE_breaks[j] + 1):(TE_breaks[j + 1] + 1)] = params[num_breaks_TE + j]
+
+    FA_ = [np.pi] + [FA]*spokes_count
+
+    #TE_ = [0] + list(TE_)
+
+    TR_ = np.zeros(spokes_count + 1)
+    TR_[0] = 8.32 / 1000
+
+    if not (inversion):
+        FA_[0] = 0
+        TR_[0] = 0
+
+    TR_[1:] = np.array(TE_[1:]) + min_TR_delay
+    TR_[-1] = TR_[-1] + [0.0]
     TR_ = list(TR_)
     return TR_, FA_, TE_

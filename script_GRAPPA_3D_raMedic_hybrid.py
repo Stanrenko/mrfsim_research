@@ -136,40 +136,94 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
     if 'twix' not in locals():
         print("Re-loading raw data")
         twix = twixtools.read_twix(filename)
-    mdb_list = twix[-1]['mdb']
-    data=[]
 
-    data_calib = []
-    for i, mdb in enumerate(mdb_list):
-        if mdb.is_image_scan():
-            data.append(mdb)
-        if mdb.is_flag_set("PATREFSCAN"):
-            data_calib.append(mdb)
+    mdb_list = twix[-1]['mdb']
+    if nb_gating_spokes == 0:
+        data = []
+
+        for i, mdb in enumerate(mdb_list):
+            if mdb.is_image_scan():
+                data.append(mdb)
+
+
+
+    else:
+        print("Reading Navigator Data....")
+        data_for_nav = []
+        data = []
+        nav_size_initialized = False
+        #k = 0
+        for i, mdb in enumerate(mdb_list):
+            if mdb.is_image_scan() :
+                if not(mdb.mdh[14][9]):
+                    mdb_data_shape = mdb.data.shape
+                    mdb_dtype = mdb.data.dtype
+                    nav_size_initialized = True
+                    break
+
+        for i, mdb in enumerate(mdb_list):
+            if mdb.is_image_scan():
+                if not (mdb.mdh[14][9]):
+                    data.append(mdb)
+                else:
+                    data_for_nav.append(mdb)
+                    data.append(np.zeros(mdb_data_shape,dtype=mdb_dtype))
+
+                #print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
+                #k += 1
+        data_for_nav = np.array([mdb.data for mdb in data_for_nav])
+        data_for_nav = data_for_nav.reshape((int(nb_part),int(nb_gating_spokes))+data_for_nav.shape[1:])
+
+        if data_for_nav.ndim==3:
+            data_for_nav=np.expand_dims(data_for_nav,axis=-2)
+
+        data_for_nav = np.moveaxis(data_for_nav,-2,0)
+        np.save(filename_nav_save, data_for_nav)
 
     data = np.array([mdb.data for mdb in data])
-    data = data.reshape((-1, int(nb_allspokes)) + data.shape[1:])
-    data=np.moveaxis(data,2,0)
+    data = data.reshape((-1, int(nb_segments)) + data.shape[1:])
+    data = np.moveaxis(data, 2, 0)
     data = np.moveaxis(data, 2, 1)
 
-    data_calib = np.array([mdb.data for mdb in data_calib])
-    data_calib = data_calib.reshape((-1, int(nb_allspokes)) + data_calib.shape[1:])
-    if undersampling_factor>1:
-        data_calib = np.moveaxis(data_calib, 2, 0)
-        data_calib = np.moveaxis(data_calib, 2, 1)
+    del mdb_list
 
+    ##################################################
     try:
         del twix
     except:
         pass
 
-
     np.save(filename_save,data)
-    if undersampling_factor > 1:
-        np.save(filename_save_calib, data_calib)
+    #
+    ##################################################
+    #
+    # Parsed_File = rT.map_VBVD(filename)
+    # idx_ok = rT.detect_TwixImg(Parsed_File)
+    # start_time = time.time()
+    # data = Parsed_File[str(idx_ok)]["image"].readImage()
+    # elapsed_time = time.time()
+    # elapsed_time = elapsed_time - start_time
+    #
+    # progress_str = "Data read in %f s \n" % round(elapsed_time, 2)
+    # print(progress_str)
+    #
+    # data = np.squeeze(data)
+    #
+    # if nb_gating_spokes>0:
+    #     data = np.moveaxis(data, 0, -1)
+    #     data = np.moveaxis(data, -2, 0)
+    #
+    # else:
+    #     data = np.moveaxis(data, 0, -1)
+
+    #np.save(filename_save, data)
+
 
 else :
     data = np.load(filename_save)
-    data_calib = np.load(filename_save_calib)
+    if nb_gating_spokes>0:
+        data_for_nav=np.load(filename_nav_save)
+
 
 try:
     del twix

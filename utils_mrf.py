@@ -4,7 +4,10 @@ try:
 except:
     pass
 import matplotlib.animation as animation
-from mutools.optim.dictsearch import dictsearch,groupmatch
+from mutools.optim.dictsearch import dictsearch#,groupmatch
+from mutools import io
+from mutools.io import io_twixt
+
 from functools import reduce
 from mrfsim import *
 import numpy as np
@@ -17,7 +20,12 @@ from Transformers import PCAComplex
 import pickle
 import twixtools
 import os
-
+from scipy.signal import savgol_filter
+from statsmodels.nonparametric.smoothers_lowess import lowess
+from sklearn.decomposition import PCA
+#from utils_reco import calculate_displacement,correct_mvt_kdata_zero_filled
+#from trajectory import Navigator3D,Radial
+import math
 try:
     import freud
 except:
@@ -39,6 +47,7 @@ import cv2
 import pywt
 from mpl_toolkits.axes_grid1 import ImageGrid
 from skimage.metrics import structural_similarity as ssim
+from skimage.morphology import binary_erosion,erosion
 import collections
 import gc
 try:
@@ -50,10 +59,12 @@ try:
 except:
     pass
 
-from copy import copy
+from copy import copy,deepcopy
 import psutil
 from datetime import datetime
 import scipy as sp
+
+
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
@@ -151,16 +162,77 @@ def cartesian_traj_3D(total_nspoke, npoint_x, npoint_y, nb_slices, undersampling
 def radial_golden_angle_traj(total_nspoke,npoint,k_max=np.pi):
     golden_angle=111.246*np.pi/180
     #base_spoke = np.arange(-k_max, k_max, 2 * k_max / npoint, dtype=np.complex_)
-    base_spoke = -k_max+np.arange(npoint)*2*k_max/(npoint-1)
+    #base_spoke = -k_max+np.arange(npoint)*2*k_max/(npoint-1)
+    base_spoke = (-k_max+k_max/(npoint)+np.arange(npoint)*2*k_max/(npoint))
     all_rotations = np.exp(1j * np.arange(total_nspoke) * golden_angle)
     all_spokes = np.matmul(np.diag(all_rotations), np.repeat(base_spoke.reshape(1, -1), total_nspoke, axis=0))
     return all_spokes
 
+def distrib_angle_traj(total_nspoke,npoint,k_max=np.pi):
+    angle=2*np.pi/total_nspoke
+    #base_spoke = np.arange(-k_max, k_max, 2 * k_max / npoint, dtype=np.complex_)
+    base_spoke = -k_max+np.arange(npoint)*2*k_max/(npoint-1)
+    all_rotations = np.exp(1j * np.arange(total_nspoke) * angle)
+    all_spokes = np.matmul(np.diag(all_rotations), np.repeat(base_spoke.reshape(1, -1), total_nspoke, axis=0))
+    return all_spokes
 
-def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4):
+
+def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,nb_rep_center_part=1):
+    timesteps = int(total_nspoke / nspoke)
+    print(total_nspoke)
+    print(nspoke)
+
+
+    nb_rep = math.ceil((nb_slices ) / undersampling_factor)+nb_rep_center_part-1
+    all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
+    #traj = np.reshape(all_spokes, (-1, nspoke * npoint))
+
+    k_z = np.zeros((timesteps, nb_rep))
+    #all_slices = np.linspace(-np.pi, np.pi, nb_slices)
+    all_slices=np.arange(-np.pi, np.pi, 2 * np.pi / nb_slices)
+    
+
+    k_z[0, :] = all_slices[::undersampling_factor]
+
+
+    for j in range(1, k_z.shape[0]):
+        k_z[j, :] = np.sort(np.roll(all_slices, -j)[::undersampling_factor])
+
+    if nb_rep_center_part>1:
+        center_part=all_slices[int(nb_slices/2)]
+        k_z_new= np.zeros((timesteps, nb_rep))
+        for j in range( k_z.shape[0]):
+            num_center_part=np.argwhere(k_z[j]==center_part)[0][0]
+            #print(num_center_part)
+            k_z_new[j,:num_center_part]=k_z[j,:num_center_part]
+            k_z_new[j,(num_center_part+nb_rep_center_part):]=k_z[j,(num_center_part+1):]
+        print(k_z_new[0,:])
+        k_z=k_z_new
+
+
+    k_z=np.repeat(k_z, nspoke, axis=0)
+
+    print(k_z.shape)
+    k_z = np.expand_dims(k_z, axis=-1)
+
+
+    traj = np.expand_dims(all_spokes, axis=-2)
+
+    print(traj.shape)
+    k_z, traj = np.broadcast_arrays(k_z, traj)
+
+    # k_z = np.reshape(k_z, (timesteps, -1))
+    # traj = np.reshape(traj, (timesteps, -1))
+
+    result = np.stack([traj.real,traj.imag, k_z], axis=-1)
+    print(result.shape)
+    return result.reshape(result.shape[0],-1,result.shape[-1])
+
+
+def distrib_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4):
     timesteps = int(total_nspoke / nspoke)
     nb_rep = int(nb_slices / undersampling_factor)
-    all_spokes = radial_golden_angle_traj(total_nspoke, npoint)
+    all_spokes = distrib_angle_traj(total_nspoke, npoint)
     #traj = np.reshape(all_spokes, (-1, nspoke * npoint))
 
     k_z = np.zeros((timesteps, nb_rep))
@@ -181,7 +253,6 @@ def radial_golden_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersa
 
     result = np.stack([traj.real,traj.imag, k_z], axis=-1)
     return result.reshape(result.shape[0],-1,result.shape[-1])
-
 
 def spherical_golden_angle_means_traj_3D(total_nspoke, npoint, nb_slices, undersampling_factor=4,k_max=np.pi):
     nb_rep = int(nb_slices / undersampling_factor)
@@ -235,7 +306,11 @@ def spherical_golden_angle_means_traj_3D(total_nspoke, npoint, nb_slices, unders
 
 def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=1,mode="old",offset=0):
     timesteps = int(total_nspoke / nspoke)
-    nb_rep = int(nb_slices / undersampling_factor)
+    nb_rep = math.ceil(nb_slices / undersampling_factor)
+
+    print(nb_rep)
+    print(nb_slices)
+    print(undersampling_factor)
 
     golden_angle = 111.246 * np.pi / 180
     #all_slices = np.linspace(-np.pi, np.pi, nb_slices)
@@ -279,24 +354,34 @@ def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slic
     for j in range(1, k_z.shape[0]):
         k_z[j, :] = np.sort(np.roll(all_slices, -j))
 
+    print(traj.shape)
     k_z=np.repeat(k_z, nspoke, axis=0)
     k_z = np.expand_dims(k_z, axis=-1)
     k_z, traj = np.broadcast_arrays(k_z, traj)
 
     result = np.stack([traj.real,traj.imag, k_z], axis=-1)
 
+    print(result.shape)
 
     if undersampling_factor>1:
+        print(result.shape)
         result = result.reshape(timesteps, nspoke, -1, npoint, result.shape[-1])
+
         result_us=np.zeros((timesteps, nspoke, nb_rep, npoint, 3),
                           dtype=result.dtype)
+        
+        #result_us[:, :, :, :, 1:] = result[:, :, :nb_rep, :, 1:]
+        #print(result_us.shape)
         shift = offset
 
-        for ts in range(timesteps):
+        for sl in range(nb_slices):
 
-            result_us[ts, :, :, :, :] = result[ts, :, shift::undersampling_factor, :, :]
-            shift += 1
-            shift = shift % (undersampling_factor)
+            if int(sl/undersampling_factor)<nb_rep:
+                result_us[shift::undersampling_factor, :, int(sl/undersampling_factor), :, :] = result[shift::undersampling_factor, :, sl, :, :]
+                shift += 1
+                shift = shift % (undersampling_factor)
+            else:
+                continue
 
         result=result_us
 
@@ -900,7 +985,7 @@ def regression_paramMaps_ROI(map1, map2, mask1=None, mask2=None, maskROI=None, t
 
     plt.suptitle(title)
     if save:
-        fig.savefig("./figures/{}".format(title))
+        fig.savefig("./figures/{}.jpeg".format(title))
 
 
 def process_ROI_values(all_results, save=False,mode="Standard",title="Results comparison all ROIs",plt_std=False,figsize=(15, 10),fontsize=5,fontsize_axis=None,units=None):
@@ -993,7 +1078,7 @@ def metrics_ROI_values(all_results,units=None,name="Results"):
 
     return df
 
-def get_ROI_values(map1, map2, mask1=None, mask2=None, maskROI=None, adj_wT1=False, fat_threshold=0.8,proj_on_mask1=True,return_std=False,
+def compare_ROI_values(map1, map2, mask1=None, mask2=None, maskROI=None, adj_wT1=False, fat_threshold=0.8,proj_on_mask1=True,return_std=False,
                              kept_keys=None,min_ROI_count=15):
 
     keys_1 = set(map1.keys())
@@ -1175,6 +1260,107 @@ def metrics_paramMaps_ROI(map_ref, map2, mask_ref=None, mask2=None, maskROI=None
 
     return df
 
+
+def get_ROI_values(map_,mask,maskROI,kernel_size=5,adj_wT1=False, fat_threshold=0.7,wT1_threshold=1700,kept_keys=None,min_ROI_count=15,return_std=True,excluded_border_slices=2):
+
+    keys = set(map_.keys())
+    if kept_keys is not None:
+        keys = keys & set(kept_keys)
+    
+    nb_keys = len(keys)
+
+    print(maskROI.shape)
+    print(mask.shape)
+
+    if mask.ndim==2:
+        excluded_border_slices=None
+        final_mask=mask[None,...]
+        for k in keys:
+            curr_map = makevol(map_[k], mask > 0)
+            curr_map=curr_map[None,...]
+            map_[k]=curr_map[final_mask>0]
+        mask=final_mask
+
+    if excluded_border_slices is not None:
+        print("Excluding {} border slices on each extremity".format(excluded_border_slices))
+        final_mask=mask[excluded_border_slices:-excluded_border_slices]
+        maskROI=maskROI[excluded_border_slices:-excluded_border_slices]
+        for k in keys:
+            curr_map=makevol(map_[k],mask>0)
+            map_[k]=curr_map[excluded_border_slices:-excluded_border_slices][final_mask>0]
+        mask=final_mask
+
+
+    if kernel_size is not None:
+        print("Eroding ROIs kernel size {}".format(kernel_size))
+        mask_from_roi=(maskROI>0)*1
+        mask_from_roi_eroded=np.zeros_like(mask_from_roi)
+        for sl in range(mask_from_roi.shape[0]):
+            mask_from_roi_eroded[sl]=erosion(mask_from_roi[sl],footprint=np.ones((kernel_size,kernel_size),np.uint8))
+
+        final_mask=mask_from_roi_eroded*mask
+        for k in keys:
+            curr_map=makevol(map_[k],mask>0)
+            map_[k]=curr_map[final_mask>0]
+
+        mask=final_mask        
+    
+
+
+
+    maskROI=maskROI[mask>0]
+    print(maskROI.shape)
+
+    if wT1_threshold is not None:
+        print("Filtering High wT1 values")
+        wT1 = map_["wT1"]
+        for k in keys:
+            map_[k]=map_[k][wT1 < wT1_threshold]
+        
+        maskROI=maskROI[wT1 < wT1_threshold]
+        
+
+    #Removing ROIs with less than min_ROI_count values
+    freq = collections.Counter(maskROI)
+    maskROI = np.array([ele if freq[ele] > min_ROI_count else 0 for ele in maskROI])
+
+
+
+
+    results=pd.DataFrame()
+    for i, k in enumerate(sorted(keys)):
+        obs=map_[k]
+
+
+        if adj_wT1 and k == "wT1":
+            print("Filtering wT1 map for high FF values")
+            ff = map_["ff"]
+            obs = obs[ff < fat_threshold]
+            maskROI_current = maskROI[ff < fat_threshold]
+        else:
+            maskROI_current=maskROI
+        
+        
+
+        df_obs = pd.DataFrame(columns=["Data", "Groups"],
+                              data=np.stack([obs.flatten(), maskROI_current.flatten()], axis=-1))
+
+        obs = np.array(df_obs.groupby("Groups").mean())[1:]
+        print(obs)
+
+        
+
+
+            # print(list(pred_std.reshape(1,-1)))
+        results[k+" Mean"]=obs.flatten()
+
+        if return_std:
+            obs_std = np.array(df_obs.groupby("Groups").std())[1:]
+ 
+            results[k+" Std"] = obs_std.flatten()
+
+    return results
+
 def voronoi_finite_polygons_2d(vor, radius=None):
     """
     Reconstruct infinite voronoi regions in a 2D diagram to finite
@@ -1347,11 +1533,11 @@ def transform_py_map(res,mask):
     map_py["wT1"] = map_py.pop("wt1")
     return map_py
 
-def build_mask(volumes):
+def build_mask_from_volume(volumes,threshold_factor=0.05,iterations=3):
     mask = False
     unique = np.histogram(np.abs(volumes), 100)[1]
-    mask = mask | (np.mean(np.abs(volumes), axis=0) > unique[len(unique) // 10])
-    mask = ndimage.binary_closing(mask, iterations=3)
+    mask = mask | (np.abs(volumes) > unique[int(len(unique) * threshold_factor)])
+    mask = ndimage.binary_closing(mask, iterations=iterations)
     return mask*1
 
 
@@ -1916,7 +2102,7 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
     return np.array(images_series_rebuilt)
 
 
-def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6,is_theta_z_adjusted=False,ntimesteps=175):
+def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,useGPU=False,eps=1e-6,is_theta_z_adjusted=False,ntimesteps=175,nthreads=1,fftw=0):
 #Deals with single channel data / howver kdata can be a list of arrays (meaning each timestep does not need to have the same number of spokes/partitions)
     traj=trajectory.get_traj_for_reconstruction(ntimesteps)
     npoint = trajectory.paramDict["npoint"]
@@ -1951,7 +2137,7 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
     if traj[0].shape[-1] == 2:  # 2D
         if not(useGPU):
             images_series_rebuilt = [
-                finufft.nufft2d1(t[:,0], t[:,1], s, size)
+                finufft.nufft2d1(t[:,0], t[:,1], s, size,nthreads=nthreads,fftw=fftw)
                 for t, s in zip(traj, kdata)
             ]
         else:
@@ -2796,7 +2982,7 @@ def simulate_radial_undersampled_singular_images_multi(kdata, trajectory, size, 
 
     return images_series_rebuilt
 
-def undersampling_operator_singular(volumes,trajectory,b1_all_slices,density_adj=True):
+def undersampling_operator_singular(volumes,trajectory,b1_all_slices,density_adj=True,weights=None):
     """
     returns A.H @ W @ A @ volumes where A=F Fourier + sampling operator and W correspond to radial density adjustment
     """
@@ -2811,9 +2997,9 @@ def undersampling_operator_singular(volumes,trajectory,b1_all_slices,density_adj
     npoint = trajectory.paramDict["npoint"]
 
     num_k_samples = traj.shape[0]
-
+    num_k_samples=1
     output_shape = (L0,) + size
-    images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
+    images_series_rebuilt = np.zeros(output_shape, dtype=np.complex128)
 
     for k in tqdm(range(nb_channels)):
 
@@ -2827,24 +3013,33 @@ def undersampling_operator_singular(volumes,trajectory,b1_all_slices,density_adj
             density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
             curr_kdata*=density
 
+        if weights is not None:
+            weights = weights.reshape(1, -1, 1)
+            curr_kdata *= weights
+
 
         curr_kdata = curr_kdata.reshape(L0, -1)
+        #np.save("kdata_test.npy",curr_kdata)
 
-        fk = finufft.nufft3d1(traj[:, 2], traj[:, 0], traj[:, 1], curr_kdata, size)
+        fk = finufft.nufft3d1(traj[:, 2], traj[:, 0], traj[:, 1], curr_kdata.squeeze(), size)
         print(fk.shape)
         images_series_rebuilt += b1_all_slices[k].conj()* fk
 
     images_series_rebuilt /= num_k_samples
+
     return images_series_rebuilt
 
 
-def undersampling_operator_singular_new(volumes,trajectory,b1_all_slices=None,ntimesteps=175,density_adj=True,weights=None,retained_timesteps=None,light_memory_usage=False):
+def undersampling_operator_singular_new(volumes,trajectory,b1_all_slices=None,ntimesteps=175,density_adj=True,weights=None,retained_timesteps=None):
     """
     returns A.H @ W @ A @ volumes where A=F Fourier + sampling operator and W correspond to radial density adjustment
     """
 
     L0=volumes.shape[0]
     size=volumes.shape[1:]
+
+    print("LO {}".format(L0))
+    print("Image size {}".format(size))
 
     if b1_all_slices is None:
         b1_all_slices=np.ones((1,)+size,dtype="complex64")
@@ -2853,13 +3048,16 @@ def undersampling_operator_singular_new(volumes,trajectory,b1_all_slices=None,nt
 
     nb_slices=size[0]
 
+    print("Nb channels {}".format(nb_channels))
+
     #nb_allspokes = trajectory.paramDict["total_nspokes"]
 
     if not(type(trajectory)==np.ndarray):
-        traj = trajectory.get_traj_for_reconstruction(ntimesteps)
+        traj = trajectory.get_traj_for_reconstruction(1)
         if retained_timesteps is not None:
             traj=traj[retained_timesteps]
-        weights=weights.flatten()
+        if not((type(weights)==int)or(weights is None)):
+            weights=weights.flatten()
         traj = traj.reshape(-1, 2).astype("float32")
         npoint = trajectory.paramDict["npoint"]
     
@@ -2869,30 +3067,42 @@ def undersampling_operator_singular_new(volumes,trajectory,b1_all_slices=None,nt
         density_adj=False
         traj=traj.reshape(-1,2)
 
+    #print(traj.shape)
+    #print(weights.shape)
+
     num_k_samples = traj.shape[0]
 
     output_shape = (L0,) + size
     images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
 
-    if weights is not None:
+
+    if (weights is not None) and not(type(weights)==int):
         weights = np.expand_dims(weights, axis=(0, -1))
+        print(weights.shape)
+        
+
+    
 
     for k in tqdm(range(nb_channels)):
-
+        #print("Ch {}".format(k))
+        #print(volumes.shape)
+        #print(b1_all_slices[k].shape)
         curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
         #print(curr_volumes.shape)
         curr_kdata_slice=np.fft.fftshift(sp.fft.fft(
             np.fft.ifftshift(curr_volumes, axes=1),
             axis=1,workers=24), axes=1).astype("complex64")
         #curr_kdata=np.zeros((L0,nb_slices,traj.shape[0]), dtype="complex64")
+        print(curr_kdata_slice.shape)
         curr_kdata = finufft.nufft2d2(traj[:, 0],traj[:, 1],curr_kdata_slice.reshape((L0*nb_slices,)+size[1:])).reshape(L0,nb_slices,-1)
-
+        #print(curr_kdata.shape)
         if density_adj:
             curr_kdata=curr_kdata.reshape(L0,-1,npoint)
             density = np.abs(np.linspace(-1, 1, npoint))
             density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
             curr_kdata*=density
 
+        #print(weights.shape)
         if weights is not None:
             curr_kdata = curr_kdata.reshape((L0,-1,npoint))
             curr_kdata *= weights
@@ -3674,125 +3884,9 @@ def correct_mvt_kdata(kdata,trajectory,cond,ntimesteps,density_adj=True,log=Fals
 
 
 
-def correct_mvt_kdata_zero_filled(trajectory,cond,ntimesteps):
-
-    traj=trajectory.get_traj()
-
-    mode=trajectory.paramDict["mode"]
-    incoherent=trajectory.paramDict["incoherent"]
 
 
-    nb_rep = int(cond.shape[0]/traj.shape[0])
-    npoint = int(traj.shape[1] / nb_rep)
-    nspoke = int(traj.shape[0] / ntimesteps)
-
-    traj_for_selection = np.array(groupby(traj, npoint, axis=1))
-    traj_for_selection = traj_for_selection.reshape(cond.shape[0], -1, 3)
-    indices = np.unravel_index(np.argwhere(cond).T,(nb_rep,ntimesteps,nspoke))
-    retained_indices = np.squeeze(np.array(indices).T)
-    retained_timesteps = np.unique(retained_indices[:, 1])
-    ## DENSITY CORRECTION
-
-    df = pd.DataFrame(columns=["rep", "ts", "spoke", "kz", "theta"], index=range(nb_rep * ntimesteps * nspoke))
-    df["rep"] = np.repeat(list(range(nb_rep)), ntimesteps * nspoke)
-    df["ts"] = list(np.repeat(list(range(ntimesteps)), (nspoke))) * nb_rep
-    df["spoke"] = list(range(nspoke)) * nb_rep * ntimesteps
-
-    df["kz"] = traj_for_selection[:, :, 2][:, 0]
-    golden_angle = 111.246 * np.pi / 180
-
-    if not(incoherent):
-        df["theta"] = np.array(list(np.mod(np.arange(0, int(df.shape[0] / nb_rep)) * golden_angle, np.pi)) * nb_rep)
-    elif incoherent:
-        if mode=="old":
-            df["theta"] = np.array(list(np.mod(np.arange(0, int(df.shape[0])) * golden_angle, np.pi)))
-        elif mode=="new":
-            df["theta"] = np.mod((np.array(list(np.arange(0, nb_rep) * golden_angle)).reshape(-1,1)+np.array(list(np.arange(0, int(df.shape[0] / nb_rep)) * golden_angle)).reshape(1,-1)).flatten(),np.pi)
-
-
-    df_retained = df.iloc[np.nonzero(cond)]
-    kz_by_timestep = df_retained.groupby("ts")["kz"].unique()
-    theta_by_rep_timestep = df_retained.groupby(["ts", "rep"])["theta"].unique()
-
-    df_retained = df_retained.join(kz_by_timestep, on="ts", rsuffix="_s")
-    df_retained = df_retained.join(theta_by_rep_timestep, on=["ts", "rep"], rsuffix="_s")
-
-    # Theta weighting
-    df_retained["theta_s"] = df_retained["theta_s"].apply(lambda x: np.sort(x))
-    #df_retained["theta_s"] = df_retained["theta_s"].apply(
-    #    lambda x: np.concatenate([[x[-1] - np.pi], x, [x[0] + np.pi]]))
-    df_retained["theta_s"] = df_retained["theta_s"].apply(
-        lambda x: np.unique(np.concatenate([[0], x, [np.pi]])))
-    diff_theta=(df_retained.theta - df_retained["theta_s"])
-    theta_inside_boundary=(df_retained["theta"]!=0)*(df_retained["theta"]!=np.pi)
-    df_retained["theta_inside_boundary"] = theta_inside_boundary
-
-    min_theta = df_retained.groupby(["ts", "rep"])["theta"].min()
-    max_theta = df_retained.groupby(["ts", "rep"])["theta"].max()
-    df_retained = df_retained.join(min_theta, on=["ts", "rep"], rsuffix="_min")
-    df_retained = df_retained.join(max_theta, on=["ts", "rep"], rsuffix="_max")
-    is_min_theta = (df_retained["theta"]==df_retained["theta_min"])
-    is_max_theta = (df_retained["theta"] == df_retained["theta_max"])
-    df_retained["is_min_theta"] = is_min_theta
-    df_retained["is_max_theta"] = is_max_theta
-
-    df_retained["theta_weight"] = theta_inside_boundary*diff_theta.apply(lambda x: (np.sort(x[x>=0])[1]+np.sort(-x[x<=0])[1])/2 if ((x>=0).sum()>1) and ((x<=0).sum()>1) else 0)+ \
-                                  (1-theta_inside_boundary)*diff_theta.apply(lambda x: np.sort(np.abs(x))[1]/2)
-
-    df_retained["theta_weight_before_correction"] = df_retained["theta_weight"]
-
-    df_retained["theta_weight"] = df_retained["theta_weight"]+ (theta_inside_boundary)* ((is_min_theta)*df_retained["theta"]+(is_max_theta)*(np.pi-df_retained["theta"]))/2
-
-    df_retained.loc[df_retained["theta_weight"].isna(), "theta_weight"] = 1.0
-    sum_weights = df_retained.groupby(["ts", "rep"])["theta_weight"].sum()
-    df_retained = df_retained.join(sum_weights, on=["ts", "rep"], rsuffix="_sum")
-    #df_retained["theta_weight"] = df_retained["theta_weight"] / df_retained["theta_weight_sum"]
-
-    # KZ weighting
-    #df_retained.loc[df_retained.ts == 138].to_clipboard()
-    df_retained["kz_s"] = df_retained["kz_s"].apply(lambda x: np.unique(np.concatenate([[-np.pi], x, [np.pi]])))
-    diff_kz=(df_retained.kz - df_retained["kz_s"])
-    kz_inside_boundary=(df_retained["kz"].abs()!=np.pi)
-    df_retained["kz_inside_boundary"]=kz_inside_boundary
-
-    min_kz = df_retained.groupby(["ts"])["kz"].min()
-    max_kz = df_retained.groupby(["ts"])["kz"].max()
-    df_retained = df_retained.join(min_kz, on=["ts"], rsuffix="_min")
-    df_retained = df_retained.join(max_kz, on=["ts"], rsuffix="_max")
-
-    is_min_kz = (df_retained["kz"] == df_retained["kz_min"])
-    is_max_kz = (df_retained["kz"] == df_retained["kz_max"])
-
-    df_retained["is_min_kz"] = is_min_kz
-    df_retained["is_max_kz"] = is_max_kz
-
-    df_retained["kz_weight"] = kz_inside_boundary*diff_kz.apply(lambda x: (np.sort(x[x >= 0])[1] + np.sort(-x[x <= 0])[1]) / 2 if ((x >= 0).sum() > 1) and (
-        ((x <= 0).sum() > 1)) else 0)+(1-kz_inside_boundary)*diff_kz.apply(lambda x: np.sort(np.abs(x))[1]/2)
-
-
-
-    df_retained["kz_weight"] = df_retained["kz_weight"] + (kz_inside_boundary) * (
-            (is_min_kz) * (df_retained["kz"]+np.pi) + (is_max_kz) * (np.pi - df_retained["kz"])) / 2
-
-    df_retained.loc[df_retained["kz_weight"].isna(), "kz_weight"] = 1.0
-    sum_weights = df_retained.drop_duplicates(subset=["kz","ts"])
-    sum_weights = sum_weights.groupby(["ts"])["kz_weight"].apply(lambda x: x.sum())
-    df_retained = df_retained.join(sum_weights, on=["ts"], rsuffix="_sum")
-    #df_retained["kz_weight"] = df_retained["kz_weight"] / df_retained["kz_weight_sum"]
-    theta_weight = df_retained["theta_weight"]
-    kz_weight = df_retained["kz_weight"]
-    weights = np.zeros(cond.shape[0])
-    weights[cond] = theta_weight * kz_weight
-    weights = weights.reshape(nb_rep, -1)
-    weights = np.moveaxis(weights, 0, 1)
-    weights = weights.reshape(ntimesteps, nspoke, -1)
-    weights=weights[retained_timesteps]
-
-    return weights,retained_timesteps
-
-
-
-def plot_image_grid(list_images,nb_row_col,figsize=(10,10),title="",cmap=None,save_file=None):
+def plot_image_grid(list_images,nb_row_col,figsize=(10,10),title="",cmap=None,save_file=None,same_range=False,aspect=None):
     fig = plt.figure(figsize=figsize)
     plt.title(title)
     grid = ImageGrid(fig, 111,  # similar to subplot(111)
@@ -3800,179 +3894,20 @@ def plot_image_grid(list_images,nb_row_col,figsize=(10,10),title="",cmap=None,sa
                      axes_pad=0.1,  # pad between axes in inch.
                      )
 
-    for ax, im in zip(grid, list_images):
-        ax.imshow(im,cmap=cmap)
+    if same_range:
+        vmin=np.min(np.array(list_images))
+        vmax=np.max(np.array(list_images))
+        for ax, im in zip(grid, list_images):
+            ax.imshow(im,cmap=cmap,vmin=vmin,vmax=vmax,aspect=aspect)
+    else:
+        for ax, im in zip(grid, list_images):
+            ax.imshow(im,cmap=cmap,aspect=aspect)
 
     if save_file is not None:
         plt.savefig(save_file)
     else:
         plt.show()
 
-def calculate_sensitivity_map(kdata,trajectory,res=16,image_size=(256,256),hanning_filter=False,density_adj=False):
-    traj_all = trajectory.get_traj()
-    traj_all=traj_all.reshape(-1,traj_all.shape[-1])
-    npoint = kdata.shape[-1]
-    center_res = int(npoint / 2 - 1)
-
-    nb_channels=kdata.shape[1]
-
-    if density_adj:
-        density = np.abs(np.linspace(-1, 1, npoint))
-        # density=np.expand_dims(axis=0)
-        density = np.expand_dims(density, tuple(range(kdata.ndim - 1)))
-        kdata*=density
-
-    kdata_for_sensi = np.zeros(kdata.shape, dtype=np.complex128)
-
-    if hanning_filter:
-        if kdata.ndim==3:#Tried :: syntax but somehow it introduces errors in the allocation
-            kdata_for_sensi[:,:, (center_res - int(res / 2)):(center_res + int(res / 2))]=kdata[:,:,
-                                                                                       (center_res - int(res / 2)):(
-                                                                                                   center_res + int(
-                                                                                               res / 2))]*np.expand_dims(np.hanning(2*int(res/2)),axis=(0,1))
-        else:
-            kdata_for_sensi[:, :,:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:, :,:,
-                                                                                             (center_res - int(res / 2)):(
-                                                                                                     center_res + int(
-                                                                                                 res / 2))]*np.expand_dims(np.hanning(2*int(res/2)),axis=(0,1,2))
-
-    else:
-        if kdata.ndim==3:#Tried :: syntax but somehow it introduces errors in the allocation
-            kdata_for_sensi[:,:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:,:,
-                                                                                       (center_res - int(res / 2)):(
-                                                                                                   center_res + int(
-                                                                                               res / 2))]
-        else:
-            kdata_for_sensi[:, :,:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:, :,:,
-                                                                                             (center_res - int(res / 2)):(
-                                                                                                     center_res + int(
-                                                                                                 res / 2))]
-
-    kdata_all = kdata_for_sensi.reshape(np.prod(kdata.shape[:-2]), -1)
-    print(traj_all.shape)
-    print(kdata_all.shape)
-    coil_sensitivity = finufft.nufft2d1(traj_all[:, 0], traj_all[:, 1], kdata_all, image_size)
-    coil_sensitivity=coil_sensitivity.reshape(*kdata.shape[:-2],*image_size)
-    print(coil_sensitivity.shape)
-
-    if coil_sensitivity.ndim==3:
-        print("Ndim 3)")
-        b1 = coil_sensitivity / np.linalg.norm(coil_sensitivity, axis=0)
-        #b1 = b1 / np.max(np.abs(b1.flatten()))
-    else:#first dimension contains slices
-        print("Ndim > 3")
-        b1=coil_sensitivity.copy()
-        for i in range(coil_sensitivity.shape[0]):
-            b1[i]=coil_sensitivity[i] / np.linalg.norm(coil_sensitivity[i], axis=0)
-            #b1[i]=b1[i] / np.max(np.abs(b1[i].flatten()))
-    return b1
-
-def calculate_sensitivity_map_3D(kdata,trajectory,res=16,image_size=(1,256,256),useGPU=False,eps=1e-6,light_memory_usage=False,density_adj=False,hanning_filter=False):
-    traj_all = trajectory.get_traj()
-    traj_all = traj_all.reshape(-1, traj_all.shape[-1])
-    npoint = kdata.shape[-1]
-    nb_channels = kdata.shape[0]
-    center_res = int(npoint / 2 - 1)
-
-    if density_adj:
-        density = np.abs(np.linspace(-1, 1, npoint))
-        density = np.expand_dims(density, tuple(range(kdata.ndim - 1)))
-        kdata*=density
-
-    if not(light_memory_usage):
-        kdata_for_sensi = np.zeros(kdata.shape, dtype=np.complex128)
-        if not(hanning_filter):
-            kdata_for_sensi[:, :, :, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:,
-                                                                                            :, :,
-                                                                                            (center_res - int(res / 2)):(
-                                                                                                    center_res + int(
-                                                                                                res / 2))]
-        else:
-            kdata_for_sensi[:, :, :, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[:,
-                                                                                                :, :,
-                                                                                                (center_res - int(
-                                                                                                    res / 2)):(
-                                                                                                        center_res + int(
-                                                                                                    res / 2))]*np.expand_dims(np.hanning(2 * int(res / 2)), axis=(0, 1, 2))
-
-
-
-        del kdata
-        kdata_for_sensi = kdata_for_sensi.reshape(nb_channels, -1)
-
-    print("Performing NUFFT on filtered data for sensitivity calculation")
-    if not(useGPU):
-        if not(light_memory_usage):
-            index_non_zero_kdata=np.nonzero(kdata_for_sensi[0])
-            kdata_for_sensi=kdata_for_sensi[index_non_zero_kdata]
-            traj_all=traj_all[index_non_zero_kdata]
-            coil_sensitivity = finufft.nufft3d1(traj_all[:, 2], traj_all[:, 0], traj_all[:, 1], kdata_for_sensi, image_size)
-        else:
-            coil_sensitivity=np.zeros((nb_channels,)+image_size,dtype=np.complex128)
-            kdata_for_sensi = np.zeros(kdata.shape[1:], dtype=np.complex128)
-            for i in tqdm(range(nb_channels)):
-                if not(hanning_filter):
-                    kdata_for_sensi[:, :, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[i,
-                                                                                                    :, :,
-                                                                                                    (center_res - int(
-                                                                                                        res / 2)):(
-                                                                                                            center_res + int(
-                                                                                                      res / 2))]
-
-                else:
-                    kdata_for_sensi[:, :, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[i,
-                                                                                                     :, :,
-                                                                                                     (center_res - int(
-                                                                                                         res / 2)):(
-                                                                                                             center_res + int(
-                                                                                                         res / 2))]*np.expand_dims(np.hanning(2 * int(res / 2)), axis=(0, 1))
-
-
-                flattened_kdata_for_sensi=kdata_for_sensi.flatten()
-                index_non_zero_kdata = np.nonzero(flattened_kdata_for_sensi)
-                flattened_kdata_for_sensi=flattened_kdata_for_sensi[index_non_zero_kdata]
-                traj_current = traj_all[index_non_zero_kdata]
-                coil_sensitivity[i] = finufft.nufft3d1(traj_current[:, 2], traj_current[:, 0], traj_current[:, 1], flattened_kdata_for_sensi, image_size)
-
-
-    else:
-        N1, N2, N3 = image_size[0], image_size[1], image_size[2]
-        dtype = np.float32  # Datatype (real)
-        complex_dtype = np.complex64
-
-        fk_gpu = GPUArray((nb_channels, N1, N2, N3), dtype=complex_dtype)
-
-        kx = traj_all[:, 0]
-        ky = traj_all[:, 1]
-        kz = traj_all[:, 2]
-
-        kx = kx.astype(dtype)
-        ky = ky.astype(dtype)
-        kz = kz.astype(dtype)
-
-        c_retrieved_gpu = to_gpu(kdata_for_sensi.astype(complex_dtype))
-        plan = cufinufft(1, (N1, N2, N3), nb_channels, eps=eps, dtype=dtype)
-        plan.set_pts(to_gpu(kz), to_gpu(kx), to_gpu(ky))
-
-        plan.execute(c_retrieved_gpu, fk_gpu)
-
-        coil_sensitivity = np.squeeze(fk_gpu.get())
-
-        fk_gpu.gpudata.free()
-        c_retrieved_gpu.gpudata.free()
-        plan.__del__()
-
-    del kdata_for_sensi
-    print("Normalizing sensi")
-
-    #b1 = coil_sensitivity / np.linalg.norm(coil_sensitivity, axis=0)
-    #del coil_sensitivity
-    #b1 = b1 / np.max(np.abs(b1.flatten()))
-    coil_sensitivity /= np.linalg.norm(coil_sensitivity, axis=0)
-    #coil_sensitivity /= np.max(np.abs(coil_sensitivity.flatten()))
-
-
-    return coil_sensitivity
 
 
 def J_fourier(m, traj, kdata):
@@ -4033,7 +3968,7 @@ def array_to_coef(array):
     return c
 
 
-def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,t0=1,log=False,plot=False,filename_save=None):
+def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,t0=1,log=False,plot=False,filename_save=None,folder_logs="./logs",folder_figures="./figures"):
     '''
     J : function from W (domain of m) to R
     grad_J : function from W to W - gradient of J
@@ -4041,9 +3976,11 @@ def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,t0=1,log=F
     '''
     k=0
     m=m0
-    if log:
+    if log or plot:
         now = datetime.now()
         date_time = now.strftime("%Y%m%d_%H%M%S")
+    
+    if log:
         norm_g_list=[]
 
     g=grad_J(m)
@@ -4076,14 +4013,14 @@ def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,t0=1,log=F
             t_array = np.arange(0.,t0,t0/100)
             axs[1].plot(t_array,J_m+t_array*slope)
             axs[1].scatter(0,J_m,c="b",marker="x")
-            plt.savefig('./figures/conjgrad_plot_{}.png'.format(date_time))
+            plt.savefig(folder_figures+'/conjgrad_plot_{}.png'.format(date_time))
 
         while(J_m_next>J_m+alpha*t*slope):
             print(t)
             t = beta*t
             if plot:
                 axs[1].scatter(t,J_m_next,c="b",marker="x")
-                plt.savefig('./figures/conjgrad_plot_{}.png'.format(date_time))
+                plt.savefig(folder_figures+'/conjgrad_plot_{}.png'.format(date_time))
             J_m_next=J(m+t*d_m)
 
 
@@ -4099,7 +4036,7 @@ def conjgrad(J,grad_J,m0,tolgrad=1e-4,maxiter=100,alpha=0.05,beta=0.6,t0=1,log=F
 
     if log:
         norm_g_list=np.array(norm_g_list)
-        np.save('./logs/conjgrad_{}.npy'.format(date_time),norm_g_list)
+        np.save(folder_logs+'/conjgrad_{}.npy'.format(date_time),norm_g_list)
 
     return m
 
@@ -4250,121 +4187,9 @@ def simulate_image_series_from_maps(map_rebuilt,mask_rebuilt,window=8):
     return rebuilt_image_series,map_for_sim
 
 
-def calculate_sensitivity_map_3D_for_nav(kdata, trajectory, res=16, image_size=(400,)):
-    traj = trajectory.get_traj()
-    nb_channels = kdata.shape[0]
-    npoint = kdata.shape[-1]
-    nb_slices = kdata.shape[1]
-    nb_gating_spokes = kdata.shape[2]
-    center_res = int(npoint / 2 - 1)
-    kdata = kdata.reshape((nb_channels, -1, npoint))
-    b1_nav = np.zeros((nb_channels, kdata.shape[1],) + image_size, dtype=np.complex128)
-    kdata_for_sensi = np.zeros(kdata.shape[1:], dtype=np.complex128)
-    for i in tqdm(range(nb_channels)):
-        kdata_for_sensi[:, (center_res - int(res / 2)):(center_res + int(res / 2))] = kdata[i, :,
-                                                                                      (center_res - int(res / 2)):(
-                                                                                                  center_res + int(
-                                                                                              res / 2))]
-        b1_nav[i] = finufft.nufft1d1(traj[0, :, 2], kdata_for_sensi, image_size)
-
-        print("Normalizing sensi")
-
-        # b1 = coil_sensitivity / np.linalg.norm(coil_sensitivity, axis=0)
-        # del coil_sensitivity
-        # b1 = b1 / np.max(np.abs(b1.flatten()))
-    b1_nav /= np.linalg.norm(b1_nav, axis=0)
-    b1_nav /= np.max(np.abs(b1_nav.flatten()))
-
-    b1_nav = b1_nav.reshape((nb_channels, nb_slices, nb_gating_spokes, int(npoint / 2)))
-    return b1_nav
 
 
-def simulate_nav_images_multi(kdata, trajectory, image_size=(400,), b1=None):
-    traj = trajectory.get_traj()
-    nb_channels = kdata.shape[0]
-    npoint = kdata.shape[-1]
-    nb_slices = kdata.shape[1]
-    nb_gating_spokes = kdata.shape[2]
 
-    print(kdata.dtype)
-    print(traj.dtype)
-
-    if kdata.dtype == "complex64":
-        traj=traj.astype("float64")
-
-    if kdata.dtype == "complex128":
-        traj=traj.astype("float128")
-
-    if b1 is not None:
-        if b1.ndim == 2:
-            b1 = np.expand_dims(b1, axis=(1, 2))
-        elif b1.ndim == 3:
-            b1 = np.expand_dims(b1, axis == (1))
-
-    traj = traj.astype(np.float32)
-
-    kdata = kdata.reshape((nb_channels, -1, npoint))
-    images_series_rebuilt_nav = np.zeros((nb_slices, nb_gating_spokes, int(npoint / 2)), dtype=np.complex64)
-    # all_channels_images_nav = np.zeros((nb_channels,nb_slices,nb_gating_spokes,int(npoint/2)),dtype=np.complex64)
-
-    for i in tqdm(range(nb_channels)):
-        fk = finufft.nufft1d1(traj[0, :, 2], kdata[i, :, :], image_size)
-        fk = fk.reshape((nb_slices, nb_gating_spokes, int(npoint / 2)))
-
-        # all_channels_images_nav[i]=fk
-
-        if b1 is None:
-            images_series_rebuilt_nav += np.abs(fk) ** 2
-        else:
-            images_series_rebuilt_nav += b1[i].conj() * fk
-
-    if b1 is None:
-        images_series_rebuilt_nav = np.sqrt(images_series_rebuilt_nav)
-
-    return images_series_rebuilt_nav
-
-
-def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001):
-    nb_gating_spokes = image.shape[1]
-    nb_slices = image.shape[0]
-    npoint_image = image.shape[-1]
-    ft = np.mean(image, axis=0)
-    # ft=np.mean(image_nav_best_channel,axis=0)
-    # ft=image[0]
-    image_nav_for_correl = image.reshape(-1, npoint_image)
-    nb_images = image_nav_for_correl.shape[0]
-    correls = []
-    mvt = []
-    # adj=[]
-    for j in tqdm(range(nb_images)):
-        corrs = np.zeros(len(shifts))
-        for i, shift in enumerate(shifts):
-            corr = np.corrcoef(np.concatenate([ft[j % nb_gating_spokes, bottom:top].reshape(1, -1),
-                                               image_nav_for_correl[j, bottom + shift:top + shift].reshape(1, -1)],
-                                              axis=0))[0, 1]
-            # corr = np.linalg.norm(image_nav_for_correl[0, bottom:top]-image_nav_for_correl[j + 1, (bottom + shift):(top + shift)])
-            corrs[i] = corr
-        # adjustment=np.sum(dft_x[j+1]*dft_t[j])/np.sum(dft_x[j+1]**2)
-        # adj.append(adjustment)
-        if (j % nb_gating_spokes == 0):
-            J = corrs
-
-
-        else:
-            J = corrs - lambda_tv * (np.array(shifts) - mvt[j - 1]) ** 2  # penalty to not be too far from last disp
-
-        current_mvt = shifts[np.argmax(J)]
-        mvt.append(current_mvt)
-        # correls.append(corrs)
-    # correls_array = np.array(correls)
-    # mvt = [shifts[i] for i in np.argmax(correls_array, axis=-1)]
-    # mvt=[shifts[i] for i in np.argmin(correls_array,axis=-1)]
-    # mvt=np.array(mvt)+np.array(adj)
-    # mvt=np.concatenate([[0],mvt]).astype(int)
-    # mvt=np.array(mvt).reshape(int(nb_slices),int(nb_gating_spokes))
-    # displacement=-np.cumsum(mvt,axis=-1).flatten()
-    displacement = np.array(mvt)
-    return displacement
 
 
 
@@ -4481,29 +4306,26 @@ def calc_entropy(v):
     #p[p==0]=1 #pixel with value 0 are crashing the algo
     return np.sum(-np.log2(p) * p)
 
-def best_channel_selection(data_for_nav,nav_traj,nav_image_size,shifts=list(range(-30,30))):
-    nb_channels=data_for_nav.shape[0]
-    image_nav_all_channels = []
-    displacements_all_ch = []
-    bottom = -shifts[0]
-    top = nav_image_size[0] - shifts[-1]
-    for j in range(nb_channels):
-        images_series_rebuilt_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[j], axis=0), nav_traj,
-                                                                 nav_image_size, b1=None)
-        image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
-        # plt.figure()
-        # plt.imshow(image_nav_ch.reshape(-1, int(npoint / 2)).T, cmap="gray")
-        # plt.title("Image channel {}".format(j))
-        image_nav_all_channels.append(image_nav_ch)
 
-        displacements = calculate_displacement(image_nav_ch, bottom, top, shifts, lambda_tv=0.001)
-        displacements_all_ch.append(displacements)
+def build_phi(dictfile,L0):
 
-    displacements_all_ch = np.array(displacements_all_ch)
-    pca = PCAComplex(n_components_=1)
-    disp_transf = pca.fit_transform(displacements_all_ch)
+    #mrfdict = dictsearch.Dictionary()
+    keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.1))
 
-    return np.argsort(disp_transf[:, 0]),image_nav_all_channels
+    import dask.array as da
+    u,s,vh = da.linalg.svd(da.asarray(values))
+
+    vh=np.array(vh)
+    s=np.array(s)
+
+    phi=vh[:L0]
+    #phi=vh
+
+    filename_phi=str.split(dictfile, ".dict")[0] + "_phi_L0_{}.npy".format(L0)
+    np.save(filename_phi,phi)
+
+    return phi
+
 
 
 def calc_grad_entropy(v,w=None):
@@ -5058,4 +4880,177 @@ def grad_J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None,shift=1
     return delta_adjoint(weights*delta_m/W,axis,shift)
 
 
+def getPreScanImages(twix):
 
+    '''
+    from twix object read from twix tools, extract pre-scan data:
+    data_noise : noise data reshaped into (nb_channels,-1) (to calculate noise channels correl)
+    data_body : body coil prescan data reshape into (128,2,32,32)
+    data_multicoil : body coil prescan data reshape into (128,nb_channels,32,32)
+    '''
+
+    mdb_list = twix[0]['mdb']
+
+    dico_data_set0 = {}
+    dico_data_set1 = {}
+    noise_adj_0 = []
+    noise_adj_1 = []
+
+    for i, mdb in enumerate(mdb_list):
+        if mdb.is_image_scan():
+            if mdb.mdh[14][7] == 0:
+                if mdb.mdh[14][0] in dico_data_set0.keys():
+                    dico_data_set0[mdb.mdh[14][0]][mdb.mdh[14][3]] = mdb
+                else:
+                    dico_data_set0[mdb.mdh[14][0]] = {}
+                    dico_data_set0[mdb.mdh[14][0]][mdb.mdh[14][3]] = mdb
+            else:
+                if mdb.mdh[14][0] in dico_data_set1.keys():
+                    dico_data_set1[mdb.mdh[14][0]][mdb.mdh[14][3]] = mdb
+                else:
+                    dico_data_set1[mdb.mdh[14][0]] = {}
+                    dico_data_set1[mdb.mdh[14][0]][mdb.mdh[14][3]] = mdb
+        elif mdb.is_flag_set("NOISEADJSCAN"):
+            if mdb.mdh[14][1] == 0:
+                noise_adj_0.append(mdb.data)
+            else:
+                noise_adj_1.append(mdb.data)
+
+    noise_adj_0 = np.array(noise_adj_0)
+    noise_adj_1 = np.array(noise_adj_1)
+    data_noise = np.stack([noise_adj_0, noise_adj_1])
+    data_noise = np.moveaxis(data_noise, 2, 0)
+    nb_chan = data_noise.shape[0]
+    data_noise = data_noise.reshape(nb_chan, -1)
+
+    kdata_3D_set0 = np.zeros(shape=(32, 32, nb_chan, 128), dtype="complex64")
+    for j in range(kdata_3D_set0.shape[1] - 1):
+        if (j + 1) in dico_data_set0.keys():
+            for i in range(kdata_3D_set0.shape[0] - 1):
+                if (i + 1) in dico_data_set0[j + 1].keys():
+                    kdata_3D_set0[i + 1, j + 1, :] = dico_data_set0[j + 1][i + 1].data
+
+    kdata_3D_set1 = np.zeros(shape=(32, 32, 2, 128), dtype="complex64")
+    for j in range(kdata_3D_set1.shape[1] - 1):
+        if (j + 1) in dico_data_set1.keys():
+
+            for i in range(kdata_3D_set1.shape[0] - 1):
+                if (i + 1) in dico_data_set1[j + 1].keys():
+                    kdata_3D_set1[i + 1, j + 1, :] = dico_data_set1[j + 1][i + 1].data
+
+    data_body = kdata_3D_set1.T
+    data_multicoil = kdata_3D_set0.T
+
+    return data_body, data_multicoil, data_noise
+
+
+def plot_rotated_axes(ax, r, name=None, offset=(0, 0, 0), scale=1):
+    colors = ("#FF6666", "#005533", "#1199EE")  # Colorblind-safe RGB
+    loc = np.array([offset, offset])
+    axis_names=["x","y","z"]
+    for i, (axis, c) in enumerate(zip((ax.xaxis, ax.yaxis, ax.zaxis),colors)):
+        axlabel = axis_names[i]
+        axis.set_label_text(axlabel)
+        axis.label.set_color(c)
+        axis.line.set_color(c)
+        axis.set_tick_params(colors=c)
+        line = np.zeros((2, 3))
+        line[1, i] = scale
+        line_rot = r.apply(line)
+        line_plot = line_rot + loc
+        ax.plot(line_plot[:, 0], line_plot[:, 1], line_plot[:, 2], c)
+        text_loc = line[1]*1.2
+        text_loc_rot = r.apply(text_loc)
+        text_plot = text_loc_rot + loc[0]
+        ax.text(*text_plot, axlabel.upper(), color=c,va="center", ha="center")
+        ax.text(*offset, name, color="k", va="center", ha="center",bbox={"fc": "w", "alpha": 0.8, "boxstyle": "circle"})
+
+
+
+def gamma_transform(volume,gamma):
+    target=copy(volume)
+    for sl in range(target.shape[0]):
+        target[sl]=((np.abs(volume[sl])-np.min(np.abs(volume[sl])))/(np.max(np.abs(volume[sl]))-np.min(np.abs(volume[sl]))))**gamma
+    return target
+
+
+
+def get_volume_geometry(file, index=-1):
+    '''
+    'sSliceArray.asSlice[0].dThickness',
+    'sSliceArray.asSlice[0].dPhaseFOV',
+    'sSliceArray.asSlice[0].dReadoutFOV',
+    'sSliceArray.asSlice[0].sPosition.dSag',
+    'sSliceArray.asSlice[0].sPosition.dCor',
+    'sSliceArray.asSlice[0].sPosition.dTra',
+    'sSliceArray.asSlice[0].sNormal.dTra',
+    '''
+    print("Getting geometry info for {}".format(file))
+    headers = io_twixt.parse_twixt_header(file)
+    print(len(headers))
+    geom = []
+    for header in headers:
+        if not has_volume_geometry(header):
+            continue
+        
+        # center of first slice
+
+        pos_dSag=header['sSliceArray.asSlice[0].sPosition.dSag'] if 'sSliceArray.asSlice[0].sPosition.dSag' in header else 0.
+        pos_dCor=header['sSliceArray.asSlice[0].sPosition.dCor'] if 'sSliceArray.asSlice[0].sPosition.dCor' in header else 0.
+        pos_dTra=header['sSliceArray.asSlice[0].sPosition.dTra'] if 'sSliceArray.asSlice[0].sPosition.dTra' in header else 0.
+        
+        offset=header['lScanRegionPosTra']
+
+        position = (
+            pos_dSag,
+            pos_dCor,
+            pos_dTra+offset,
+        )
+        print(position)
+
+        # volume shape in pixel
+        shape = (
+            header['sKSpace.lBaseResolution'],
+            header['sKSpace.lBaseResolution'],
+            header['sSliceArray.lSize'],
+        )
+        
+        # print("Readout FOV: {}".format(header['sSliceArray.asSlice[0].dReadoutFOV']))
+        # print("Phase FOV : {}".format(header['sSliceArray.asSlice[0].dPhaseFOV']))
+
+        print("Shape: {}".format(shape))
+
+        if shape[-1]==1:
+            spacing_z=header['sSliceArray.asSlice[0].dThickness']
+        else:
+            spacing_z=header['sSliceArray.asSlice[1].sPosition.dTra']-header['sSliceArray.asSlice[0].sPosition.dTra']
+
+        
+
+        spacing = (
+            header['sSliceArray.asSlice[0].dReadoutFOV']/shape[0], # which field to use ???
+            header['sSliceArray.asSlice[0].dReadoutFOV']/shape[1], #??
+            spacing_z,
+        )
+        print("spacing: {}".format(spacing))
+
+        origin = (
+            position[0] - shape[0]/2 * spacing[0],
+            position[1] - shape[1]/2 * spacing[1],
+            position[2] ,#- spacing[2] / 2,
+        )
+
+        print("origin: {}".format(origin))
+
+        geom.append({
+            'origin': origin,
+            'spacing': spacing,
+            # 'transform': transform, # TODO
+        })
+    return geom[index]
+
+
+def has_volume_geometry(header):
+    fields = ['sKSpace.lBaseResolution']
+    print(all(field in header for field in fields))
+    return all(field in header for field in fields)

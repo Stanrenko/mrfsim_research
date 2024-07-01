@@ -68,16 +68,16 @@ medfilter=False
 
 #name = "SquareSimu3D_SS_FF0_1"
 name = "SquareSimu3D_SS_SimReco2"
-name = "KneePhantomFat"
+#name = "KneePhantomFat"
 #name = "KneePhantom"
 
-
-dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_1_87_reco3.53_w8_simmean.dict"
-suffix="_random_FA_v2_reco353"
-dictfile_light="mrf_dictconf_SimReco2_light_matching_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_1_87_reco3.53_w8_simmean.dict"
-with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_1_87.json") as f:
-    sequence_config = json.load(f)
-Treco=3530
+#
+# dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_1_87_reco3.53_w8_simmean.dict"
+# suffix="_random_FA_v2_reco353"
+# dictfile_light="mrf_dictconf_SimReco2_light_matching_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_1_87_reco3.53_w8_simmean.dict"
+# with open("./mrf_sequence_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v2_1_87.json") as f:
+#     sequence_config = json.load(f)
+# Treco=3530
 
 
 # dictfile="mrf_dictconf_SimReco2_adjusted_optimized_M0_T1_local_optim_correl_crlb_filter_sp760_optimized_DE_Simu_FF_random_FA_v1_reco3.95_w8_simmean.dict"
@@ -101,13 +101,13 @@ Treco=3530
 #    sequence_config = json.load(f)
 # Treco=3750
 
-# dictfile="mrf_dictconf_SimReco2_adjusted_1_87_reco4_w8_simmean.dict"
-# dictfile_light='./mrf_dictconf_SimReco2_light_matching_adjusted_1_87_reco4_w8_simmean.dict'
-# suffix="_fullReco"
-# with open("./mrf_sequence_adjusted_1_87.json") as f:
-#    sequence_config = json.load(f)
-# Treco=4000
-
+dictfile='mrf_dictconf_SimReco2_adjusted_1_87_1.87_reco4.0_w8_simmean.dict'
+dictfile_light="mrf_dictconf_SimReco2_light_matching_adjusted_1_87_1.87_reco4.0_w8_simmean.dict"
+suffix="_fullReco"
+with open("./mrf_sequence_adjusted_1_87.json") as f:
+   sequence_config = json.load(f)
+Treco=4000
+sequence_config["FA"]=2.5
 nb_allspokes = len(sequence_config["TE"])
 nspoke=8
 nb_segments=nb_allspokes
@@ -210,7 +210,7 @@ file_map = filename + "_sl{}_rp{}_us{}{}w{}{}_MRF_map.pkl".format(nb_slices,repe
 #filename="./data/InVivo/Phantom20211028/meas_MID00028_FID39712_JAMBES_raFin_CLI.dat"
 
 nb_channels=1
-npoint = 512
+npoint = 128
 
 
 
@@ -224,6 +224,7 @@ size = image_size[1:]
 with open(dictjson) as f:
     dict_config = json.load(f)
 dict_config["ff"]=np.arange(0.,1.05,0.05)
+dict_config["attB1"]=np.arange(0.6,1.05,0.05)
 #dict_config["ff"]=np.array([0.1])
 #dict_config["delta_freqs"]=[0.0]
 

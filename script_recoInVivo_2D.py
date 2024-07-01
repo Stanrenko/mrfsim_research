@@ -56,6 +56,9 @@ localfile="/KB/MRF#SSkyra145100#F737243#M2960#D170322#T195218#JAMBES_raFin_CLIBI
 localfile ="/3D/patient.008.v5/meas_MID00119_FID32357_raFin_2D_tra_1x1x5mm_FULL_bmy.dat"
 
 localfile ="/3D/phantom.015.v2/meas_MID00371_FID50760_raFin_customIR_Reco.dat"
+localfile ="/3D/patient.003.v14/meas_MID00192_FID52970_raFin_customIR_Reco.dat"
+localfile ="/3D/patient.003.v15/meas_MID00255_FID53333_raFin_customIR_Reco.dat"
+
 
 filename = base_folder+localfile
 
@@ -92,8 +95,10 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
     ## Random map simulation
 
     data = np.squeeze(RawData)
+    if data.ndim==2:
+        data=np.expand_dims(data,axis=1)
     data = np.moveaxis(data, -1, 0)
-    data = np.moveaxis(data, 1, -1)
+    data = np.moveaxis(data, -1, 0)
 
     np.save(filename_save,data)
 
@@ -102,7 +107,7 @@ else :
 
 #data = np.moveaxis(data, 0, -1)
 # data=np.moveaxis(data,-2,-1)
-data=np.moveaxis(data,0,-1)
+#data=np.moveaxis(data,0,-1)
 data=np.expand_dims(data,axis=0)
 
 data_shape = data.shape
@@ -149,16 +154,22 @@ else:
 # Coil sensi estimation for all slices
 print("Calculating Coil Sensitivity....")
 
-if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
-    res = 16
-    b1_all_slices=calculate_sensitivity_map(kdata_all_channels_all_slices,radial_traj,res,image_size,hanning_filter=True)
-    np.save(filename_b1,b1_all_slices)
+if nb_channels==1:
+    b1_all_slices=np.ones((1,nb_slices)+image_size)
+
 else:
-    b1_all_slices=np.load(filename_b1)
+    if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
+        res = 16
+        b1_all_slices=calculate_sensitivity_map(kdata_all_channels_all_slices,radial_traj,res,image_size,hanning_filter=True)
+        np.save(filename_b1,b1_all_slices)
+    else:
+        b1_all_slices=np.load(filename_b1)
 
 sl=int(nb_slices/2)
 list_images = list(np.abs(b1_all_slices[sl]))
 plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
+
+
 
 #dico=build_dico_seqParams(filename, folder)
 
@@ -201,8 +212,8 @@ for sl in tqdm(range(nb_slices)):
     ## Dict mapping
 
     #dictfile = "mrf175_SimReco2_.dict"
-    dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1_68_reco4_w8_simmean.dict"
-    dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1_68_reco4_w8_simmean.dict"
+    dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1.14_reco5_w8_simmean.dict"
+    dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1.14_reco5_w8_simmean.dict"
 
 
     file_map = filename.split(".dat")[0] + "_MRF_map_sl_{}.pkl".format(sl)
@@ -343,6 +354,11 @@ base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodol
 base_folder = "./data"
 
 
+
+
+
+
+
 filename_mask=base_folder+"/TestMarc/meas_MID00020_FID21818_JAMBE_raFin_CLI_EMPTY_ICE_mask.npy"
 filename_volume=base_folder+"/TestMarc/meas_MID00020_FID21818_JAMBE_raFin_CLI_EMPTY_ICE_volumes.npy"
 
@@ -353,36 +369,223 @@ volumes_all=np.load(filename_volume)
 dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2.26_reco4_w8_simmean.dict"
 dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2.26_reco4_w8_simmean.dict"
 
-dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1.14_reco5_w8_simmean.dict"
-dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1.14_reco5_w8_simmean.dict"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_1.14_reco5.0_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_1.14_reco5.0_w8_simmean.dict"
 
-optimizer = SimpleDictSearch(mask=mask,niter=0,seq=None,trajectory=None,split=2000,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=None,threshold_ff=0.9,dictfile_light=dictfile_light,mu=1,mu_TV=1,weights_TV=[1.,0.,0.],return_cost=False,clustering=True)#,mu_TV=1,weights_TV=[1.,0.,0.])
-all_maps=optimizer.search_patterns_test_multi_2_steps_dico(dictfile,volumes_all,retained_timesteps=None)
+
+
+filename_mask="./data/InVivo/TestMarc/processed/meas_MID00256_FID68294_raFin_customIR_Reco_mask_sl4.npy"
+filename_volume="./data/InVivo/TestMarc/processed/meas_MID00256_FID68294_raFin_customIR_Reco_volumes_sl4.npy"
+
+mask_python_machines=np.load(filename_mask)
+volumes_all=np.load(filename_volume)
+
+optimizer = SimpleDictSearch(mask=mask_python_machines,niter=0,seq=None,trajectory=None,split=2000,pca=True,threshold_pca=15,log=False,useGPU_dictsearch=True,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=None,threshold_ff=0.9,dictfile_light=dictfile_light,mu=1,mu_TV=1,weights_TV=[1.,0.,0.],return_cost=False,clustering=True)#,mu_TV=1,weights_TV=[1.,0.,0.])
+all_maps_volumes_python_machines=optimizer.search_patterns_test_multi_2_steps_dico(dictfile,volumes_all,retained_timesteps=None)
 
 plt.close("all")
 
-k="ff"
+k="wT1"
 
-image_map=makevol(all_maps[0][0][k],mask>0)
-image_map[mask_ice==0]=0
-image_map[image_map>0.35]=0.35
+image_map=makevol(all_maps[0][0][k],mask_ice>0)
+#image_map[mask_ice.T==0]=0
+#image_map[mask_ice==0]=0
+#image_map[image_map>0.35]=0.35
 plt.figure()
 plt.imshow(image_map.T)
 plt.colorbar()
+plt.title("{} Map Python Volumes Python Matching".format(k))
 
 
-k="attB1"
 
-image_map=makevol(all_maps[0][0][k],mask>0).T
-image_map[mask_ice==0]=0
+plt.close("all")
+
+k="wT1"
+
+
+
+image_map=makevol(all_maps[0][0][k],mask_ice>0)
+#image_map[mask_ice==0]=0
+#image_map[image_map>0.35]=0.35
 plt.figure()
 plt.imshow(image_map)
+plt.colorbar()
+plt.title("{} Map Ice Volumes Python Matching".format(k))
+
+
+
+
+k="ff"
+
+image_map=makevol(all_maps[0][0][k],mask_ice>0)
+#image_map[mask_ice==0]=0
+#image_map[image_map>0.35]=0.35
+plt.figure()
+plt.imshow(image_map)
+plt.colorbar()
+plt.title("{} Map Ice Volumes Python Matching".format(k))
+
+
+sl=4
+with open("./data/InVivo/TestMarc/processed/meas_MID00256_FID68294_raFin_customIR_Reco_MRF_map_sl{}.pkl".format(sl),"rb") as file:
+    all_maps_python_volumes=pickle.load(file)
+
+mask_python_machines=np.load("./data/InVivo/TestMarc/processed/meas_MID00256_FID68294_raFin_customIR_Reco_mask_sl{}.npy".format(sl))
+
+
+
+ff_map=makevol(all_maps_python_volumes[0][0]["ff"],mask_python_machines>0).T
+ff_map_ice=makevol(data.iloc[:,-1],mask_ice>0)
+
+
+plt.close("all")
+k="wT1"
+
+#image_map_ice_volumes=makevol(all_maps[0][0][k],mask_ice>0)
+image_map_python_volumes=makevol(all_maps_python_volumes[0][0][k],mask_python_machines>0).T
+#image_map_python_volumes=np.flip(makevol(all_maps_volumes_python_machines[0][0][k],mask_python_machines>0).T)
+image_map_ice_matching=makevol(data.iloc[:,0],mask_ice>0)
+#image_map_ice_volumes[mask_ice==0]=0
+image_map_python_volumes[mask_ice==0]=0
+image_map_ice_matching[mask_ice==0]=0
+#image_map_ice_volumes[np.flip(mask_python_machines).T==0]=0
+image_map_python_volumes[(mask_python_machines).T==0]=0
+image_map_ice_matching[(mask_python_machines).T==0]=0
+
+#image_map_ice_volumes[ff_map>0.7]=0
+image_map_python_volumes[ff_map>0.7]=0
+image_map_python_volumes[ff_map_ice>0.7]=0
+
+# image_map_ice_volumes[ff_map_ice>0.7]=0
+image_map_python_volumes[ff_map_ice>0.7]=0
+image_map_ice_matching[ff_map>0.7]=0
+
+
+plt.close("all")
+#plt.figure()
+#plt.imshow(image_map_ice_volumes)
+
+plt.figure()
+plt.imshow(image_map_python_volumes)
+
+plt.figure()
+plt.imshow(image_map_ice_matching)
+
+plt.figure()
+plt.imshow(image_map_python_volumes-image_map_ice_matching,cmap="inferno",vmin=-50,vmax=50)
 plt.colorbar()
 
 
 
+k="ff"
+
+#image_map_ice_volumes=makevol(all_maps[0][0][k],mask_ice>0)
+#image_map_python_volumes=np.flip(makevol(all_maps_python_volumes[0][0][k],mask_python_machines>0).T)
+
+image_map_python_volumes=makevol(all_maps_python_volumes[0][0][k],mask_python_machines>0).T
+#image_map_python_volumes=np.flip(makevol(all_maps_volumes_python_machines[0][0][k],mask_python_machines>0).T)
+image_map_ice_matching=makevol(data.iloc[:,-1],mask_ice>0)
+#image_map_ice_volumes[mask_ice==0]=0
+image_map_python_volumes[mask_ice==0]=0
+image_map_ice_matching[mask_ice==0]=0
+#image_map_ice_volumes[np.flip(mask_python_machines).T==0]=0
+image_map_python_volumes[(mask_python_machines).T==0]=0
+image_map_ice_matching[(mask_python_machines).T==0]=0
+
+
+
+#map_ice_volumes=image_map_ice_volumes[mask_ice>0]
+map_python_volumes=image_map_python_volumes[mask_ice>0]
+map_ice_matching=image_map_ice_matching[mask_ice>0]
+
+plt.figure()
+plt.hist(map_python_volumes-map_ice_matching)
+
+
+plt.figure()
+plt.imshow(image_map_python_volumes-image_map_ice_matching,cmap="inferno",vmax=0.25,vmin=-0.25)
+plt.colorbar()
+
+plt.figure()
+plt.imshow(mask_ice-np.flip(mask_python_machines.T))
+
+
+
+import seaborn as sns
+
+plt.figure()
+sns.regplot(map_ice_matching,map_python_volumes,ci=95)
+
+df_comp=pd.DataFrame(columns=["Python Matching vs Ice Matching"])
+df_comp["Python Volumes vs Ice Volumes"]=map_python_volumes-map_ice_matching
+#df_comp["Python Matching vs Ice Matching"]=map_ice_matching-map_ice_volumes
+
+fig=plt.figure()
+ax=df_comp.boxplot(grid=False,showfliers=False,showmeans=True,medianprops=dict(color="red"),boxprops=dict(color="black"),whiskerprops=dict(color="black"),meanprops=dict(marker="x",markeredgecolor="gray"),whis=[5,95])
+plt.yticks(fontsize=12)
+plt.xticks(fontsize=12)
+fig.patch.set_facecolor("white")
+fig.set_tight_layout(True)
+
+plt.figure()
+plt.hist(map_python_volumes)
+plt.hist(map_ice_matching,alpha=0.5)
+
+traj=pd.read_csv("./data/InVivo/TestMarc/CSV_file_coilsensi_bis/trajectory.CSV",header=None)
+
+radial_traj=Radial(1400,448*2)
+traj_python=radial_traj.get_traj_for_reconstruction(timesteps=175)[0]
+
+traj=np.array(traj)
+
+
+plt.figure()
+plt.scatter(x=traj_python[:,0],y=traj_python[:,1])
+plt.scatter(x=traj[:,0],y=traj[:,1])
+
+
+traj=traj.reshape(8,-1,2)
+traj_python=traj_python.reshape(8,-1,2)
+
+
+spoke=7
+plt.figure()
+plt.plot(traj[spoke,:,0])
+plt.plot(traj_python[spoke,:,0])
+
+plt.figure()
+plt.plot(traj[0,:,0]-traj_python[0,:,0])
+
+
+k="wT1"
+
+
+
+
+
+
+image_map=makevol(all_maps_python_volumes[0][0][k],mask>0)
+#image_map[mask_ice==0]=0
+#image_map[image_map>0.35]=0.35
+plt.figure()
+plt.imshow(np.flip(image_map.T))
+plt.colorbar()
+plt.title("{} Map Python Volumes Python Matching".format(k))
+
+k="ff"
+
+image_map=makevol(all_maps_python_volumes[0][0][k],mask>0)
+#image_map[mask_ice==0]=0
+#image_map[image_map>0.35]=0.35
+plt.figure()
+plt.imshow(np.flip(image_map.T))
+plt.colorbar()
+plt.title("{} Map Python Volumes Python Matching".format(k))
 
 file="/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/2_Data Raw/zz_Data_old/mask.csv"
+file="./data/InVivo/TestMarc/CSV_file_coilsensi_res16/mask.csv"
+
+
 
 import pandas as pd
 mask_ice=pd.read_csv(file,header=None)
@@ -391,58 +594,70 @@ mask_ice=np.array(mask_ice)
 plt.figure()
 plt.imshow(mask_ice)
 
+mask_icecoil=copy(mask_ice)
 
-file="/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/2_Data Raw/zz_Data_old/maps_final.csv"
+file="./data/InVivo/TestMarc/CSV_file_coilsensi_res16/maps_final.csv"
 
-#plt.close("all")
+plt.close("all")
 
 import pandas as pd
 data=pd.read_csv(file,header=None)
 
-curr_map=makevol(data.iloc[:,-1],mask_ice>0)
+curr_map=makevol(data.iloc[:,0],mask_ice>0)
 #curr_map[mask==0]=0
 fig=plt.figure()
 plt.imshow(curr_map)
 plt.colorbar()
+plt.title("FF Map Ice Volumes Ice Matching - Console")
 
 
-
-
-
-file="/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/2_Data Raw/zz_Data_old/volumes_water.csv"
-
-import pandas as pd
-data=pd.read_csv(file,header=None)
-data_real=data.iloc[:,::2]
-data_real=data_real.applymap(lambda x:float(x[1:]))
+curr_map_icecoil=makevol(data_icecoil.iloc[:,0],mask_icecoil>0)
+curr_map=makevol(data.iloc[:,0],mask_ice>0)
 
 plt.figure()
-plt.imshow(np.array(data_real.iloc[:,0]).reshape(180,180))
+plt.imshow(curr_map-curr_map_icecoil)
+plt.colorbar()
 
-images=np.array(data_real).T
-images=[im.reshape(180,180) for im in images]
-images=np.array(images)
 
-animate_images(images)
+plt.figure()
+plt.hist(curr_map_icecoil.flatten()-curr_map.flatten())
+
+
+#
+# file="/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/2_Data Raw/zz_Data_old/volumes_water.csv"
+#
+# import pandas as pd
+# data=pd.read_csv(file,header=None)
+# data_real=data.iloc[:,::2]
+# data_real=data_real.applymap(lambda x:float(x[1:]))
+#
+# plt.figure()
+# plt.imshow(np.array(data_real.iloc[:,0]).reshape(180,180))
+#
+# images=np.array(data_real).T
+# images=[makevol(im,mask_ice>0) for im in images]
+# images=np.array(images)
+#
+# animate_images(images)
 
 
 file="/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/2_Data Raw/zz_Data_old/volumes_real.csv"
-
+file="./data/InVivo/TestMarc/CSV_file_no_filter/volumes_real.csv"
 import pandas as pd
 data_real=pd.read_csv(file,header=None)
 
 images=np.array(data_real).T
-images=[im.reshape(180,180).T for im in images]
+images=[makevol(im,mask_ice>0) for im in images]
 images=np.array(images)
 
 
 file="/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/2_Data Raw/zz_Data_old/volumes_imag.csv"
-
+file="./data/InVivo/TestMarc/CSV_file_no_filter/volumes_imag.csv"
 import pandas as pd
 data_imag=pd.read_csv(file,header=None)
 
 images_imag=np.array(data_imag).T
-images_imag=[im.reshape(180,180).T for im in images_imag]
+images_imag=[makevol(im,mask_ice>0) for im in images_imag]
 images_imag=np.array(images_imag)
 
 volumes_all_ice=images + 1j*images_imag
@@ -450,12 +665,12 @@ volumes_all_ice=images + 1j*images_imag
 
 
 
-animate_images(images)
+animate_images(volumes_all_ice)
 
 
 
 
-animate_images(volumes_all)
+animate_images(volumes_all_ice)
 
 nb_signals=mask.sum()
 all_signals_python=np.real(volumes_all[:,mask>0])

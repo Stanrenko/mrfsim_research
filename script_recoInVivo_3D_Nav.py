@@ -1007,6 +1007,8 @@ else:
     all_maps = pickle.load(file)
 
 from mutools import io
+import pickle
+file_map="map_MRF_20231016_123409.pkl"
 curr_file=file_map
 file = open(curr_file, "rb")
 all_maps = pickle.load(file)
@@ -1025,7 +1027,7 @@ for iter in list(all_maps.keys()):
 
 
     for key in ["ff","wT1","df","attB1"]:
-        file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
+        file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])])[1:] + "_it{}_{}.mha".format(iter,key)
         io.write(file_mha,map_for_sim[key],tags={"spacing":[5,1,1]})
 
 

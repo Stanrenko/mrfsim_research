@@ -38,6 +38,8 @@ localfile="/3D/patient.002.v5/meas_MID00021_FID34064_raFin_3D_tra_1x1x5mm_FULL_n
 
 filename = base_folder+localfile
 
+filename="/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/2_Data Raw/phantom.009.v2/meas_MID00218_FID06324_raFin_3D_tra_1x1x5mm_FULL_fullReco.dat"
+
 #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00044_FID42066_raFin_3D_tra_1x1x5mm_us4_vivo.dat"
 #filename="./data/InVivo/3D/20211119_EV_MRF/meas_MID00043_FID42065_raFin_3D_tra_1x1x5mm_us2_vivo.dat"
 
@@ -331,20 +333,26 @@ traj_python=radial_traj.get_traj()
 traj_python=np.transpose(traj_python)
 
 
-traj_python_for_bart=traj_python.astype("complex64")
+traj_python_for_bart=traj_python.astype("complex64")[:,:,-200:]
 #traj_python_for_bart[:2,:,:]=traj_python
-traj_python_for_bart[:2,:,:]=traj_python_for_bart[:2,:,:]/np.max(traj_python_for_bart[:2,:,:])*int(npoint/4)
-traj_python_for_bart[2,:,:]=traj_python_for_bart[2,:,:]/np.max(traj_python_for_bart[2,:,:])*int(nb_slices/2)
+traj_python_for_bart[0,:,:]=traj_python_for_bart[0,:,:]/np.max(np.abs(traj_python_for_bart[0,:,:]))*int(npoint/4)
+traj_python_for_bart[1,:,:]=traj_python_for_bart[1,:,:]/np.max(np.abs(traj_python_for_bart[1,:,:]))*int(npoint/4)
+traj_python_for_bart[2,:,:]=traj_python_for_bart[2,:,:]/np.max(np.abs(traj_python_for_bart[2,:,:]))*int(nb_slices/2)
 
 cfl.writecfl("traj",traj_python_for_bart)
 
 kdata_multi_for_bart_full=kdata_all_channels.reshape(nb_channels,nb_allspokes,-1).T
-kdata_multi_for_bart_full=np.expand_dims(kdata_multi_for_bart_full,axis=0)
+kdata_multi_for_bart_full=np.expand_dims(kdata_multi_for_bart_full,axis=0)[:,:,-200:]
 cfl.writecfl("kdata_multi_full",kdata_multi_for_bart_full)
 
 coil_img=bart(1,"nufft -i -t traj kdata_multi_full")
 cfl.writecfl("coil_img",coil_img)
+
+coil_img=cfl.readcfl("coil_img")
+
 plot_image_grid(np.moveaxis(np.abs(coil_img[:,:,int(nb_slices/2)]).squeeze(),-1,0),nb_row_col=(4,4))
+
+animate_images(coil_img[:,:,:,0].T)
 
 #sens done in Bart espirit
 #bart fft -u $(bart bitmask 0 1) coil_img ksp

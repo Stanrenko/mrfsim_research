@@ -9,20 +9,17 @@ except:
 
 from utils_simu import simulate_gen_eq_signal
 from scipy import ndimage
-from scipy.optimize import minimize
-from scipy.ndimage import affine_transform
-#import matplotlib.pyplot as plt
-from datetime import datetime
+
 
 import pandas as pd
-from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series,build_mask,generate_kdata,build_mask_single_image,buildROImask,correct_mvt_kdata,create_map
+from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series,build_mask_from_volume,generate_kdata,build_mask_single_image,buildROImask,correct_mvt_kdata,create_map
 from mutools.optim.dictsearch import dictsearch
+from mutools.optim.dictsearch import dictmodel
+
 import itertools
 from mrfsim import groupby,makevol,load_data,loadmat
-import numpy as np
 import finufft
 from tqdm import tqdm
-from Transformers import PCAComplex
 import matplotlib.animation as animation
 from trajectory import *
 
@@ -62,6 +59,18 @@ UNITS ={
     "wT2":"ms",
     "fT2":"ms",
     "ff":"a.u"
+}
+
+PARAMS_WINDOWS={
+    "attB1":[0,2],
+    "df":[-0.5,0.5],
+    "wT1":[0,2000],
+    "fT1":[0,1000],
+    "wT2":[0,500],
+    "fT2":[0,500],
+    "ff":[0,1]
+
+
 }
 
 def dump_function(func):
@@ -236,7 +245,7 @@ class ImageSeries(object):
             keys = list(itertools.product(wT1_in_map, wT2_in_map, fT1_in_map, fT2_in_map, attB1_in_map, df_in_map))
             values = np.stack(np.broadcast_arrays(water, fat), axis=-1)
             values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
-        mrfdict = dictsearch.Dictionary(keys, values)
+        mrfdict = dictmodel.Dictionary(keys, values)
 
         images_series = np.zeros(self.image_size + (values.shape[-2],), dtype=np.complex_)
         #water_series = images_series.copy()
@@ -333,7 +342,7 @@ class ImageSeries(object):
         else :
             values = np.stack(np.broadcast_arrays(water, fat), axis=-1)
             values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
-        mrfdict = dictsearch.Dictionary(keys, values)
+        mrfdict = dictmodel.Dictionary(keys, values)
 
         images_series = np.zeros(self.image_size + (values.shape[-2],), dtype=np.complex_)
         #water_series = images_series.copy()
@@ -371,7 +380,7 @@ class ImageSeries(object):
         #water_series = np.moveaxis(water_series, -1, 0)
         #fat_series = np.moveaxis(fat_series, -1, 0)
 
-
+        #images_series=images_series.astype("complex64")
         #images_series=normalize_image_series(images_series)
         self.images_series=images_series
 
@@ -403,12 +412,14 @@ class ImageSeries(object):
         self.list_movements=[*self.list_movements,*list_movements]
 
 
-    def generate_kdata(self,trajectory,useGPU=False,eps=1e-4,movement_correction=False,perc=80):
+    def generate_kdata(self,trajectory,useGPU=False,eps=1e-4,movement_correction=False,perc=80,nthreads=1,fftw=0):
         print("Generating kdata")
         #nspoke = trajectory.paramDict["nspoke"]
         #npoint = trajectory.paramDict["npoint"]
-        traj = trajectory.get_traj()
+        
 
+        traj = trajectory.get_traj()
+        print(self.images_series.dtype)
         #traj = traj.reshape((self.images_series.shape[0], -1, traj.shape[-1]))
         if self.images_series.dtype=="complex64":
             traj = traj.astype("float32")
@@ -428,10 +439,11 @@ class ImageSeries(object):
             if self.list_movements == []:
 
                 if not(useGPU):
+                    
                     kdata = [
-                        finufft.nufft2d2(t[:, 0], t[:, 1], p)
-                        for t, p in zip(traj, images_series)
-                    ]
+                                finufft.nufft2d2(t[:, 0], t[:, 1], p,nthreads=nthreads,fftw=fftw)
+                                for t, p in tqdm(zip(traj, images_series))
+                            ]
 
                 else:
                     dtype = np.float32  # Datatype (real)
@@ -792,8 +804,10 @@ class ImageSeries(object):
         print("WARNING : Compression is irreversible")
         kept_indices=int(compression_factor)
         if len(self.image_size)==2:
-            self.images_series = self.images_series[:,::kept_indices,::kept_indices]
-            self.cached_images_series=self.images_series
+
+            if self.images_series is not None:
+                self.images_series = self.images_series[:,::kept_indices,::kept_indices]
+                self.cached_images_series=self.images_series
             new_mask=self.mask[::kept_indices,::kept_indices]
 
             for param in self.paramMap.keys():
@@ -804,8 +818,10 @@ class ImageSeries(object):
                 self.paramMap[param]=new_values_on_mask
 
         else:
-            self.images_series = self.images_series[:, :,::kept_indices, ::kept_indices]
-            self.cached_images_series = self.images_series
+            if self.images_series is not None:
+
+                self.images_series = self.images_series[:, :,::kept_indices, ::kept_indices]
+                self.cached_images_series = self.images_series
             new_mask = self.mask[:,::kept_indices, ::kept_indices]
 
             for param in self.paramMap.keys():
@@ -816,7 +832,7 @@ class ImageSeries(object):
                 self.paramMap[param] = new_values_on_mask
 
         self.mask=new_mask
-        self.image_size = self.images_series.shape[1:]
+        self.image_size = new_mask.shape
 
 
     def buildParamMap(self,mask=None):
@@ -1000,7 +1016,7 @@ class MapFromFile(ImageSeries):
             self.paramDict["file_type"]="GroundTruth" # else "Result"
 
     @wrapper_rounding
-    def buildParamMap(self,mask=None):
+    def buildParamMap(self,mask=None,dico_bumps=None):
 
         if mask is not None:
             raise ValueError("mask automatically built from wT1 map for file load for now")
@@ -1078,6 +1094,11 @@ class MapFromFile(ImageSeries):
             "df": -map_all_on_mask[:, 5]/1000,
             "ff": map_all_on_mask[:, 6]
         }
+
+        if dico_bumps is not None:
+            for k in dico_bumps.keys():
+                self.paramMap[k]=np.maximum(np.minimum(self.paramMap[k]+dico_bumps[k][self.mask>0],PARAMS_WINDOWS[k][1]),PARAMS_WINDOWS[k][0])
+                #print(self.paramMap[k])
 
 
 class MapFromDict(ImageSeries):
@@ -1482,3 +1503,10 @@ class RandomMap3D(ImageSeries3D):
 
 
 
+# def task_nufft(ts):
+#     global traj
+#     global images_series
+#     print(ts)
+#     result=finufft.nufft2d2(traj[ts,:, 0], traj[ts,:, 1], images_series[ts])
+#     #print("Saving")
+#     np.save("./nufft_optim/nufft_{}.npy".format(ts),result)

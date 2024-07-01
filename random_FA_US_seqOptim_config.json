@@ -1,11 +1,11 @@
 {
- "spokes_count": 760,
- "DFs":[-30,0,30],
- "FFs":[0,0.1,0.2,0.3,0.4,0.5],
+ "spokes_count": 800,
+ "DFs":[-120,-60,0,60,120],
+ "FFs":[0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1],
  "B1s":[0.5,0.7,1],
  "T1s":[0.6, 0.8, 1 , 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 2 ],
  "inversion":True,
- "min_TR_delay":0.00187,
+ "min_TR_delay":0.00222,
  "bound_min_TE":0.0022,
  "bound_max_TE":0.004,
  "bound_min_FA":0.087266,
@@ -15,13 +15,25 @@
  "lambda_time":0,
  "lambda_FF":2,
  "lambda_T1":1,
- "lambda_DF": 4,
- "lambda_B1": 1,
+ "lambda_DF": 0,
+ "lambda_B1": 0,
  "lambda_stdT1":0,
  "maxiter":1000,
  "npoint": 512,
- "file_phantom": "./data/KneePhantom/Phantom1/paramMap_Control.mat",
+ "file_phantom": ["./data/BodyPhantom/BodyPhantom_0_us2.mat",
+ "./data/BodyPhantom/BodyPhantom_1_us2.mat",
+ "./data/BodyPhantom/BodyPhantom_2_us2.mat",
+ "./data/BodyPhantom/BodyPhantom_3_us2.mat",
+ "./data/BodyPhantom/BodyPhantom_4_us2.mat",
+ "./data/BodyPhantom/BodyPhantom_5_us2.mat",
+ "./data/BodyPhantom/BodyPhantom_6_us2.mat",
+ "./data/BodyPhantom/BodyPhantom_7_us2.mat",
+ "./data/BodyPhantom/BodyPhantom_8_us2.mat"
+],
  "useGPU": False,
- "dumpfile": "x_random_FA_US_H4_allparams_log.pkl"
+ "dumpfile": "x_random_FA_US_H4_flat_allparams_log.pkl",
+ "include_flat": True,
+ "nb_flat": 800
+
 }
 

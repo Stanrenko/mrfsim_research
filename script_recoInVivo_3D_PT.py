@@ -5,6 +5,7 @@ from mrfsim import T1MRF
 from image_series import *
 from dictoptimizers import SimpleDictSearch
 from utils_mrf import *
+from utils_reco import *
 import json
 import readTwix as rT
 import time
@@ -18,7 +19,7 @@ from mutools import io
 import cv2
 import scipy
 
-base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
+base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/2_Data Raw"
 base_folder = "./data/InVivo/3D"
 
 
@@ -129,6 +130,18 @@ dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_33_reco4_w8_simmean.dict"
 dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_33_reco4_w8_simmean.dict"
 
 
+localfile="/patient.010.v1/meas_MID00037_FID63866_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+localfile="/patient.010.v1/meas_MID00038_FID63867_raFin_3D_tra_1x1x5mm_FULL_mrf_2_4_reco_4.dat"
+dictfile="mrf_dictconf_Dico2_Invivo_adjusted_2_40_reco4_w8_simmean.dict"
+dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_40_reco4_w8_simmean.dict"
+
+
+
+localfile="/patient.010.v3/meas_MID00119_FID65013_raFin_3D_tra_1x1x5mm_FULL_new_respi.dat"
+
+
+
+
 #
 # dictfile="mrf_dictconf_Dico2_Invivo_adjusted_760_2.22_reco4_w8_simmean.dict"
 # dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_760_2.22_reco4_w8_simmean.dict"
@@ -151,6 +164,8 @@ dictfile_light="mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2_33_reco4
 
 filename = base_folder+localfile
 
+#filename="/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/2_Data Raw/patient.010.v1/meas_MID00037_FID63866_raFin_3D_tra_1x1x5mm_FULL_new.dat"
+
 filename_save=str.split(filename,".dat") [0]+".npy"
 #filename_nav_save=str.split(base_folder+"/phantom.001.v1/phantom.001.v1.dat",".dat") [0]+"_nav.npy"
 filename_nav_save=str.split(filename,".dat") [0]+"_nav.npy"
@@ -166,8 +181,9 @@ filename_seqParams = str.split(filename,".dat") [0]+"_seqParams.pkl"
 
 filename_volume = str.split(filename,".dat") [0]+"_volumes{}.npy".format("")
 filename_kdata = str.split(filename,".dat") [0]+"_kdata_no_dens_adj{}.npy".format("")
-filename_kdata_pt_corr = str.split(filename,".dat") [0]+"_kdata_no_dens_adj_pt_corr{}.npy".format("")
+filename_kdata_pt_corr = str.split(filename,".dat") [0]+"_kdata{}.npy".format("")
 filename_displacement_pt = str.split(filename,".dat") [0]+"_displacement_pt{}.npy".format("")
+filename_Ashat = str.split(filename,".dat") [0]+"_Ashat{}.npy".format("")
 
 
 #filename_kdata_no_dens_adj = str.split(filename,".dat") [0]+"_kdata_no_dens_adj.npy".format("")
@@ -237,7 +253,7 @@ except:
     use_navigator_dll=False
 
 if use_navigator_dll:
-    meas_sampling_mode=dico_seqParams["alFree"][14]
+    meas_sampling_mode=dico_seqParams["alFree"][15]
     nb_gating_spokes = dico_seqParams["alFree"][6]
 else:
     meas_sampling_mode = dico_seqParams["alFree"][12]
@@ -254,6 +270,7 @@ if nb_gating_spokes>0:
 
 nb_segments = dico_seqParams["alFree"][4]
 dummy_echos = dico_seqParams["alFree"][5]
+nb_rep_center_part = dico_seqParams["alFree"][11]
 
 ntimesteps=int(nb_segments/window)
 
@@ -322,7 +339,7 @@ if str.split(filename_save,"/")[-1] not in os.listdir(folder):
                 # print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
                 # k += 1
         data_for_nav = np.array([mdb.data for mdb in data_for_nav])
-        data_for_nav = data_for_nav.reshape((int(nb_part+dummy_echos), int(nb_gating_spokes)) + data_for_nav.shape[1:])
+        data_for_nav = data_for_nav.reshape((int(nb_part+dummy_echos+nb_rep_center_part-1), int(nb_gating_spokes)) + data_for_nav.shape[1:])
 
         if data_for_nav.ndim == 3:
             data_for_nav = np.expand_dims(data_for_nav, axis=-2)
@@ -368,10 +385,10 @@ data_shape = data.shape
 nb_channels=data_shape[0]
 nb_allspokes = data_shape[-3]
 npoint = data_shape[-1]
-nb_slices = data_shape[-2]*undersampling_factor
+nb_slices = (data_shape[-2]-nb_rep_center_part+1)*undersampling_factor
 image_size = (nb_slices, int(npoint/2), int(npoint/2))
 #image_size = (nb_slices, 550, 550)
-
+nb_part=nb_part + nb_rep_center_part-1
 #image_size = (nb_slices, int(npoint), int(npoint))
 
 dx = x_FOV/(npoint/2)
@@ -412,24 +429,24 @@ radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=undersampli
 
 nb_segments=radial_traj.get_traj().shape[0]
 
-if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
-    res = 16
-    b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage,hanning_filter=True,density_adj=True)
-    np.save(filename_b1,b1_all_slices)
-    del kdata_all_channels_all_slices
-    kdata_all_channels_all_slices = np.load(filename_kdata)
-
-else:
-    b1_all_slices=np.load(filename_b1)
-
-sl=int(b1_all_slices.shape[1]/2)
-list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
-plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
-
-#b1_all_slices=np.load(filename_b1_bart)
-
-if nb_channels==1:
-    b1_all_slices=np.ones(b1_all_slices.shape)
+# if str.split(filename_b1,"/")[-1] not in os.listdir(folder):
+#     res = 16
+#     b1_all_slices=calculate_sensitivity_map_3D(kdata_all_channels_all_slices,radial_traj,res,image_size,useGPU=False,light_memory_usage=light_memory_usage,hanning_filter=True,density_adj=True)
+#     np.save(filename_b1,b1_all_slices)
+#     del kdata_all_channels_all_slices
+#     kdata_all_channels_all_slices = np.load(filename_kdata)
+#
+# else:
+#     b1_all_slices=np.load(filename_b1)
+#
+# sl=int(b1_all_slices.shape[1]/2)
+# list_images = list(np.abs(b1_all_slices[:,sl,:,:]))
+# plot_image_grid(list_images,(6,6),title="Sensitivity map for slice {}".format(sl))
+#
+# #b1_all_slices=np.load(filename_b1_bart)
+#
+# if nb_channels==1:
+#     b1_all_slices=np.ones(b1_all_slices.shape)
 
 
 
@@ -503,10 +520,13 @@ plt.close("all")
 fig,ax=plt.subplots(6,6)
 axli=ax.flatten()
 all_radial_proj_all_ch_no_corr=[]
-sl=int(nb_slices/2)
+sl=int(nb_part/2)
+
+from scipy.stats import kurtosis
+all_kurt=[]
 for ch in range(nb_channels):
     kdata_PT=kdata_all_channels_all_slices[ch]
-    traj_PT=radial_traj.get_traj().reshape(nb_allspokes,nb_slices,-1,3)
+    #traj_PT=radial_traj.get_traj().reshape(nb_allspokes,nb_slices,-1,3)
 
     #finufft.nufft3d1(traj_PT[0][0],kdata_PT[0][0])
 
@@ -518,13 +538,21 @@ for ch in range(nb_channels):
 
     all_radial_proj=np.array(all_radial_proj)
 
+
+
     axli[ch].plot(all_radial_proj[::27].T)
     axli[ch].set_title(ch)
     all_radial_proj_all_ch_no_corr.append(all_radial_proj)
 
+    #all_kurt.append(np.mean(kurtosis(all_radial_proj[1::28],axis=-1)))
+
 all_radial_proj_all_ch_no_corr[ch].shape
 plt.figure()
 plt.imshow(all_radial_proj_all_ch_no_corr[ch])
+
+np.mean(kurtosis(np.array(all_radial_proj_all_ch_no_corr)[:,1::28],axis=-1),axis=1)
+
+
 #
 #
 # ch=0
@@ -589,31 +617,62 @@ plt.imshow(all_radial_proj_all_ch_no_corr[ch])
 #
 
 
-max_slices=nb_slices
+max_slices=int(nb_part)
 fs_hat=np.zeros((nb_allspokes,max_slices))
 
 kdata_with_pt=np.load(filename_kdata)
 
-ch_opt=16
-f_min = 200
-f_max = 270
-f_list = np.arange(f_min, f_max, 0.001)
+ch_opt=33
+f_min = 230
+f_max = 290
 
+f_list = np.expand_dims(np.arange(f_min, f_max, 0.01), axis=(1, 2))
+
+
+def task(ts):
+    global ch_opt
+    #global fs_hat
+    global max_slices
+    global f_list
+    global npoint
+    global kdata_with_pt
+    npoint_list = np.expand_dims(np.arange(npoint), axis=(0, 1))
+    fun_correl_matrix = -np.abs(np.sum(np.expand_dims(kdata_with_pt[ch_opt, ts, :max_slices].conj(), axis=0) * np.exp(
+        2 * 1j * np.pi * f_list * npoint_list / npoint), axis=-1))
+
+    # cost_padded=np.array([cost[0]]+cost+[cost[-1]])
+    # cost=np.maximum(cost_padded[1:-1]-0.5*(cost_padded[:-2]+cost_padded[2:]),0)
+
+    # x = minimize(fun_correl, x0=(f_min+f_max)/2, bounds=[(f_min, f_max)], tol=1e-8)
+
+    # f_opt=x.x[0]
+    np.save("./fshat/fshat_{}.npy".format(ts),f_list[np.argmin(fun_correl_matrix, axis=0)].squeeze())
+    #print("Finished ts {}".format(ts))
+    return
+
+from multiprocessing import Pool
+
+with Pool(24) as pool:
+    # perform calculations
+    results = pool.map(task, range(nb_allspokes))
 
 
 for ts in tqdm(range(nb_allspokes)):
-    f_list = np.expand_dims(np.arange(f_min, f_max, 0.1), axis=(1, 2))
-    npoint_list = np.expand_dims(np.arange(npoint), axis=(0, 1))
-    fun_correl_matrix = -np.abs(np.sum(np.expand_dims(kdata_with_pt[ch_opt, ts,:max_slices].conj(), axis=0) * np.exp(
-        2 * 1j * np.pi * f_list * npoint_list / npoint), axis=-1))
-
-    #cost_padded=np.array([cost[0]]+cost+[cost[-1]])
-    #cost=np.maximum(cost_padded[1:-1]-0.5*(cost_padded[:-2]+cost_padded[2:]),0)
-
-    #x = minimize(fun_correl, x0=(f_min+f_max)/2, bounds=[(f_min, f_max)], tol=1e-8)
-
-    #f_opt=x.x[0]
-    fs_hat[ts,:]=f_list[np.argmin(fun_correl_matrix,axis=0)].squeeze()
+    fs_hat[ts, :] =np.load("./fshat/fshat_{}.npy".format(ts))
+#
+# for ts in tqdm(range(nb_allspokes)):
+#     #
+#     npoint_list = np.expand_dims(np.arange(npoint), axis=(0, 1))
+#     fun_correl_matrix = -np.abs(np.sum(np.expand_dims(kdata_with_pt[ch_opt, ts,:max_slices].conj(), axis=0) * np.exp(
+#         2 * 1j * np.pi * f_list * npoint_list / npoint), axis=-1))
+#
+#     #cost_padded=np.array([cost[0]]+cost+[cost[-1]])
+#     #cost=np.maximum(cost_padded[1:-1]-0.5*(cost_padded[:-2]+cost_padded[2:]),0)
+#
+#     #x = minimize(fun_correl, x0=(f_min+f_max)/2, bounds=[(f_min, f_max)], tol=1e-8)
+#
+#     #f_opt=x.x[0]
+#     fs_hat[ts,:]=f_list[np.argmin(fun_correl_matrix,axis=0)].squeeze()
 #
 #
 # fs_hat=np.zeros((nb_allspokes,nb_slices))
@@ -671,32 +730,67 @@ for ts in tqdm(range(nb_allspokes)):
 #         fs_hat_bis[ts,sl]=f_list[int(fs_hat[ts,sl]-f_min)]
 #
 # fs_hat=fs_hat_bis
+#
+# kdata_with_pt=np.load(filename_kdata)
+# kdata_with_pt_corrected=np.zeros(kdata_with_pt.shape,dtype=kdata_with_pt.dtype)
+# As_hat=np.zeros((nb_channels,nb_allspokes,max_slices))
+# adjust_PT_in_FOV=0
+# win_FOV=5
+# for ch in tqdm(range(nb_channels)):
+#     for ts in range(nb_allspokes):
+#         for sl in range(max_slices):
+#             f_opt=fs_hat[ts,sl]
+#             radial_proj=np.abs(np.fft.fft(kdata_with_pt[ch,ts,sl]))
+#             #f_opt=fs[ts,sl]
+#             scalar_product=np.sum(kdata_with_pt[ch,ts,sl].conj()*np.exp(2*1j*np.pi*f_opt*np.arange(npoint)/npoint))
+#             A_opt=np.abs(scalar_product)-adjust_PT_in_FOV*0.5*(radial_proj[int(f_opt)-win_FOV]+radial_proj[int(f_opt)+win_FOV])
+#             phase=-np.angle(scalar_product)
+#             #A_opt=As[ts,sl]*npoint
+#             kdata_with_pt_corrected[ch,ts,sl]=kdata_with_pt[ch,ts,sl]- A_opt/npoint*np.exp(2*1j*np.pi*f_opt*np.arange(npoint)/npoint)*np.exp(1j*phase)
+#             As_hat[ch,ts,sl]=A_opt
+
+
 
 kdata_with_pt=np.load(filename_kdata)
 kdata_with_pt_corrected=np.zeros(kdata_with_pt.shape,dtype=kdata_with_pt.dtype)
 As_hat=np.zeros((nb_channels,nb_allspokes,max_slices))
-adjust_PT_in_FOV=0
-win_FOV=5
-for ch in tqdm(range(nb_channels)):
-    for ts in range(nb_allspokes):
+def task_Ashat(ts):
+    As_hat_ts = np.zeros((nb_channels, max_slices))
+    kdata_with_pt_corrected_ts=np.zeros((nb_channels,max_slices,npoint),dtype=kdata_with_pt.dtype)
+    for ch in tqdm(range(nb_channels)):
         for sl in range(max_slices):
-            f_opt=fs_hat[ts,sl]
-            radial_proj=np.abs(np.fft.fft(kdata_with_pt[ch,ts,sl]))
-            #f_opt=fs[ts,sl]
-            scalar_product=np.sum(kdata_with_pt[ch,ts,sl].conj()*np.exp(2*1j*np.pi*f_opt*np.arange(npoint)/npoint))
-            A_opt=np.abs(scalar_product)-adjust_PT_in_FOV*0.5*(radial_proj[int(f_opt)-win_FOV]+radial_proj[int(f_opt)+win_FOV])
-            phase=-np.angle(scalar_product)
-            #A_opt=As[ts,sl]*npoint
-            kdata_with_pt_corrected[ch,ts,sl]=kdata_with_pt[ch,ts,sl]- A_opt/npoint*np.exp(2*1j*np.pi*f_opt*np.arange(npoint)/npoint)*np.exp(1j*phase)
-            As_hat[ch,ts,sl]=A_opt
+            f_opt = fs_hat[ts, sl]
+            radial_proj = np.abs(np.fft.fft(kdata_with_pt[ch, ts, sl]))
+            # f_opt=fs[ts,sl]
+            scalar_product = np.sum(
+                kdata_with_pt[ch, ts, sl].conj() * np.exp(2 * 1j * np.pi * f_opt * np.arange(npoint) / npoint))
+            A_opt = np.abs(scalar_product)
+            phase = -np.angle(scalar_product)
+            # A_opt=As[ts,sl]*npoint
+            kdata_with_pt_corrected_ts[ch, sl] = kdata_with_pt[ch, ts, sl] - A_opt / npoint * np.exp(
+                2 * 1j * np.pi * f_opt * np.arange(npoint) / npoint) * np.exp(1j * phase)
+            As_hat_ts[ch,sl]=A_opt
+    np.save("./fshat/Ashat_{}.npy".format(ts), As_hat_ts)
+    np.save("./fshat/kdata_pt_corrected_{}.npy".format(ts), kdata_with_pt_corrected_ts)
+
+with Pool(24) as pool:
+    # perform calculations
+    results = pool.map(task_Ashat, range(nb_allspokes))
+
+
+for ts in tqdm(range(nb_allspokes)):
+    As_hat[:,ts,:] =np.load("./fshat/Ashat_{}.npy".format(ts))
+for ts in tqdm(range(nb_allspokes)):
+    kdata_with_pt_corrected[:,ts,:] =np.load("./fshat/kdata_pt_corrected_{}.npy".format(ts))
 
 As_hat[:,::28,:]=As_hat[:,1::28,:]
 
-
+np.save(filename_Ashat,As_hat)
 
 
 ts=np.random.randint(nb_allspokes)
 sl=np.random.randint(max_slices)
+#sl=int(nb_slices/2)
 ch=np.random.randint(nb_channels)
 #ch=21
 
@@ -726,6 +820,8 @@ plt.plot(radial_proj)
 radial_proj_corrected=np.abs(np.fft.fft(kdata_with_pt_corrected[ch,ts,sl]))
 plt.figure()
 plt.plot(radial_proj_corrected)
+
+
 
 
 
@@ -762,6 +858,7 @@ for ch in range(nb_channels):
     axli[ch].set_title(ch)
     all_radial_proj_all_ch.append(all_radial_proj)
 
+kdata_all_channels_all_slices=np.load(filename_kdata)
 fig,ax=plt.subplots(6,6)
 axli=ax.flatten()
 all_radial_proj_all_ch_no_corr=[]
@@ -786,6 +883,10 @@ for ch in range(nb_channels):
 
 
 ch=np.random.randint(nb_channels)
+#ch=ch_opt
+#ch=6
+#ch=33
+print(ch)
 plt.figure()
 plt.title("Radial Projection Corrected from PT ch {} sl {}".format(ch,sl))
 plt.imshow(all_radial_proj_all_ch[ch],vmin=0,vmax=0.001)
@@ -793,6 +894,8 @@ plt.imshow(all_radial_proj_all_ch[ch],vmin=0,vmax=0.001)
 plt.figure()
 plt.title("Radial Projection ch {} sl {}".format(ch,sl))
 plt.imshow(all_radial_proj_all_ch_no_corr[ch],vmin=0,vmax=0.001)
+
+plt.close("all")
 
 
 ch=np.random.randint(nb_channels)
@@ -802,27 +905,58 @@ ch=ch_opt
 plt.figure()
 plt.plot(As_hat[ch,:,sl])
 
-
-As_hat_normalized=np.zeros(As_hat.shape)
-As_hat_filtered=np.zeros(As_hat.shape)
+#from scipy.signal import savgol_filter
+#from statsmodels.nonparametric.smoothers_lowess import lowess
+#
+# As_hat_normalized=np.zeros(As_hat.shape)
+# As_hat_filtered=np.zeros(As_hat.shape)
+#
+#
+# for ch in tqdm(range(nb_channels)):
+#     for sl in range(max_slices):
+#         signal=As_hat[ch,:,sl]
+#         signal=(signal-np.min(signal))/(np.max(signal)-np.min(signal))
+#         As_hat_normalized[ch, :, sl]=signal
+#         #mean=np.mean(signal)
+#         #std=np.std(signal)
+#         #ind=np.argwhere(signal<(mean-std)).flatten()
+#         #signal[ind]=signal[ind-1]
+#         signal_filtered=savgol_filter(signal,41,3)
+#         signal_filtered=lowess(signal_filtered,np.arange(len(signal_filtered)),frac=0.1)[:,1]
+#         As_hat_filtered[ch,:,sl]=signal_filtered
 
 from scipy.signal import savgol_filter
 from statsmodels.nonparametric.smoothers_lowess import lowess
 
+def task_Ashat_filtered(ch):
+    As_hat_filtered_ch = np.zeros((nb_allspokes, max_slices))
+    As_hat_normalized_ch = np.zeros((nb_allspokes, max_slices))
+    for sl in tqdm(range(max_slices)):
+        signal = As_hat[ch, :, sl]
+        min_=np.min(signal)
+        max_=np.max(signal)
+        signal = (signal - min_) / (max_ - min_)
+        As_hat_normalized_ch[:, sl] = signal
+        # mean=np.mean(signal)
+        # std=np.std(signal)
+        # ind=np.argwhere(signal<(mean-std)).flatten()
+        # signal[ind]=signal[ind-1]
+        signal_filtered = savgol_filter(signal, 41, 3)
+        signal_filtered = lowess(signal_filtered, np.arange(len(signal_filtered)), frac=0.1)[:, 1]
+        As_hat_filtered_ch[:, sl] = (max_-min_)*signal_filtered+min_
+    np.save("./fshat/Ashat_filtered_ch{}.npy".format(ch), As_hat_filtered_ch)
+    np.save("./fshat/As_hat_normalized_ch{}.npy".format(ch), As_hat_normalized_ch)
+
+with Pool(24) as pool:
+    # perform calculations
+    results = pool.map(task_Ashat_filtered, range(nb_channels))
+
+As_hat_normalized=np.zeros(As_hat.shape)
+As_hat_filtered=np.zeros(As_hat.shape)
+
 for ch in tqdm(range(nb_channels)):
-    for sl in range(max_slices):
-        signal=As_hat[ch,:,sl]
-        signal=(signal-np.min(signal))/(np.max(signal)-np.min(signal))
-        As_hat_normalized[ch, :, sl]=signal
-        #mean=np.mean(signal)
-        #std=np.std(signal)
-        #ind=np.argwhere(signal<(mean-std)).flatten()
-        #signal[ind]=signal[ind-1]
-        signal_filtered=savgol_filter(signal,41,3)
-        signal_filtered=lowess(signal_filtered,np.arange(len(signal_filtered)),frac=0.1)[:,1]
-        As_hat_filtered[ch,:,sl]=signal_filtered
-
-
+    As_hat_filtered[ch] =np.load("./fshat/Ashat_filtered_ch{}.npy".format(ch))
+    As_hat_normalized[ch] = np.load("./fshat/As_hat_normalized_ch{}.npy".format(ch))
 
 ch=np.random.randint(nb_channels)
 sl=np.random.randint(max_slices)
@@ -837,7 +971,7 @@ plt.figure()
 plt.plot(As_hat_filtered[:,:,sl].T,label=np.arange(nb_channels))
 plt.legend()
 
-ch=16
+ch=ch_opt
 plt.figure()
 plt.plot(As_hat_filtered[ch,::28,sl])
 
@@ -853,6 +987,11 @@ pca.fit(data_for_pca.T)
 pcs=pca.components_@data_for_pca
 explained_variances_all_slices=pca.explained_variance_ratio_
 movement_all_slices=pcs[0]
+
+np.save(filename_displacement_pt,movement_all_slices.reshape(nb_slices,nb_allspokes))
+
+plt.figure()
+plt.plot(movement_all_slices)
 
 #
 # for sl in tqdm(range(max_slices)):

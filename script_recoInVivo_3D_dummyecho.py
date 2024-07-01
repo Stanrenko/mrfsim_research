@@ -250,6 +250,7 @@ y_FOV = dico_seqParams["y_FOV"]
 z_FOV = dico_seqParams["z_FOV"]
 #z_FOV=64
 nb_part = dico_seqParams["nb_part"]
+
 undersampling_factor = dico_seqParams["alFree"][9]
 undersampling_factor=1
 
