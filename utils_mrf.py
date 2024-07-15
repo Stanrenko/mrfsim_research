@@ -72,8 +72,7 @@ def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
     mrfdict.load(dict_file, force=True)
 
     if aggregate_components :
-        epg_water = mrfdict.values[: ,: ,0]
-        epg_fat = mrfdict.values[: ,: ,1]
+        
         ff = np.zeros(mrfdict.values.shape[:-1 ] +(len(FF_list),))
         ff_matrix =np.tile(np.array(FF_list) ,ff.shape[:-1 ] +(1,))
 
@@ -387,14 +386,6 @@ def radial_golden_angle_traj_3D_incoherent(total_nspoke, npoint, nspoke, nb_slic
 
 
     return result.reshape(total_nspoke,-1,3)
-
-
-
-
-
-
-
-
 
 
 def radial_golden_angle_traj_random_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling_factor=4,frac_center=0.25,mode="old",incoherent=True):
@@ -4975,7 +4966,7 @@ def gamma_transform(volume,gamma):
 
 
 
-def get_volume_geometry(file, index=-1):
+def get_volume_geometry(hdr_input, index=-1):
     '''
     'sSliceArray.asSlice[0].dThickness',
     'sSliceArray.asSlice[0].dPhaseFOV',
@@ -4985,54 +4976,90 @@ def get_volume_geometry(file, index=-1):
     'sSliceArray.asSlice[0].sPosition.dTra',
     'sSliceArray.asSlice[0].sNormal.dTra',
     '''
-    print("Getting geometry info for {}".format(file))
-    headers = io_twixt.parse_twixt_header(file)
-    print(len(headers))
-    geom = []
-    for header in headers:
-        if not has_volume_geometry(header):
-            continue
-        
-        # center of first slice
+    if type(hdr_input) == str:
+        print("Getting geometry info for {}".format(hdr_input))
+        headers = io_twixt.parse_twixt_header(hdr_input)
+    else:
+        print("Input is not a file - assuming the header was passed directly")
+        headers = hdr_input
 
-        pos_dSag=header['sSliceArray.asSlice[0].sPosition.dSag'] if 'sSliceArray.asSlice[0].sPosition.dSag' in header else 0.
-        pos_dCor=header['sSliceArray.asSlice[0].sPosition.dCor'] if 'sSliceArray.asSlice[0].sPosition.dCor' in header else 0.
-        pos_dTra=header['sSliceArray.asSlice[0].sPosition.dTra'] if 'sSliceArray.asSlice[0].sPosition.dTra' in header else 0.
-        
-        offset=header['lScanRegionPosTra']
+    header=headers[index]
+    if not has_volume_geometry(header):
+        raise ValueError("header has no geometry information")
 
-        position = (
-            pos_dSag,
-            pos_dCor,
-            pos_dTra+offset,
+    # center of first slice
+
+    pos_dSag=header['sSliceArray.asSlice[0].sPosition.dSag'] if 'sSliceArray.asSlice[0].sPosition.dSag' in header else 0.
+    pos_dCor=header['sSliceArray.asSlice[0].sPosition.dCor'] if 'sSliceArray.asSlice[0].sPosition.dCor' in header else 0.
+    pos_dTra=header['sSliceArray.asSlice[0].sPosition.dTra'] if 'sSliceArray.asSlice[0].sPosition.dTra' in header else 0.
+
+    offset=header['lScanRegionPosTra']
+
+    position = (
+        pos_dSag,
+        pos_dCor,
+        pos_dTra#+offset,
+    )
+    print(position)
+
+    # volume shape in pixel
+    protocol_name=header["tProtocolName"]
+    #print(protocol_name)
+    is3D="3D" in protocol_name
+    if is3D:
+        nb_slices=header["sKSpace.lPartitions"]
+    else:
+        nb_slices=header['sSliceArray.lSize']
+    shape = (
+        header['sKSpace.lBaseResolution'],
+        header['sKSpace.lBaseResolution'],
+        nb_slices,
+    )
+
+    # print("Readout FOV: {}".format(header['sSliceArray.asSlice[0].dReadoutFOV']))
+    # print("Phase FOV : {}".format(header['sSliceArray.asSlice[0].dPhaseFOV']))
+
+    
+    if shape[-1]==1:
+        spacing_z=header['sSliceArray.asSlice[0].dThickness']
+    elif is3D:
+        spacing_z=header["sSliceArray.asSlice[0].dThickness"]/nb_slices
+    else:    
+        spacing_z=header['sSliceArray.asSlice[1].sPosition.dTra']-header['sSliceArray.asSlice[0].sPosition.dTra']
+
+
+
+    spacing = (
+        header['sSliceArray.asSlice[0].dReadoutFOV']/shape[0], # which field to use ???
+        header['sSliceArray.asSlice[0].dReadoutFOV']/shape[1], #??
+        spacing_z,
+    )
+    
+    if header['sSliceArray.lCor']==1:
+        order_axis=[0,2,1]
+        orientation="coronal"
+    elif header['sSliceArray.lSag']==1:
+        order_axis=[2,0,1]
+        orientation="sagittal"
+    else:
+        order_axis=[0,1,2]
+        orientation="transversal"
+    
+    spacing=tuple(np.array(spacing)[order_axis])
+    shape=tuple(np.array(shape)[order_axis])
+    
+    print("Shape: {}".format(shape))
+
+    print("spacing: {}".format(spacing))
+
+
+    if is3D:
+        origin = (
+            position[0] - shape[0]/2 * spacing[0],
+            position[1] - shape[1]/2 * spacing[1],
+            position[2] - shape[2]/2 * spacing[2],#- spacing[2] / 2,
         )
-        print(position)
-
-        # volume shape in pixel
-        shape = (
-            header['sKSpace.lBaseResolution'],
-            header['sKSpace.lBaseResolution'],
-            header['sSliceArray.lSize'],
-        )
-        
-        # print("Readout FOV: {}".format(header['sSliceArray.asSlice[0].dReadoutFOV']))
-        # print("Phase FOV : {}".format(header['sSliceArray.asSlice[0].dPhaseFOV']))
-
-        print("Shape: {}".format(shape))
-
-        if shape[-1]==1:
-            spacing_z=header['sSliceArray.asSlice[0].dThickness']
-        else:
-            spacing_z=header['sSliceArray.asSlice[1].sPosition.dTra']-header['sSliceArray.asSlice[0].sPosition.dTra']
-
-        
-
-        spacing = (
-            header['sSliceArray.asSlice[0].dReadoutFOV']/shape[0], # which field to use ???
-            header['sSliceArray.asSlice[0].dReadoutFOV']/shape[1], #??
-            spacing_z,
-        )
-        print("spacing: {}".format(spacing))
+    else:
 
         origin = (
             position[0] - shape[0]/2 * spacing[0],
@@ -5040,17 +5067,40 @@ def get_volume_geometry(file, index=-1):
             position[2] ,#- spacing[2] / 2,
         )
 
-        print("origin: {}".format(origin))
+    print("origin: {}".format(origin))
 
-        geom.append({
-            'origin': origin,
-            'spacing': spacing,
-            # 'transform': transform, # TODO
-        })
-    return geom[index]
+    geom={
+        'origin': origin,
+        'spacing': spacing,
+        # 'transform': transform, # TODO
+    }
+    return geom,is3D,orientation,offset
 
 
 def has_volume_geometry(header):
     fields = ['sKSpace.lBaseResolution']
     print(all(field in header for field in fields))
     return all(field in header for field in fields)
+
+def list_hdr_keys(hdr,filter,index=-1):
+    return [k for k in hdr[index] if filter in k]
+
+def get_specials(hdr,type="alFree",index=-1):
+    if type=="alFree":
+        dtype=int
+    elif type=="adFree":
+        dtype=float
+    else:
+        raise ValueError("type should be alFree or adFree")
+
+
+    sWipMemBlock_keys=list_hdr_keys(hdr,"sWipMemBlock.{}[".format(type),index=index)
+    sWipMemBlock_idx=[int(str.split(str.split(k,"[")[-1],"]")[0]) for k in sWipMemBlock_keys]
+
+    count_sWimMemBlock=hdr[-1]['sWipMemBlock.{}.__attribute__.size'.format(type)]
+    sWipMemBlock=np.zeros(count_sWimMemBlock,dtype=dtype)
+    for i,idx in enumerate(sWipMemBlock_idx):
+        sWipMemBlock[idx]=hdr[-1][sWipMemBlock_keys[i]]
+
+
+    return sWipMemBlock

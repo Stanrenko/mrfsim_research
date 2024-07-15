@@ -32,6 +32,7 @@ python script_recoInVivo_3D_machines.py coil_compression --filename-kdata $1_kda
 python script_recoInVivo_3D_machines.py build_volumes_singular --filename-kdata $1_kdata.npy --n-comp $NCOMP --L0 $NSING --dictfile $2 --useGPU False
 rm $1_kdata.npy
 
+exit
 python script_recoInVivo_3D_machines.py build_mask_from_singular_volume --filename-volume $1_volumes_singular.npy --l 0 --threshold 0.025 --it 1
 # python script_recoInVivo_3D_machines.py build_mask_from_singular_volume --filename-volume $1_bart30_volumes_singular_gr0.npy --l 0 --threshold 0.015 --it 1
 # cp $1_bart30_volumes_singular_gr0_l0_mask.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
@@ -52,4 +53,4 @@ python script_recoInVivo_3D_machines.py build_maps --filename-volume "$1_volumes
 #cp $1_volumes_singular_CF_iterative_2Dplus1_MRF_map_it0_*.mha /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo/comp${NCOMP}L0${NSING}
 #cp $1_volumes_singular_CF_iterative_2Dplus1_MRF_map.pkl /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo/comp${NCOMP}L0${NSING}/
 
-sh run_MRF_mask_ROI.sh $1
+sh run_MRF_mask_ROI_lowerbody.sh $1

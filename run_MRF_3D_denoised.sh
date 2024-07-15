@@ -12,24 +12,24 @@ NITER=0
 
 
 
-# #Extracting k-space and navigator data
-# echo "######################################################"
-# echo "Extracting k-space and navigator data"
-python script_recoInVivo_3D_machines.py build_kdata --filename $1.dat
-
-rm $1.npy
-rm $1.dat
-
-# #Coil compression
-# echo "######################################################"
-# echo "Coil Compression $NCOMP virtual coils"
-python script_recoInVivo_3D_machines.py coil_compression --filename-kdata $1_kdata.npy --n-comp $NCOMP --invert-dens-adj True --res 16
-# #python script_recoInVivo_3D_machines.py coil_compression_bart --filename-kdata $1_kdata.npy --n-comp $NCOMP
-
-# # #Rebuild singular volumes for all bins
+# # #Extracting k-space and navigator data
 # # echo "######################################################"
-# # echo "Rebuilding singular volumes"
-python script_recoInVivo_3D_machines.py build_volumes_singular --filename-kdata $1_kdata.npy --n-comp $NCOMP --L0 $NSING --dictfile $2 --useGPU False
+# # echo "Extracting k-space and navigator data"
+# python script_recoInVivo_3D_machines.py build_kdata --filename $1.dat
+
+# rm $1.npy
+# rm $1.dat
+
+# # #Coil compression
+# # echo "######################################################"
+# # echo "Coil Compression $NCOMP virtual coils"
+# python script_recoInVivo_3D_machines.py coil_compression --filename-kdata $1_kdata.npy --n-comp $NCOMP --invert-dens-adj True --res 16
+# # #python script_recoInVivo_3D_machines.py coil_compression_bart --filename-kdata $1_kdata.npy --n-comp $NCOMP
+
+# # # #Rebuild singular volumes for all bins
+# # # echo "######################################################"
+# # # echo "Rebuilding singular volumes"
+# python script_recoInVivo_3D_machines.py build_volumes_singular --filename-kdata $1_kdata.npy --n-comp $NCOMP --L0 $NSING --dictfile $2 --useGPU False
 # rm $1_kdata.npy
 
 python script_recoInVivo_3D_machines.py build_volumes_iterative --filename-volume $1_volumes_singular.npy  --niter $NITER  --use-wavelet True --lambda-wav 1e-4 --mu 1000 --filename-b1 $1_b12Dplus1_$NCOMP.npy --filename-seqParams $1_seqParams.pkl #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy

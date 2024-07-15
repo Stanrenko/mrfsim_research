@@ -325,6 +325,9 @@ file_maps=[
     "./data/InVivo/3D/patient.009.v6/meas_MID00083_FID84492_raFin_3D_tra_1x1x5mm_FULL_new_mrf_bart30_volumes_singular_allbins_volumes_allbins_registered_ref4_it1_CF_iterative_2Dplus1_MRF_map.pkl"
 
            ]
+
+
+
 k="wT1"
 maps_list=[]
 for i,file in enumerate(file_maps):
@@ -397,3 +400,300 @@ if volumes_resized.shape[0]==1:
 else:
     volumes_resized_ff=np.concatenate([volumes_resized[:-1],volumes_resized[::-1][:-1]],axis=0)
 viewer.add_image(volumes_resized_ff)
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import napari
+from skimage.transform import resize
+from tqdm import tqdm
+import glob
+import pickle
+
+def makevol(values, mask):
+    """ fill volume """
+    values = np.asarray(values)
+    new = np.zeros(mask.shape, dtype=values.dtype)
+    new[mask] = values
+    return new
+
+
+
+flip_axis = (1,2)
+flip_z=True
+
+#filename_volume="meas_MID00083_FID83140_raFin_3D_tra_1x1x5mm_FULL_new_respi_bart30_volumes_allbins_registered_allindex.npy"
+#filename_maps="meas_MID00084_FID83141_raFin_3D_tra_1x1x5mm_FULL_new_mrf_bart30_volumes_singular_allbins_volumes_allbins_registered_ref*_it1_CF_iterative_2Dplus1_MRF_map.pkl"
+
+
+
+
+
+#filename_volume="meas_MID00069_FID83126_raFin_3D_tra_1x1x5mm_FULL_new_respi_bart30_volumes_allbins_registered_allindex.npy"
+#filename_maps="meas_MID00070_FID83127_raFin_3D_tra_1x1x5mm_FULL_new_mrf_bart30_volumes_singular_allbins_volumes_allbins_registered_ref*_it1_CF_iterative_2Dplus1_MRF_map.pkl"
+
+#filename_volume="meas_MID00059_FID81502_raFin_3D_tra_1x1x5mm_FULL_new_respi_bart30_volumes_allbins_registered_allindex.npy"
+#filename_maps="meas_MID00060_FID81503_raFin_3D_tra_1x1x5mm_FULL_new_mrf_bart30_volumes_singular_allbins_volumes_allbins_registered_ref*_it1_CF_iterative_2Dplus1_MRF_map.pkl"
+
+
+
+#volumes=np.load("./data/InVivo/3D/DMD/meas_MID00059_FID81502_raFin_3D_tra_1x1x5mm_FULL_new_respi_bart30_volumes_allbins_registered_allindex.npy")
+#volumes=np.load("./data/InVivo/3D/patient.012.v1/meas_MID00132_FID81741_raFin_3D_tra_1x1x5mm_FULL_new_respi_bart30_volumes_allbins_registered_allindex.npy")
+#volumes=np.load("./data/InVivo/3D/patient.003.v24/meas_MID00287_FID82176_raFin_3D_tra_1x1x5mm_FULL_new_respi_coro_bart30_volumes_allbins_registered_allindex.npy")
+
+file_maps=[
+    #"./data/InVivo/3D/patient.013.v2/meas_MID00063_FID02914_raFin_3D_tra_1x1x5mm_FULL_new_mrf_legs_volumes_singular_denoised_CF_iterative_2Dplus1_MRF_map.pkl",
+    "./data/InVivo/3D/patient.013.v2/meas_MID00050_FID02901_raFin_3D_tra_1x1x5mm_FULL_new_mrf_thigh_volumes_singular_denoised_CF_iterative_2Dplus1_MRF_map.pkl"
+
+           ]
+
+
+k="wT1"
+maps_list=[]
+for i,file in enumerate(file_maps):
+    with open(file,"rb") as f:
+        all_maps=pickle.load(f)
+    map_rebuilt = all_maps[0][0]
+    mask = all_maps[0][1]
+    if k=="wT1":
+        map_rebuilt[k][map_rebuilt["ff"]>0.7]=0
+    curr_map=makevol(map_rebuilt[k],mask>0)
+    maps_list.append(curr_map)
+
+volumes=np.array(maps_list)
+volumes=np.concatenate(volumes,axis=0)
+if volumes.ndim==3:
+    volumes=np.expand_dims(volumes,axis=0)
+
+
+volumes_resized=np.zeros(shape=(volumes.shape[0],5*volumes.shape[1],volumes.shape[2],volumes.shape[3]))
+
+
+for ts in tqdm(range(volumes_resized.shape[0])):
+    if flip_axis is not None:
+        volumes_resized[ts] = resize(np.flip(np.abs(volumes[ts]),axis=flip_axis), volumes_resized.shape[1:])
+    else:
+        volumes_resized[ts]=resize(np.abs(volumes[ts]),volumes_resized.shape[1:])
+
+if flip_z:
+    volumes_resized=np.flip(volumes_resized,axis=1)
+
+if volumes_resized.shape[0]==1:
+    volumes_resized_wT1=volumes_resized
+else:
+    volumes_resized_wT1=np.concatenate([volumes_resized[:-1],volumes_resized[::-1][:-1]],axis=0)
+viewer=napari.Viewer()
+viewer.add_image(volumes_resized_wT1)
+
+maps_list=[]
+k="ff"
+maps_list=[]
+for file in file_maps:
+    with open(file,"rb") as f:
+        all_maps=pickle.load(f)
+    map_rebuilt = all_maps[0][0]
+    mask = all_maps[0][1]
+    if k=="wT1":
+        map_rebuilt[k][map_rebuilt["ff"]>0.7]=0
+    curr_map=makevol(map_rebuilt[k],mask>0)
+    maps_list.append(curr_map)
+
+volumes=np.array(maps_list)
+volumes=np.concatenate(volumes,axis=0)
+if volumes.ndim==3:
+    volumes=np.expand_dims(volumes,axis=0)
+
+volumes_resized=np.zeros(shape=(volumes.shape[0],5*volumes.shape[1],volumes.shape[2],volumes.shape[3]))
+
+
+for ts in tqdm(range(volumes_resized.shape[0])):
+    if flip_axis is not None:
+        volumes_resized[ts] = resize(np.flip(np.abs(volumes[ts]),axis=flip_axis), volumes_resized.shape[1:])
+    else:
+        volumes_resized[ts]=resize(np.abs(volumes[ts]),volumes_resized.shape[1:])
+
+if flip_z:
+    volumes_resized=np.flip(volumes_resized,axis=1)
+
+if volumes_resized.shape[0]==1:
+    volumes_resized_ff=volumes_resized
+else:
+    volumes_resized_ff=np.concatenate([volumes_resized[:-1],volumes_resized[::-1][:-1]],axis=0)
+viewer.add_image(volumes_resized_ff)
+
+
+
+
+
+
+
+
+import numpy as np
+import napari
+from skimage.transform import resize
+from tqdm import tqdm
+import glob
+import pickle
+from mutools import io
+
+
+
+flip_axis = None
+flip_z=False
+
+
+basename="./data/InVivo/3D/patient.013.v2/meas_MID00050_FID02901_raFin_3D_tra_1x1x5mm_FULL_new_mrf_thigh_volumes_singular"
+
+
+
+map_name = basename+"_oop.mha"
+volumes=io.read(map_name)
+volumes_resized=np.zeros(shape=(1,int(volumes.spacing[0]*volumes.shape[0]),int(volumes.spacing[1]*volumes.shape[1]),int(volumes.spacing[2]*volumes.shape[2])))
+volumes=np.array(volumes)[None,...]
+print(volumes.shape)
+
+
+for ts in tqdm(range(volumes_resized.shape[0])):
+    if flip_axis is not None:
+        volumes_resized[ts] = resize(np.flip(np.abs(volumes[ts]),axis=flip_axis), volumes_resized.shape[1:])
+    else:
+        volumes_resized[ts]=resize(np.abs(volumes[ts]),volumes_resized.shape[1:])
+
+if flip_z:
+    volumes_resized=np.flip(volumes_resized,axis=1)
+
+if volumes_resized.shape[0]==1:
+    volumes_resized=volumes_resized
+else:
+    volumes_resized=np.concatenate([volumes_resized[:-1],volumes_resized[::-1][:-1]],axis=0)
+viewer=napari.Viewer()
+viewer.add_image(volumes_resized)
+
+
+
+
+
+
+
+k="wT1"
+map_name = basename+"_CF_iterative_2Dplus1_MRF_map_it0_{}_adjusted.mha".format(k)
+volumes=io.read(map_name)
+volumes_resized=np.zeros(shape=(1,int(volumes.spacing[0]*volumes.shape[0]),int(volumes.spacing[1]*volumes.shape[1]),int(volumes.spacing[2]*volumes.shape[2])))
+volumes=np.array(volumes)[None,...]
+
+for ts in tqdm(range(volumes_resized.shape[0])):
+    if flip_axis is not None:
+        volumes_resized[ts] = resize(np.flip(np.abs(volumes[ts]),axis=flip_axis), volumes_resized.shape[1:])
+    else:
+        volumes_resized[ts]=resize(np.abs(volumes[ts]),volumes_resized.shape[1:])
+
+if flip_z:
+    volumes_resized=np.flip(volumes_resized,axis=1)
+
+if volumes_resized.shape[0]==1:
+    volumes_resized_wT1=volumes_resized
+else:
+    volumes_resized_wT1=np.concatenate([volumes_resized[:-1],volumes_resized[::-1][:-1]],axis=0)
+viewer.add_image(volumes_resized_wT1)
+
+k="ff"
+map_name = basename+"_CF_iterative_2Dplus1_MRF_map_it0_{}_adjusted.mha".format(k)
+volumes=io.read(map_name)
+volumes_resized=np.zeros(shape=(1,int(volumes.spacing[0]*volumes.shape[0]),int(volumes.spacing[1]*volumes.shape[1]),int(volumes.spacing[2]*volumes.shape[2])))
+volumes=np.array(volumes)[None,...]
+
+for ts in tqdm(range(volumes_resized.shape[0])):
+    if flip_axis is not None:
+        volumes_resized[ts] = resize(np.flip(np.abs(volumes[ts]),axis=flip_axis), volumes_resized.shape[1:])
+    else:
+        volumes_resized[ts]=resize(np.abs(volumes[ts]),volumes_resized.shape[1:])
+
+if flip_z:
+    volumes_resized=np.flip(volumes_resized,axis=1)
+
+if volumes_resized.shape[0]==1:
+    volumes_resized_ff=volumes_resized
+else:
+    volumes_resized_ff=np.concatenate([volumes_resized[:-1],volumes_resized[::-1][:-1]],axis=0)
+viewer.add_image(volumes_resized_ff)
+
+
+
+
+
+
+import numpy as np
+import napari
+from skimage.transform import resize
+from tqdm import tqdm
+import glob
+import pickle
+import glob
+import pickle
+from mutools import io
+
+
+
+file_maps=[
+
+    "../gradunwarp/test.nii",
+"../gradunwarp/test_thighs.nii",
+"../gradunwarp/test_abdomen.nii"
+
+           ]
+
+
+
+
+
+volumes_list=[]
+
+for v in file_maps:
+    vol=io.read(v)
+    volumes_list.append(np.array(vol))
+
+volumes=np.concatenate(volumes_list,axis=2)
+
+
+
+volumes_resized=resize(volumes,(int(vol.spacing[0]*volumes.shape[0]),int(vol.spacing[1]*volumes.shape[1]),int(vol.spacing[2]*volumes.shape[2])))
+
+
+volumes_resized=np.flip(volumes_resized,axis=(0,2))
+viewer=napari.Viewer()
+viewer.add_image(volumes_resized)
+
+
+file_maps=[
+
+    "./data/InVivo/3D/patient.009.v6/meas_MID00114_FID84523_raFin_3D_tra_1x1x5mm_FULL_new_mrf_legs_volumes_singular_denoised_CF_iterative_2Dplus1_MRF_map_it0_wT1_adjusted.nii",
+"./data/InVivo/3D/patient.009.v6/meas_MID00101_FID84510_raFin_3D_tra_1x1x5mm_FULL_new_mrf_thighs_volumes_singular_denoised_CF_iterative_2Dplus1_MRF_map_it0_wT1_adjusted.nii",
+"./data/InVivo/3D/patient.009.v6/meas_MID00083_FID84492_raFin_3D_tra_1x1x5mm_FULL_new_mrf_bart30_volumes_singular_allbins_volumes_allbins_registered_ref4_it1_CF_iterative_2Dplus1_MRF_map_it0_wT1_adjusted.nii"
+
+           ]
+
+
+
+volumes_list=[]
+
+for v in file_maps:
+    vol=io.read(v)
+    volumes_list.append(np.array(vol))
+
+volumes=np.concatenate(volumes_list,axis=2)
+
+
+
+volumes_resized=resize(volumes,(int(vol.spacing[0]*volumes.shape[0]),int(vol.spacing[1]*volumes.shape[1]),int(vol.spacing[2]*volumes.shape[2])))
+
+
+volumes_resized_nocorr=np.flip(volumes_resized,axis=(0,2))
+viewer.add_image(volumes_resized_nocorr)

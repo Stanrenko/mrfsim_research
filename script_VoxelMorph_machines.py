@@ -265,8 +265,8 @@ def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolutio
     else:
         pad = int(pad_2 / 2)
 
-    if n%2==0:
-        pad=0
+    # if n%2==0:
+    #     pad=0
 
     pad_amount = ((0,0),(pad,pad), (pad,pad))
     print(pad_amount)
@@ -997,8 +997,8 @@ def register_allbins_to_baseline(filename_volumes,file_model,config_train,niter,
     else:
         pad = int(pad_2 / 2)
 
-    if n%2==0:
-        pad=0
+    # if n%2==0:
+    #     pad=0
 
     pad_amount = ((0, 0), (pad, pad), (pad, pad))
     print(pad_amount)

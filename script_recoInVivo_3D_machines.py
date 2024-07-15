@@ -59,13 +59,85 @@ def getTR(filename):
 @set_parameter("filename", str, default=None, description="Filename for getting metatada")
 @set_parameter("filemha", str, default=None, description="Map (.mha)")
 @set_parameter("suffix",str,default="")
-def getGeometry(filename,filemha,suffix):
+@set_parameter("nifti",bool,default=False)
+def getGeometry(filename,filemha,suffix,nifti):
     if filename is None:
         filename=str.split(filemha,"_MRF_map")[0]+".dat"
+    if nifti:
+        filemha_adjusted=str.replace(filemha,".mha","{}.nii".format(suffix))
+    else:
+        filemha_adjusted=str.replace(filemha,".mha","{}.mha".format(suffix))
+    geom,is3D,orientation=get_volume_geometry(filename)
+    data=np.array(io.read(filemha))
+    print(data.shape)
+    if is3D:
+        #data=np.flip(np.moveaxis(data,0,-1),axis=(1,2))
+        if orientation=="coronal":
+            data=np.flip(np.moveaxis(data,(0,1,2),(1,2,0)),axis=(1))
+            #data=np.moveaxis(data,0,2)
+        elif orientation=="transversal":
+            data=np.moveaxis(data,0,2)[:,::-1]
+    else:
+        data=np.moveaxis(data,0,2)[:,::-1]
     
-    filemha_adjusted=str.replace(filemha,".mha","{}.mha".format(suffix))
-    geom=get_volume_geometry(filename)
-    data=np.moveaxis(np.array(io.read(filemha)),0,2)[:,::-1]
+    
+    vol = io.Volume(data, **geom)
+    io.write(filemha_adjusted,vol)
+    return
+
+@machine
+@set_parameter("filedico", str, default=None, description="Dictionary .pkl containing parameters")
+@set_parameter("filevolume", str, default=None, description="Volume (.npy)")
+@set_parameter("suffix",str,default="")
+@set_parameter("nifti",bool,default=False)
+@set_parameter("apply_offset",bool,default=False,description="Apply offset (for having the absolute position in space) - should be false for unwarping volumes")
+def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset):
+
+
+    extension=str.split(filevolume,".")[-1]
+
+    print(extension)
+    if ("nii" in extension) or (extension=="mha"):
+        func_load=io.read
+    elif (extension=="npy"):
+        func_load=np.load
+    else:
+        raise ValueError("Unknown extension {}".format(extension))
+
+
+    if nifti:
+        filemha_adjusted=str.replace(filevolume,".{}".format(extension),"{}.nii".format(suffix))
+    else:
+        filemha_adjusted=str.replace(filevolume,".{}".format(extension),"{}.mha".format(suffix))
+    
+    with open(filedico,"rb") as file:
+        dico=pickle.load(file)
+    
+    spacing=dico["spacing"]
+    origin=dico["origin"]
+    orientation=dico["orientation"]
+    is3D=dico["is3D"]
+
+    if apply_offset:
+        print("Applying offset")
+        offset=dico["offset"]
+        spacing[-1]=spacing[-1]+offset
+
+    geom={"origin":origin,"spacing":spacing}
+
+    data=np.abs(np.array(func_load(filevolume)).squeeze())
+    print(data.shape)
+    if is3D:
+        #data=np.flip(np.moveaxis(data,0,-1),axis=(1,2))
+        if orientation=="coronal":
+            data=np.flip(np.moveaxis(data,(0,1,2),(1,2,0)),axis=(1))
+            #data=np.moveaxis(data,0,2)
+        elif orientation=="transversal":
+            data=np.moveaxis(data,0,2)[:,::-1]
+    else:
+        data=np.moveaxis(data,0,2)[:,::-1]
+    
+    
     vol = io.Volume(data, **geom)
     io.write(filemha_adjusted,vol)
     return
@@ -93,27 +165,60 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep):
 
     if str.split(filename_seqParams, "/")[-1] not in os.listdir(folder):
 
-        twix = twixtools.read_twix(filename, optional_additional_maps=["sWipMemBlock", "sKSpace"],
-                                   optional_additional_arrays=["SliceThickness"])
+        # twix = twixtools.read_twix(filename, optional_additional_maps=["sWipMemBlock", "sKSpace"],
+        #                            optional_additional_arrays=["SliceThickness"])
+        #
+        # if np.max(np.argwhere(np.array(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]) > 0)) >= 16:
+        #     use_navigator_dll = True
+        # else:
+        #     use_navigator_dll = False
 
-        if np.max(np.argwhere(np.array(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]) > 0)) >= 16:
+
+
+
+        # alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
+        # x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
+        # y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
+        # z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
+        # dTR=twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["adFree"][1]-twix[-1]["hdr"]["Meas"]["alTE"][0]/1000
+        # total_TR=twix[-1]["hdr"]["Meas"]["alTR"][0]/1e6
+        #
+        # nb_part = twix[-1]["hdr"]["Meas"]["Partitions"]
+        #
+        # dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV, "z_FOV": z_FOV,
+        #                   "use_navigator_dll": use_navigator_dll, "nb_part": nb_part,"total_TR":total_TR,"dTR":dTR}
+
+
+        #del alFree
+        hdr = io_twixt.parse_twixt_header(filename)
+
+        alFree = get_specials(hdr, type="alFree")
+        adFree = get_specials(hdr, type="adFree")
+        geometry, is3D, orientation, offset = get_volume_geometry(hdr)
+
+        nb_segments = alFree[4]
+
+        x_FOV = hdr[-1]['sSliceArray.asSlice[0].dReadoutFOV']
+        y_FOV = hdr[-1]['sSliceArray.asSlice[0].dReadoutFOV']
+        z_FOV = hdr[-1]['sSliceArray.asSlice[0].dThickness']
+        nb_part = hdr[-1]['sKSpace.lPartitions']
+
+        minTE = hdr[-1]["alTE[0]"] / 1e3
+        echoSpacing = adFree[1]
+        dTR = echoSpacing - minTE
+        total_TR = hdr[-1]["alTR[0]"] / 1e6
+        invTime = adFree[0]
+
+        if np.max(np.argwhere(alFree> 0)) >= 16:
             use_navigator_dll = True
         else:
             use_navigator_dll = False
 
-        alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
-        x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
-        y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
-        z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
-        dTR=twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["adFree"][1]-twix[-1]["hdr"]["Meas"]["alTE"][0]/1000
-        total_TR=twix[-1]["hdr"]["Meas"]["alTR"][0]/1e6
+        dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV,"z_FOV": z_FOV, "TI": invTime, "total_TR": total_TR,
+                          "dTR": dTR, "is3D": is3D, "orientation": orientation, "nb_part": nb_part, "offset": offset,"use_navigator_dll":use_navigator_dll}
+        dico_seqParams.update(geometry)
 
-        nb_part = twix[-1]["hdr"]["Meas"]["Partitions"]
-
-        dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV, "z_FOV": z_FOV,
-                          "use_navigator_dll": use_navigator_dll, "nb_part": nb_part,"total_TR":total_TR,"dTR":dTR}
-
-        del alFree
+        
 
         file = open(filename_seqParams, "wb")
         pickle.dump(dico_seqParams, file)
@@ -124,18 +229,24 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep):
         dico_seqParams = pickle.load(file)
         file.close()
 
+    print(dico_seqParams)
+
     use_navigator_dll = dico_seqParams["use_navigator_dll"]
+    nb_segments = dico_seqParams["alFree"][4]
 
     if use_navigator_dll:
         meas_sampling_mode = dico_seqParams["alFree"][15]
         nb_gating_spokes = dico_seqParams["alFree"][6]
+        if not(nb_gating_spokes==0) and (int(nb_segments/nb_gating_spokes)<(nb_segments/nb_gating_spokes)):
+            print("Nb segments not divisible by nb_gating_spokes - adjusting nb_gating_spokes")
+            nb_gating_spokes+=1
     else:
         meas_sampling_mode = dico_seqParams["alFree"][12]
         nb_gating_spokes = 0
 
     undersampling_factor=dico_seqParams["alFree"][9]
 
-    nb_segments = dico_seqParams["alFree"][4]
+    
     nb_part = dico_seqParams["nb_part"]
     nb_slices=int(nb_part)
 
@@ -144,9 +255,10 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep):
     nb_part = math.ceil(nb_part / undersampling_factor)
     nb_part_center=int(nb_part/2)
     nb_part = nb_part + nb_rep_center_part - 1
-    print(nb_part)
-    print(nb_rep_center_part)
-    print(dico_seqParams["alFree"])
+    # print(nb_part)
+    # print(nb_rep_center_part)
+    # print(nb_gating_spokes)
+    # print(dico_seqParams["alFree"])
 
     del dico_seqParams
 
@@ -364,14 +476,23 @@ def build_kdata_pilot_tone(filename,ch_opt,fmin,fmax,dens_adj,suffix):
 
     use_navigator_dll = dico_seqParams["use_navigator_dll"]
 
+    nb_segments = dico_seqParams["alFree"][4]
+
     if use_navigator_dll:
         meas_sampling_mode = dico_seqParams["alFree"][15]
         nb_gating_spokes = dico_seqParams["alFree"][6]
+        if int(nb_segments/nb_gating_spokes)<(nb_segments/nb_gating_spokes):
+            print("Nb segments not divisible by nb_gating_spokes - adjusting nb_gating_spokes")
+            nb_gating_spokes+=1
     else:
         meas_sampling_mode = dico_seqParams["alFree"][12]
         nb_gating_spokes = 0
 
-    nb_segments = dico_seqParams["alFree"][4]
+    
+
+    
+
+
     nb_part = dico_seqParams["nb_part"]
     dummy_echos = dico_seqParams["alFree"][5]
     nb_rep_center_part = dico_seqParams["alFree"][11]
@@ -1701,12 +1822,67 @@ def build_maps(filename_volume,filename_mask,filename_b1,filename_weights,filena
         all_maps = optimizer.search_patterns_matrix(dictfile, volumes_all)
 
     elif opt_type=="Brute":
-        optimizer=BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=split, pca=True,
-                                 threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU
-                                 )
-        all_maps = optimizer.search_patterns(dictfile, volumes_all)
+        
+        if "volumes_type" in optimizer_config:
+            volumes_type=optimizer_config["volumes_type"]
+        else:
+            volumes_type="Standard"
+
+        if volumes_type=="Singular":
+
+            print("Projecting dictionary on singular basis")
+        
+            L0=ntimesteps
+            print(dictfile)
+            filename_phi=str.split(dictfile,".dict") [0]+"_phi_L0_{}.npy".format(L0)
+
+            if filename_phi not in os.listdir():
+                #mrfdict = dictsearch.Dictionary()
+
+                print("Generating Phi : {}".format(filename_phi))
+                keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.1))
+
+                import dask.array as da
+                u,s,vh = da.linalg.svd(da.asarray(values))
+
+                vh=np.array(vh)
+                #s=np.array(s)
+
+                phi=vh[:L0]
+                np.save(filename_phi,phi.astype("complex64"))
+                #del mrfdict
+                del keys
+                del values
+                del u
+                del s
+                del vh
+            else:
+                phi=np.load(filename_phi)
+
+
+            mrfdict = dictmodel.Dictionary()
+            mrfdict.load(dictfile, force=True)
+            keys = mrfdict.keys
+            array_water = mrfdict.values[:, :, 0]
+            array_fat = mrfdict.values[:, :, 1]
+            array_water_projected=array_water@phi.T.conj()
+            array_fat_projected=array_fat@phi.T.conj()
+            optimizer=BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=split, pca=True,
+                                    threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,n_clusters_dico=100,pruning=0.05
+                                    )
+            all_maps = optimizer.search_patterns((array_water_projected,array_fat_projected,keys), volumes_all)
+
+        else:
+            optimizer=BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=split, pca=True,
+                                    threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,n_clusters_dico=100,pruning=0.05
+                                    )
+            all_maps = optimizer.search_patterns(dictfile, volumes_all)
+
 
     if opt_type=="CF_twosteps":
+        
+        
+
         if "log" in optimizer_config:
             log=optimizer_config["log"]
         else:
@@ -1805,7 +1981,6 @@ def build_maps(filename_volume,filename_mask,filename_b1,filename_weights,filena
             vh=np.array(vh)
             #s=np.array(s)
 
-            L0=10
             phi=vh[:L0]
             np.save(filename_phi,phi.astype("complex64"))
             #del mrfdict
@@ -2903,6 +3078,7 @@ def build_volumes_singular_allbins(filename_kdata, filename_b1, filename_pca, fi
     if dictfile is not None:
         filename_phi = str.split(dictfile, ".dict")[0] + "_phi_L0_{}.npy".format(L0)
 
+    print(filename_phi)
     b1_all_slices_2Dplus1_pca = np.load(filename_b1)
 
     nb_slices_b1=b1_all_slices_2Dplus1_pca.shape[1]
@@ -4557,8 +4733,12 @@ def generate_dictionaries(sequence_file,reco,min_TR_delay,dictconf,dictconf_ligh
 @set_parameter("fileseq", str, default="mrf_sequence_adjusted.json", description="Sequence File")
 @set_parameter("spacing", [float,float,float], default=[1,1,5], description="Voxel size")
 @set_parameter("reorient", bool, default=True, description="Reorient to match usual orientation")
-def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient):
+@set_parameter("filename", str, default=None, description=".dat file for adding geometry if necessary")
+def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient,filename):
     gen_mode="other"
+
+    if filename is not None :
+        reorient=False
 
     with open(fileseq) as f:
         sequence_config = json.load(f)
@@ -4567,9 +4747,6 @@ def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient):
     sequence_config["TR"]=list(np.array(sequence_config["TE"])+10000)
     sequence_config["B1"]=[3.0,3.0]
 
-    nb_allspokes = len(sequence_config["TE"])
-
-    L0 = 2
     nrep=2
     rep=nrep-1
     TR_total = np.sum(sequence_config["TR"])
@@ -4591,7 +4768,7 @@ def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient):
     with open(filemap,"rb") as file:
         all_maps=pickle.load(file)
 
-    print(all_maps)
+    #print(all_maps)
     mask=all_maps[0][1]
     map_rebuilt=all_maps[0][0]
     map_rebuilt["attB1"]=np.ones_like(map_rebuilt["attB1"])
@@ -4616,15 +4793,42 @@ def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient):
         volume_ip=np.abs(m.images_series[0])
         volume_oop=np.abs(m.images_series[1])
     
+    
     split=str.split(filemap,"CF_iterative_2Dplus1_MRF_map.pkl")
+
     if len(split)==1:
         split=str.split(filemap,"MRF_map.pkl")
     file_ip=split[0]+"ip.mha"
     file_oop=split[0]+"oop.mha"
 
+    # split=str.split(filemap,"/")
+    # folder_path="/".join(split[:-1])
+    # file_ip=folder_path+"/vol_ip.mha"
+    # file_oop=folder_path+"/vol_oop.mha"
+    # print(file_ip)
+
     #spacing=[1, 1,5]
-    io.write(file_ip, volume_ip, tags={"spacing": spacing})
-    io.write(file_oop, volume_oop, tags={"spacing": spacing})
+    if filename is None:
+        io.write(file_ip, volume_ip, tags={"spacing": spacing})
+        io.write(file_oop, volume_oop, tags={"spacing": spacing})
+
+    else:
+        print("Getting geometry from {}".format(filename))
+        geom,is3D=get_volume_geometry(filename)
+        if is3D:
+            volume_ip=np.flip(np.moveaxis(volume_ip,0,-1),axis=(1,2))
+            volume_oop=np.flip(np.moveaxis(volume_oop,0,-1),axis=(1,2))
+        else:
+            volume_ip=np.moveaxis(volume_ip,0,2)[:,::-1]
+            volume_oop=np.moveaxis(volume_oop,0,2)[:,::-1]
+        
+        
+        volume_ip = io.Volume(volume_ip, **geom)
+        volume_oop = io.Volume(volume_oop, **geom)
+        io.write(file_ip,volume_ip)
+        io.write(file_oop,volume_oop)
+    
+
 
     return
 
@@ -4768,6 +4972,7 @@ toolbox.add_program("build_volumes_iterative_allbins_registered", build_volumes_
 toolbox.add_program("build_volumes_iterative_allbins_registered_allindex", build_volumes_iterative_allbins_registered_allindex)
 toolbox.add_program("getTR", getTR)
 toolbox.add_program("getGeometry", getGeometry)
+toolbox.add_program("convertArrayToImage", convertArrayToImage)
 toolbox.add_program("plot_deformation", plot_deformation)
 toolbox.add_program("build_navigator_images", build_navigator_images)
 toolbox.add_program("generate_random_weights", generate_random_weights)

@@ -49,7 +49,17 @@ from machines import machine, Toolbox, Config, set_parameter, set_output, printe
 def process_folder_mrf(folder,dictfile,dictfile_light,target_folder,return_mat,useGPU,return_cost,ignored_str):
     
     print("Processing folder {}".format(folder))
-    filenames = glob.glob(folder+"/**/*.dat",recursive=True)
+
+    #filenames = glob.glob(folder+"/**/*.dat",recursive=True)
+    dirs=os.listdir(folder)
+    print(dirs)
+    filenames=[]
+    for dir in dirs:
+        dir_full=folder+"/"+dir
+        if os.path.isdir(dir_full) and ("ignored" not in dir):
+            print("############## Processing directory {}###################".format(dir))
+            filenames=filenames+glob.glob(dir_full+"/**/*.dat",recursive=True)
+    
     print(filenames)
 
     for filename in filenames:

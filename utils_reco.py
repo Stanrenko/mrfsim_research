@@ -627,16 +627,30 @@ def estimate_weights_bins(displacements,nb_slices,nb_segments,nb_gating_spokes,n
     
     
 
-    if not(pt):
-        spoke_groups = np.argmin(np.abs(
-            np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
-                                                                              nb_segments / nb_gating_spokes).reshape(1,
-                                                                                                                      -1)),
-            axis=-1)
+    if int(nb_segments/nb_gating_spokes)<(nb_segments/nb_gating_spokes):
+        gating_spokes_step=int(nb_segments/(nb_gating_spokes-1))
+    else:
+        gating_spokes_step=int(nb_segments/nb_gating_spokes)
 
-        spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
-        spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
-            nb_segments / nb_gating_spokes / 2) + 1:] - 1  # adjustment for change of partition
+    print("Gating spokes step : {}".format(gating_spokes_step))
+
+    if not(pt):
+        # spoke_groups = np.argmin(np.abs(
+        #     np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
+        #                                                                       gating_spokes_step).reshape(1,
+        #                                                                                                               -1)),
+        #     axis=-1)
+
+        # spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
+
+        spoke_groups_onerep=np.argmin(np.abs(np.arange(0,nb_segments,1).reshape(-1,1)-np.arange(0,nb_segments,gating_spokes_step).reshape(1,-1
+        )),axis=-1).reshape(1,-1)
+        rep_increment=nb_gating_spokes*np.arange(nb_slices).reshape(-1,1)
+
+        spoke_groups=spoke_groups_onerep+rep_increment
+        # if not(int(nb_segments/nb_gating_spokes)<(nb_segments/nb_gating_spokes)):
+        #     spoke_groups[:-1, -int(gating_spokes_step / 2) + 1:] = spoke_groups[:-1, -int(
+        #         gating_spokes_step / 2) + 1:] - 1  # adjustment for change of partition
         spoke_groups = spoke_groups.flatten()
 
     # if nb_rep_center_part>1:
@@ -655,7 +669,7 @@ def estimate_weights_bins(displacements,nb_slices,nb_segments,nb_gating_spokes,n
 
         if not(pt):
             included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
-            included_spokes[::int(nb_segments / nb_gating_spokes)] = False
+            included_spokes[::gating_spokes_step] = False
         else:
             included_spokes = np.array([s in retained_nav_spokes_index for s in range(len(displacement_for_binning))])
 
@@ -665,7 +679,7 @@ def estimate_weights_bins(displacements,nb_slices,nb_segments,nb_gating_spokes,n
             print("Using Soft Weights for full inspiration phase")
             retained_nav_spokes_index_prev_bin = np.argwhere(groups[-2]).flatten()
             included_spokes_prev_bin = np.array([s in retained_nav_spokes_index_prev_bin for s in spoke_groups])
-            included_spokes_prev_bin[::int(nb_segments / nb_gating_spokes)] = False
+            included_spokes_prev_bin[::gating_spokes_step] = False
             disp_reshaped=np.array([displacement_for_binning[i] for i in spoke_groups])
             included_soft_weight = (np.exp(-alpha * np.abs(disp_reshaped - bins[-1])) > tau)
             print(np.sum(included_soft_weight))
@@ -682,7 +696,7 @@ def estimate_weights_bins(displacements,nb_slices,nb_segments,nb_gating_spokes,n
             print("Using Soft Weights for full inspiration phase")
             retained_nav_spokes_index_prev_bin = np.argwhere(groups[1]).flatten()
             included_spokes_prev_bin = np.array([s in retained_nav_spokes_index_prev_bin for s in spoke_groups])
-            included_spokes_prev_bin[::int(nb_segments / nb_gating_spokes)] = False
+            included_spokes_prev_bin[::gating_spokes_step] = False
             disp_reshaped=np.array([displacement_for_binning[i] for i in spoke_groups])
             included_soft_weight = (np.exp(-alpha * np.abs(disp_reshaped - bins[0])) > tau)
             included_spokes_prev_bin=(included_soft_weight & included_spokes_prev_bin)

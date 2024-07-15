@@ -10,6 +10,7 @@ from mrfsim import makevol
 from image_series import MapFromDict
 from datetime import datetime
 from skimage.restoration import denoise_tv_chambolle
+import itertools
 from copy import copy
 import os
 #import cupy as cp
@@ -8604,11 +8605,16 @@ class BruteDictSearch(Optimizer):
         else:
             mask = self.mask
 
+        
+
+        FF_list=self.paramDict["FF"]
 
         verbose=self.verbose
         split=self.paramDict["split"]
         pca=self.paramDict["pca"]
         threshold_pca=self.paramDict["threshold_pca"]
+        ntimesteps=volumes.shape[0]
+        threshold_pca=np.minimum(ntimesteps,threshold_pca)
         #useAdjPred=self.paramDict["useAdjPred"]
         log=self.paramDict["log"]
         useGPU_dictsearch=self.paramDict["useGPU_dictsearch"]
@@ -8618,11 +8624,11 @@ class BruteDictSearch(Optimizer):
         #adj_phase=self.paramDict["adj_phase"]
         n_clusters_dico = self.paramDict["n_clusters_dico"]
         pruning = self.paramDict["pruning"]
-        if n_clusters_dico is not None:
+        if (n_clusters_dico is not None) and (type(dictfile)==str):
             clustering_file=str.split(dictfile,".dict")[0]+"_{}groups.pkl".format(n_clusters_dico)
             clustering_file_name=str.split(clustering_file, "/")[-1]
 
-        if pca:
+        if pca and (type(dictfile)==str):
             pca_file = str.split(dictfile, ".dict")[0] + "_{}pca_brute.pkl".format(threshold_pca)
             pca_file_name = str.split(pca_file, "/")[-1]
 
@@ -8648,19 +8654,46 @@ class BruteDictSearch(Optimizer):
         norm_signals=np.linalg.norm(signals, 2, axis=0)
         all_signals = signals/norm_signals
 
-        keys,values=read_mrf_dict(dictfile,self.paramDict["FF"])
+        
 
+        if type(dictfile) == str:
+            keys,values=read_mrf_dict(dictfile,FF_list)
+
+        else:  # otherwise dictfile contains (s_w,s_f,keys)
+            array_water = dictfile[0]
+            array_fat = dictfile[1]
+            keys = dictfile[2]
+            
+
+            ff = np.zeros(array_water.shape +(len(FF_list),))
+            ff_matrix =np.tile(np.array(FF_list) ,ff.shape[:-1 ] +(1,))
+
+            water_signal =np.expand_dims(array_water ,axis=-1 ) *(1-ff_matrix)
+            fat_signal =np.expand_dims(array_fat ,axis=-1 ) *(ff_matrix)
+
+            signal =water_signal +fat_signal
+
+            signal_reshaped =np.moveaxis(signal ,-1 ,-2)
+            print(signal.shape)
+            values =signal_reshaped.reshape((-1 ,signal_reshaped.shape[-1]))
+
+            keys_with_ff = list(itertools.product(keys, FF_list))
+            keys = [(*res, f) for res, f in keys_with_ff]
+
+        
 
         if retained_timesteps is not None:
             values=values[:,retained_timesteps]
 
         if pca:
-            if pca_file_name not in os.listdir(path):
+            if not(type(dictfile)==str) or (pca_file_name not in os.listdir(path)):
                 pca = PCAComplex(n_components_=threshold_pca)
                 pca.fit(values)
                 transformed_values = pca.transform(values)
-                with open(pca_file, "wb") as file:
-                    pickle.dump((pca,transformed_values), file)
+
+                if type(dictfile)==str:
+                    with open(pca_file, "wb") as file:
+                        pickle.dump((pca,transformed_values), file)
             else:
                 with open(pca_file,"rb") as file:
                     (pca,transformed_values)=pickle.load(file)
@@ -8681,7 +8714,7 @@ class BruteDictSearch(Optimizer):
 
         if n_clusters_dico is not None:
 
-            if clustering_file_name not in os.listdir(path):
+            if not(type(dictfile)==str) or (clustering_file_name not in os.listdir(path)):
                 #print(os.listdir())
                 print("Forming dictionary groups for group matching")
                 n_el_per_group = int(nb_signals_dico / n_clusters_dico)
@@ -8706,9 +8739,9 @@ class BruteDictSearch(Optimizer):
                     cluster_signals.append(s_cur)
                     # curr_values=np.delete(curr_values,indices_group,axis=0)
                     curr_values[indices_group] = np.inf
-
-                with open(clustering_file,"wb") as file:
-                    pickle.dump((cluster_signals,labels),file)
+                if type(dictfile)==str:
+                    with open(clustering_file,"wb") as file:
+                        pickle.dump((cluster_signals,labels),file)
             else:
                 with open(clustering_file,"rb") as file:
                     (cluster_signals, labels)=pickle.load(file)
