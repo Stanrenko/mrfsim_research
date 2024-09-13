@@ -63,7 +63,7 @@ from copy import copy,deepcopy
 import psutil
 from datetime import datetime
 import scipy as sp
-
+from scipy.interpolate import RegularGridInterpolator
 
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
@@ -5035,10 +5035,10 @@ def get_volume_geometry(hdr_input, index=-1):
         spacing_z,
     )
     
-    if header['sSliceArray.lCor']==1:
+    if ('sSliceArray.lCor' in header.keys()) and header['sSliceArray.lCor']==1:
         order_axis=[0,2,1]
         orientation="coronal"
-    elif header['sSliceArray.lSag']==1:
+    elif ('sSliceArray.lSag' in header.keys()) and header['sSliceArray.lSag']==1:
         order_axis=[2,0,1]
         orientation="sagittal"
     else:
@@ -5097,10 +5097,92 @@ def get_specials(hdr,type="alFree",index=-1):
     sWipMemBlock_keys=list_hdr_keys(hdr,"sWipMemBlock.{}[".format(type),index=index)
     sWipMemBlock_idx=[int(str.split(str.split(k,"[")[-1],"]")[0]) for k in sWipMemBlock_keys]
 
-    count_sWimMemBlock=hdr[-1]['sWipMemBlock.{}.__attribute__.size'.format(type)]
+    count_sWimMemBlock=hdr[index]['sWipMemBlock.{}.__attribute__.size'.format(type)]
     sWipMemBlock=np.zeros(count_sWimMemBlock,dtype=dtype)
     for i,idx in enumerate(sWipMemBlock_idx):
-        sWipMemBlock[idx]=hdr[-1][sWipMemBlock_keys[i]]
+        sWipMemBlock[idx]=hdr[index][sWipMemBlock_keys[i]]
 
 
     return sWipMemBlock
+
+
+
+def concatenate_images(image_list,ignore_zero=True):
+    # Calculating the boundaries and the grid of each individual image
+
+
+    min_x_list=[im.origin[0] for im in image_list]
+    min_y_list=[im.origin[1] for im in image_list]
+    min_z_list=[im.origin[2] for im in image_list]
+
+
+    min_x=np.min(min_x_list)
+    min_y=np.min(min_y_list)
+    min_z=np.min(min_z_list)
+
+
+    max_x_list=[im.origin[0]+im.spacing[0]*(im.shape[0]-1) for im in image_list]
+    max_y_list=[im.origin[1]+im.spacing[1]*(im.shape[1]-1) for im in image_list]
+    max_z_list=[im.origin[2]+im.spacing[2]*(im.shape[2]-1) for im in image_list]
+
+
+    max_x=np.max(max_x_list)
+    max_y=np.max(max_y_list)
+    max_z=np.max(max_z_list)
+
+
+    print(min_x)
+    print(min_y)
+    print(min_z)
+    
+    print(max_x)
+    print(max_y)
+    print(max_z)
+
+    print()
+
+    x_list = [min_x_list[i] + np.array(list(range(image_list[i].shape[0])))*image_list[i].spacing[0] for i in range(len(image_list))]
+    y_list = [min_y_list[i] + np.array(list(range(image_list[i].shape[1])))*image_list[i].spacing[1] for i in range(len(image_list))]
+    z_list = [min_z_list[i] + np.array(list(range(image_list[i].shape[2])))*image_list[i].spacing[2] for i in range(len(image_list))]
+
+
+    # Calculating the target grid for the whole concatenated image
+    spacing=image_list[0].spacing
+    max_index_x=int((max_x-min_x)/spacing[0])
+    max_index_y=int((max_y-min_y)/spacing[1])
+    max_index_z=int((max_z-min_z)/spacing[2])
+    x = min_x+np.array(list(range(max_index_x+1)))*spacing[0]
+    y = min_y+np.array(list(range(max_index_y+1)))*spacing[1]
+    z = min_z+np.array(list(range(max_index_z+1)))*spacing[2]
+    xg, yg ,zg = np.meshgrid(x, y, z, indexing='ij')
+
+
+    # Interpolating each image on the target grid
+    interp_list=[RegularGridInterpolator((x_list[i], y_list[i], z_list[i]),np.array(image_list[i]),fill_value=np.inf,bounds_error=False) for i in range(len(image_list))]
+    imag_interp_list=[interp(np.stack([xg,yg,zg],axis=-1).reshape(-1,3)).reshape(xg.shape) for interp in interp_list]
+
+
+
+    # Handling extrapolated regions
+    imag_interp_list_nan=[]
+    for im in imag_interp_list:
+        curr_im=im
+        curr_im[curr_im==np.inf]=np.nan
+        if ignore_zero:
+            curr_im[curr_im==0]=np.nan
+        imag_interp_list_nan.append(curr_im)
+
+    final=np.nanmean(np.stack(imag_interp_list_nan,axis=-1),axis=-1)
+
+    final=np.nan_to_num(final,nan=0,posinf=0,neginf=0)
+
+    #Adding geometry
+    geom={
+            'origin': (min_x,min_y,min_z),
+            'spacing': spacing,
+            # 'transform': transform, # TODO
+        }
+
+    vol=io.Volume(final,**geom)
+
+    return vol

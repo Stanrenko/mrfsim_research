@@ -708,11 +708,12 @@ def train_voxelmorph_torchvision(filename_volumes,config_train,suffix,init_weigh
 
 @machine
 @set_parameter("config_train", type=Config, default=DEFAULT_TRAIN_CONFIG, description="Config training")
+@set_parameter("kept_bins", str, default=None, description="Bins to keep for training")
 @set_parameter("suffix", str, default="", description="suffix")
 @set_parameter("init_weights", str, default=None, description="Weights initialization from .h5 file")
-def train_voxelmorph_torchvision_multiple_patients(config_train, suffix, init_weights):
-    filenames=config_train["filenames"]
-    folder=config_train["folder"]
+def train_voxelmorph_torchvision_multiple_patients(config_train, suffix, init_weights, kept_bins):
+    filenames = config_train["filenames"]
+    folder = config_train["folder"]
 
     file_model = folder + "/multiple_patients_vxm_model_weights_torchaugment{}.h5".format(suffix)
     file_checkpoint = folder + "/multiple_patients_model_checkpoint.h5"
@@ -727,27 +728,29 @@ def train_voxelmorph_torchvision_multiple_patients(config_train, suffix, init_we
     # pad_amount=tuple(tuple(l) for l in pad_amount)
     decay = config_train["lr_decay"]
 
-    n=0
-    volumes_all_patients=[]
-    n_all_patients=[]
+    n = 0
+    volumes_all_patients = []
+    n_all_patients = []
+
     for file_volume in filenames:
-        all_volumes = np.load(folder+file_volume)
+        all_volumes = np.load(folder + file_volume)
         print("Volumes shape {}".format(all_volumes.shape))
         all_volumes = np.abs(all_volumes).astype("float32")
+        if kept_bins is not None:
+            kept_bins_list = np.array(str.split(kept_bins, ",")).astype(int)
+            print(kept_bins_list)
+            all_volumes = all_volumes[kept_bins_list]
         n_curr = all_volumes.shape[-1]
         n_all_patients.append(n_curr)
-        if n_curr>n:
-            n=n_curr
+        if n_curr > n:
+            n = n_curr
         volumes_all_patients.append(all_volumes)
-    pads=((n-np.array(n_all_patients))/2).astype(int)
-    volumes_all_patients=[np.pad(v,((0,0),(0, 0), (pads[i], pads[i]), (pads[i], pads[i])),"constant") for i,v in enumerate(volumes_all_patients)]
+    pads = ((n - np.array(n_all_patients)) / 2).astype(int)
+    volumes_all_patients = [np.pad(v, ((0, 0), (0, 0), (pads[i], pads[i]), (pads[i], pads[i])), "constant") for i, v in
+                            enumerate(volumes_all_patients)]
 
     for v in volumes_all_patients:
         print(v.shape)
-
-
-
-
 
     # Finding the power of 2 "closest" and longer than  x dimension
 
@@ -758,6 +761,9 @@ def train_voxelmorph_torchvision_multiple_patients(config_train, suffix, init_we
         pad = int(pad_1 / 2)
     else:
         pad = int(pad_2 / 2)
+
+    if n%2==0:
+        pad=0
 
     pad_amount = ((0, 0), (pad, pad), (pad, pad))
     print(pad_amount)
@@ -782,10 +788,10 @@ def train_voxelmorph_torchvision_multiple_patients(config_train, suffix, init_we
     perc_augmentation = config_train["perc_augmentation"]
     test_size = config_train["test_size"]
 
-    lr=config_train["lr"]
+    lr = config_train["lr"]
 
-    x_fixed_all=[]
-    x_moving_all=[]
+    x_fixed_all = []
+    x_moving_all = []
 
     for v in volumes_all_patients:
         x_fixed, x_moving = format_input_voxelmorph(v, pad_amount, normalize=True,
@@ -794,9 +800,8 @@ def train_voxelmorph_torchvision_multiple_patients(config_train, suffix, init_we
         x_moving_all.append(x_moving)
         print(x_fixed.shape)
 
-
-    x_fixed_all=np.concatenate(x_fixed_all,axis=0)
-    x_moving_all=np.concatenate(x_moving_all,axis=0)
+    x_fixed_all = np.concatenate(x_fixed_all, axis=0)
+    x_moving_all = np.concatenate(x_moving_all, axis=0)
     x_train_fixed, x_test_fixed, x_train_moving, x_test_moving = train_test_split(x_fixed_all, x_moving_all,
                                                                                   test_size=test_size, random_state=42)
 
@@ -825,7 +830,7 @@ def train_voxelmorph_torchvision_multiple_patients(config_train, suffix, init_we
     vxm_model.compile(optimizer=optimizer, loss=losses, loss_weights=loss_weights)
 
     if lr is not None:
-        backend.set_value(vxm_model.optimizer.learning_rate,lr)
+        backend.set_value(vxm_model.optimizer.learning_rate, lr)
 
     transform_color = T.Lambda(lambda x: T.functional.adjust_contrast(T.functional.adjust_brightness(x, 1.5), 1.5))
     identity = T.Lambda(lambda x: x)
@@ -846,7 +851,10 @@ def train_voxelmorph_torchvision_multiple_patients(config_train, suffix, init_we
     steps_per_epoch_training = int(nb_examples_training / batch_size) + 1
     steps_per_epoch_test = int(nb_examples_test / batch_size) + 1
 
-    curr_scheduler = lambda epoch, lr: scheduler(epoch, lr, decay)
+    if "min_lr" in config_train:
+        min_lr = config_train["min_lr"]
+
+    curr_scheduler = lambda epoch, lr: scheduler(epoch, lr, decay, min_lr)
     Schedulecallback = tf.keras.callbacks.LearningRateScheduler(curr_scheduler)
 
     if init_weights is not None:
@@ -857,7 +865,7 @@ def train_voxelmorph_torchvision_multiple_patients(config_train, suffix, init_we
     hist = vxm_model.fit_generator(train_generator, epochs=nb_epochs, validation_data=validation_generator,
                                    steps_per_epoch=steps_per_epoch_training, validation_steps=steps_per_epoch_test,
                                    verbose=2,
-                                   callbacks=[Schedulecallback, WandbMetricsLogger(log_freq=8), callback_checkpoint])
+                                   callbacks=[Schedulecallback, WandbMetricsLogger()])
 
     vxm_model.save_weights(file_model)
 
@@ -1058,9 +1066,7 @@ def plot_deformation_flow(file_deformation,gr,sl):
 @machine
 @set_parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
 @set_parameter("file_deformation",str,default=None,description="Initial deformation if doing multiple pass of registration algo")
-@set_parameter("metric",["abs","phase","real","imag"],default="abs",description="Metric to apply to volumes")
-
-def apply_deformation_map(filename_volumes,file_deformation,metric):
+def apply_deformation_map(filename_volumes,file_deformation):
     all_volumes = np.load(filename_volumes)
     filename_registered_volumes = filename_volumes.split(".npy")[0] + "_registered_by_deformation.npy"
 

@@ -682,13 +682,10 @@ def estimate_weights_bins(displacements,nb_slices,nb_segments,nb_gating_spokes,n
             included_spokes_prev_bin[::gating_spokes_step] = False
             disp_reshaped=np.array([displacement_for_binning[i] for i in spoke_groups])
             included_soft_weight = (np.exp(-alpha * np.abs(disp_reshaped - bins[-1])) > tau)
-            print(np.sum(included_soft_weight))
             included_spokes_prev_bin=(included_soft_weight & included_spokes_prev_bin)
-            print(np.sum(included_spokes_prev_bin))
             included_spokes_current_bin=included_spokes
-            print(np.sum(included_spokes))
             included_spokes=included_spokes | included_spokes_prev_bin
-            print(np.sum(included_spokes))
+            disp_reshaped = disp_reshaped.reshape(nb_slices, nb_segments)
 
         if (j==0)and(soft_weight_for_full_inspi):
             alpha=-2*np.log(tau)/(bins[1]-bins[0])
@@ -702,6 +699,7 @@ def estimate_weights_bins(displacements,nb_slices,nb_segments,nb_gating_spokes,n
             included_spokes_prev_bin=(included_soft_weight & included_spokes_prev_bin)
             included_spokes_current_bin=included_spokes
             included_spokes=included_spokes | included_spokes_prev_bin
+            disp_reshaped = disp_reshaped.reshape(nb_slices, nb_segments)
 
         if us_file is not None:
             print("Using file {} for simulation kz undersampling".format(us_file))
@@ -745,29 +743,74 @@ def estimate_weights_bins(displacements,nb_slices,nb_segments,nb_gating_spokes,n
                 curr_start = curr_start % us
 
             included_spokes=included_spokes_new.flatten()
+
+
+            if ((j == (len(retained_categories) - 1))or(j==0)) and (soft_weight_for_full_inspi):
+                included_spokes_new=np.zeros((nb_slices_no_us,nb_segments),dtype=included_spokes.dtype)
+            
+                included_spokes_new = included_spokes_new.reshape((nb_slices_no_us, -1,nspoke_per_part))
+                included_spokes_prev_bin = included_spokes_prev_bin.reshape((nb_slices, -1,nspoke_per_part))
+
+                curr_start = 0
+
+                for sl in range(nb_slices_no_us):
+                    included_spokes_new[sl, curr_start::us, :] = included_spokes_prev_bin[int(sl/us),curr_start::us]
+                    curr_start = curr_start + 1
+                    curr_start = curr_start % us
+
+
+                included_spokes_prev_bin=included_spokes_new.reshape(nb_slices_no_us,-1)
+
+
+                included_spokes_new=np.zeros((nb_slices_no_us,nb_segments),dtype=included_spokes.dtype)
+            
+                included_spokes_new = included_spokes_new.reshape((nb_slices_no_us, -1,nspoke_per_part))
+                included_spokes_current_bin = included_spokes_current_bin.reshape((nb_slices, -1,nspoke_per_part))
+
+                curr_start = 0
+
+                for sl in range(nb_slices_no_us):
+                    included_spokes_new[sl, curr_start::us, :] = included_spokes_current_bin[int(sl/us),curr_start::us]
+                    curr_start = curr_start + 1
+                    curr_start = curr_start % us
+
+                included_spokes_current_bin=included_spokes_new.reshape(nb_slices_no_us,-1)
+
+                disp_reshaped_new=np.zeros((nb_slices_no_us,nb_segments),dtype=disp_reshaped.dtype)
+            
+                disp_reshaped_new = disp_reshaped_new.reshape((nb_slices_no_us, -1,nspoke_per_part))
+                disp_reshaped = disp_reshaped.reshape((nb_slices, -1,nspoke_per_part))
+
+                curr_start = 0
+
+                for sl in range(nb_slices_no_us):
+                    disp_reshaped_new[sl, curr_start::us, :] = disp_reshaped[int(sl/us),curr_start::us]
+                    curr_start = curr_start + 1
+                    curr_start = curr_start % us
+
+                disp_reshaped=disp_reshaped_new.reshape(nb_slices_no_us,-1)
+
             np.save("test_us_included_spokes.npy",included_spokes)
 
             
         np.save("test_us_included_spokes.npy",included_spokes)
         
-        print(included_spokes.shape)
-
         weights, retained_timesteps = correct_mvt_kdata_zero_filled(radial_traj, included_spokes, ntimesteps)
 
         print(weights.shape)
 
         if (j == (len(retained_categories) - 1)) and (soft_weight_for_full_inspi):
-            disp_reshaped = disp_reshaped.reshape(nb_slices, nb_segments)
+            
             disp_reshaped = np.moveaxis(disp_reshaped, -1, 0)
-            included_spokes_current_bin=1*np.expand_dims(included_spokes_current_bin.reshape(nb_slices,nb_segments).T,axis=0)
-            included_spokes_prev_bin = 1*np.expand_dims(included_spokes_prev_bin.reshape(nb_slices, nb_segments).T,axis=0)
+            included_spokes_current_bin=1*np.expand_dims(included_spokes_current_bin.reshape(weights.shape[2],nb_segments).T,axis=0)
+            included_spokes_prev_bin = 1*np.expand_dims(included_spokes_prev_bin.reshape(weights.shape[2], nb_segments).T,axis=0)
             weights=weights*included_spokes_current_bin+weights*included_spokes_prev_bin*np.exp(-alpha * np.abs(disp_reshaped - bins[-1]))
 
         if (j == 0) and (soft_weight_for_full_inspi):
-            disp_reshaped = disp_reshaped.reshape(nb_slices, nb_segments)
+
             disp_reshaped = np.moveaxis(disp_reshaped, -1, 0)
-            included_spokes_current_bin=1*np.expand_dims(included_spokes_current_bin.reshape(nb_slices,nb_segments).T,axis=0)
-            included_spokes_prev_bin = 1*np.expand_dims(included_spokes_prev_bin.reshape(nb_slices, nb_segments).T,axis=0)
+            included_spokes_current_bin=1*np.expand_dims(included_spokes_current_bin.reshape(weights.shape[2],nb_segments).T,axis=0)
+            included_spokes_prev_bin = 1*np.expand_dims(included_spokes_prev_bin.reshape(weights.shape[2], nb_segments).T,axis=0)
             weights=weights*included_spokes_current_bin+weights*included_spokes_prev_bin*np.exp(-alpha * np.abs(disp_reshaped - bins[0]))
 
 

@@ -37,8 +37,9 @@ SLICE1=${3-${SLICE1_def}}
 SLICE2=${4-${SLICE2_def}}
 
 #
-US=1
+
 SIMUS=1
+US=2
 
 # #Extracting k-space and navigator data
 # echo "######################################################"
@@ -48,10 +49,10 @@ SIMUS=1
 # rm $1.dat
 # rm $1.npy
 
-# # echo "Building navigator images to help with channel choice"
-# # python script_recoInVivo_3D_machines.py build_navigator_images --filename-nav-save $1_nav.npy
-# # cp $1_image_nav.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
-# # cp $1_image_nav_diff.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# echo "Building navigator images to help with channel choice"
+# python script_recoInVivo_3D_machines.py build_navigator_images --filename-nav-save $1_nav.npy
+# cp $1_image_nav.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# cp $1_image_nav_diff.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
 
 # echo "######################################################"
@@ -72,16 +73,16 @@ SIMUS=1
 
 # rm $1_kdata.npy
 
-# # ##
-# # ##
-# # #exit
-# # ##
-# # ##
-# # ## #Estimate displacement, bins and weights
-# # echo "######################################################"
-# # echo "Estimating displacement, bins and weights"
-# # # # ###python script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --use-ml True --incoherent False --ch $CHANNEL --ntimesteps 1 --nb-segments $NSEGMENTS --equal-spoke-per-bin True --nbins $NBINS --retained-categories "0,1,2,3"
-# python script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -20 --top 45 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --equal-spoke-per-bin True --ch $CHANNEL --nbins $NBINS --retained-categories "0,1,2,3,4" --sim-us $SIMUS --interp-bad-correl True --seasonal-adj False --pad 0 --nspoke-per-z 1 --soft-weight True #--stddisp 1.5
+# # # ##
+# # # ##
+# # # #exit
+# # # ##
+# # # ##
+# # # ## #Estimate displacement, bins and weights
+# # # echo "######################################################"
+# # # echo "Estimating displacement, bins and weights"
+# # # # # ###python script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --use-ml True --incoherent False --ch $CHANNEL --ntimesteps 1 --nb-segments $NSEGMENTS --equal-spoke-per-bin True --nbins $NBINS --retained-categories "0,1,2,3"
+# python script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -20 --top 45 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --equal-spoke-per-bin True --ch $CHANNEL --nbins $NBINS --retained-categories "0,1,2,3,4" --sim-us $SIMUS --us $US --interp-bad-correl True --seasonal-adj False --pad 0 --nspoke-per-z 1 --soft-weight True #--stddisp 1.5
 # cp $1_displacement.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
 # # # #exit
@@ -96,39 +97,42 @@ SIMUS=1
 # echo "Rebuilding and denoising volumes for all bins"
 # python script_recoInVivo_3D_machines.py build_volumes_allbins --filename-kdata $1_bart${NCOMP}_kdata.npy --n-comp $NCOMP --filename-weights $1_weights.npy
 # # # ## ##
-# python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_allbins.npy --sl ${SLICE1}
-# cp $1_bart${NCOMP}_volumes_allbins.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
-# python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_allbins.npy --sl ${SLICE2}
-# cp $1_bart${NCOMP}_volumes_allbins.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_allbins.npy --sl ${SLICE1}
+cp $1_bart${NCOMP}_volumes_allbins.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_allbins.npy --sl ${SLICE2}
+cp $1_bart${NCOMP}_volumes_allbins.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 # #exit
 # # ## #
 # # ## #
 # # ## #
 # # #exit
+# # exit
 
-# python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins --filename-volume $1_bart${NCOMP}_volumes_allbins.npy --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --mu-TV 0.1 --mu-bins 0. --gamma $GAMMA --niter 5 --filename-weights $1_weights.npy
-# # # ## ##
-# # # ## python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins --filename-volume $1_volumes_allbins.npy --filename-b1 $1_b12Dplus1_$NCOMP.npy --mu-bins 0. --gamma $GAMMA --niter $NITER --lambda-wav $WAV --use-wavelet True --mu 0.1
-# # # ## ##
-# # # ## ##for i in `seq 0 $(($NBINS-1))`
-# # # ## ##do
-# # # ## ##    python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volume_denoised_gr${i}.npy --sl ${SLICE1}
-# # # ## ##    cp $1_volume_denoised_gr${i}.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo/${FILEVAR}_volume_denoised_gr${i}_wav_${WAVSTR}.npy_sl${SLICE1}_moving_singular.gif
-# # # ## ##    python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volume_denoised_gr${i}.npy --sl ${SLICE2}
-# # # ## ##    cp $1_volume_denoised_gr${i}.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo/${FILEVAR}_volume_denoised_gr${i}_wav_${WAVSTR}.npy_sl${SLICE2}_moving_singular.gif
-# # # ## ##done
-# # # ## ##
-# # # ## ##python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins_denoised_gamma_$GAMMASTR.npy --sl ${SLICE1}
-# # # ## ##cp $1_volumes_allbins_denoised_gamma_${GAMMASTR}.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo/${FILEVAR}_volumes_allbins_denoised_gamma_${GAMMASTR}_wav_${WAVSTR}.npy_sl${SLICE1}_moving_singular.gif
-# # # ## ##python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins_denoised_gamma_$GAMMASTR.npy --sl ${SLICE2}
-# # # ## ##cp $1_volumes_allbins_denoised_gamma_${GAMMASTR}.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo/${FILEVAR}_volumes_allbins_denoised_gamma_${GAMMASTR}_wav_${WAVSTR}.npy_sl${SLICE2}_moving_singular.gif
-# # # ## #
-# # # ## #
-# # # ## #
-# python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_allbins_denoised_gamma_$GAMMASTR.npy --sl ${SLICE1}
-# cp $1_bart${NCOMP}_volumes_allbins_denoised_gamma_$GAMMASTR.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
-# python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_allbins_denoised_gamma_$GAMMASTR.npy --sl ${SLICE2}
-# cp $1_bart${NCOMP}_volumes_allbins_denoised_gamma_$GAMMASTR.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins --filename-volume $1_bart${NCOMP}_volumes_allbins.npy --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --mu-TV 0.1 --mu-bins 0. --gamma $GAMMA --niter 5 --filename-weights $1_weights.npy
+
+
+# # ## ##
+# # ## python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins --filename-volume $1_volumes_allbins.npy --filename-b1 $1_b12Dplus1_$NCOMP.npy --mu-bins 0. --gamma $GAMMA --niter $NITER --lambda-wav $WAV --use-wavelet True --mu 0.1
+# # ## ##
+# # ## ##for i in `seq 0 $(($NBINS-1))`
+# # ## ##do
+# # ## ##    python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volume_denoised_gr${i}.npy --sl ${SLICE1}
+# # ## ##    cp $1_volume_denoised_gr${i}.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo/${FILEVAR}_volume_denoised_gr${i}_wav_${WAVSTR}.npy_sl${SLICE1}_moving_singular.gif
+# # ## ##    python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volume_denoised_gr${i}.npy --sl ${SLICE2}
+# # ## ##    cp $1_volume_denoised_gr${i}.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo/${FILEVAR}_volume_denoised_gr${i}_wav_${WAVSTR}.npy_sl${SLICE2}_moving_singular.gif
+# # ## ##done
+# # ## ##
+# # ## ##python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins_denoised_gamma_$GAMMASTR.npy --sl ${SLICE1}
+# # ## ##cp $1_volumes_allbins_denoised_gamma_${GAMMASTR}.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo/${FILEVAR}_volumes_allbins_denoised_gamma_${GAMMASTR}_wav_${WAVSTR}.npy_sl${SLICE1}_moving_singular.gif
+# # ## ##python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins_denoised_gamma_$GAMMASTR.npy --sl ${SLICE2}
+# # ## ##cp $1_volumes_allbins_denoised_gamma_${GAMMASTR}.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo/${FILEVAR}_volumes_allbins_denoised_gamma_${GAMMASTR}_wav_${WAVSTR}.npy_sl${SLICE2}_moving_singular.gif
+# # ## #
+# # ## #
+# # ## #
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_allbins_denoised_gamma_$GAMMASTR.npy --sl ${SLICE1}
+cp $1_bart${NCOMP}_volumes_allbins_denoised_gamma_$GAMMASTR.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_allbins_denoised_gamma_$GAMMASTR.npy --sl ${SLICE2}
+cp $1_bart${NCOMP}_volumes_allbins_denoised_gamma_$GAMMASTR.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
 # # exit
 

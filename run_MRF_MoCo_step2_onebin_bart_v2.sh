@@ -26,7 +26,7 @@ SLICE2=${7-${SLICE2_def}}
 US=1
 SIMUS=1
 
-REF=0
+REF=4
 
 
 if [ $((NITER)) -eq 0 ]

@@ -39,18 +39,19 @@ DEFAULT_OPT_CONFIG_2STEPS="opt_config_twosteps.json"
 
 @machine
 @set_parameter("filename", str, default=None, description="Siemens K-space data .dat file")
-def getTR(filename):
+@set_parameter("index", int, default=-1, description="Header index")
+def getTR(filename,index):
     twix = twixtools.read_twix(filename, optional_additional_maps=["sWipMemBlock"],
                                    optional_additional_arrays=["SliceThickness"])
 
 
-    dTR=twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["adFree"][1]-twix[-1]["hdr"]["Meas"]["alTE"][0]/1000
-    print(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["adFree"][1])
-    print(twix[-1]["hdr"]["Meas"]["alTE"][0]/1000)
+    dTR=twix[index]["hdr"]["Meas"]["sWipMemBlock"]["adFree"][1]-twix[-1]["hdr"]["Meas"]["alTE"][0]/1000
+    print(twix[index]["hdr"]["Meas"]["sWipMemBlock"]["adFree"][1])
+    print(twix[index]["hdr"]["Meas"]["alTE"][0]/1000)
 
-    print(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["adFree"])
+    print(twix[index]["hdr"]["Meas"]["sWipMemBlock"]["adFree"])
     
-    total_TR=twix[-1]["hdr"]["Meas"]["alTR"][0]/1e6
+    total_TR=twix[index]["hdr"]["Meas"]["alTR"][0]/1e6
     print("Echo spacing is {} ms".format(dTR))
     print("Total TR is {} s".format(total_TR))
     return
@@ -91,7 +92,8 @@ def getGeometry(filename,filemha,suffix,nifti):
 @set_parameter("suffix",str,default="")
 @set_parameter("nifti",bool,default=False)
 @set_parameter("apply_offset",bool,default=False,description="Apply offset (for having the absolute position in space) - should be false for unwarping volumes")
-def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset):
+@set_parameter("reorient",bool,default=True,description="Reorient input volumes")
+def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset,reorient):
 
 
     extension=str.split(filevolume,".")[-1]
@@ -119,23 +121,38 @@ def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset):
     is3D=dico["is3D"]
 
     if apply_offset:
-        print("Applying offset")
+
         offset=dico["offset"]
-        spacing[-1]=spacing[-1]+offset
+        print("Applying offset {}".format(offset))
+        
+        origin=np.array(origin)
+        origin[-1]=origin[-1]+offset
+        origin=tuple(origin)
+        
 
     geom={"origin":origin,"spacing":spacing}
+    print(geom)
 
     data=np.abs(np.array(func_load(filevolume)).squeeze())
     print(data.shape)
-    if is3D:
-        #data=np.flip(np.moveaxis(data,0,-1),axis=(1,2))
-        if orientation=="coronal":
-            data=np.flip(np.moveaxis(data,(0,1,2),(1,2,0)),axis=(1))
-            #data=np.moveaxis(data,0,2)
-        elif orientation=="transversal":
+    if reorient:
+        print("Reorienting input volume")
+        if is3D:
+            #data=np.flip(np.moveaxis(data,0,-1),axis=(1,2))
+            offset=data.ndim-3
+            if orientation=="coronal":
+                
+                data=np.flip(np.moveaxis(data,(offset,offset+1,offset+2),(offset+1,offset+2,offset)),axis=(offset,offset+1))
+                #data=np.moveaxis(data,0,2)
+            elif orientation=="transversal":
+                # data=np.moveaxis(data,offset,offset+2)
+                data=np.flip(np.moveaxis(data,offset,offset+2),axis=(offset+1,offset+2))
+
+            elif orientation=="sagittal":
+                # data=np.moveaxis(data,offset,offset+2)
+                data=np.flip(np.moveaxis(data,(offset,offset+1,offset+2),(offset,offset+2,offset+1)))
+        else:
             data=np.moveaxis(data,0,2)[:,::-1]
-    else:
-        data=np.moveaxis(data,0,2)[:,::-1]
     
     
     vol = io.Volume(data, **geom)
@@ -149,7 +166,8 @@ def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset):
 @set_parameter("dens_adj", bool, default=True, description="Radial density adjustment")
 @set_parameter("suffix",str,default="")
 @set_parameter("select_first_rep", bool, default=False, description="Select the first central partition repetition")
-def build_kdata(filename,suffix,dens_adj,select_first_rep):
+@set_parameter("index", int, default=-1, description="Header index")
+def build_kdata(filename,suffix,dens_adj,select_first_rep,index):
 
     if dens_adj:
         filename_kdata = str.split(filename, ".dat")[0] + suffix + "_kdata.npy"
@@ -191,29 +209,31 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep):
 
         #del alFree
         hdr = io_twixt.parse_twixt_header(filename)
-
-        alFree = get_specials(hdr, type="alFree")
-        adFree = get_specials(hdr, type="adFree")
-        geometry, is3D, orientation, offset = get_volume_geometry(hdr)
+        print(len(hdr))
+        print(index)
+        #index=5
+        alFree = get_specials(hdr, type="alFree",index=index)
+        adFree = get_specials(hdr, type="adFree",index=index)
+        print(alFree)
+        geometry, is3D, orientation, offset = get_volume_geometry(hdr,index=index)
 
         nb_segments = alFree[4]
 
-        x_FOV = hdr[-1]['sSliceArray.asSlice[0].dReadoutFOV']
-        y_FOV = hdr[-1]['sSliceArray.asSlice[0].dReadoutFOV']
-        z_FOV = hdr[-1]['sSliceArray.asSlice[0].dThickness']
-        nb_part = hdr[-1]['sKSpace.lPartitions']
+        x_FOV = hdr[index]['sSliceArray.asSlice[0].dReadoutFOV']
+        y_FOV = hdr[index]['sSliceArray.asSlice[0].dReadoutFOV']
+        z_FOV = hdr[index]['sSliceArray.asSlice[0].dThickness']
+        nb_part = hdr[index]['sKSpace.lPartitions']
 
-        minTE = hdr[-1]["alTE[0]"] / 1e3
+        minTE = hdr[index]["alTE[0]"] / 1e3
         echoSpacing = adFree[1]
         dTR = echoSpacing - minTE
-        total_TR = hdr[-1]["alTR[0]"] / 1e6
+        total_TR = hdr[index]["alTR[0]"] / 1e6
         invTime = adFree[0]
 
         if np.max(np.argwhere(alFree> 0)) >= 16:
             use_navigator_dll = True
         else:
             use_navigator_dll = False
-
         dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV,"z_FOV": z_FOV, "TI": invTime, "total_TR": total_TR,
                           "dTR": dTR, "is3D": is3D, "orientation": orientation, "nb_part": nb_part, "offset": offset,"use_navigator_dll":use_navigator_dll}
         dico_seqParams.update(geometry)
@@ -244,6 +264,7 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep):
         meas_sampling_mode = dico_seqParams["alFree"][12]
         nb_gating_spokes = 0
 
+    
     undersampling_factor=dico_seqParams["alFree"][9]
 
     
@@ -3650,7 +3671,7 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
     volumes=mu*volumes0
 
     if use_wavelet:
-
+        print("Wavelet Denoising")
         wav_level = 4
         wav_type="db4"
 
@@ -3670,6 +3691,8 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
             y = u
             t = 1
             u = pywt.threshold(y, lambd * mu)
+
+            print("Non zero percentage: {} ".format(np.count_nonzero(u)/np.prod(u.shape)))
 
             vol_denoised_log.append(pywt.waverecn(pywt.array_to_coeffs(u, slices), wav_type, mode="periodization",axes=(1,2,3)))
 
@@ -3692,6 +3715,7 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
                 y = y - mu * grad
 
                 u = pywt.threshold(y, lambd * mu)
+                print("Non zero percentage: {} ".format(np.count_nonzero(u)/np.prod(u.shape)))
 
                 t_next = 0.5 * (1 + np.sqrt(1 + 4 * t ** 2))
                 y = u + (t - 1) / t_next * (u - u_prev)
@@ -3713,6 +3737,7 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
 
 
     elif use_LLR:
+        print("LLR denoising")
         blck = np.array(block.split(",")).astype(int)
         strd = blck
         lambd = lambda_LLR
