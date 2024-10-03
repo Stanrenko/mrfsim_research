@@ -4,21 +4,23 @@ set -e
 # $1 : MRF scan data file e.g. data/InVivo/3D/patient.003.v17/meas_MID00021_FID67001_raFin_3D_tra_1x1x5mm_FULL_new_mrf.dat
 # $2 : Full MRF dictionary e.g. mrf_dictconf_Dico2_Invivo_adjusted_2.22_reco4_w8_simmean.dict
 # $3 : Light MRF dictionary e.g. mrf_dictconf_Dico2_Invivo_light_for_matching_adjusted_2.22_reco4_w8_simmean.dict
+# $4 : Index for parsing header file - default -1
 
+INDEX_def=-1
 
 NCOMP=46
 NSING=6
 NITER=0
-
+INDEX=${4-${INDEX_def}}
 
 
 # #Extracting k-space and navigator data
 # echo "######################################################"
 # echo "Extracting k-space and navigator data"
-python script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index -1
+python script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX}
 
 rm $1.npy
-# rm $1.dat
+rm $1.dat
 
 # #Coil compression
 # echo "######################################################"

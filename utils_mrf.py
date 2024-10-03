@@ -1258,10 +1258,7 @@ def get_ROI_values(map_,mask,maskROI,kernel_size=5,adj_wT1=False, fat_threshold=
     if kept_keys is not None:
         keys = keys & set(kept_keys)
     
-    nb_keys = len(keys)
-
-    print(maskROI.shape)
-    print(mask.shape)
+    
 
     if mask.ndim==2:
         excluded_border_slices=None
@@ -1297,10 +1294,7 @@ def get_ROI_values(map_,mask,maskROI,kernel_size=5,adj_wT1=False, fat_threshold=
         mask=final_mask        
     
 
-
-
     maskROI=maskROI[mask>0]
-    print(maskROI.shape)
 
     if wT1_threshold is not None:
         print("Filtering High wT1 values")
@@ -1310,15 +1304,14 @@ def get_ROI_values(map_,mask,maskROI,kernel_size=5,adj_wT1=False, fat_threshold=
         
         maskROI=maskROI[wT1 < wT1_threshold]
         
-
+    
     #Removing ROIs with less than min_ROI_count values
     freq = collections.Counter(maskROI)
+    print(freq)
     maskROI = np.array([ele if freq[ele] > min_ROI_count else 0 for ele in maskROI])
 
+    results=pd.DataFrame(index=np.unique(maskROI))
 
-
-
-    results=pd.DataFrame()
     for i, k in enumerate(sorted(keys)):
         obs=map_[k]
 
@@ -1332,24 +1325,25 @@ def get_ROI_values(map_,mask,maskROI,kernel_size=5,adj_wT1=False, fat_threshold=
             maskROI_current=maskROI
         
         
+        
 
         df_obs = pd.DataFrame(columns=["Data", "Groups"],
                               data=np.stack([obs.flatten(), maskROI_current.flatten()], axis=-1))
 
-        obs = np.array(df_obs.groupby("Groups").mean())[1:]
-        print(obs)
+    
 
         
 
 
             # print(list(pred_std.reshape(1,-1)))
-        results[k+" Mean"]=obs.flatten()
+        results[k+" Mean"]=df_obs.groupby("Groups").mean()[1:]
 
         if return_std:
-            obs_std = np.array(df_obs.groupby("Groups").std())[1:]
+            # obs_std = np.array(df_obs.groupby("Groups").std())[1:]
  
-            results[k+" Std"] = obs_std.flatten()
+            results[k+" Std"] = df_obs.groupby("Groups").std()
 
+    results=results.dropna()
     return results
 
 def voronoi_finite_polygons_2d(vor, radius=None):
@@ -5107,7 +5101,8 @@ def get_specials(hdr,type="alFree",index=-1):
 
 
 
-def concatenate_images(image_list,ignore_zero=True):
+def concatenate_images(image_list,ignore_zero=True,spacing=None,method="linear",overlap=(0,0,0)):
+    
     # Calculating the boundaries and the grid of each individual image
 
 
@@ -5115,21 +5110,17 @@ def concatenate_images(image_list,ignore_zero=True):
     min_y_list=[im.origin[1] for im in image_list]
     min_z_list=[im.origin[2] for im in image_list]
 
-
     min_x=np.min(min_x_list)
     min_y=np.min(min_y_list)
     min_z=np.min(min_z_list)
-
 
     max_x_list=[im.origin[0]+im.spacing[0]*(im.shape[0]-1) for im in image_list]
     max_y_list=[im.origin[1]+im.spacing[1]*(im.shape[1]-1) for im in image_list]
     max_z_list=[im.origin[2]+im.spacing[2]*(im.shape[2]-1) for im in image_list]
 
-
     max_x=np.max(max_x_list)
     max_y=np.max(max_y_list)
     max_z=np.max(max_z_list)
-
 
     print(min_x)
     print(min_y)
@@ -5139,7 +5130,40 @@ def concatenate_images(image_list,ignore_zero=True):
     print(max_y)
     print(max_z)
 
-    print()
+    print("Cutting overlap regions")
+    image_list_new=[]
+    for i,im in enumerate(image_list):
+        curr_geom={
+            'origin': im.origin,
+            'spacing': im.spacing,
+            # 'transform': transform, # TODO
+        }
+
+
+        data=np.array(im)
+        data_new=np.zeros_like(data)
+        cut_x=math.floor(0.5*overlap[0]/im.spacing[0])
+        cut_y=math.floor(0.5*overlap[1]/im.spacing[1])
+        cut_z=math.floor(0.5*overlap[2]/im.spacing[2])
+
+        ind_min_x=cut_x
+        ind_max_x=im.shape[0]-cut_x
+
+        ind_min_y=cut_y
+        ind_max_y=im.shape[1]-cut_y
+
+        ind_min_z=cut_z
+        ind_max_z=im.shape[2]-cut_z
+
+        print(ind_min_z)
+        print(ind_max_z)
+
+        data_new[ind_min_x:ind_max_x,ind_min_y:ind_max_y,ind_min_z:ind_max_z]=data[ind_min_x:ind_max_x,ind_min_y:ind_max_y,ind_min_z:ind_max_z]
+        im_new=io.Volume(data_new,**curr_geom)
+        image_list_new.append(im_new)
+    
+    image_list=image_list_new
+
 
     x_list = [min_x_list[i] + np.array(list(range(image_list[i].shape[0])))*image_list[i].spacing[0] for i in range(len(image_list))]
     y_list = [min_y_list[i] + np.array(list(range(image_list[i].shape[1])))*image_list[i].spacing[1] for i in range(len(image_list))]
@@ -5147,7 +5171,8 @@ def concatenate_images(image_list,ignore_zero=True):
 
 
     # Calculating the target grid for the whole concatenated image
-    spacing=image_list[0].spacing
+    if spacing is None:
+        spacing=image_list[0].spacing
     max_index_x=int((max_x-min_x)/spacing[0])
     max_index_y=int((max_y-min_y)/spacing[1])
     max_index_z=int((max_z-min_z)/spacing[2])
@@ -5158,7 +5183,7 @@ def concatenate_images(image_list,ignore_zero=True):
 
 
     # Interpolating each image on the target grid
-    interp_list=[RegularGridInterpolator((x_list[i], y_list[i], z_list[i]),np.array(image_list[i]),fill_value=np.inf,bounds_error=False) for i in range(len(image_list))]
+    interp_list=[RegularGridInterpolator((x_list[i], y_list[i], z_list[i]),np.array(image_list[i]),fill_value=np.inf,bounds_error=False,method=method) for i in range(len(image_list))]
     imag_interp_list=[interp(np.stack([xg,yg,zg],axis=-1).reshape(-1,3)).reshape(xg.shape) for interp in interp_list]
 
 

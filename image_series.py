@@ -1178,7 +1178,8 @@ class ImageSeries3D(ImageSeries):
     def __init__(self, name,dict_config={}, **kwargs):
         super().__init__(name, dict_config, **kwargs)
         if "nb_slices" not in self.paramDict:
-            raise ValueError("nb_slices should be provided for MapFromFile3D")
+            self.paramDict["nb_slices"]=1
+            print("nb_slices was not provided. Giving it default dummy value of 1.")
         if "gap_slice" not in self.paramDict:
             self.paramDict["gap_slice"]=1
         if "undersampling_factor" not in self.paramDict:
@@ -1273,28 +1274,88 @@ class MapFromFile3D(ImageSeries3D):
             self.paramDict["default_fT1"]=DEFAULT_fT1
 
     @wrapper_rounding
-    def buildParamMap(self, mask=None):
+    def buildParamMap(self, mask=None,dico_bumps=None):
 
         if mask is not None:
             raise ValueError("mask automatically built from wT1 map for file load for now")
 
-        matobj = loadmat(self.paramDict["file"])["paramMap"]
-        map_wT1 = matobj["T1"][0, 0]
-        map_df = matobj["Df"][0, 0]
-        map_attB1 = matobj["B1"][0, 0]
-        map_ff = matobj["FF"][0, 0]
+        file=self.paramDict["file"]
+        if type(file)==str:
+            matobj = loadmat(self.paramDict["file"])["paramMap"]
+            map_wT1 = matobj["T1"][0, 0]
+            map_df = matobj["Df"][0, 0]
+            map_attB1 = matobj["B1"][0, 0]
+            map_ff = matobj["FF"][0, 0]
 
-        mask_slice = np.zeros(map_wT1.shape)
-        mask_slice[map_wT1 > 0] = 1.0
+            mask_slice = np.zeros(map_wT1.shape)
+            mask_slice[map_wT1 > 0] = 1.0
 
-        self.image_size = (self.paramDict["nb_slices"] + 2 * self.paramDict["nb_empty_slices"],) + map_wT1.shape
+            self.image_size = (self.paramDict["nb_slices"] + 2 * self.paramDict["nb_empty_slices"],) + map_wT1.shape
 
-        map_wT1 = np.resize(map_wT1, self.image_size)
-        map_df = np.resize(map_df, self.image_size)
-        map_attB1 = np.resize(map_attB1, self.image_size)
-        map_ff = np.resize(map_ff, self.image_size)
+            mask = np.resize(mask_slice, self.image_size)
 
-        mask = np.resize(mask_slice, self.image_size)
+            map_wT1 = np.resize(map_wT1, self.image_size)
+            map_df = np.resize(map_df, self.image_size)
+            map_attB1 = np.resize(map_attB1, self.image_size)
+            map_ff = np.resize(map_ff, self.image_size)
+
+
+        elif type(file)==list:
+            print("Processing list of files to build a single 3D map")
+            map_wT1=[]
+            map_df=[]
+            map_attB1=[]
+            map_ff=[]
+
+            for f in file:
+                matobj = loadmat(f)["paramMap"]
+                # curr_map_wT1=matobj["T1"][0, 0]
+                # print(curr_map_wT1.shape)
+                map_wT1.append(matobj["T1"][0, 0])
+                map_df.append(matobj["Df"][0, 0])
+                map_attB1.append(matobj["B1"][0, 0])
+                map_ff.append(matobj["FF"][0, 0])
+                
+
+            
+
+
+            map_wT1=np.array(map_wT1)
+            map_df=np.array(map_df)
+            map_attB1=np.array(map_attB1)
+            map_ff=np.array(map_ff)
+
+            map_wT1=np.vstack([np.zeros((self.paramDict["nb_empty_slices"],)+map_wT1.shape[1:]),map_wT1])
+            map_wT1=np.vstack([map_wT1,np.zeros((self.paramDict["nb_empty_slices"],)+map_wT1.shape[1:])])
+
+            map_df=np.vstack([np.zeros((self.paramDict["nb_empty_slices"],)+map_wT1.shape[1:]),map_df])
+            map_df=np.vstack([map_df,np.zeros((self.paramDict["nb_empty_slices"],)+map_wT1.shape[1:])])
+
+            map_attB1=np.vstack([np.zeros((self.paramDict["nb_empty_slices"],)+map_wT1.shape[1:]),map_attB1])
+            map_attB1=np.vstack([map_attB1,np.zeros((self.paramDict["nb_empty_slices"],)+map_wT1.shape[1:])])
+
+            map_ff=np.vstack([np.zeros((self.paramDict["nb_empty_slices"],)+map_wT1.shape[1:]),map_ff])
+            map_ff=np.vstack([map_ff,np.zeros((self.paramDict["nb_empty_slices"],)+map_wT1.shape[1:])])
+
+            mask=np.zeros(map_wT1.shape)
+            mask[map_wT1>0]=1
+
+            mask=np.array(mask)
+
+            print("WARNING: nb_slices not used. Using the number of slices in the map files")
+            self.paramDict["nb_slices"]=map_wT1.shape[0]
+            self.image_size = (self.paramDict["nb_slices"] + 2 * self.paramDict["nb_empty_slices"],) + map_wT1.shape
+            # mask=np.vstack([np.zeros((self.paramDict["nb_empty_slices"],)+mask.shape[1:]),mask])
+            # mask=np.vstack([mask,np.zeros((self.paramDict["nb_empty_slices"],)+mask.shape[1:])])
+
+            print(mask.shape)
+
+        else:
+            raise ValueError("file parameter should be a string or a list of files")
+
+        
+        
+        
         mask[:self.paramDict["nb_empty_slices"], :, :] = 0
         mask[-self.paramDict["nb_empty_slices"]:, :, :] = 0
         self.mask = mask
@@ -1319,6 +1380,11 @@ class MapFromFile3D(ImageSeries3D):
             "df": -map_all_on_mask[:, 5] / 1000,
             "ff": map_all_on_mask[:, 6]
         }
+
+        if dico_bumps is not None:
+            for k in dico_bumps.keys():
+                self.paramMap[k]=np.maximum(np.minimum(self.paramMap[k]+dico_bumps[k][self.mask>0],PARAMS_WINDOWS[k][1]),PARAMS_WINDOWS[k][0])
+                #print(self.paramMap[k])
 
 
 class MapFromDict3D(ImageSeries3D):

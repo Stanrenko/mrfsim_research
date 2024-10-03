@@ -159,6 +159,23 @@ def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset,reorient):
     io.write(filemha_adjusted,vol)
     return
 
+@machine
+@set_parameter("folder", str, default=None, description="Folder containing the .mha")
+@set_parameter("key", str, default=None, description="Substring for matching volumes")
+@set_parameter("suffix",str,default="_corrected_offset.nii")
+@set_parameter("spacing",[float,float,float],default=[2,2,2],description="Target spacing")
+def concatenateVolumes(folder,key,spacing,suffix):
+    print(folder+"/*{}{}.nii".format(key,suffix))
+    files_list=glob.glob(folder+"/*{}{}".format(key,suffix))
+    print(files_list)
+    image_list=[io.read(f) for f in files_list]
+    whole=concatenate_images(image_list,spacing=tuple(spacing))
+    io.write(folder+"/whole_{}{}".format(key,suffix),whole)
+    return
+
+
+
+
 
 
 @machine
@@ -4867,9 +4884,8 @@ def generate_mask_roi_from_segmentation(fileseg):
     file_maskROI=str.split(fileseg,".nii")[0]+"_maskROI.npy"
     img = nib.load(fileseg)
     data = np.array(img.dataobj)
+    print("Reorienting in the reconstructed maps original orientation")
     maskROI=np.moveaxis(np.flip(data,axis=(1,2)),-1,0)
-
-
 
     np.save(file_maskROI,maskROI)
 
@@ -4879,9 +4895,13 @@ def generate_mask_roi_from_segmentation(fileseg):
 @machine
 @set_parameter("filemap", str, default=None, description="Maps (.pkl)")
 @set_parameter("fileroi", str, default=None, description="ROIs (.npy)")
+@set_parameter("filelabels", str, default=None, description="Labels name mapping (.txt)")
 @set_parameter("adj_wT1", bool, default=True, description="Filter water T1 value for FF")
 @set_parameter("fat_threshold", float, default=0.7, description="FF threshold for water T1 filtering")
-def getROIresults(filemap,fileroi,adj_wT1,fat_threshold):
+@set_parameter("excluded", int, default=5, description="number of excluded border slices on each extremity")
+@set_parameter("kernel", int, default=5, description="Kernel size for erosion")
+@set_parameter("roi", int, default=15, description="Min ROI number of pixel for inclusion")
+def getROIresults(filemap,fileroi,filelabels,adj_wT1,fat_threshold,excluded,kernel,roi):
 
     file_results_ROI=str.split(filemap,".pkl")[0]+"_ROI_results.csv"
 
@@ -4892,7 +4912,13 @@ def getROIresults(filemap,fileroi,adj_wT1,fat_threshold):
     map_=all_maps[0][0]
     maskROI=np.load(fileroi)
 
-    results=get_ROI_values(map_,mask,maskROI,adj_wT1=adj_wT1, fat_threshold=0.7,kept_keys=None,min_ROI_count=15,return_std=True)
+    results=get_ROI_values(map_,mask,maskROI,adj_wT1=adj_wT1, fat_threshold=fat_threshold,kept_keys=None,min_ROI_count=roi,return_std=True,excluded_border_slices=excluded,kernel_size=kernel)
+
+    if filelabels is not None:
+        labels=pd.read_csv(filelabels,skiprows=14,header=None,delim_whitespace=True).iloc[:,-1]
+        labels.name="ROI"
+        results=pd.merge(results,labels,left_index=True,right_index=True).set_index("ROI")
+
 
     print(results)
     results.to_csv(file_results_ROI)
@@ -4998,6 +5024,7 @@ toolbox.add_program("build_volumes_iterative_allbins_registered_allindex", build
 toolbox.add_program("getTR", getTR)
 toolbox.add_program("getGeometry", getGeometry)
 toolbox.add_program("convertArrayToImage", convertArrayToImage)
+toolbox.add_program("concatenateVolumes", concatenateVolumes)
 toolbox.add_program("plot_deformation", plot_deformation)
 toolbox.add_program("build_navigator_images", build_navigator_images)
 toolbox.add_program("generate_random_weights", generate_random_weights)

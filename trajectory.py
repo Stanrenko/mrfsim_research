@@ -92,7 +92,7 @@ class Cartesian(Trajectory):
 
 class Radial3D(Trajectory):
 
-    def __init__(self,total_nspokes=1400,nspoke_per_z_encoding=8,npoint=512,undersampling_factor=4,incoherent=False,is_random=False,mode="old",offset=0,golden_angle=True,nb_rep_center_part=1,**kwargs):
+    def __init__(self,total_nspokes=1400,nspoke_per_z_encoding=8,npoint=512,undersampling_factor=1,incoherent=False,is_random=False,mode="old",offset=0,golden_angle=True,nb_rep_center_part=1,**kwargs):
         super().__init__(**kwargs)
         self.paramDict["total_nspokes"] = total_nspokes
         self.paramDict["nspoke"] = nspoke_per_z_encoding

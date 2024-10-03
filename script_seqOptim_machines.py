@@ -38,6 +38,7 @@ BUMP_STD={
     "ff":0.01
 }
 
+df_results=pd.DataFrame()
 
 @machine
 @set_parameter("optimizer_config",type=Config,default=DEFAULT_RANDOM_OPT_CONFIG,description="Optimizer parameters")
@@ -1093,6 +1094,7 @@ def cost_function_simul_breaks_random_FA_KneePhantom_variablesp(params,**kwargs)
     #global result
 
     global map_index
+    global df_results
 
     DFs = kwargs["DFs"]
     FFs = None
@@ -1276,18 +1278,18 @@ def cost_function_simul_breaks_random_FA_KneePhantom_variablesp(params,**kwargs)
     #print(matched_signals.shape)
 
     
-    plt.close("all")
-    plt.figure()
-    i=np.random.choice(num_signals)
-    print("Plotting Match Example")
-    print(signals.shape)
-    print(matched_signals.shape)
-    print(i)
+    # plt.close("all")
+    # plt.figure()
+    # i=np.random.choice(num_signals)
+    # print("Plotting Match Example")
+    # print(signals.shape)
+    # print(matched_signals.shape)
+    # print(i)
     
-    plt.plot(signals[:,i],label="Orig")
-    plt.plot(matched_signals[:,i],label="Matched")
-    plt.legend()
-    plt.savefig("Optim_Matching_example.jpg")
+    # plt.plot(signals[:,i],label="Orig")
+    # plt.plot(matched_signals[:,i],label="Matched")
+    # plt.legend()
+    # plt.savefig("Optim_Matching_example.jpg")
 
     key = "wT1"
     map = all_maps[0][0][key][m_.paramMap["ff"]<0.7]#*1000
@@ -1323,6 +1325,14 @@ def cost_function_simul_breaks_random_FA_KneePhantom_variablesp(params,**kwargs)
     error_b1 = np.mean(error)
 
     print("B1 Cost : {}".format(error_b1))
+
+    curr_results=pd.DataFrame(data=np.array([error_wT1,error_ff,error_df,error_b1]).reshape(1,-1),columns=["wT1 cost","ff cost","df cost","attB1 cost"])
+    if df_results.empty:
+        df_results=curr_results
+    else:
+        df_results=pd.concat([df_results,curr_results])
+    
+    df_results.to_csv("cost_terms.csv")
 
     # num_breaks_TE=len(TE_breaks)
     FA_cost = np.mean((np.abs(np.diff(FA_[1:]))))
