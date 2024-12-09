@@ -1,3 +1,496 @@
+import datetime
+
+#import matplotlib
+#matplotlib.u<se("TkAgg")
+import numpy as np
+from mrfsim import T1MRF
+from image_series import *
+from dictoptimizers import SimpleDictSearch,GaussianWeighting,BruteDictSearch
+from script_MoCo_MRF import filename_weights
+from utils_mrf import *
+from utils_simu import *
+import json
+import readTwix as rT
+import time
+import os
+from numpy.lib.format import open_memmap
+from numpy import memmap
+import pickle
+from scipy.io import loadmat,savemat
+from mutools import io
+from sklearn import linear_model
+from scipy.optimize import minimize
+from epgpy import epg
+from scipy.signal import medfilt
+base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
+base_folder = "./data/InVivo/3D/kushball"
+
+id="meas_MID00019_FID16131_raFin_3D_tra_3x3x3mm_respi_kushball"
+file=id+"_kdata.npy"
+filedico=id+"_seqParams.pkl"
+
+
+f = open(base_folder+"/"+filedico, "rb")
+dico_seqParams = pickle.load(f)
+f.close()
+
+x_FOV=dico_seqParams["x_FOV"]
+y_FOV=dico_seqParams["x_FOV"]
+z_FOV=dico_seqParams["x_FOV"]
+spacing=dico_seqParams["spacing"]
+image_size=(int(z_FOV/spacing[2]),int(x_FOV/spacing[0]),int(y_FOV/spacing[1]))
+
+
+
+
+kdata=np.load(base_folder+"/"+file)
+
+
+
+total_nspoke=kdata.shape[1]
+npart=kdata.shape[2]
+npoint=kdata.shape[-1]
+nb_channels=kdata.shape[0]
+
+density = np.abs(np.linspace(-1, 1, npoint))
+density = np.expand_dims(density, tuple(range(kdata.ndim - 1)))
+kdata *= density
+
+
+k_max=np.pi
+phi1=0.4656
+phi2=0.6823
+theta=2*np.pi*np.mod(np.arange(total_nspoke*npart)*phi2,1)
+phi=np.arccos(np.mod(np.arange(total_nspoke*npart)*phi1,1))
+
+kdata=kdata*np.sin(phi.reshape(npart,total_nspoke).T[None,:,:,None])
+
+rotation=np.stack([np.sin(phi)*np.cos(theta),np.sin(phi)*np.sin(theta),np.cos(phi)],axis=1).reshape(-1,1,3)
+base_spoke = (-k_max+k_max/(npoint)+np.arange(npoint)*2*k_max/(npoint))
+
+base_spoke=base_spoke.reshape(-1,1)
+spokes=np.matmul(base_spoke,rotation).reshape(npart,total_nspoke,npoint,-1)
+spokes=np.moveaxis(spokes,0,1)
+spokes=spokes.reshape(-1,3)
+
+#np.save(base_folder+"/"+id+"_kdata_dcomp.npy",kdata)
+
+kdata=kdata.reshape(nb_channels,-1)
+#spokes=spokes.astype("float32")
+
+ch=0
+fk = finufft.nufft3d1(spokes[:, 2], spokes[:, 0], spokes[:, 1], kdata[ch], image_size)
+
+fk.shape
+
+
+plt.imshow(np.abs(fk[int(image_size[0]/2)]))
+plot_image_grid(np.abs(fk[::5]),nb_row_col=(5,4))
+plt.savefig("test3D.jpg")
+
+
+fk=0
+
+for ch in tqdm(range(nb_channels)):
+    fk+=np.abs(finufft.nufft3d1(spokes[:, 2], spokes[:, &], spokes[:, 2], kdata[ch], image_size))**2
+
+fk=np.sqrt(fk)
+
+plot_image_grid(np.abs(fk[::5]),nb_row_col=(5,4))
+plt.savefig("test3D.jpg")
+
+file_npy=base_folder+"/"+"Liver_SOS.npy"
+file_mha=base_folder+"/"+"Liver_SOS.mha"
+np.save(file_npy,fk)
+vol=io.Volume(np.moveaxis(fk,0,-1),spacing=dico_seqParams["spacing"])
+io.write(file_mha,vol)
+
+
+
+
+
+
+
+
+
+
+
+
+
+import datetime
+
+#import matplotlib
+#matplotlib.u<se("TkAgg")
+import numpy as np
+from mrfsim import T1MRF
+from image_series import *
+from dictoptimizers import SimpleDictSearch,GaussianWeighting,BruteDictSearch
+from utils_mrf import *
+from utils_simu import *
+import json
+import readTwix as rT
+import time
+import os
+from numpy.lib.format import open_memmap
+from numpy import memmap
+import pickle
+from scipy.io import loadmat,savemat
+from mutools import io
+from sklearn import linear_model
+from scipy.optimize import minimize
+from epgpy import epg
+from scipy.signal import medfilt
+from utils_reco import calculate_sensitivity_map_3D
+base_folder = "/mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/&0_2021_MR_MyoMaps/3_Data/4_3D/Invivo"
+base_folder = "./data/InVivo/3D/kushball"
+
+id="meas_MID00019_FID16131_raFin_3D_tra_3x3x3mm_respi_kushball"
+id="meas_MID00042_FID16733_raFin_3D_tra_3x3x3mm_respi_kushball_iso"
+#id="meas_MID00051_FID16742_raFin_3D_tra_3x3x3mm_respi_kushball_150"
+id="meas_MID00032_FID16144_raFin_3D_tra_3x3x3mm_mrf_optim_kushball"
+id="meas_MID00019_FID16131_raFin_3D_tra_3x3x3mm_respi_kushball"
+file=id+"_kdata.npy"
+filedico=id+"_seqParams.pkl"
+
+
+f = open(base_folder+"/"+filedico, "rb")
+dico_seqParams = pickle.load(f)
+f.close()
+
+x_FOV=dico_seqParams["x_FOV"]
+y_FOV=dico_seqParams["y_FOV"]
+z_FOV=dico_seqParams["z_FOV"]
+spacing=dico_seqParams["spacing"]
+image_size=(int(z_FOV/spacing[2]),int(x_FOV/spacing[0]),int(y_FOV/spacing[1]))
+
+kdata=np.load(base_folder+"/"+file)
+
+total_nspoke=kdata.shape[1]
+npart=kdata.shape[2]
+npoint=kdata.shape[-1]
+nb_channels=kdata.shape[0]
+
+density = np.abs(np.linspace(-1, 1, npoint))
+density = np.expand_dims(density, tuple(range(kdata.ndim - 1)))
+kdata *= density
+
+
+k_max=np.pi
+phi1=0.4656
+phi2=0.6823
+theta=2*np.pi*np.mod(np.arange(total_nspoke*npart)*phi2,1)
+phi=np.arccos(np.mod(np.arange(total_nspoke*npart)*phi1,1))
+
+kdata=kdata*np.sin(phi.reshape(npart,total_nspoke).T[None,:,:,None])
+
+traj=Radial3D(tota_nspokes=total_nspoke,undersampling_factor=1,npoint=npoint,nb_slices=npart,mode="Kushball")
+
+b1_map=calculate_sensitivity_map_3D(kdata,traj,image_size=image_size,light_memory_usage=True,hanning_filter=True)
+
+plot_image_grid(np.abs(b1_map[:,52]),nb_row_col=(5,5))
+
+vol2=simulate_radial_undersampled_images_multi(kdata,traj,image_size,b1=b1_map,ntimesteps=1,density_adj=False,light_memory_usage=True)
+vol2=vol2[0]
+plot_image_grid(np.abs(vol2[::5]),nb_row_col=(5,5))
+
+file_npy=base_folder+"/"+"Liver_CoilSensi.npy"
+file_mha=base_folder+"/"+"Liver_CoilSensi.mha"
+np.save(file_npy,vol2)
+
+vol3=io.Volume(np.moveaxis(np.abs(vol2),0,-1),spacing=dico_seqParams["spacing"])
+io.write(file_mha,vol3)
+
+
+
+
+
+
+
+
+
+
+##BART
+import datetime
+
+#import matplotlib
+#matplotlib.u<se("TkAgg")
+import numpy as np
+from mrfsim import T1MRF
+from image_series import *
+from dictoptimizers import SimpleDictSearch,GaussianWeighting,BruteDictSearch
+from utils_mrf import *
+from utils_simu import *
+
+import pickle
+import os
+import sys
+os.environ['PATH'] = os.environ['TOOLBOX_PATH'] + ":" + os.environ['PATH']
+sys.path.append(os.environ['TOOLBOX_PATH'] + "/python/")
+import cfl
+from bart import bart
+import numpy as np
+
+
+base_folder = "./data/InVivo/3D/kushball"
+
+id="meas_MID00033_FID16909_raFin_3D_tra_3x3x3mm_mrf_optim_kushball_liver"
+file_kdata=id+"_kdata.npy"
+file_kdata_no_densadj=id+"_no_densadj_kdata.npy"
+file_weights=id+"_weights.npy"
+filedico=id+"_seqParams.pkl"
+
+
+f = open(base_folder+"/"+filedico, "rb")
+dico_seqParams = pickle.load(f)
+f.close()
+
+x_FOV=dico_seqParams["x_FOV"]
+y_FOV=dico_seqParams["y_FOV"]
+z_FOV=dico_seqParams["z_FOV"]
+spacing=dico_seqParams["spacing"]
+image_size=(int(z_FOV/spacing[2]),int(x_FOV/spacing[0]),int(y_FOV/spacing[1]))
+
+
+
+kdata=np.load(base_folder+"/"+file_kdata)
+weights=np.load(base_folder+"/"+file_weights)
+
+nb_channels,nb_segments,nb_slices,npoint=kdata.shape
+
+traj=Radial3D(total_nspokes=nb_segments,undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,mode="Kushball")
+
+kdata_bart=np.moveaxis(kdata,-1,1)
+kdata_bart=np.moveaxis(kdata_bart,0,-1)
+kdata_bart=kdata_bart[None,:]
+kdata_bart=kdata_bart.reshape(1,npoint,-1,nb_channels)
+
+traj_python = traj.get_traj()
+traj_python = traj_python.reshape(nb_segments, nb_slices, -1, 3)
+traj_python = traj_python.T
+traj_python = np.moveaxis(traj_python, -1, -2)
+
+traj_python[0] = traj_python[0] / np.max(np.abs(traj_python[0])) * int(
+    npoint / 4)
+traj_python[1] = traj_python[1] / np.max(np.abs(traj_python[1])) * int(
+    npoint / 4)
+traj_python[2] = traj_python[2] / np.max(np.abs(traj_python[2])) * int(
+    nb_slices / 2)
+
+traj_python_bart = traj_python.reshape(3, npoint, -1)
+
+coil_img = bart(1, 'nufft -a -t', traj_python_bart, kdata_bart)
+kdata_cart = bart(1, 'fft -u 7', coil_img)
+
+
+plot_image_grid(np.abs(np.moveaxis(coil_img[:,:,52],-1,0)),nb_row_col=(5,5))
+
+cc=bart(1,"cc -M",kdata_cart)
+
+n_comp=12
+
+kdata_bart_cc = bart(1, 'ccapply -p {}'.format(n_comp), kdata_bart, cc)
+kdata_python_cc=kdata_bart_cc.squeeze().reshape(npoint,nb_segments,nb_slices,n_comp)
+kdata_python_cc=np.moveaxis(kdata_python_cc,-1,0)
+kdata_python_cc=np.moveaxis(kdata_python_cc,1,-1)
+
+
+kdata_cart_cc = bart(1, 'ccapply -p {}'.format(n_comp), kdata_cart, cc)
+b1_bart_cc=bart(1,"ecalib -m1",kdata_cart_cc)
+b1_python_cc=np.moveaxis(b1_bart_cc,-2,0)
+b1_python_cc=np.moveaxis(b1_python_cc,-1,0)
+
+sl = int(b1_python_cc.shape[1]/2)
+
+list_images=list(np.abs(b1_python_cc[:,sl,:,:]))
+plot_image_grid(list_images,(6,6),title="BART Coil Sensitivity map for slice".format(sl))
+
+del traj
+traj=Radial3D(total_nspokes=nb_segments,undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,mode="Kushball")
+
+vol2=simulate_radial_undersampled_images_multi(kdata_python_cc,traj,image_size,b1=b1_python_cc,ntimesteps=1,density_adj=False,light_memory_usage=True)
+vol2=vol2[0]
+plot_image_grid(np.abs(vol2[::5]),nb_row_col=(5,5))
+
+file_npy=base_folder+"/"+id+"_bart{}_volume.npy".format(n_comp)
+file_mha=base_folder+"/"+id+"_bart{}_volume.mha".format(n_comp)
+np.save(file_npy,vol2)
+
+vol3=io.Volume(np.moveaxis(np.abs(vol2),0,-1),spacing=dico_seqParams["spacing"])
+io.write(file_mha,vol3)
+
+
+
+
+
+
+
+
+
+
+##BART
+import datetime
+
+#import matplotlib
+#matplotlib.u<se("TkAgg")
+import numpy as np
+from mrfsim import T1MRF
+from image_series import *
+from dictoptimizers import SimpleDictSearch,GaussianWeighting,BruteDictSearch
+from utils_mrf import *
+from utils_simu import *
+
+import pickle
+import os
+import sys
+os.environ['PATH'] = os.environ['TOOLBOX_PATH'] + ":" + os.environ['PATH']
+sys.path.append(os.environ['TOOLBOX_PATH'] + "/python/")
+import cfl
+from bart import bart
+import numpy as np
+
+
+base_folder = "./data/InVivo/3D/patient.014.v10"
+
+id="meas_MID00065_FID18293_raFin_3D_tra_3x3x3mm_mrf_optim_kushball"
+file_kdata_no_densadj=id+"_no_densadj_bart12_kdata.npy"
+file_b1=id+"_no_densadj_bart12_b12Dplus1_12.npy"
+file_weights=id+"_weights.npy"
+filedico=id+"_seqParams.pkl"
+
+
+f = open(base_folder+"/"+filedico, "rb")
+dico_seqParams = pickle.load(f)
+f.close()
+
+x_FOV=dico_seqParams["x_FOV"]
+y_FOV=dico_seqParams["y_FOV"]
+z_FOV=dico_seqParams["z_FOV"]
+spacing=dico_seqParams["spacing"]
+image_size=(int(z_FOV/spacing[2]),int(x_FOV/spacing[0]),int(y_FOV/spacing[1]))
+
+
+b1=np.load(base_folder+"/"+file_b1)
+kdata=np.load(base_folder+"/"+file_kdata_no_densadj)
+
+nb_channels,nb_segments,nb_part,npoint=kdata.shape
+image_size=b1.shape[1:]
+
+kdata_bart=np.moveaxis(kdata,-1,1)
+kdata_bart=np.moveaxis(kdata_bart,0,-1)
+
+print(kdata_bart.shape)
+
+b1_bart=np.moveaxis(b1,0,-1)
+b1_bart=np.moveaxis(b1_bart,0,-2)
+print(b1_bart.shape)
+
+
+
+
+
+traj=Radial3D(total_nspokes=nb_segments,undersampling_factor=1,npoint=npoint,nb_slices=nb_part,mode="Kushball")
+
+traj_python = traj.get_traj()
+traj_python = traj_python.reshape(nb_segments, nb_part, -1, 3)
+traj_python = traj_python.T
+traj_python = np.moveaxis(traj_python, -1, -2)
+
+traj_python[0] = traj_python[0] / np.max(np.abs(traj_python[0])) * int(image_size[0]/2)
+traj_python[1] = traj_python[1] / np.max(np.abs(traj_python[1])) * int(
+    image_size[1]/2)
+traj_python[2] = traj_python[2] / np.max(np.abs(traj_python[2])) * int(
+    image_size[2] / 2)
+
+traj_python_bart = traj_python.reshape(3, npoint, -1)
+
+kdata_bart=kdata_bart.reshape((1,npoint,-1,nb_channels))
+traj_python_bart.shape
+
+
+b1_bart.shape
+img_test=bart(1,f'pics -i1 -e -S -t',traj_python_bart,kdata_bart,b1_bart)
+plot_image_grid(np.abs(img_test[::10]),nb_row_col=(4,4))
+
+
+weights=np.load(base_folder+"/"+file_weights)
+nbins=weights.shape[0]
+
+img_allbins=np.zeros((nbins,)+b1_bart.shape[:-1],dtype=b1_bart.dtype)
+
+for gr in tqdm(range(nbins)):
+    curr_weights_bart=weights[gr]
+
+    curr_weights_bart=(curr_weights_bart.squeeze().flatten()>0)*1
+
+
+    traj_python_bart_gr=traj_python_bart[:,:,curr_weights_bart>0]
+    kdata_bart_gr=kdata_bart[:,:,curr_weights_bart>0]
+
+    img_allbins[gr]=bart(1,f'pics -i1 -e -S -d2 -t',traj_python_bart_gr,kdata_bart_gr,b1_bart)
+
+
+np.save(base_folder+"/"+"bart_movie.npy",img_allbins)
+
+plot_image_grid(np.abs(np.moveaxis(img_allbins[0,:,:,::10],-1,0)),nb_row_col=(4,4))
+
+
+
+
+L0=6
+window=8
+dictfile="mrf_dictconf_Dico2_Invivo_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.55_reco2.99_w8_simmean.dict"
+
+filename_phi = str.split(dictfile, ".dict")[0] + "_phi_L0_{}.npy".format(L0)
+phi = np.load(filename_phi)
+ntimesteps=int(nb_segments/window)
+
+kdata_singular = np.zeros((nb_channels,ntimesteps, nb_part*npoint*window) + (L0,), dtype="complex64")
+print(kdata_singular.shape)
+#print(phi.shape)
+
+data=kdata.reshape(nb_channels,ntimesteps,-1)
+
+for ch in tqdm(range(nb_channels)):
+    for ts in tqdm(range(ntimesteps)):
+        kdata_singular[ch, ts, :, :] = data[ch, ts, :, None] @ (phi[:L0].conj().T[ts][None, :])
+
+kdata_singular = np.moveaxis(kdata_singular, -1, 1)
+kdata_singular = kdata_singular.reshape(nb_channels,L0, -1,npoint)
+
+
+kdata_singular_bart=np.moveaxis(kdata_singular,-1,1)
+kdata_singular_bart=np.moveaxis(kdata_singular,0,-1)[None,...,None]
+kdata_singular_bart=np.moveaxis(kdata_singular_bart,1,-1)
+kdata_singular_bart=np.moveaxis(kdata_singular_bart,2,1)
+
+
+gr=0
+curr_weights_bart=weights[gr]
+
+curr_weights_bart=(curr_weights_bart.squeeze().flatten()>0)*1
+traj_python_bart_gr=traj_python_bart[:,:,curr_weights_bart>0]
+kdata_bart_gr=kdata_singular_bart[:,:,curr_weights_bart>0]
+
+img_singular_test_LLR=bart(1,f'pics -i1 -e -S -d2 -b 5 -RL:$(bart bitmask 5):$(bart bitmask 0 1 2):0.01 -t',traj_python_bart_gr,kdata_bart_gr,b1_bart)
+
+img_singular_test_LLR=bart(1,f'pics -i1 -RL:$(bart bitmask 5):$(bart bitmask 0 1 2):0.01 -t',traj_python_bart_gr,kdata_bart_gr,b1_bart)
+cfl.writecfl("traj_gr",traj_python_bart_gr)
+cfl.writecfl("kdata_gr",kdata_bart_gr)
+cfl.writecfl("b1_bart",b1_bart)
+
+
+img_LLR=cfl.readcfl("out")
+img_LLR.shape
+plot_image_grid(np.abs(np.moveaxis(img_LLR.squeeze()[30],-1,0)),nb_row_col=(3,2),same_range=True)
+
+
+
+img_singular_test_W=bart(1,f'pics -i1 -RW:$(bart bitmask 0 1 2):0:0.001 -t',traj_python_bart_gr,kdata_bart_gr,b1_bart)
+
+
+plot_image_grid(np.abs(np.moveaxis(img_singular_test.squeeze()[30],-1,0)),nb_row_col=(3,2),same_range=True)
+
+
 #
 # #import matplotlib
 # #matplotlib.use("TkAgg")
@@ -961,7 +1454,7 @@ import twixtools
 from mutools import io
 import cv2
 import scipy
-from utils_reco import calculate_sensitivity_map
+from utils_reco import calculate_sensitivity_map, calculate_sensitivity_map_3D
 from utils_simu import *
 
 sequence_file="./mrf_sequence_adjusted.json"

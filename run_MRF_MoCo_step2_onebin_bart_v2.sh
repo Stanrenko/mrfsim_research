@@ -26,7 +26,7 @@ SLICE2=${7-${SLICE2_def}}
 US=1
 SIMUS=1
 
-REF=4
+REF=0
 
 
 if [ $((NITER)) -eq 0 ]
@@ -46,24 +46,24 @@ python script_recoInVivo_3D_machines.py build_kdata --filename $1.dat
 echo "######################################################"
 echo "Coil Compression $NCOMP virtual coils"
 python script_recoInVivo_3D_machines.py coil_compression_bart --filename-kdata $1_kdata.npy --n-comp $NCOMP #--filename-cc $2_bart_cc.cfl --calc-sensi False
-# # #cp $1_b12Dplus1_$NCOMP.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
-# # #
-# # #echo "######################################################"
-# # echo "Pre-scan navigator images $2_image_nav_diff.jpg"
-# # echo "Based on step 1 navigator images, what is the best channel for motion estimation ?"
-# # read CHANNEL
-# # echo "Channel $CHANNEL will be used for motion estimation"
+# #cp $1_b12Dplus1_$NCOMP.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# #
+#echo "######################################################"
+echo "Pre-scan navigator images $2_image_nav_diff.jpg"
+echo "Based on step 1 navigator images, what is the best channel for motion estimation ?"
+read CHANNEL
+echo "Channel $CHANNEL will be used for motion estimation"
 
-# # # #   #Estimate displacement, bins and weights
-# echo "######################################################"
-# echo "Estimating displacement, bins and weights"
-# #python script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -20 --top 40 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --equal-spoke-per-bin True --ch $CHANNEL --seasonal-adj True --randomize True --hard-interp True --nbins $NBINS --retained-categories "0,1,2,3" --us $US --interp-bad-correl True --sim-us $SIMUS --filename-bins $2_bins.npy
+# # #   #Estimate displacement, bins and weights
+echo "######################################################"
+echo "Estimating displacement, bins and weights"
+python script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -20 --top 40 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --equal-spoke-per-bin True --ch $CHANNEL --seasonal-adj True --randomize True --hard-interp True --nbins $NBINS --retained-categories "0,1,2,3" --us $US --interp-bad-correl True --sim-us $SIMUS --filename-bins $2_bins.npy
 
 # NBINS=6
 
-# cp $1_displacement.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
-# # #echo "Please check displacement $1_displacement.jpg. Press any key to continue..."
-# # # #read DUMMY
+cp $1_displacement.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# #echo "Please check displacement $1_displacement.jpg. Press any key to continue..."
+# # #read DUMMY
 
 
 # # # # #Rebuild singular volumes for all bins
@@ -83,22 +83,22 @@ echo "Rebuilding singular volumes for all bins"
 # # ##Denoise singular volumes for all bins by using the motion field
 echo "######################################################"
 echo "Denoising singular volumes for all bins by using the motion field $2_bart${NCOMP}_volumes_allbins_registered_allindex_deformation_map.npy"
-#python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins_registered --index-ref ${REF} --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy  --niter $NITER --file-deformation $2_bart${NCOMP}_volumes_allbins_registered_allindex_deformation_map.npy --filename-weights $1_weights.npy --lambda-wav 1e-5 --use-wavelet True --mu 0.1 --gating-only True --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
-# # # #python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins_registered --index-ref ${REF} --filename-volume $1_volumes_singular_allbins.npy  --niter $NITER --file-deformation $2_volumes_allbins_registered_allindex_deformation_map.npy --filename-weights $1_weights.npy --lambda-wav 1e-5 --use-wavelet True --mu 0.1 --gating-only True --filename-b1 $1_b12Dplus1_$NCOMP.npy #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
+python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins_registered --index-ref ${REF} --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy  --niter $NITER --file-deformation $2_bart${NCOMP}_volumes_allbins_registered_allindex_deformation_map.npy --filename-weights $1_weights.npy --lambda-wav 1e-5 --use-wavelet True --mu 0.1 --gating-only True --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
+# # #python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins_registered --index-ref ${REF} --filename-volume $1_volumes_singular_allbins.npy  --niter $NITER --file-deformation $2_volumes_allbins_registered_allindex_deformation_map.npy --filename-weights $1_weights.npy --lambda-wav 1e-5 --use-wavelet True --mu 0.1 --gating-only True --filename-b1 $1_b12Dplus1_$NCOMP.npy #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
 
 
-# # #VOLUMESSUFFIX=ref0_it0
+# #VOLUMESSUFFIX=ref0_it0
 
-#python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --sl ${SLICE1}
-#cp $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
-#python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --sl ${SLICE2}
-#cp $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --sl ${SLICE1}
+cp $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --sl ${SLICE2}
+cp $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
-# # # # #
-# # # # ###exit
-# # # # ##
-#python script_recoInVivo_3D_machines.py build_mask_from_singular_volume --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --l 0 --threshold 0.015 --it 2
-#cp $1_bart${NCOMP}_volumes_singular_allbins_volumes_allbins_registered_${VOLUMESSUFFIX}_l0_mask.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# # # #
+# # # ###exit
+# # # ##
+python script_recoInVivo_3D_machines.py build_mask_from_singular_volume --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --l 0 --threshold 0.015 --it 2
+cp $1_bart${NCOMP}_volumes_singular_allbins_volumes_allbins_registered_${VOLUMESSUFFIX}_l0_mask.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
 #exit
 

@@ -1,7 +1,7 @@
 {
     "type": "CF_iterative_2Dplus1",
     "pca":10,
-    "split":500,
+    "split":200,
     "useGPU": True,
     "niter": 0,
     "mu":1,

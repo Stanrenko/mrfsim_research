@@ -227,9 +227,12 @@ def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001,randomize=
             used_shifts=shifts
         else:
             used_shifts=np.arange(mvt[j - 1]-10,(mvt[j - 1]+10)).astype(int)
+        # print(used_shifts)
         corrs = np.zeros(len(used_shifts))
         bottom = np.maximum(-used_shifts[0],int(npoint_image/4))
         top = np.minimum(int(npoint_image) -used_shifts[-1],int(3*npoint_image/4))
+        # print(bottom)
+        # print(top)
         for i, shift in enumerate(used_shifts):
             
             corr = np.corrcoef(np.concatenate([ft[j % nb_gating_spokes, bottom:top].reshape(1, -1),
@@ -1210,7 +1213,7 @@ def build_volume_2Dplus1_cc_allbins(kdata_all_channels_all_slices,b1_all_slices_
 
 
 
-def build_volume_singular_2Dplus1_cc_registered(kdata_all_channels_all_slices, b1_all_slices_2Dplus1_pca, pca_dict, weights,phi,L0,deformation_map,gr,useGPU=True,nb_rep_center_part=1,interp=cv2.INTER_LINEAR,select_first_rep=False):
+def build_volume_singular_2Dplus1_cc_registered(kdata_all_channels_all_slices, b1_all_slices_2Dplus1_pca, pca_dict, weights,phi,L0,deformation_map,gr,useGPU=True,nb_rep_center_part=1,interp=cv2.INTER_LINEAR,select_first_rep=False,axis=None):
 
     if useGPU:
         xp=cp
@@ -1292,17 +1295,17 @@ def build_volume_singular_2Dplus1_cc_registered(kdata_all_channels_all_slices, b
     #np.save("./log/moving_gr{}.npy".format(gr),images_series_rebuilt)
     for l in range(L0):
         
-        images_series_rebuilt[l]=apply_deformation_to_complex_volume(images_series_rebuilt[l], deformation_map,interp=interp)
+        images_series_rebuilt[l]=apply_deformation_to_complex_volume(images_series_rebuilt[l], deformation_map,interp=interp,axis=axis)
     
     #np.save("./log/registered_gr{}.npy".format(gr),images_series_rebuilt)
     return images_series_rebuilt
 
 
-def build_volume_singular_2Dplus1_cc_allbins_registered(kdata_all_channels_all_slices,b1_all_slices_2Dplus1_pca,pca_dict,all_weights,phi,L0,deformation_map,useGPU=True,nb_rep_center_part=1,interp=cv2.INTER_LINEAR,select_first_rep=False):
+def build_volume_singular_2Dplus1_cc_allbins_registered(kdata_all_channels_all_slices,b1_all_slices_2Dplus1_pca,pca_dict,all_weights,phi,L0,deformation_map,useGPU=True,nb_rep_center_part=1,interp=cv2.INTER_LINEAR,select_first_rep=False,axis=None):
     nb_gr=all_weights.shape[0]
     all_images=[]
     for gr in range(nb_gr):
-        curr_image=build_volume_singular_2Dplus1_cc_registered(kdata_all_channels_all_slices,b1_all_slices_2Dplus1_pca,pca_dict,all_weights[gr],phi,L0,deformation_map[:,gr],gr,useGPU,nb_rep_center_part,interp=interp,select_first_rep=select_first_rep)
+        curr_image=build_volume_singular_2Dplus1_cc_registered(kdata_all_channels_all_slices,b1_all_slices_2Dplus1_pca,pca_dict,all_weights[gr],phi,L0,deformation_map[:,gr],gr,useGPU,nb_rep_center_part,interp=interp,select_first_rep=select_first_rep,axis=axis)
         all_images.append(curr_image)
     return np.sum(np.array(all_images),axis=0)
 
@@ -1402,16 +1405,19 @@ def build_volume_singular_2Dplus1_cc_allbins(kdata_all_channels_all_slices,b1_al
 
 
 
-def build_volume_singular_3D(kdata_all_channels_all_slices, b1_all_slices,radial_traj,weights,phi,L0,useGPU=True,nb_rep_center_part=1,select_first_rep=False):
+
+
+def build_volume_singular_3D(kdata_all_channels_all_slices, b1_all_slices,radial_traj,weights,phi,L0,useGPU=True,nb_rep_center_part=1,select_first_rep=False,image_size=None):
 
     data_shape = kdata_all_channels_all_slices.shape
     nb_channels = data_shape[0]
     nb_allspokes = data_shape[-3]
     npoint = data_shape[-1]
-    nb_slices = radial_traj.paramDict["nb_slices"]
-    nb_rep=data_shape[-2]
+    # nb_part = radial_traj.paramDict["nb_slices"]
+    nb_part=data_shape[-2]
     #nb_slices = nb_slices - nb_rep_center_part + 1
-    image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
+    if image_size is None:
+        image_size = (nb_part, int(npoint / 2), int(npoint / 2))
     output_shape=(L0,)+image_size
 
     print("Output shape {}".format(output_shape))
@@ -1448,14 +1454,14 @@ def build_volume_singular_3D(kdata_all_channels_all_slices, b1_all_slices,radial
     print(np.max(weights))
 
     if not((type(weights)==int)or(weights is None)):
-        weights=weights.reshape(1,ntimesteps,window,nb_rep,1)
+        weights=weights.reshape(1,ntimesteps,window,nb_part,-1)
     data=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,window,-1,npoint)*weights
     data=data.reshape(nb_channels,ntimesteps,-1)
 
     print(data.shape)
 
     for j in tqdm(range(nb_channels)):
-        kdata_singular = np.zeros((ntimesteps, nb_rep*npoint * window) + (L0,), dtype="complex64")
+        kdata_singular = np.zeros((ntimesteps, nb_part*npoint * window) + (L0,), dtype="complex64")
         print(kdata_singular.shape)
         #print(phi.shape)
         for ts in tqdm(range(ntimesteps)):
@@ -1475,103 +1481,103 @@ def build_volume_singular_3D(kdata_all_channels_all_slices, b1_all_slices,radial
     return images_series_rebuilt/num_k_samples
 
 
-def build_volume_singular_3D_allbins(kdata_all_channels_all_slices,b1_all_slices,radial_traj,all_weights,phi,L0,useGPU=True,nb_rep_center_part=1,select_first_rep=False):
+def build_volume_singular_3D_allbins(kdata_all_channels_all_slices,b1_all_slices,radial_traj,all_weights,phi,L0,useGPU=True,nb_rep_center_part=1,select_first_rep=False,image_size=None):
     nb_gr=all_weights.shape[0]
     all_images=[]
     for gr in range(nb_gr):
         print("###### Build singular volumes for bin {}####################".format(gr))
-        curr_image=build_volume_singular_3D(kdata_all_channels_all_slices,b1_all_slices,radial_traj,all_weights[gr],phi,L0,useGPU,nb_rep_center_part,select_first_rep=select_first_rep)
+        curr_image=build_volume_singular_3D(kdata_all_channels_all_slices,b1_all_slices,radial_traj,all_weights[gr],phi,L0,useGPU,nb_rep_center_part,select_first_rep=select_first_rep,image_size=image_size)
         all_images.append(curr_image)
     all_images=np.array(all_images)
     print(all_images.shape)
     return all_images
 
 
-def undersampling_operator_singular_new(volumes,trajectory,b1_all_slices=None,ntimesteps=175,density_adj=True,weights=None,retained_timesteps=None):
-    """
-    returns A.H @ W @ A @ volumes where A=F Fourier + sampling operator and W correspond to radial density adjustment
-    """
+# def undersampling_operator_singular_new(volumes,trajectory,b1_all_slices=None,ntimesteps=175,density_adj=True,weights=None,retained_timesteps=None):
+#     """
+#     returns A.H @ W @ A @ volumes where A=F Fourier + sampling operator and W correspond to radial density adjustment
+#     """
 
-    L0=volumes.shape[0]
-    size=volumes.shape[1:]
+#     L0=volumes.shape[0]
+#     size=volumes.shape[1:]
 
-    print("LO {}".format(L0))
-    print("Image size {}".format(size))
+#     print("LO {}".format(L0))
+#     print("Image size {}".format(size))
 
-    if b1_all_slices is None:
-        b1_all_slices=np.ones((1,)+size,dtype="complex64")
+#     if b1_all_slices is None:
+#         b1_all_slices=np.ones((1,)+size,dtype="complex64")
 
-    nb_channels=b1_all_slices.shape[0]
+#     nb_channels=b1_all_slices.shape[0]
 
-    nb_slices=size[0]
+#     nb_slices=size[0]
 
-    print("Nb channels {}".format(nb_channels))
+#     print("Nb channels {}".format(nb_channels))
 
-    #nb_allspokes = trajectory.paramDict["total_nspokes"]
+#     #nb_allspokes = trajectory.paramDict["total_nspokes"]
 
-    if not(type(trajectory)==np.ndarray):
-        traj = trajectory.get_traj_for_reconstruction(1)
-        if retained_timesteps is not None:
-            traj=traj[retained_timesteps]
-        if not((type(weights)==int)or(weights is None)):
-            weights=weights.flatten()
-        traj = traj.reshape(-1, 2).astype("float32")
-        npoint = trajectory.paramDict["npoint"]
+#     if not(type(trajectory)==np.ndarray):
+#         traj = trajectory.get_traj_for_reconstruction(1)
+#         if retained_timesteps is not None:
+#             traj=traj[retained_timesteps]
+#         if not((type(weights)==int)or(weights is None)):
+#             weights=weights.flatten()
+#         traj = traj.reshape(-1, 2).astype("float32")
+#         npoint = trajectory.paramDict["npoint"]
     
-    else:#testing fully sampled cartesian trajectory 
-        traj=trajectory
-        weights=None
-        density_adj=False
-        traj=traj.reshape(-1,2)
+#     else:#testing fully sampled cartesian trajectory 
+#         traj=trajectory
+#         weights=None
+#         density_adj=False
+#         traj=traj.reshape(-1,2)
 
-    #print(traj.shape)
-    #print(weights.shape)
+#     #print(traj.shape)
+#     #print(weights.shape)
 
-    num_k_samples = traj.shape[0]
+#     num_k_samples = traj.shape[0]
 
-    output_shape = (L0,) + size
-    images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
+#     output_shape = (L0,) + size
+#     images_series_rebuilt = np.zeros(output_shape, dtype=np.complex64)
 
 
-    if (weights is not None) and not(type(weights)==int):
-        weights = np.expand_dims(weights, axis=(0, -1))
-        print(weights.shape)
+#     if (weights is not None) and not(type(weights)==int):
+#         weights = np.expand_dims(weights, axis=(0, -1))
+#         print(weights.shape)
         
 
     
 
-    for k in tqdm(range(nb_channels)):
-        #print("Ch {}".format(k))
-        #print(volumes.shape)
-        #print(b1_all_slices[k].shape)
-        curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
-        #print(curr_volumes.shape)
-        curr_kdata_slice=np.fft.fftshift(sp.fft.fft(
-            np.fft.ifftshift(curr_volumes, axes=1),
-            axis=1,workers=24), axes=1).astype("complex64")
-        #curr_kdata=np.zeros((L0,nb_slices,traj.shape[0]), dtype="complex64")
-        print(curr_kdata_slice.shape)
-        curr_kdata = finufft.nufft2d2(traj[:, 0],traj[:, 1],curr_kdata_slice.reshape((L0*nb_slices,)+size[1:])).reshape(L0,nb_slices,-1)
-        #print(curr_kdata.shape)
-        if density_adj:
-            curr_kdata=curr_kdata.reshape(L0,-1,npoint)
-            density = np.abs(np.linspace(-1, 1, npoint))
-            density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
-            curr_kdata*=density
+#     for k in tqdm(range(nb_channels)):
+#         #print("Ch {}".format(k))
+#         #print(volumes.shape)
+#         #print(b1_all_slices[k].shape)
+#         curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
+#         #print(curr_volumes.shape)
+#         curr_kdata_slice=np.fft.fftshift(sp.fft.fft(
+#             np.fft.ifftshift(curr_volumes, axes=1),
+#             axis=1,workers=24), axes=1).astype("complex64")
+#         #curr_kdata=np.zeros((L0,nb_slices,traj.shape[0]), dtype="complex64")
+#         print(curr_kdata_slice.shape)
+#         curr_kdata = finufft.nufft2d2(traj[:, 0],traj[:, 1],curr_kdata_slice.reshape((L0*nb_slices,)+size[1:])).reshape(L0,nb_slices,-1)
+#         #print(curr_kdata.shape)
+#         if density_adj:
+#             curr_kdata=curr_kdata.reshape(L0,-1,npoint)
+#             density = np.abs(np.linspace(-1, 1, npoint))
+#             density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+#             curr_kdata*=density
 
-        #print(weights.shape)
-        if weights is not None:
-            curr_kdata = curr_kdata.reshape((L0,-1,npoint))
-            curr_kdata *= weights
+#         #print(weights.shape)
+#         if weights is not None:
+#             curr_kdata = curr_kdata.reshape((L0,-1,npoint))
+#             curr_kdata *= weights
 
-        curr_kdata = curr_kdata.reshape(L0, nb_slices,traj.shape[0])
-        curr_kdata = np.fft.fftshift(sp.fft.ifft(np.fft.ifftshift(curr_kdata,axes=1),axis=1,workers=24),axes=1).astype(np.complex64)
+#         curr_kdata = curr_kdata.reshape(L0, nb_slices,traj.shape[0])
+#         curr_kdata = np.fft.fftshift(sp.fft.ifft(np.fft.ifftshift(curr_kdata,axes=1),axis=1,workers=24),axes=1).astype(np.complex64)
 
-        images_series_rebuilt+=np.expand_dims(b1_all_slices[k].conj(), axis=0)* (finufft.nufft2d1(traj[:, 0],traj[:, 1],curr_kdata.reshape(L0*nb_slices,-1),size[1:])).reshape((L0,)+size)
+#         images_series_rebuilt+=np.expand_dims(b1_all_slices[k].conj(), axis=0)* (finufft.nufft2d1(traj[:, 0],traj[:, 1],curr_kdata.reshape(L0*nb_slices,-1),size[1:])).reshape((L0,)+size)
 
 
-    images_series_rebuilt /= num_k_samples
-    return images_series_rebuilt
+#     images_series_rebuilt /= num_k_samples
+#     return images_series_rebuilt
 
 def invert_map(F):
     # shape is (h, w, 2), an "xymap"
@@ -1585,7 +1591,7 @@ def invert_map(F):
     return P
 
 
-def apply_deformation_to_volume(volume, deformation_map,interp=cv2.INTER_LINEAR):
+def apply_deformation_to_volume(volume, deformation_map,interp=cv2.INTER_LINEAR,axis=None):
     '''
     input :
     volume nz x nx x ny type float
@@ -1593,7 +1599,14 @@ def apply_deformation_to_volume(volume, deformation_map,interp=cv2.INTER_LINEAR)
     output :
     deformed volume nz x nx x ny type float
     '''
+    if axis is not None:
+        volume=np.moveaxis(volume,axis+volume.ndim-3,volume.ndim-3)
+        deformation_map=np.moveaxis(deformation_map,axis+1,1)
+
+    # print(volume.shape)
+    # print(deformation_map.shape)
     deformed_volume = np.zeros_like(volume)
+    
     if volume.ndim==4:
         L0=volume.shape[0]
         nb_slices = volume.shape[1]
@@ -1612,6 +1625,9 @@ def apply_deformation_to_volume(volume, deformation_map,interp=cv2.INTER_LINEAR)
             mapx = deformation_map[0, sl]
             mapy = deformation_map[1, sl]
             deformed_volume[sl] = cv2.remap(img, mapx.astype(np.float32), mapy.astype(np.float32), interp)
+
+    if axis is not None:
+        deformed_volume=np.moveaxis(deformed_volume,volume.ndim-3,axis+volume.ndim-3)
 
     return deformed_volume
 
@@ -1708,7 +1724,7 @@ def interp_deformation_resize(deformation_map,new_shape):
     return deformation_map_resized
 
 
-def apply_deformation_to_complex_volume(volume, deformation_map,interp=cv2.INTER_LINEAR):
+def apply_deformation_to_complex_volume(volume, deformation_map,interp=cv2.INTER_LINEAR,axis=None):
     '''
     input :
     volume nz x nx x ny type complex
@@ -1716,26 +1732,31 @@ def apply_deformation_to_complex_volume(volume, deformation_map,interp=cv2.INTER
     output :
     deformed volume nz x nx x ny type complex
     '''
-    deformed_volume = apply_deformation_to_volume(np.real(volume), deformation_map,interp) + 1j * apply_deformation_to_volume(
-        np.imag(volume), deformation_map,interp)
+    deformed_volume = apply_deformation_to_volume(np.real(volume), deformation_map,interp,axis) + 1j * apply_deformation_to_volume(
+        np.imag(volume), deformation_map,interp,axis)
     return deformed_volume
 
 
-def calculate_inverse_deformation_map(deformation_map):
+def calculate_inverse_deformation_map(deformation_map,axis=None):
     '''
     input :
     deformation_map 2 x nz x nx x ny
     output :
     inv_deformation_map 2 x nz x nx x ny
     '''
+    if axis is not None:
+        deformation_map=np.moveaxis(deformation_map,axis+1,1)
     inv_deformation_map = np.zeros_like(deformation_map)
     nb_slices = deformation_map.shape[1]
     for sl in range(nb_slices):
         inv_deformation_map[:, sl] = np.moveaxis(invert_map(np.moveaxis(deformation_map[:, sl], 0, -1)), -1, 0)
 
+    if axis is not None:
+        inv_deformation_map=np.moveaxis(inv_deformation_map,1,axis+1)
+
     return inv_deformation_map
 
-def change_deformation_map_ref(deformation_map_allbins,index_ref):
+def change_deformation_map_ref(deformation_map_allbins,index_ref,axis=None):
     '''
     input :
     deformation_map_allbins nb_gr x 2 x nz x nx x ny
@@ -1745,16 +1766,24 @@ def change_deformation_map_ref(deformation_map_allbins,index_ref):
 
     '''
 
+    
+    if axis is not None:
+        deformation_map_allbins=np.moveaxis(deformation_map_allbins,axis+2,2)
+
     ndim,nb_gr,nb_slices,nx,ny=deformation_map_allbins.shape
     deformation_map_allbins_new=np.zeros_like(deformation_map_allbins)
 
-    mapx_base, mapy_base = np.meshgrid(np.arange(nx), np.arange(ny))
+    mapx_base, mapy_base = np.meshgrid(np.arange(ny), np.arange(nx))
+
     mapx_base=np.tile(mapx_base,reps=(nb_slices,1,1))
     mapy_base = np.tile(mapy_base, reps=(nb_slices, 1, 1))
     deformation_base=np.stack([mapx_base,mapy_base],axis=0)
     
     for gr in range(nb_gr):
         deformation_map_allbins_new[:,gr]=deformation_map_allbins[:,gr]-deformation_map_allbins[:,index_ref]+deformation_base
+
+    if axis is not None:
+        deformation_map_allbins_new=np.moveaxis(deformation_map_allbins_new,2,axis+2)
 
     return deformation_map_allbins_new
 
@@ -1923,15 +1952,32 @@ def format_input_voxelmorph(all_volumes,pad_amount,sl_down=5,sl_top=-5,normalize
 
     return fixed_volume,moving_volume
 
-def format_input_voxelmorph_3D(all_volumes,pad_amount,sl_down=5,sl_top=-5,normalize=True,all_groups_combination=False):
+def format_input_voxelmorph_3D(all_volumes,pad_amount,sl_down=5,sl_top=-5,normalize=True,all_groups_combination=False,exclude_zero_slices=True):
     nb_gr=all_volumes.shape[0]
+    nb_slices=all_volumes.shape[1]
 
     fixed_volume=[]
     moving_volume=[]
 
+    if exclude_zero_slices:
+        sl_down_non_zeros = 0
+        while not(np.any(all_volumes[:,sl_down_non_zeros])):
+            sl_down_non_zeros+=1
+
+        sl_top_non_zeros=nb_slices
+        while not(np.any(all_volumes[:,sl_top_non_zeros-1])):
+            sl_top_non_zeros-=1
+
+
+        sl_down=np.maximum(sl_down,sl_down_non_zeros)
+        sl_top=np.minimum(sl_top,sl_top_non_zeros)
+    
+    print(sl_down)
+    print(sl_top)
+
     for gr in range(nb_gr-1):
-        fixed_volume.append(all_volumes[gr,:])
-        moving_volume.append(all_volumes[gr+1,:])
+        fixed_volume.append(all_volumes[gr,sl_down:sl_top])
+        moving_volume.append(all_volumes[gr+1,sl_down:sl_top])
 
     if all_groups_combination:
         shift=2
@@ -2003,10 +2049,11 @@ def kdata_aggregate_center_part(kdata_all_channels_all_slices,nb_rep_center_part
 
 def plot_deformation_map(deformation_map,us=4,save_file=None):
     '''
-    deformation_map : shape 2*n*n 2D new coordinates map for an image
+    deformation_map : shape 2*n_x*n_y 2D new coordinates map for an image
     '''
-    npoint=deformation_map.shape[-1]
-    X, Y = np.meshgrid(np.arange(npoint), np.arange(npoint))
+    npoint_x=deformation_map.shape[-2]
+    npoint_y=deformation_map.shape[-1]
+    X, Y = np.meshgrid(np.arange(npoint_y), np.arange(npoint_x))
     ne.plot.flow([np.moveaxis(np.stack([deformation_map[0] - X, deformation_map[1] - Y], axis=0), 0, -1)[::us, ::us]],
                  width=5, scale=us,plot_block=False)
 

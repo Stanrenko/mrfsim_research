@@ -93,10 +93,12 @@ def getGeometry(filename,filemha,suffix,nifti):
 @set_parameter("nifti",bool,default=False)
 @set_parameter("apply_offset",bool,default=False,description="Apply offset (for having the absolute position in space) - should be false for unwarping volumes")
 @set_parameter("reorient",bool,default=True,description="Reorient input volumes")
-def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset,reorient):
+@set_parameter("gr",int,default=None,description="Bin number if dynamic data")
+def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset,reorient,gr):
 
 
     extension=str.split(filevolume,".")[-1]
+
 
     print(extension)
     if ("nii" in extension) or (extension=="mha"):
@@ -106,11 +108,18 @@ def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset,reorient):
     else:
         raise ValueError("Unknown extension {}".format(extension))
 
-
     if nifti:
-        filemha_adjusted=str.replace(filevolume,".{}".format(extension),"{}.nii".format(suffix))
+        new_extension="nii"
     else:
-        filemha_adjusted=str.replace(filevolume,".{}".format(extension),"{}.mha".format(suffix))
+        new_extension="mha"
+
+    filemha_adjusted=str.replace(filevolume,".{}".format(extension),"{}.{}".format(suffix,new_extension))
+
+
+    if gr is not None:
+        filemha_adjusted=str.replace(filemha_adjusted,".{}".format(new_extension),"_gr{}.{}".format(gr,new_extension))
+
+    print(filemha_adjusted)
     
     with open(filedico,"rb") as file:
         dico=pickle.load(file)
@@ -133,7 +142,10 @@ def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset,reorient):
     geom={"origin":origin,"spacing":spacing}
     print(geom)
 
-    data=np.abs(np.array(func_load(filevolume)).squeeze())
+    if gr is not None:
+        data=np.abs(np.array(func_load(filevolume))[gr].squeeze())
+    else:
+        data=np.abs(np.array(func_load(filevolume)).squeeze())
     print(data.shape)
     if reorient:
         print("Reorienting input volume")
@@ -163,13 +175,14 @@ def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset,reorient):
 @set_parameter("folder", str, default=None, description="Folder containing the .mha")
 @set_parameter("key", str, default=None, description="Substring for matching volumes")
 @set_parameter("suffix",str,default="_corrected_offset.nii")
-@set_parameter("spacing",[float,float,float],default=[2,2,2],description="Target spacing")
-def concatenateVolumes(folder,key,spacing,suffix):
+@set_parameter("spacing",[float, float, float],default=[2,2,2],description="Target spacing")
+@set_parameter("overlap",[float, float, float],default=[0,0,0],description="Overlap between regions")
+def concatenateVolumes(folder,key,spacing,suffix,overlap):
     print(folder+"/*{}{}.nii".format(key,suffix))
     files_list=glob.glob(folder+"/*{}{}".format(key,suffix))
     print(files_list)
     image_list=[io.read(f) for f in files_list]
-    whole=concatenate_images(image_list,spacing=tuple(spacing))
+    whole=concatenate_images(image_list,spacing=tuple(spacing),overlap=tuple(overlap))
     io.write(folder+"/whole_{}{}".format(key,suffix),whole)
     return
 
@@ -181,10 +194,12 @@ def concatenateVolumes(folder,key,spacing,suffix):
 @machine
 @set_parameter("filename", str, default=None, description="Siemens K-space data .dat file")
 @set_parameter("dens_adj", bool, default=True, description="Radial density adjustment")
+@set_parameter("save", bool, default=False, description="save intermediary npy file")
 @set_parameter("suffix",str,default="")
 @set_parameter("select_first_rep", bool, default=False, description="Select the first central partition repetition")
 @set_parameter("index", int, default=-1, description="Header index")
-def build_kdata(filename,suffix,dens_adj,select_first_rep,index):
+@set_parameter("nb_rep", int, default=None, description="nb rep selection for kushball undersampling simulation")
+def build_kdata(filename,suffix,dens_adj,nb_rep,select_first_rep,index,save):
 
     if dens_adj:
         filename_kdata = str.split(filename, ".dat")[0] + suffix + "_kdata.npy"
@@ -247,13 +262,33 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep,index):
         total_TR = hdr[index]["alTR[0]"] / 1e6
         invTime = adFree[0]
 
+        print(np.max(np.argwhere(alFree> 0)))
+
+        if np.max(np.argwhere(alFree> 0)) >= 19:
+            use_kushball_dll = True
+        else:
+            use_kushball_dll = False
+
         if np.max(np.argwhere(alFree> 0)) >= 16:
             use_navigator_dll = True
         else:
             use_navigator_dll = False
+
+        
+            
         dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV,"z_FOV": z_FOV, "TI": invTime, "total_TR": total_TR,
-                          "dTR": dTR, "is3D": is3D, "orientation": orientation, "nb_part": nb_part, "offset": offset,"use_navigator_dll":use_navigator_dll}
+                          "dTR": dTR, "is3D": is3D, "orientation": orientation, "nb_part": nb_part, "offset": offset,"use_navigator_dll":use_navigator_dll,"use_kushball_dll":use_kushball_dll}
         dico_seqParams.update(geometry)
+
+        if use_kushball_dll:
+            meas_sampling_mode=dico_seqParams["alFree"][16]
+        elif use_navigator_dll:
+            meas_sampling_mode=dico_seqParams["alFree"][15]
+
+
+        if meas_sampling_mode==4:
+            print("3D Kushball sampling")
+            dico_seqParams["Spherical"]=True
 
         
 
@@ -269,16 +304,29 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep,index):
     print(dico_seqParams)
 
     use_navigator_dll = dico_seqParams["use_navigator_dll"]
+
+    if "use_kushball_dll" in dico_seqParams.keys():
+        use_kushball_dll=dico_seqParams["use_kushball_dll"]
+    else:
+        use_kushball_dll=False
+
     nb_segments = dico_seqParams["alFree"][4]
 
-    if use_navigator_dll:
+
+    if use_kushball_dll:
+        meas_sampling_mode = dico_seqParams["alFree"][16]
+    elif use_navigator_dll:
         meas_sampling_mode = dico_seqParams["alFree"][15]
+    else:
+        meas_sampling_mode = dico_seqParams["alFree"][12]
+
+    if use_navigator_dll:
+        
         nb_gating_spokes = dico_seqParams["alFree"][6]
         if not(nb_gating_spokes==0) and (int(nb_segments/nb_gating_spokes)<(nb_segments/nb_gating_spokes)):
             print("Nb segments not divisible by nb_gating_spokes - adjusting nb_gating_spokes")
             nb_gating_spokes+=1
     else:
-        meas_sampling_mode = dico_seqParams["alFree"][12]
         nb_gating_spokes = 0
 
     
@@ -287,10 +335,14 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep,index):
     
     nb_part = dico_seqParams["nb_part"]
     nb_slices=int(nb_part)
-
     dummy_echos = dico_seqParams["alFree"][5]
     nb_rep_center_part = dico_seqParams["alFree"][11]
-    nb_part = math.ceil(nb_part / undersampling_factor)
+
+    if ("Spherical" in dico_seqParams)and(dico_seqParams["Spherical"]):
+        nb_part = dico_seqParams["alFree"][12]
+    else:
+        nb_part = math.ceil(nb_part / undersampling_factor)
+
     nb_part_center=int(nb_part/2)
     nb_part = nb_part + nb_rep_center_part - 1
     # print(nb_part)
@@ -306,6 +358,9 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep,index):
         incoherent = True
     elif meas_sampling_mode==3:
         incoherent = True
+    elif meas_sampling_mode==4:
+        incoherent=True
+
 
     if incoherent:
         print("Non Stack-Of-Stars acquisition - 2Dplus1 reconstruction should not be used")
@@ -363,6 +418,8 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep,index):
                 data_for_nav_select_first[:,(nb_part_center+1):]=data_for_nav[:,(nb_part_center+nb_rep_center_part):]
                 data_for_nav=data_for_nav_select_first
 
+            if nb_rep is not None:
+                data_for_nav=data_for_nav[:,:nb_rep]
 
 
             np.save(filename_nav_save, data_for_nav)
@@ -411,7 +468,8 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep,index):
                 data=data_select_first
 
 
-
+        if nb_rep is not None:
+            data=data[:,:,:nb_rep]
         
 
 
@@ -422,8 +480,9 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep,index):
             del twix
         except:
             pass
-
-        np.save(filename_save, data)
+        
+        if save:
+            np.save(filename_save, data)
 
     else:
         data = np.load(filename_save)
@@ -441,7 +500,14 @@ def build_kdata(filename,suffix,dens_adj,select_first_rep,index):
         print("Performing Density Adjustment....")
         density = np.abs(np.linspace(-1, 1, npoint))
         density = np.expand_dims(density, tuple(range(data.ndim - 1)))
-        data *= density
+
+        if meas_sampling_mode==4:
+            # phi1 = 0.4656
+            # phi = np.arccos(np.mod(np.arange(nb_segments * nb_part) * phi1, 1))
+            data *= density**2 #*np.sin(phi.reshape(nb_part, nb_segments).T[None, :, :, None])
+        else:
+            
+            data *= density
     np.save(filename_kdata, data)
 
     return
@@ -2756,20 +2822,18 @@ def coil_compression(filename_kdata, dens_adj,n_comp,nb_rep_center_part,invert_d
     return
 
 
+
+
 @machine
 @set_parameter("filename_kdata", str, default=None, description="MRF raw data")
 @set_parameter("dens_adj", bool, default=False, description="Radial density adjustment")
-@set_parameter("n_comp", int, default=None, description="Number of virtual coils")
-@set_parameter("filename_cc", str, default=None, description="Filename for coil compression")
-@set_parameter("calc_sensi", bool, default=True, description="Calculate coil sensitivities")
-def coil_compression_bart(filename_kdata,dens_adj,n_comp,filename_cc,calc_sensi):
+def build_coil_images(filename_kdata,dens_adj):
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
     nb_channels,nb_segments,nb_slices,npoint=kdata_all_channels_all_slices.shape
 
-    filename_virtualcoils = str.split(filename_kdata, "_kdata.npy")[0] + "_bart{}_virtualcoils_{}.pkl".format(n_comp,n_comp)
-    filename_b12Dplus1 = str.split(filename_kdata, "_kdata.npy")[0] + "_bart{}_b12Dplus1_{}.npy".format(n_comp,n_comp)
-    filename_kdata_compressed = str.split(filename_kdata, "_kdata.npy")[0] + "_bart{}_kdata.npy".format(n_comp)
+    filename_coilimg = str.split(filename_kdata, "_kdata.npy")[0] + "_bart_coilimg.pkl"
+
     
     if dens_adj:
         density = np.abs(np.linspace(-1, 1, npoint))
@@ -2782,16 +2846,116 @@ def coil_compression_bart(filename_kdata,dens_adj,n_comp,filename_cc,calc_sensi)
     kdata_bart=np.moveaxis(kdata_bart,0,-1)
     kdata_bart=kdata_bart[None,:]
     kdata_bart=kdata_bart.reshape(1,npoint,-1,nb_channels)
+
+    incoherent=False
+    radial_traj = Radial3D(total_nspokes=nb_segments, undersampling_factor=1, npoint=npoint,
+                                nb_slices=nb_slices, incoherent=incoherent, mode=None,nspoke_per_z_encoding=nb_segments,)
+
+    traj_python = radial_traj.get_traj()
+    traj_python=traj_python.reshape(nb_segments,nb_slices,-1,3)
+    traj_python=traj_python.T
+    traj_python=np.moveaxis(traj_python,-1,-2)
+    
+    traj_python[0] = traj_python[0] / np.max(np.abs(traj_python[0])) * int(
+        npoint / 4)
+    traj_python[1] = traj_python[1] / np.max(np.abs(traj_python[1])) * int(
+            npoint / 4)
+    traj_python[2] = traj_python[2] / np.max(np.abs(traj_python[2])) * int(
+            nb_slices / 2)
+        
+    print("Building coil images")
+    traj_python_bart=traj_python.reshape(3,npoint,-1)
+    coil_img = bart(1,'nufft -a -t', traj_python_bart, kdata_bart)
+
+    np.save(filename_coilimg,coil_img)
+
+    return
+
+@machine
+@set_parameter("file_bart", str, default=None, description="bart file")
+@set_parameter("sl", int, default=30, description="Slice number")
+def plot_image_grid_bart(file_bart,sl):
+    file_plot=file_bart+".jpg"
+    img_LLR=cfl.readcfl(file_bart)
+    plot_image_grid(np.abs(np.moveaxis(img_LLR.squeeze()[sl],-1,0)),nb_row_col=(3,2),same_range=True)
+    plt.savefig(file_plot)
+    return
+
+
+
+
+
+
+@machine
+@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
+@set_parameter("filename_seqParams", str, default=None, description="Seq params")
+@set_parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@set_parameter("n_comp", int, default=None, description="Number of virtual coils")
+@set_parameter("filename_cc", str, default=None, description="Filename for coil compression")
+@set_parameter("calc_sensi", bool, default=True, description="Calculate coil sensitivities")
+@set_parameter("iskushball", bool, default=False, description="3D Kushball sampling")
+@set_parameter("spoke_start", int, default=None, description="Starting segment to avoid inversion")
+def coil_compression_bart(filename_kdata,dens_adj,n_comp,filename_cc,calc_sensi,iskushball,filename_seqParams,spoke_start):
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+
+    nb_channels,nb_segments,nb_part,npoint=kdata_all_channels_all_slices.shape
+
+
+
+    filename_virtualcoils = str.split(filename_kdata, "_kdata.npy")[0] + "_bart{}_virtualcoils_{}.pkl".format(n_comp,n_comp)
+    filename_b12Dplus1 = str.split(filename_kdata, "_kdata.npy")[0] + "_bart{}_b12Dplus1_{}.npy".format(n_comp,n_comp)
+    filename_kdata_compressed = str.split(filename_kdata, "_kdata.npy")[0] + "_bart{}_kdata.npy".format(n_comp)
+    coil_image_file=str.split(filename_b12Dplus1, ".npy")[0] + "_coilimg.jpg"
+
+    if filename_seqParams is None:
+        filename_seqParams =filename_kdata.split("_kdata.npy")[0] + "_seqParams.pkl"
+
+    file = open(filename_seqParams, "rb")
+    dico_seqParams = pickle.load(file)
+    file.close()
+
+    print(dico_seqParams)
+
+    if "Spherical" in dico_seqParams.keys():
+        iskushball=dico_seqParams["Spherical"]
+    else:
+        iskushball=False
+
+    nb_slices = int(dico_seqParams["nb_part"])
+    
+    if dens_adj:
+        print("Performing Density Adjustment....")
+        density = np.abs(np.linspace(-1, 1, npoint))
+        density = np.expand_dims(density, tuple(range(kdata_all_channels_all_slices.ndim - 1)))
+        if iskushball:
+            # phi1 = 0.4656
+            # phi = np.arccos(np.mod(np.arange(nb_segments * nb_slices) * phi1, 1))
+            kdata_all_channels_all_slices *= density**2#*np.sin(phi.reshape(nb_slices, nb_segments).T[None, :, :, None])
+        else:
+            kdata_all_channels_all_slices *= density
+    
+    kdata_bart=np.moveaxis(kdata_all_channels_all_slices,-1,1)
+    kdata_bart=np.moveaxis(kdata_bart,0,-1)
+    kdata_bart=kdata_bart[None,:]
+
+    kdata_bart=kdata_bart.reshape(1,npoint,-1,nb_channels)
     
     if (filename_cc is None) or calc_sensi:
         
 
         incoherent=False
-        radial_traj = Radial3D(total_nspokes=nb_segments, undersampling_factor=1, npoint=npoint,
-                                nb_slices=nb_slices, incoherent=incoherent, mode=None,nspoke_per_z_encoding=nb_segments,)
+        if iskushball:
+            print("Kushball reco")
+            radial_traj=Radial3D(total_nspokes=nb_segments,undersampling_factor=1,npoint=npoint,nb_slices=nb_part,mode="Kushball")
+        else:
+            radial_traj = Radial3D(total_nspokes=nb_segments, undersampling_factor=1, npoint=npoint,
+                                nb_slices=nb_part, incoherent=incoherent, mode=None,nspoke_per_z_encoding=nb_segments,)
 
         traj_python = radial_traj.get_traj()
-        traj_python=traj_python.reshape(nb_segments,nb_slices,-1,3)
+        traj_python=traj_python.reshape(nb_segments,nb_part,-1,3)
+        if spoke_start is not None:
+            traj_python=traj_python[spoke_start:]
+        
         traj_python=traj_python.T
         traj_python=np.moveaxis(traj_python,-1,-2)
 
@@ -2805,7 +2969,20 @@ def coil_compression_bart(filename_kdata,dens_adj,n_comp,filename_cc,calc_sensi)
         
         traj_python_bart=traj_python.reshape(3,npoint,-1)
 
-        coil_img = bart(1,'nufft -a -t', traj_python_bart, kdata_bart)
+        if spoke_start is not None:
+            coil_img=bart(1,'nufft -a -t', traj_python_bart, (kdata_bart.reshape(1,npoint,nb_segments,nb_part,nb_channels)[:,:,spoke_start:]).reshape(1,npoint,-1,nb_channels))
+        else:
+            coil_img = bart(1,'nufft -a -t', traj_python_bart, kdata_bart)
+
+        print(coil_img.shape)
+        
+        coil_img_plot=np.moveaxis(coil_img,-2,0)
+        coil_img_plot=np.moveaxis(coil_img_plot,-1,0)
+        sl = int(coil_img_plot.shape[1]/2)
+
+        list_images=list(np.abs(coil_img_plot[:,sl,:,:]))
+        plot_image_grid(list_images,(6,6),title="BART Coil Images for slice".format(sl),save_file=coil_image_file)
+        
         kdata_cart = bart(1,'fft -u 7', coil_img)
 
     if filename_cc is None:
@@ -2819,7 +2996,7 @@ def coil_compression_bart(filename_kdata,dens_adj,n_comp,filename_cc,calc_sensi)
 
     print("Applying coil compression to k-space data")
     kdata_bart_cc = bart(1, 'ccapply -p {}'.format(n_comp), kdata_bart, cc)
-    kdata_python_cc=kdata_bart_cc.squeeze().reshape(npoint,nb_segments,nb_slices,n_comp)
+    kdata_python_cc=kdata_bart_cc.squeeze().reshape(npoint,nb_segments,nb_part,n_comp)
     kdata_python_cc=np.moveaxis(kdata_python_cc,-1,0)
     kdata_python_cc=np.moveaxis(kdata_python_cc,1,-1)
     np.save(filename_kdata_compressed,kdata_python_cc)
@@ -2840,7 +3017,7 @@ def coil_compression_bart(filename_kdata,dens_adj,n_comp,filename_cc,calc_sensi)
         plot_image_grid(list_images,(6,6),title="BART Coil Sensitivity map for slice".format(sl),save_file=image_file)
 
         pca_dict={}
-        for sl in range(nb_slices):
+        for sl in range(nb_part):
             pca=PCAComplex(n_components_=n_comp)
             pca.explained_variance_ratio_=[1]
             pca.components_=np.eye(n_comp)
@@ -2982,7 +3159,8 @@ def build_volumes_allbins(filename_kdata,filename_b1,filename_pca,filename_weigh
 @set_parameter("suffix", str, default="", description="Suffix")
 @set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
 @set_parameter("select_first_rep", bool, default=False, description="Select firt repetition of central partition only")
-def build_volumes_singular_allbins_registered(filename_kdata, filename_b1, filename_pca, filename_weights,filename_phi,dictfile,L0,file_deformation_map,n_comp,useGPU,nb_rep_center_part,index_ref,interp,gating_only,suffix,select_first_rep):
+@set_parameter("axis", int, default=None, description="Registration axis")
+def build_volumes_singular_allbins_registered(filename_kdata, filename_b1, filename_pca, filename_weights,filename_phi,dictfile,L0,file_deformation_map,n_comp,useGPU,nb_rep_center_part,index_ref,interp,gating_only,suffix,select_first_rep,axis):
     '''
     Build singular volumes for MRF registered to the same motion phase and averaged (first iteration of the gradient descent for motion-corrected MRF)
     Output shape L0 x nz x nx x ny
@@ -3033,7 +3211,7 @@ def build_volumes_singular_allbins_registered(filename_kdata, filename_b1, filen
     print("Loading Deformation Map")
     deformation_map=np.load(file_deformation_map)
     if not(index_ref==0):
-        deformation_map=change_deformation_map_ref(deformation_map,index_ref)
+        deformation_map=change_deformation_map_ref(deformation_map,index_ref,axis)
 
     print("Kdata shape {}".format(kdata_all_channels_all_slices.shape))
     print("virtual coils components shape {}".format(pca_dict[0].components_.shape))
@@ -3054,7 +3232,7 @@ def build_volumes_singular_allbins_registered(filename_kdata, filename_b1, filen
 
 
     volumes_allbins_registered=build_volume_singular_2Dplus1_cc_allbins_registered(kdata_all_channels_all_slices, b1_all_slices_2Dplus1_pca, pca_dict,
-                                               all_weights, phi, L0, deformation_map,useGPU,nb_rep_center_part,interp,select_first_rep)
+                                               all_weights, phi, L0, deformation_map,useGPU,nb_rep_center_part,interp,select_first_rep,axis)
     np.save(filename_volumes, volumes_allbins_registered)
 
     return
@@ -3083,6 +3261,9 @@ def build_volumes_singular_allbins(filename_kdata, filename_b1, filename_pca, fi
     Build singular volumes for MRF for all motion bins
     Output shape nb_motion_bins x L0 x nz x nx x ny
     '''
+    
+
+
     filename_volumes = filename_kdata.split("_kdata.npy")[0] + "_volumes_singular_allbins.npy"
     print("Loading Kdata")
     print(filename_kdata)
@@ -3205,6 +3386,96 @@ def build_volumes_singular_allbins(filename_kdata, filename_b1, filename_pca, fi
     return
 
 
+@machine
+@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
+@set_parameter("filename_weights", str, default=None, description="Weights")
+@set_parameter("filename_seqParams", str, default=None, description="Seq params")
+def calculate_dcomp_voronoi_3D(filename_kdata,filename_weights,filename_seqParams):
+    '''
+    Build singular volumes for MRF for all motion bins
+    Output shape nb_motion_bins x L0 x nz x nx x ny
+    '''
+    
+    filename_dcomp = filename_kdata.split("_kdata.npy")[0] + "_dcomp.npy"
+    print("Loading Kdata")
+    print(filename_kdata)
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+
+    nb_channels,nb_segments,nb_part,npoint=kdata_all_channels_all_slices.shape
+
+    all_weights=np.load(filename_weights)
+    nbins=all_weights.shape[0]
+
+    if filename_seqParams is not None:
+        file = open(filename_seqParams, "rb")
+        dico_seqParams = pickle.load(file)
+        file.close()
+
+        use_navigator_dll = dico_seqParams["use_navigator_dll"]
+
+        if "use_kushball_dll" in dico_seqParams.keys():
+            use_kushball_dll=dico_seqParams["use_kushball_dll"]
+        else:
+            use_kushball_dll=False
+
+
+        if use_kushball_dll:
+            meas_sampling_mode = dico_seqParams["alFree"][16]
+        elif (use_navigator_dll):
+            meas_sampling_mode = dico_seqParams["alFree"][15]
+        else:
+            meas_sampling_mode = dico_seqParams["alFree"][12]
+
+        print(meas_sampling_mode)
+
+
+
+        undersampling_factor = dico_seqParams["alFree"][9]
+
+
+
+        if meas_sampling_mode == 1:
+            incoherent = False
+            mode = None
+        elif meas_sampling_mode == 2:
+            incoherent = True
+            mode = "old"
+        elif meas_sampling_mode == 3:
+            incoherent = True
+            mode = "new"
+
+        elif meas_sampling_mode == 4:
+            incoherent = True
+            mode = "Kushball"
+
+    else:
+        incoherent=False
+        mode="old"
+        undersampling_factor=1
+
+
+    radial_traj = Radial3D(total_nspokes=nb_segments,npoint=npoint,nb_slices=nb_part,undersampling_factor=undersampling_factor,incoherent=incoherent,mode=mode)
+    traj_python = radial_traj.get_traj()
+    # traj_python = traj_python.reshape(nb_segments, nb_part, -1, 3)
+    traj_python=traj_python.reshape(-1,npoint,3)
+
+
+    dcomp=np.zeros((nbins,1)+(nb_segments*nb_part,npoint))
+
+    for gr in tqdm(range(nbins)):
+        print("Calculating Voronoi for bin {}".format(gr))
+        weights_for_traj_current_bin=all_weights[gr].squeeze().flatten()
+        
+        traj_python_current_bin=traj_python[weights_for_traj_current_bin>0]
+        traj_python_current_bin=traj_python_current_bin.reshape(-1,3)
+        density_voronoi=voronoi_volumes_freud(traj_python_current_bin)
+        dcomp[gr,0,weights_for_traj_current_bin>0,:]=density_voronoi.reshape((-1,npoint))
+
+    dcomp=dcomp.reshape((nbins,1,nb_segments,nb_part,npoint))
+    np.save(filename_dcomp,dcomp)
+
+
+    return
 
 
 @machine
@@ -3212,6 +3483,8 @@ def build_volumes_singular_allbins(filename_kdata, filename_b1, filename_pca, fi
 @set_parameter("filename_b1", str, default=None, description="B1")
 @set_parameter("filename_weights", str, default=None, description="Motion bin weights")
 @set_parameter("filename_phi", str, default=None, description="MRF temporal basis components")
+@set_parameter("filename_seqParams", str, default=None, description="Seq params")
+@set_parameter("filename_dcomp", str, default=None, description="Seq params")
 @set_parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
 @set_parameter("L0", int, default=10, description="Number of retained temporal basis functions")
 @set_parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
@@ -3221,7 +3494,7 @@ def build_volumes_singular_allbins(filename_kdata, filename_b1, filename_pca, fi
 @set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
 @set_parameter("incoherent", bool, default=False, description="Use GPU")
 
-def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weights,filename_phi,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,incoherent):
+def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weights,filename_dcomp,filename_phi,filename_seqParams,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,incoherent):
     '''
     Build singular volumes for MRF for all motion bins
     Output shape nb_motion_bins x L0 x nz x nx x ny
@@ -3232,13 +3505,70 @@ def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weig
     print(filename_kdata)
     kdata_all_channels_all_slices = np.load(filename_kdata)
     print(filename_kdata)
+
+    nb_channels,nb_allspokes,nb_part,npoint=kdata_all_channels_all_slices.shape
+
+    if filename_seqParams is not None:
+        file = open(filename_seqParams, "rb")
+        dico_seqParams = pickle.load(file)
+        file.close()
+
+        use_navigator_dll = dico_seqParams["use_navigator_dll"]
+
+        if "use_kushball_dll" in dico_seqParams.keys():
+            use_kushball_dll=dico_seqParams["use_kushball_dll"]
+        else:
+            use_kushball_dll=False
+
+
+        if use_kushball_dll:
+            meas_sampling_mode = dico_seqParams["alFree"][16]
+        elif (use_navigator_dll):
+            meas_sampling_mode = dico_seqParams["alFree"][15]
+        else:
+            meas_sampling_mode = dico_seqParams["alFree"][12]
+
+        print(meas_sampling_mode)
+
+
+
+        undersampling_factor = dico_seqParams["alFree"][9]
+
+        nb_slices=int(dico_seqParams["nb_part"])
+
+
+        if meas_sampling_mode == 1:
+            incoherent = False
+            mode = None
+        elif meas_sampling_mode == 2:
+            incoherent = True
+            mode = "old"
+        elif meas_sampling_mode == 3:
+            incoherent = True
+            mode = "new"
+
+        elif meas_sampling_mode == 4:
+            incoherent = True
+            mode = "Kushball"
+
+    else:
+        incoherent="False"
+        mode="old"
+        undersampling_factor=1
+        nb_slices=nb_part
+
+
+
     if dens_adj:
         npoint = kdata_all_channels_all_slices.shape[-1]
         density = np.abs(np.linspace(-1, 1, npoint))
         density = np.expand_dims(density, tuple(range(kdata_all_channels_all_slices.ndim - 1)))
 
         print("Performing Density Adjustment....")
-        kdata_all_channels_all_slices *= density
+        if mode=="Kushball":
+            kdata_all_channels_all_slices *= density**2
+        else:
+            kdata_all_channels_all_slices *= density
 
 
     if ((filename_b1 is None))and(n_comp is None):
@@ -3260,12 +3590,11 @@ def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weig
 
     nb_slices_b1=b1_all_slices_2Dplus1_pca.shape[1]
     npoint_b1=b1_all_slices_2Dplus1_pca.shape[-1]
-    nb_slices=kdata_all_channels_all_slices.shape[-2]
-    npoint=kdata_all_channels_all_slices.shape[-1]
-    npoint_image=int(npoint/2)
-    nb_allspokes=kdata_all_channels_all_slices.shape[1]
 
-    nb_channels=b1_all_slices_2Dplus1_pca.shape[0]
+    npoint_image=int(npoint/2)
+    
+    image_size=(nb_slices,npoint_image,npoint_image)
+
     
 
     # if nb_slices>nb_slices_b1:
@@ -3294,7 +3623,14 @@ def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weig
         print("Using weights for gating only")
         all_weights=(all_weights>0)*1
 
-
+    if filename_dcomp is not None:
+        print("Weighing by density compensation file")
+        dcomp=np.load(filename_dcomp)
+        print(dcomp.shape)
+        dcomp[:,:,:,:,-1]=dcomp[:,:,:,:,-2]
+        dcomp[:,:,:,:,0]=dcomp[:,:,:,:,1]
+        
+        all_weights=all_weights*dcomp
 
 
     if filename_phi not in os.listdir():
@@ -3307,18 +3643,521 @@ def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weig
     print("phi shape {}".format(phi.shape))
     print("B1 shape {}".format(b1_all_slices_2Dplus1_pca.shape))
 
+    print("nb_part {}".format(nb_part))
+    print("image_size {}".format(image_size))
 
-
-    radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=1,npoint=npoint,nb_slices=nb_slices,incoherent=incoherent,mode="old")
+    radial_traj=Radial3D(total_nspokes=nb_allspokes,undersampling_factor=1,npoint=npoint,nb_slices=nb_part,incoherent=incoherent,mode=mode)
     volumes_allbins=build_volume_singular_3D_allbins(kdata_all_channels_all_slices, b1_all_slices_2Dplus1_pca, radial_traj,
-                                               all_weights, phi, L0,useGPU,nb_rep_center_part=nb_rep_center_part)
+                                               all_weights, phi, L0,useGPU,nb_rep_center_part=nb_rep_center_part,image_size=image_size)
     np.save(filename_volumes, volumes_allbins)
 
     return
 
 
+
+@machine
+@set_parameter("bart_command", str, default=None, description="bart pics command")
+@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
+@set_parameter("filename_b1", str, default=None, description="B1")
+@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
+@set_parameter("filename_phi", str, default=None, description="MRF temporal basis components")
+@set_parameter("filename_seqParams", str, default=None, description="Seq params")
+@set_parameter("filename_dcomp", str, default=None, description="Seq params")
+@set_parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
+@set_parameter("L0", int, default=10, description="Number of retained temporal basis functions")
+@set_parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
+@set_parameter("useGPU", bool, default=True, description="Use GPU")
+@set_parameter("log", bool, default=True, description="log bin results")
+@set_parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
+def build_volumes_singular_allbins_3D_BART(bart_command,filename_kdata, filename_b1, filename_weights,filename_dcomp,filename_phi,filename_seqParams,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,log):
+    '''
+    Build singular volumes for MRF for all motion bins
+    Output shape nb_motion_bins x L0 x nz x nx x ny
+    '''
+    filename_volumes = filename_kdata.split("_kdata.npy")[0] + "_volumes_singular_allbins_bart.npy"
+    filename_volumes_log = filename_kdata.split("_kdata.npy")[0] + "_volumes_singular_allbins_bart_gr{}.npy"
+    print("Loading Kdata")
+    print(filename_kdata)
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+    print(filename_kdata)
+    print(np.linalg.norm(kdata_all_channels_all_slices))
+
+    nb_channels,nb_segments,nb_part,npoint=kdata_all_channels_all_slices.shape
+
+    if filename_seqParams is not None:
+        file = open(filename_seqParams, "rb")
+        dico_seqParams = pickle.load(file)
+        file.close()
+
+        use_navigator_dll = dico_seqParams["use_navigator_dll"]
+
+        if "use_kushball_dll" in dico_seqParams.keys():
+            use_kushball_dll=dico_seqParams["use_kushball_dll"]
+        else:
+            use_kushball_dll=False
+
+
+        if use_kushball_dll:
+            meas_sampling_mode = dico_seqParams["alFree"][16]
+        elif (use_navigator_dll):
+            meas_sampling_mode = dico_seqParams["alFree"][15]
+        else:
+            meas_sampling_mode = dico_seqParams["alFree"][12]
+
+        print(meas_sampling_mode)
+
+
+
+        undersampling_factor = dico_seqParams["alFree"][9]
+
+        nb_slices=int(dico_seqParams["nb_part"])
+
+
+        if meas_sampling_mode == 1:
+            incoherent = False
+            mode = None
+        elif meas_sampling_mode == 2:
+            incoherent = True
+            mode = "old"
+        elif meas_sampling_mode == 3:
+            incoherent = True
+            mode = "new"
+
+        elif meas_sampling_mode == 4:
+            incoherent = True
+            mode = "Kushball"
+
+
+
+    else:
+        incoherent=False
+        mode="old"
+        undersampling_factor=1
+        nb_slices=nb_part
+        image_size=(100,100,100)
+
+
+
+
+    if dens_adj:
+
+
+        npoint = kdata_all_channels_all_slices.shape[-1]
+        if mode=="Kushball": 
+            density = np.abs(np.linspace(-1, 1, npoint))**2
+        else:
+            density=np.abs(np.linspace(-1, 1, npoint))
+
+        
+
+        # bart_command=str.replace(bart_command,"-t","-p density -t")
+        # print(bart_command)
+        
+
+
+    if ((filename_b1 is None))and(n_comp is None):
+        raise ValueError('n_comp should be provided when B1 or PCA files are missing')
+
+    if filename_b1 is None:
+        filename_b1=str.split(filename_kdata, "_kdata.npy")[0] + "_b12Dplus1_{}.npy".format(n_comp)
+
+    if filename_weights is None:
+        filename_weights = str.split(filename_kdata, "_kdata.npy")[0] + "_weights.npy"
+
+    if ((filename_phi is None) and (dictfile is None)):
+        raise ValueError('Either dictfile or filename_phi should be provided for temporal projection')
+
+    if dictfile is not None:
+        filename_phi = str.split(dictfile, ".dict")[0] + "_phi_L0_{}.npy".format(L0)
+
+    b1_all_slices_2Dplus1_pca = np.load(filename_b1)
+    
+    image_size=b1_all_slices_2Dplus1_pca.shape[1:]
+
+    b1_bart=np.moveaxis(b1_all_slices_2Dplus1_pca,0,-1)
+    b1_bart=np.moveaxis(b1_bart,0,-2)
+
+    
+
+    # if nb_slices>nb_slices_b1:
+    #     us_b1 = int(nb_slices / nb_slices_b1)
+    #     print("B1 map on x{} coarser grid. Interpolating B1 map on a finer grid".format(us_b1))
+    #     b1_all_slices_2Dplus1_pca=interp_b1(b1_all_slices_2Dplus1_pca,us=us_b1,start=0)
+
+    #     print("Warning: pca_dict can only be interpolated when no coil compression for the moment")
+    #     pca_dict={}
+    #     for sl in range(nb_slices):
+    #         pca=PCAComplex(n_components_=nb_channels)
+    #         pca.explained_variance_ratio_=[1]
+    #         pca.components_=np.eye(nb_channels)
+    #         pca_dict[sl]=deepcopy(pca)
+
+    # if (nb_slices>nb_slices_b1)or(npoint_image>npoint_b1):
+        
+    #     print("Regridding b1")
+    #     new_shape=(nb_slices,npoint_image,npoint_image)
+    #     b1_all_slices_2Dplus1_pca=interp_b1_resize(b1_all_slices_2Dplus1_pca,new_shape)
+
+
+    all_weights = np.load(filename_weights)
+    nbins=all_weights.shape[0]
+
+    if gating_only:
+        print("Using weights for gating only")
+        all_weights=(all_weights>0)*1
+
+    if filename_dcomp is not None:
+        print("Weighing by density compensation file")
+        dcomp=np.load(filename_dcomp)
+        print(dcomp.shape)
+        dcomp[:,:,:,:,-1]=dcomp[:,:,:,:,-2]
+        dcomp[:,:,:,:,0]=dcomp[:,:,:,:,1]
+        
+        all_weights=all_weights*dcomp
+
+
+    if filename_phi not in os.listdir():
+        phi = build_phi(dictfile, L0)
+    else:
+        phi = np.load(filename_phi)
+
+    print("Kdata shape {}".format(kdata_all_channels_all_slices.shape))
+    print("Weights shape {}".format(all_weights.shape))
+    print("phi shape {}".format(phi.shape))
+    print("B1 shape {}".format(b1_all_slices_2Dplus1_pca.shape))
+
+    print("nb_part {}".format(nb_part))
+    print("image_size {}".format(image_size))
+
+    radial_traj=Radial3D(total_nspokes=nb_segments,undersampling_factor=1,npoint=npoint,nb_slices=nb_part,incoherent=incoherent,mode=mode)
+    
+        
+    traj_python = radial_traj.get_traj()
+    traj_python = traj_python.reshape(nb_segments, nb_part, -1, 3)
+    traj_python = traj_python.T
+    traj_python = np.moveaxis(traj_python, -1, -2)
+
+    traj_python[0] = traj_python[0] / np.max(np.abs(traj_python[0])) * int(image_size[0]/2)
+    traj_python[1] = traj_python[1] / np.max(np.abs(traj_python[1])) * int(
+        image_size[1]/2)
+    traj_python[2] = traj_python[2] / np.max(np.abs(traj_python[2])) * int(
+        image_size[2] / 2)
+
+    traj_python_bart = traj_python.reshape(3, npoint, -1)
+    
+    window=8
+    ntimesteps=int(nb_segments/window)
+    
+
+    kdata_singular = np.zeros((nb_channels,ntimesteps, nb_part*npoint*window) + (L0,), dtype="complex64")
+    data=kdata_all_channels_all_slices.reshape(nb_channels,ntimesteps,-1)
+
+    for ch in tqdm(range(nb_channels)):
+        for ts in tqdm(range(ntimesteps)):
+            kdata_singular[ch, ts, :, :] = data[ch, ts, :, None] @ (phi[:L0].conj().T[ts][None, :])
+
+    print(np.linalg.norm(kdata_singular))
+
+    kdata_singular = np.moveaxis(kdata_singular, -1, 1)
+    kdata_singular = kdata_singular.reshape(nb_channels,L0, -1,npoint)
+    # kdata_singular*=1000000
+
+
+    kdata_singular_bart=np.moveaxis(kdata_singular,-1,1)
+    kdata_singular_bart=np.moveaxis(kdata_singular,0,-1)[None,...,None]
+    kdata_singular_bart=np.moveaxis(kdata_singular_bart,1,-1)
+    kdata_singular_bart=np.moveaxis(kdata_singular_bart,2,1)
+    volumes_singular_allbins=[]
+    for gr in tqdm(range(nbins)):
+        print("Building singular volumes for bin {}".format(gr))
+        curr_weights_bart=all_weights[gr]
+
+        curr_weights_bart=(curr_weights_bart.squeeze().flatten()>0)*1
+        traj_python_bart_gr=traj_python_bart[:,:,curr_weights_bart>0]
+        kdata_bart_gr=kdata_singular_bart[:,:,curr_weights_bart>0]
+        # 'pics -i1 -e -S -d3 -b 5 -RL:$(bart bitmask 5):$(bart bitmask 0 1 2):0.01 -t'
+        if dens_adj:
+            tile_shape=list(kdata_bart_gr.shape[1:])
+            tile_shape[0]=1
+            tile_shape=tuple(tile_shape)
+            density_curr=np.expand_dims(density,tuple(range(1,len(tile_shape))))
+            density_curr=np.tile(density_curr,reps=tile_shape)
+            density_curr=density_curr[None,:]
+            cfl.writecfl("density",np.sqrt(density_curr))
+            volume_singular_gr=bart(1,bart_command+" -p density -t",traj_python_bart_gr,kdata_bart_gr,b1_bart)
+        else:
+            volume_singular_gr=bart(1,bart_command+" -t",traj_python_bart_gr,kdata_bart_gr,b1_bart)
+        volumes_singular_allbins.append(volume_singular_gr.squeeze())
+
+        if log:
+            np.save(filename_volumes_log.format(gr),np.moveaxis(volume_singular_gr.squeeze(),-1,0))
+
+    volumes_singular_allbins=np.array(volumes_singular_allbins)
+    volumes_singular_allbins=np.moveaxis(volumes_singular_allbins,-1,1)
+    np.save(filename_volumes,volumes_singular_allbins)
+
+    return
+
+
+
+@machine
+@set_parameter("bart_command", str, default=None, description="bart pics command")
+@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
+@set_parameter("filename_b1", str, default=None, description="B1")
+@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
+@set_parameter("filename_phi", str, default=None, description="MRF temporal basis components")
+@set_parameter("filename_seqParams", str, default=None, description="Seq params")
+@set_parameter("filename_dcomp", str, default=None, description="Seq params")
+@set_parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
+@set_parameter("L0", int, default=10, description="Number of retained temporal basis functions")
+@set_parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
+@set_parameter("useGPU", bool, default=True, description="Use GPU")
+@set_parameter("log", bool, default=True, description="log bin results")
+@set_parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
+def build_volumes_singular_allbins_3D_BART_v2(bart_command,filename_kdata, filename_b1, filename_weights,filename_dcomp,filename_phi,filename_seqParams,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,log):
+    '''
+    Build singular volumes for MRF for all motion bins
+    Output shape nb_motion_bins x L0 x nz x nx x ny
+    '''
+    filename_volumes = filename_kdata.split("_kdata.npy")[0] + "_volumes_singular_allbins_bart.npy"
+    filename_volumes_log = filename_kdata.split("_kdata.npy")[0] + "_volumes_singular_allbins_bart_gr{}.npy"
+    print("Loading Kdata")
+    print(filename_kdata)
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+    print(filename_kdata)
+    print(np.linalg.norm(kdata_all_channels_all_slices))
+
+    nb_channels,nb_segments,nb_part,npoint=kdata_all_channels_all_slices.shape
+
+    if filename_seqParams is not None:
+        file = open(filename_seqParams, "rb")
+        dico_seqParams = pickle.load(file)
+        file.close()
+
+        use_navigator_dll = dico_seqParams["use_navigator_dll"]
+
+        if "use_kushball_dll" in dico_seqParams.keys():
+            use_kushball_dll=dico_seqParams["use_kushball_dll"]
+        else:
+            use_kushball_dll=False
+
+
+        if use_kushball_dll:
+            meas_sampling_mode = dico_seqParams["alFree"][16]
+        elif (use_navigator_dll):
+            meas_sampling_mode = dico_seqParams["alFree"][15]
+        else:
+            meas_sampling_mode = dico_seqParams["alFree"][12]
+
+        print(meas_sampling_mode)
+
+
+
+        undersampling_factor = dico_seqParams["alFree"][9]
+
+        nb_slices=int(dico_seqParams["nb_part"])
+
+
+        if meas_sampling_mode == 1:
+            incoherent = False
+            mode = None
+        elif meas_sampling_mode == 2:
+            incoherent = True
+            mode = "old"
+        elif meas_sampling_mode == 3:
+            incoherent = True
+            mode = "new"
+
+        elif meas_sampling_mode == 4:
+            incoherent = True
+            mode = "Kushball"
+
+
+
+    else:
+        incoherent=False
+        mode="old"
+        undersampling_factor=1
+        nb_slices=nb_part
+        image_size=(100,100,100)
+
+
+
+
+    if dens_adj:
+
+
+        npoint = kdata_all_channels_all_slices.shape[-1]
+        if mode=="Kushball": 
+            density = np.abs(np.linspace(-1, 1, npoint))**2
+        else:
+            density=np.abs(np.linspace(-1, 1, npoint))
+
+        
+
+        # bart_command=str.replace(bart_command,"-t","-p density -t")
+        # print(bart_command)
+        
+
+
+    if ((filename_b1 is None))and(n_comp is None):
+        raise ValueError('n_comp should be provided when B1 or PCA files are missing')
+
+    if filename_b1 is None:
+        filename_b1=str.split(filename_kdata, "_kdata.npy")[0] + "_b12Dplus1_{}.npy".format(n_comp)
+
+    if filename_weights is None:
+        filename_weights = str.split(filename_kdata, "_kdata.npy")[0] + "_weights.npy"
+
+    if ((filename_phi is None) and (dictfile is None)):
+        raise ValueError('Either dictfile or filename_phi should be provided for temporal projection')
+
+    if dictfile is not None:
+        filename_u = str.split(dictfile, ".dict")[0] + "_u_bart.npy"
+
+    b1_all_slices_2Dplus1_pca = np.load(filename_b1)
+    
+    image_size=b1_all_slices_2Dplus1_pca.shape[1:]
+
+    b1_bart=np.moveaxis(b1_all_slices_2Dplus1_pca,0,-1)
+    b1_bart=np.moveaxis(b1_bart,0,-2)
+
+    
+
+    # if nb_slices>nb_slices_b1:
+    #     us_b1 = int(nb_slices / nb_slices_b1)
+    #     print("B1 map on x{} coarser grid. Interpolating B1 map on a finer grid".format(us_b1))
+    #     b1_all_slices_2Dplus1_pca=interp_b1(b1_all_slices_2Dplus1_pca,us=us_b1,start=0)
+
+    #     print("Warning: pca_dict can only be interpolated when no coil compression for the moment")
+    #     pca_dict={}
+    #     for sl in range(nb_slices):
+    #         pca=PCAComplex(n_components_=nb_channels)
+    #         pca.explained_variance_ratio_=[1]
+    #         pca.components_=np.eye(nb_channels)
+    #         pca_dict[sl]=deepcopy(pca)
+
+    # if (nb_slices>nb_slices_b1)or(npoint_image>npoint_b1):
+        
+    #     print("Regridding b1")
+    #     new_shape=(nb_slices,npoint_image,npoint_image)
+    #     b1_all_slices_2Dplus1_pca=interp_b1_resize(b1_all_slices_2Dplus1_pca,new_shape)
+
+
+    all_weights = np.load(filename_weights)
+    nbins=all_weights.shape[0]
+
+    if gating_only:
+        print("Using weights for gating only")
+        all_weights=(all_weights>0)*1
+
+    if filename_dcomp is not None:
+        print("Weighing by density compensation file")
+        dcomp=np.load(filename_dcomp)
+        print(dcomp.shape)
+        dcomp[:,:,:,:,-1]=dcomp[:,:,:,:,-2]
+        dcomp[:,:,:,:,0]=dcomp[:,:,:,:,1]
+        
+        all_weights=all_weights*dcomp
+
+
+    if filename_phi not in os.listdir():
+        u = build_basis_bart(dictfile)
+        print(u.shape)
+        np.save(filename_u,u)
+    else:
+        u = np.load(filename_u)
+
+    basis=u[:L0,:].T
+    basis=basis[None,None,None,None,None,:,:]
+
+    cfl.writecfl("basis",basis)
+
+    print("Kdata shape {}".format(kdata_all_channels_all_slices.shape))
+    print("Weights shape {}".format(all_weights.shape))
+    print("basis shape {}".format(basis.shape))
+    print("B1 shape {}".format(b1_all_slices_2Dplus1_pca.shape))
+
+    print("nb_part {}".format(nb_part))
+    print("image_size {}".format(image_size))
+
+    radial_traj=Radial3D(total_nspokes=nb_segments,undersampling_factor=1,npoint=npoint,nb_slices=nb_part,incoherent=incoherent,mode=mode)
+    
+        
+    traj_python = radial_traj.get_traj()
+    window=8
+    ntimesteps=int(nb_segments/window)
+    traj_python = traj_python.reshape(ntimesteps,window,nb_part, -1, 3)
+    traj_python = traj_python.T
+    traj_python = np.moveaxis(traj_python, -2, -3)
+
+    traj_python[0] = traj_python[0] / np.max(np.abs(traj_python[0])) * int(image_size[0]/2)
+    traj_python[1] = traj_python[1] / np.max(np.abs(traj_python[1])) * int(
+        image_size[1]/2)
+    traj_python[2] = traj_python[2] / np.max(np.abs(traj_python[2])) * int(
+        image_size[2] / 2)
+
+
+    traj_python_bart = traj_python.reshape(3, npoint, window*nb_part,1,1,ntimesteps)
+    print(traj_python_bart.shape)
+    
+    
+    
+
+    # kdata_singular = np.zeros((nb_channels,ntimesteps, nb_part*npoint*window) + (L0,), dtype="complex64")
+    # kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,nb_segments,nb_partnpoint)
+
+    
+    volumes_singular_allbins=[]
+    for gr in tqdm(range(nbins)):
+        print("Building singular volumes for bin {}".format(gr))
+        curr_weights_bart=all_weights[gr]
+        # traj_python_bart_gr=traj_python_bart[:,:,curr_weights_bart>0]
+        
+        print(curr_weights_bart.shape)
+        print(kdata_all_channels_all_slices.shape)
+        kdata_curr_gr=kdata_all_channels_all_slices*((curr_weights_bart>0)*1)
+        kdata_curr_gr=kdata_curr_gr.reshape(nb_channels,ntimesteps,window,nb_part,npoint)
+        kdata_curr_gr=kdata_curr_gr.T
+        kdata_curr_gr=np.moveaxis(kdata_curr_gr,1,2)
+        kdata_curr_gr=kdata_curr_gr.reshape(1,npoint,window*nb_part,nb_channels,1,ntimesteps)
+
+        print(kdata_curr_gr.shape)
+
+        volume_singular_gr=bart(1,bart_command+" -B basis -t",traj_python_bart,kdata_curr_gr,b1_bart)
+        volumes_singular_allbins.append(volume_singular_gr.squeeze())
+
+
+    #     # 'pics -i1 -e -S -d3 -b 5 -RL:$(bart bitmask 5):$(bart bitmask 0 1 2):0.01 -t'
+    #     if dens_adj:
+    #         tile_shape=list(kdata_bart_gr.shape[1:])
+    #         tile_shape[0]=1
+    #         tile_shape=tuple(tile_shape)
+    #         density_curr=np.expand_dims(density,tuple(range(1,len(tile_shape))))
+    #         density_curr=np.tile(density_curr,reps=tile_shape)
+    #         density_curr=density_curr[None,:]
+    #         cfl.writecfl("density",np.sqrt(density_curr))
+    #         volume_singular_gr=bart(1,bart_command+" -p density -t",traj_python_bart_gr,kdata_bart_gr,b1_bart)
+    #     else:
+    #         volume_singular_gr=bart(1,bart_command+" -t",traj_python_bart_gr,kdata_bart_gr,b1_bart)
+    #     volumes_singular_allbins.append(volume_singular_gr.squeeze())
+
+    #     if log:
+    #         np.save(filename_volumes_log.format(gr),np.moveaxis(volume_singular_gr.squeeze(),-1,0))
+
+    volumes_singular_allbins=np.array(volumes_singular_allbins)
+    volumes_singular_allbins=np.moveaxis(volumes_singular_allbins,-1,1)
+    np.save(filename_volumes,volumes_singular_allbins)
+
+    return
+
 @machine
 @set_parameter("filename_kdata", str, default=None, description="MRF raw data")
+@set_parameter("filename_seqParams", str, default=None, description="Seq params")
 @set_parameter("filename_b1", str, default=None, description="B1")
 @set_parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
 @set_parameter("filename_phi", str, default=None, description="MRF temporal basis components")
@@ -3332,13 +4171,14 @@ def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weig
 @set_parameter("in_phase", bool, default=False, description="MRF T1-FF : Select in phase spokes from original MRF sequence")
 @set_parameter("out_phase", bool, default=False, description="MRF T1-FF : Select out of phase spokes from original MRF sequence")
 
-def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_phi,dictfile,L0,n_comp,nb_rep_center_part,useGPU,filename_weights,full_volume,in_phase,out_phase):
+def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_phi,dictfile,L0,n_comp,nb_rep_center_part,useGPU,filename_weights,full_volume,in_phase,out_phase,filename_seqParams):
     '''
     Build singular volumes for MRF (no binning)
     Output shape nb_motion_bins x L0 x nz x nx x ny
     '''
 
-    filename_seqParams =filename_kdata.split("_kdata.npy")[0] + "_seqParams.pkl"
+    if filename_seqParams is None:
+        filename_seqParams =filename_kdata.split("_kdata.npy")[0] + "_seqParams.pkl"
 
     file = open(filename_seqParams, "rb")
     dico_seqParams = pickle.load(file)
@@ -3351,12 +4191,23 @@ def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_ph
     nb_gating_spokes=dico_seqParams["alFree"][6]
     print(nb_gating_spokes)
 
-    if (use_navigator_dll)and(nb_gating_spokes>0):
+    if "use_kushball_dll" in dico_seqParams.keys(): 
+        use_kushball_dll=dico_seqParams["use_kushball_dll"]
+    else:
+        use_kushball_dll=False
+
+
+    if use_kushball_dll:
+        meas_sampling_mode = dico_seqParams["alFree"][16]
+    elif (use_navigator_dll):
         meas_sampling_mode = dico_seqParams["alFree"][15]
     else:
         meas_sampling_mode = dico_seqParams["alFree"][12]
 
+
     print(meas_sampling_mode)
+
+
 
     undersampling_factor = dico_seqParams["alFree"][9]
 
@@ -3373,6 +4224,10 @@ def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_ph
         incoherent = True
         mode = "new"
 
+    elif meas_sampling_mode == 4:
+        incoherent = True
+        mode = "Kushball"
+
     print(incoherent)
 
     filename_volumes = filename_kdata.split("_kdata.npy")[0] + "_volumes_singular.npy"
@@ -3386,8 +4241,8 @@ def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_ph
     print("Loading Kdata")
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
-    nb_segments=kdata_all_channels_all_slices.shape[1]
-    npoint=kdata_all_channels_all_slices.shape[-1]
+    nb_channels,nb_segments,nb_part,npoint=kdata_all_channels_all_slices.shape
+
 
     if ((filename_b1 is None)or(filename_pca is None))and(n_comp is None)and(not(incoherent)):
         raise ValueError('n_comp should be provided when B1 or PCA files are missing for stack of stars reco')
@@ -3417,6 +4272,7 @@ def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_ph
         phi=np.ones((1,1))
     else:
         if filename_phi not in os.listdir():
+            print("Build singular basis from dictionary {}".format(dictfile))
             phi=build_phi(dictfile,L0)
         else:
             phi = np.load(filename_phi)
@@ -3452,6 +4308,14 @@ def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_ph
         volumes_allbins=build_volume_singular_2Dplus1_cc(kdata_all_channels_all_slices, b1_all_slices_2Dplus1_pca, pca_dict,
                                                 1, phi, L0,nb_rep_center_part=nb_rep_center_part,useGPU=useGPU,selected_spokes=selected_spokes)
     
+    elif meas_sampling_mode==4:
+        print("Kushball reconstruction")
+        image_size=(nb_slices,int(npoint/2),int(npoint/2))
+        print(image_size)
+        print(nb_part)
+        radial_traj=Radial3D(total_nspokes=nb_segments,undersampling_factor=1,npoint=npoint,nb_slices=nb_part,mode="Kushball")
+        volumes_allbins=build_volume_singular_3D(kdata_all_channels_all_slices, b1_all_slices_2Dplus1_pca, radial_traj,1,phi,L0,useGPU,nb_rep_center_part,image_size=image_size)
+
     else:
         print("Non stack of stars - using 3D reconstruction")
         cond_us = np.zeros((nb_slices, nb_segments))
@@ -3603,14 +4467,17 @@ def generate_random_weights(filename_kdata, nbins,nkept,nb_gating_spokes,equal_s
 @set_parameter("filename_volume", str, default=None, description="MRF raw data")
 @set_parameter("filename_b1", str, default=None, description="B1")
 @set_parameter("filename_weights", str, default=None, description="Motion bin weights")
+@set_parameter("filename_seqParams", str, default=None, description="Undersampling weights")
 @set_parameter("mu", float, default=1, description="Gradient step size")
 @set_parameter("mu_TV", float, default=1, description="Spatial Regularization")
+@set_parameter("weights_TV", [float,float,float], default=[1.0,0.2,0.2], description="Spatial Regularization Weights")
 @set_parameter("lambda_wav", float, default=0.5e-5, description="Lambda wavelet")
 @set_parameter("lambda_LLR", float, default=0.0005, description="Lambda LLR")
 @set_parameter("mu_bins", float, default=None, description="Interbin regularization")
 @set_parameter("niter", int, default=None, description="Number of iterations")
 @set_parameter("suffix", str, default="", description="Suffix")
 @set_parameter("gamma", float, default=None, description="Gamma Correction")
+@set_parameter("isgamma3D", bool, default=False, description="Do gamma intensity correction on the whole volume")
 @set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
 @set_parameter("dens_adj", bool, default=True, description="Use Radial density adjustment")
 @set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
@@ -3620,16 +4487,13 @@ def generate_random_weights(filename_kdata, nbins,nkept,nb_gating_spokes,equal_s
 @set_parameter("us", int, default=1, description="Undersampling")
 @set_parameter("use_LLR", bool, default=False, description="LLR regularization instead of TV")
 @set_parameter("block", str, default="4,10,10", description="Block size for LLR regularization")
-
-
-
-def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights,mu,mu_TV,mu_bins,niter,gamma,suffix,gating_only,dens_adj,nb_rep_center_part,select_first_rep,use_proximal_TV,use_wavelet,lambda_wav,us,use_LLR,lambda_LLR,block):
+@set_parameter("axis", int, default=None, description="Gamma correction axis - default 0")
+def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights,filename_seqParams,mu,mu_TV,mu_bins,niter,gamma,suffix,gating_only,dens_adj,nb_rep_center_part,select_first_rep,use_proximal_TV,use_wavelet,lambda_wav,us,use_LLR,lambda_LLR,block,axis,isgamma3D,weights_TV):
     filename_target=filename_volume.split("_volumes_allbins.npy")[0] + "_volumes_allbins_denoised{}.npy".format(suffix)
 
     if gamma is not None:
         filename_target=filename_target.split(".npy")[0]+"_gamma_{}.npy".format(str(gamma).replace(".","_"))
     
-    weights_TV=np.array([1.0,0.2,0.2])
     weights_TV/=np.sum(weights_TV)
     print("Loading Volumes")
     volumes=np.load(filename_volume)
@@ -3655,9 +4519,57 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
     if nb_rep_center_part>1:
         all_weights=weights_aggregate_center_part(all_weights,nb_rep_center_part,select_first_rep)
 
+
+    nb_part = all_weights.shape[3]
+
+    if filename_seqParams is not None:
+        file = open(filename_seqParams, "rb")
+        dico_seqParams = pickle.load(file)
+        file.close()
+
+        use_navigator_dll = dico_seqParams["use_navigator_dll"]
+        nb_gating_spokes=dico_seqParams["alFree"][6]
+
+
+        if "use_kushball_dll" in dico_seqParams.keys():
+            use_kushball_dll=dico_seqParams["use_kushball_dll"]
+        else:
+            use_kushball_dll=False
+
+
+        if use_kushball_dll:
+            meas_sampling_mode = dico_seqParams["alFree"][16]
+        elif (use_navigator_dll):
+            meas_sampling_mode = dico_seqParams["alFree"][15]
+        else:
+            meas_sampling_mode = dico_seqParams["alFree"][12]
+        
+        if meas_sampling_mode == 1:
+            incoherent = False
+            mode = None
+        elif meas_sampling_mode == 2:
+            incoherent = True
+            mode = "old"
+        elif meas_sampling_mode == 3:
+            incoherent = True
+            mode = "new"
+        
+        elif meas_sampling_mode == 4:
+            incoherent = True
+            mode = "Kushball"
+
+        nb_slices=int(dico_seqParams["nb_part"])
+    
+    else:
+        incoherent=False
+        mode="old"
+        nb_slices=nb_part
+
+    
+
     if us >1:
         weights_us = np.zeros_like(all_weights)
-        nb_slices = all_weights.shape[3]
+        
         nspoke_per_part = 8
         weights_us = weights_us.reshape((weights_us.shape[0], 1, -1, nspoke_per_part, nb_slices, 1))
 
@@ -3679,7 +4591,15 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
     npoint=2*volumes.shape[-1]
     nbins=volumes.shape[0]
 
-    radial_traj_2D=Radial(total_nspokes=nb_allspokes,npoint=npoint)
+    
+    if not(incoherent):
+        radial_traj = Radial(total_nspokes=nb_allspokes, npoint=npoint)
+
+    # elif mode=="Kushball":
+    #     radial_traj = Radial3D(total_nspokes=nb_allspokes,npoint=npoint,nb_slices=nb_slices,undersampling_factor=undersampling_factor,incoherent=incoherent,mode=mode)
+    else:
+        radial_traj = Radial3D(total_nspokes=nb_allspokes,npoint=npoint,nb_slices=nb_part,undersampling_factor=1,incoherent=incoherent,mode=mode)
+
 
     ntimesteps=all_weights.shape[1]
 
@@ -3722,8 +4642,14 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
                 x = pywt.array_to_coeffs(y, slices)
                 x = pywt.waverecn(x, wav_type, mode="periodization",axes=(1,2,3))
 
-                volumesi = undersampling_operator_singular_new(x, radial_traj_2D,
+                if not(incoherent):
+                    volumesi = undersampling_operator_singular_new(x, radial_traj,
                                                                b1_all_slices_2Dplus1_pca, weights=weights,
+                                                               density_adj=dens_adj)
+                    
+                else:
+                    volumesi = undersampling_operator_singular(x, radial_traj,
+                                                            b1_all_slices_2Dplus1_pca, weights=weights,
                                                                density_adj=dens_adj)
                 #volumesi = volumesi.squeeze()
                 coefs = pywt.wavedecn(volumesi, wav_type, level=wav_level, mode="periodization",axes=(1,2,3))
@@ -3779,9 +4705,17 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
                 u_prev = u
                 if u.ndim == 3:
                     u = np.expand_dims(u, axis=0)
-                volumesi = undersampling_operator_singular_new(u, radial_traj_2D,
+
+                if not(incoherent):
+                    volumesi = undersampling_operator_singular_new(x, radial_traj,
                                                                b1_all_slices_2Dplus1_pca, weights=weights,
                                                                density_adj=dens_adj)
+                    
+                else:
+                    volumesi = undersampling_operator_singular(x, radial_traj,
+                                                            b1_all_slices_2Dplus1_pca, weights=weights,
+                                                               density_adj=dens_adj)
+
 
                 grad = volumesi - u0
                 y = y - mu * grad
@@ -3804,7 +4738,17 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
             print("Correcting volumes for iteration {}".format(i))
             all_grad_norm=0
             for gr in tqdm(range(nbins)):
-                volumesi=undersampling_operator_singular_new(volumes[gr],radial_traj_2D, b1_all_slices_2Dplus1_pca,weights=all_weights[gr],density_adj=dens_adj)
+
+                if not(incoherent):
+                    volumesi = undersampling_operator_singular_new(volumes[gr], radial_traj,
+                                                               b1_all_slices_2Dplus1_pca, weights=all_weights[gr],
+                                                               density_adj=dens_adj)
+                    
+                else:
+                    volumesi = undersampling_operator_singular(volumes[gr], radial_traj,
+                                                            b1_all_slices_2Dplus1_pca, weights=all_weights[gr],
+                                                               density_adj=dens_adj)
+
 
                 grad = volumesi - volumes0[gr]
                 volumes[gr] = volumes[gr] - mu * grad
@@ -3843,14 +4787,21 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
                 print("grad_TV_bins norm {}".format(grad_TV_bins_norm))
                 del grad_TV_bins
 
-            if (i%5==0):
+            if (i%1==0):
                 filename_target_intermediate=filename_volume.split("_volumes_allbins.npy")[0] + "_volumes_allbins_denoised_it{}{}.npy".format(i,suffix)
                 np.save(filename_target_intermediate,volumes)
 
     volumes=np.squeeze(volumes)
+    
     if gamma is not None:
-        for gr in range(volumes.shape[0]):
-            volumes[gr]=gamma_transform(volumes[gr],gamma)
+
+        if isgamma3D:
+            for gr in range(volumes.shape[0]):
+                volumes[gr]=gamma_transform_3D(volumes[gr],gamma)
+        
+        else:
+            for gr in range(volumes.shape[0]):
+                volumes[gr]=gamma_transform(volumes[gr],gamma,axis=axis)
 
 
 
@@ -3900,32 +4851,54 @@ def build_volumes_iterative(filename_volume, filename_b1,filename_weights,filena
     b1_all_slices_2Dplus1_pca = np.load(filename_b1)
     incoherent=False #stack of stars by default
 
-    if filename_seqParams is not None:
-        file = open(filename_seqParams, "rb")
-        dico_seqParams = pickle.load(file)
-        file.close()
+    if filename_seqParams is None:
+        filename_seqParams =filename_kdata.split("_kdata.npy")[0] + "_seqParams.pkl"
 
-        use_navigator_dll = dico_seqParams["use_navigator_dll"]
-        nb_gating_spokes=dico_seqParams["alFree"][6]
-        if (use_navigator_dll)or(nb_gating_spokes>0):
-            meas_sampling_mode = dico_seqParams["alFree"][15]
-        else:
-            meas_sampling_mode = dico_seqParams["alFree"][12]
+    file = open(filename_seqParams, "rb")
+    dico_seqParams = pickle.load(file)
+    file.close()
+    print(dico_seqParams)
 
-        undersampling_factor = dico_seqParams["alFree"][9]
+    use_navigator_dll = dico_seqParams["use_navigator_dll"]
 
-        nb_segments = dico_seqParams["alFree"][4]
-        nb_slices = int(dico_seqParams["nb_part"])
+    if "use_kushball_dll" in dico_seqParams.keys():
+        use_kushball_dll=dico_seqParams["use_kushball_dll"]
+    else:
+        use_kushball_dll=False
 
-        if meas_sampling_mode == 1:
-            incoherent = False
-            mode = None
-        elif meas_sampling_mode == 2:
-            incoherent = True
-            mode = "old"
-        elif meas_sampling_mode == 3:
-            incoherent = True
-            mode = "new"
+
+    if use_kushball_dll:
+        meas_sampling_mode = dico_seqParams["alFree"][16]
+    elif (use_navigator_dll):
+        meas_sampling_mode = dico_seqParams["alFree"][15]
+    else:
+        meas_sampling_mode = dico_seqParams["alFree"][12]
+
+    nb_gating_spokes=dico_seqParams["alFree"][6]
+    # if (use_navigator_dll)or(nb_gating_spokes>0):
+    #     meas_sampling_mode = dico_seqParams["alFree"][15]
+    # else:
+    #     meas_sampling_mode = dico_seqParams["alFree"][12]
+
+    undersampling_factor = dico_seqParams["alFree"][9]
+
+    nb_segments = dico_seqParams["alFree"][4]
+    nb_slices = int(dico_seqParams["nb_part"])
+
+    if meas_sampling_mode == 1:
+        incoherent = False
+        mode = None
+    elif meas_sampling_mode == 2:
+        incoherent = True
+        mode = "old"
+    elif meas_sampling_mode == 3:
+        incoherent = True
+        mode = "new"
+        
+    elif meas_sampling_mode == 4:
+        incoherent = True
+        mode = "Kushball"
+        
 
     if filename_weights is not None:
         print("Applying weights mask to k-space")
@@ -3937,12 +4910,15 @@ def build_volumes_iterative(filename_volume, filename_b1,filename_weights,filena
 
     print("Volumes shape {}".format(volumes.shape))
 
-    nb_allspokes = 1400
     npoint = 2 * volumes.shape[-1]
     nbins = volumes.shape[0]
 
     if not(incoherent):
-        radial_traj = Radial(total_nspokes=nb_allspokes, npoint=npoint)
+        radial_traj = Radial(total_nspokes=nb_segments, npoint=npoint)
+
+    elif mode=="Kushball":
+        nb_part=int(dico_seqParams["alFree"][12])
+        radial_traj = Radial3D(total_nspokes=nb_segments,npoint=npoint,nb_slices=nb_part,undersampling_factor=undersampling_factor,incoherent=incoherent,mode=mode)
     else:
         radial_traj = Radial3D(total_nspokes=nb_segments,npoint=npoint,nb_slices=nb_slices,undersampling_factor=undersampling_factor,incoherent=incoherent,mode=mode)
 
@@ -3985,6 +4961,7 @@ def build_volumes_iterative(filename_volume, filename_b1,filename_weights,filena
 
         weights_us = weights_us.reshape(1, -1, nb_rep)
         weights_us = weights_us[..., None]
+        weights=weights_us
 
     volumes0 = copy(volumes)
     volumes = mu * volumes0
@@ -4031,7 +5008,7 @@ def build_volumes_iterative(filename_volume, filename_b1,filename_weights,filena
 
                 volumesi = undersampling_operator_singular(x, radial_traj,
                                                          b1_all_slices_2Dplus1_pca,
-                                                               density_adj=dens_adj,weights=weights_us)
+                                                               density_adj=dens_adj,weights=weights)
                 #volumesi = x
 
             print("volumesi.shape : {}".format(volumesi.shape))
@@ -4190,9 +5167,11 @@ def build_volumes_iterative(filename_volume, filename_b1,filename_weights,filena
 @set_parameter("filename_b1", str, default=None, description="B1")
 @set_parameter("filename_weights", str, default=None, description="Motion bin weights")
 @set_parameter("file_deformation", str, default=None, description="Deformation")
+@set_parameter("filename_seqParams", str, default=None, description="Undersampling weights")
 @set_parameter("index_ref", int, default=0, description="Registration reference")
 @set_parameter("mu", float, default=2, description="Gradient step size")
 @set_parameter("mu_TV", float, default=None, description="Spatial Regularization")
+@set_parameter("weights_TV", [float,float,float], default=[1.0,0.2,0.2], description="Spatial Regularization Weights")
 @set_parameter("niter", int, default=None, description="Number of iterations")
 @set_parameter("suffix", str, default="", description="Suffix")
 @set_parameter("gamma", float, default=None, description="Gamma Correction")
@@ -4206,8 +5185,8 @@ def build_volumes_iterative(filename_volume, filename_b1,filename_weights,filena
 @set_parameter("use_wavelet", bool, default=False, description="Wavelet regularization instead of TV")
 @set_parameter("us", int, default=1, description="Undersampling")
 @set_parameter("kept_bins",str,default=None,description="Bins to keep")
-
-def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filename_weights,mu,mu_TV,niter,gamma,suffix,gating_only,dens_adj,nb_rep_center_part,file_deformation,index_ref,beta,interp,select_first_rep,lambda_wav,use_wavelet,us,kept_bins):
+@set_parameter("axis", int, default=None, description="Registration axis")
+def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filename_weights,filename_seqParams,mu,mu_TV,niter,gamma,suffix,gating_only,dens_adj,nb_rep_center_part,file_deformation,index_ref,beta,interp,select_first_rep,lambda_wav,use_wavelet,us,kept_bins,axis,weights_TV):
     filename_target=filename_volume.split("_volumes_allbins.npy")[0] + "_volumes_allbins_registered_ref{}{}.npy".format(index_ref,suffix)
 
     if gamma is not None:
@@ -4223,7 +5202,6 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
         interp=cv2.INTER_CUBIC
 
 
-    weights_TV=np.array([1.0,0.2,0.2])
     weights_TV/=np.sum(weights_TV)
     print("Loading Volumes")
     volumes=np.load(filename_volume)
@@ -4292,8 +5270,97 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
     npoint=2*npoint_image
     nbins=volumes.shape[0]
     nb_slices=volumes.shape[2]
+    nb_part = all_weights.shape[3]
 
-    radial_traj_2D=Radial(total_nspokes=nb_allspokes,npoint=npoint)
+    if filename_seqParams is not None:
+        file = open(filename_seqParams, "rb")
+        dico_seqParams = pickle.load(file)
+        file.close()
+
+        use_navigator_dll = dico_seqParams["use_navigator_dll"]
+        nb_gating_spokes=dico_seqParams["alFree"][6]
+        if "use_kushball_dll" in dico_seqParams.keys():
+            use_kushball_dll=dico_seqParams["use_kushball_dll"]
+        else:
+            use_kushball_dll=False
+
+
+        if use_kushball_dll:
+            meas_sampling_mode = dico_seqParams["alFree"][16]
+        elif (use_navigator_dll):
+            meas_sampling_mode = dico_seqParams["alFree"][15]
+        else:
+            meas_sampling_mode = dico_seqParams["alFree"][12]
+
+        print(meas_sampling_mode)
+
+        
+        if meas_sampling_mode == 1:
+            incoherent = False
+            mode = None
+        elif meas_sampling_mode == 2:
+            incoherent = True
+            mode = "old"
+        elif meas_sampling_mode == 3:
+            incoherent = True
+            mode = "new"
+        
+        elif meas_sampling_mode == 4:
+            incoherent = True
+            mode = "Kushball"
+    
+    else:
+        incoherent=False
+        mode="old"
+
+
+    if not(incoherent):
+        radial_traj = Radial(total_nspokes=nb_allspokes, npoint=npoint)
+
+    # elif mode=="Kushball":
+    #     radial_traj = Radial3D(total_nspokes=nb_allspokes,npoint=npoint,nb_slices=nb_slices,undersampling_factor=undersampling_factor,incoherent=incoherent,mode=mode)
+    else:
+        radial_traj = Radial3D(total_nspokes=nb_allspokes,npoint=npoint,nb_slices=nb_part,undersampling_factor=1,incoherent=incoherent,mode=mode)
+
+        # cond_us = np.zeros((nb_slices, nb_segments))
+
+        # cond_us = cond_us.reshape((nb_slices, -1, 8))
+
+        # curr_start = 0
+        # for sl in range(nb_slices):
+        #     cond_us[sl, curr_start::undersampling_factor, :] = 1
+        #     curr_start = curr_start + 1
+        #     curr_start = curr_start % undersampling_factor
+
+        # cond_us = cond_us.flatten()
+        # included_spokes = cond_us
+        # included_spokes = (included_spokes > 0)
+
+        # radial_traj_allspokes = Radial3D(total_nspokes=nb_segments, undersampling_factor=1, npoint=npoint,
+        #                                  nb_slices=nb_slices, incoherent=incoherent, mode=mode)
+
+        # from utils_reco import correct_mvt_kdata_zero_filled
+        # weights, retained_timesteps = correct_mvt_kdata_zero_filled(radial_traj_allspokes, included_spokes, 1)
+
+        # weights = weights.reshape(1, -1, 8, nb_slices)
+        # import math
+        # nb_rep = math.ceil(nb_slices / undersampling_factor)
+        # weights_us = np.zeros(shape=(1, 175, 8, nb_rep), dtype=weights.dtype)
+
+        # shift = 0
+
+        # for sl in range(nb_slices):
+        #     if int(sl / undersampling_factor) < nb_rep:
+        #         weights_us[:, shift::undersampling_factor, :, int(sl / undersampling_factor)] = weights[:,
+        #                                                                                         shift::undersampling_factor,
+        #                                                                                         :, sl]
+        #         shift += 1
+        #         shift = shift % (undersampling_factor)
+        #     else:
+        #         continue
+
+        # weights_us = weights_us.reshape(1, -1, nb_rep)
+        # weights_us = weights_us[..., None]
 
     if file_deformation is None:#identity by default
         X,Y=np.meshgrid(np.arange(npoint_image),np.arange(npoint_image))
@@ -4350,7 +5417,7 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
             pca.components_=np.eye(nb_channels)
             pca_dict[sl]=deepcopy(pca)
 
-    deformation_map=change_deformation_map_ref(deformation_map,index_ref)
+    deformation_map=change_deformation_map_ref(deformation_map,index_ref,axis)
 
     print("Calculating inverse deformation map")
 
@@ -4359,7 +5426,7 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
     else:
         inv_deformation_map = np.zeros_like(deformation_map)
         for gr in tqdm(range(nbins)):
-            inv_deformation_map[:, gr] = calculate_inverse_deformation_map(deformation_map[:, gr])
+            inv_deformation_map[:, gr] = calculate_inverse_deformation_map(deformation_map[:, gr],axis)
         
     print(volumes.shape)
     volumes_registered=np.zeros(volumes.shape[1:],dtype=volumes.dtype)
@@ -4375,13 +5442,13 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
         print("Registering initial volumes")
         for gr in range(nbins):
             if beta is None:
-                volumes_registered+=apply_deformation_to_complex_volume(volumes[gr].squeeze(),deformation_map[:,gr],interp=interp)
+                volumes_registered+=apply_deformation_to_complex_volume(volumes[gr].squeeze(),deformation_map[:,gr],interp=interp,axis=axis)
             else:
                 if gr==index_ref:
-                    volumes_registered+=beta*apply_deformation_to_complex_volume(volumes[gr].squeeze(),deformation_map[:,gr],interp=interp)
+                    volumes_registered+=beta*apply_deformation_to_complex_volume(volumes[gr].squeeze(),deformation_map[:,gr],interp=interp,axis=axis)
                 else:
                     volumes_registered += (1-beta) * apply_deformation_to_complex_volume(volumes[gr].squeeze(),
-                                                                                    deformation_map[:, gr],interp=interp)
+                                                                                    deformation_map[:, gr],interp=interp,axis=axis)
 
 
     volumes0=copy(volumes_registered)
@@ -4411,6 +5478,8 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
 
         u = pywt.threshold(y, lambd * mu)
 
+        print("Non zero percentage: {} ".format(np.count_nonzero(u)/np.prod(u.shape)))
+
         t_next = 0.5 * (1 + np.sqrt(1 + 4 * t ** 2))
         y = u 
         t = t_next
@@ -4423,12 +5492,23 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
         
             for gr in tqdm(range(nbins)):
                 
-                volumesi=apply_deformation_to_complex_volume(x,inv_deformation_map[:,gr],interp=interp)
+                volumesi=apply_deformation_to_complex_volume(x,inv_deformation_map[:,gr],interp=interp,axis=axis)
                 if volumesi.ndim==3:
                     volumesi=np.expand_dims(volumesi,axis=0)
                 print("volumesi.shape {}".format(volumesi.shape))
-                volumesi=undersampling_operator_singular_new(volumesi,radial_traj_2D, b1_all_slices_2Dplus1_pca,weights=all_weights[gr],density_adj=dens_adj)
-                volumesi=apply_deformation_to_complex_volume(volumesi.squeeze(),deformation_map[:,gr],interp=interp)
+
+                if not(incoherent):
+                    volumesi = undersampling_operator_singular_new(volumesi, radial_traj,
+                                                               b1_all_slices_2Dplus1_pca, weights=all_weights[gr],
+                                                               density_adj=dens_adj)
+                else:
+
+
+                    volumesi = undersampling_operator_singular(volumesi, radial_traj,
+                                                            b1_all_slices_2Dplus1_pca,
+                                                                density_adj=dens_adj,weights=all_weights[gr])
+                    
+                volumesi=apply_deformation_to_complex_volume(volumesi.squeeze(),deformation_map[:,gr],interp=interp,axis=axis)
 
                 if volumesi.ndim==3:
                     volumesi=np.expand_dims(volumesi,axis=0)
@@ -4451,6 +5531,8 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
 
             u = pywt.threshold(y, lambd * mu)
 
+            print("Non zero percentage: {} ".format(np.count_nonzero(u)/np.prod(u.shape)))
+
             t_next = 0.5 * (1 + np.sqrt(1 + 4 * t ** 2))
             y = u + (t - 1) / t_next * (u - u_prev)
             t = t_next
@@ -4470,12 +5552,23 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
             all_grad_norm=0
             for gr in tqdm(range(nbins)):
                 
-                volumesi=apply_deformation_to_complex_volume(volumes_registered,inv_deformation_map[:,gr],interp=interp)
+                volumesi=apply_deformation_to_complex_volume(volumes_registered,inv_deformation_map[:,gr],interp=interp,axis=axis)
                 if volumesi.ndim==3:
                     volumesi=np.expand_dims(volumesi,axis=0)
                 print("volumesi.shape {}".format(volumesi.shape))
-                volumesi=undersampling_operator_singular_new(volumesi,radial_traj_2D, b1_all_slices_2Dplus1_pca,weights=all_weights[gr],density_adj=dens_adj)
-                volumesi=apply_deformation_to_complex_volume(volumesi.squeeze(),deformation_map[:,gr],interp=interp)
+
+
+                if not(incoherent):
+                    volumesi = undersampling_operator_singular_new(volumesi, radial_traj,
+                                                               b1_all_slices_2Dplus1_pca, weights=all_weights[gr],
+                                                               density_adj=dens_adj)
+                else:
+
+
+                    volumesi = undersampling_operator_singular(volumesi, radial_traj,
+                                                            b1_all_slices_2Dplus1_pca,
+                                                                density_adj=dens_adj,weights=all_weights[gr])
+                volumesi=apply_deformation_to_complex_volume(volumesi.squeeze(),deformation_map[:,gr],interp=interp,axis=axis)
 
                 if beta is not None:
                     if gr == index_ref:
@@ -4538,6 +5631,7 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
 @set_parameter("filename_volume", str, default=None, description="MRF raw data")
 @set_parameter("filename_b1", str, default=None, description="B1")
 @set_parameter("filename_weights", str, default=None, description="Motion bin weights")
+@set_parameter("filename_seqParams", str, default=None, description="Undersampling weights")
 @set_parameter("file_deformation", str, default=None, description="Deformation")
 @set_parameter("mu", float, default=1, description="Gradient step size")
 @set_parameter("mu_TV", float, default=None, description="Spatial Regularization")
@@ -4551,8 +5645,8 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
 @set_parameter("interp", str, default=None, description="Registration interpolation")
 @set_parameter("select_first_rep", bool, default=False, description="Select firt repetition of central partition only")
 @set_parameter("us", int, default=1, description="Undersampling")
-
-def build_volumes_iterative_allbins_registered_allindex(filename_volume,filename_b1,filename_weights,mu,mu_TV,niter,gamma,suffix,gating_only,dens_adj,nb_rep_center_part,file_deformation,beta,interp,select_first_rep,us):
+@set_parameter("axis", int, default=None, description="Registration axis")
+def build_volumes_iterative_allbins_registered_allindex(filename_volume,filename_b1,filename_weights,filename_seqParams,mu,mu_TV,niter,gamma,suffix,gating_only,dens_adj,nb_rep_center_part,file_deformation,beta,interp,select_first_rep,us,axis):
     filename_target=filename_volume.split("_volumes_allbins.npy")[0] + "_volumes_allbins_registered_allindex{}.npy".format(suffix)
 
     if gamma is not None:
@@ -4620,8 +5714,58 @@ def build_volumes_iterative_allbins_registered_allindex(filename_volume,filename
     nb_allspokes=all_weights.shape[2]
     npoint=2*volumes.shape[-1]
     nbins=volumes.shape[0]
+    nb_slices=volumes.shape[2]
+    nb_part = all_weights.shape[3]
 
-    radial_traj_2D=Radial(total_nspokes=nb_allspokes,npoint=npoint)
+    if filename_seqParams is not None:
+        file = open(filename_seqParams, "rb")
+        dico_seqParams = pickle.load(file)
+        file.close()
+
+        use_navigator_dll = dico_seqParams["use_navigator_dll"]
+        nb_gating_spokes=dico_seqParams["alFree"][6]
+        if "use_kushball_dll" in dico_seqParams.keys():
+            use_kushball_dll=dico_seqParams["use_kushball_dll"]
+        else:
+            use_kushball_dll=False
+
+
+        if use_kushball_dll:
+            meas_sampling_mode = dico_seqParams["alFree"][16]
+        elif (use_navigator_dll):
+            meas_sampling_mode = dico_seqParams["alFree"][15]
+        else:
+            meas_sampling_mode = dico_seqParams["alFree"][12]
+
+        
+        if meas_sampling_mode == 1:
+            incoherent = False
+            mode = None
+        elif meas_sampling_mode == 2:
+            incoherent = True
+            mode = "old"
+        elif meas_sampling_mode == 3:
+            incoherent = True
+            mode = "new"
+        
+        elif meas_sampling_mode == 4:
+            incoherent = True
+            mode = "Kushball"
+    
+    else:
+        incoherent=False
+        mode="old"
+
+    # radial_traj_2D=Radial(total_nspokes=nb_allspokes,npoint=npoint)
+
+    if not(incoherent):
+        radial_traj = Radial(total_nspokes=nb_allspokes, npoint=npoint)
+
+    # elif mode=="Kushball":
+    #     radial_traj = Radial3D(total_nspokes=nb_allspokes,npoint=npoint,nb_slices=nb_slices,undersampling_factor=undersampling_factor,incoherent=incoherent,mode=mode)
+    else:
+        radial_traj = Radial3D(total_nspokes=nb_allspokes,npoint=npoint,nb_slices=nb_part,undersampling_factor=1,incoherent=incoherent,mode=mode)
+
 
     deformation_map=np.load(file_deformation)
 
@@ -4632,7 +5776,7 @@ def build_volumes_iterative_allbins_registered_allindex(filename_volume,filename
 
     print("Extraction deformation map for all bin reference")
     for index_ref in range(nbins):
-        deformation_map_allindex.append(change_deformation_map_ref(deformation_map,index_ref))
+        deformation_map_allindex.append(change_deformation_map_ref(deformation_map,index_ref,axis))
 
     print("Building inverse deformation map for all bin reference")
     for index_ref in range(nbins):
@@ -4640,7 +5784,7 @@ def build_volumes_iterative_allbins_registered_allindex(filename_volume,filename
         print("Calculating inverse deformation map")
         inv_deformation_map = np.zeros_like(deformation_map)
         for gr in tqdm(range(nbins)):
-            inv_deformation_map[:, gr] = calculate_inverse_deformation_map(deformation_map[:, gr])
+            inv_deformation_map[:, gr] = calculate_inverse_deformation_map(deformation_map[:, gr],axis)
         inv_deformation_map_allindex.append(inv_deformation_map)
 
         volumes_registered=np.zeros(volumes.shape[1:],dtype=volumes.dtype)
@@ -4650,14 +5794,14 @@ def build_volumes_iterative_allbins_registered_allindex(filename_volume,filename
         for gr in range(nbins):
 
             if beta is None:
-                volumes_registered+=apply_deformation_to_complex_volume(volumes[gr].squeeze(),deformation_map[:,gr],interp)
+                volumes_registered+=apply_deformation_to_complex_volume(volumes[gr].squeeze(),deformation_map[:,gr],interp,axis)
 
             else:
                 if gr==index_ref:
-                    volumes_registered+=beta*apply_deformation_to_complex_volume(volumes[gr].squeeze(),deformation_map[:,gr],interp)
+                    volumes_registered+=beta*apply_deformation_to_complex_volume(volumes[gr].squeeze(),deformation_map[:,gr],interp,axis)
                 else:
                     volumes_registered += (1-beta) * apply_deformation_to_complex_volume(volumes[gr].squeeze(),
-                                                                                     deformation_map[:, gr],interp)
+                                                                                     deformation_map[:, gr],interp,axis)
         volumes_registered_allindex.append(volumes_registered)
     
     deformation_map_allindex=np.array(deformation_map_allindex)
@@ -4673,12 +5817,24 @@ def build_volumes_iterative_allbins_registered_allindex(filename_volume,filename
         for index_ref in range(nbins):
             all_grad_norm=0
             for gr in tqdm(range(nbins)):
-                
-                volumesi=apply_deformation_to_complex_volume(volumes_registered_allindex[index_ref],inv_deformation_map_allindex[index_ref,:,gr],interp)
+                print(volumes_registered_allindex.shape)
+                print(inv_deformation_map_allindex[index_ref,:,gr].shape)
+
+                volumesi=apply_deformation_to_complex_volume(volumes_registered_allindex[index_ref],inv_deformation_map_allindex[index_ref,:,gr],interp,axis)
                 if volumesi.ndim==3:
                     volumesi=np.expand_dims(volumesi,axis=0)
-                volumesi=undersampling_operator_singular_new(volumesi,radial_traj_2D, b1_all_slices_2Dplus1_pca,weights=all_weights[gr],density_adj=dens_adj)
-                volumesi=apply_deformation_to_complex_volume(volumesi.squeeze(),deformation_map_allindex[index_ref,:,gr],interp)
+                if not(incoherent):
+                    volumesi = undersampling_operator_singular_new(volumesi, radial_traj,
+                                                               b1_all_slices_2Dplus1_pca, weights=all_weights[gr],
+                                                               density_adj=dens_adj)
+                else:
+
+
+                    volumesi = undersampling_operator_singular(volumesi, radial_traj,
+                                                            b1_all_slices_2Dplus1_pca,
+                                                                density_adj=dens_adj,weights=all_weights[gr])
+                                                                
+                volumesi=apply_deformation_to_complex_volume(volumesi.squeeze(),deformation_map_allindex[index_ref,:,gr],interp,axis)
 
                 if beta is not None:
                     if gr == index_ref:
@@ -4856,7 +6012,7 @@ def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient,fil
 
     else:
         print("Getting geometry from {}".format(filename))
-        geom,is3D=get_volume_geometry(filename)
+        geom,is3D,orientation,offset=get_volume_geometry(filename)
         if is3D:
             volume_ip=np.flip(np.moveaxis(volume_ip,0,-1),axis=(1,2))
             volume_oop=np.flip(np.moveaxis(volume_oop,0,-1),axis=(1,2))
@@ -4925,6 +6081,44 @@ def getROIresults(filemap,fileroi,filelabels,adj_wT1,fat_threshold,excluded,kern
 
     return
 
+
+
+@machine
+@set_parameter("filemap", str, default=None, description="Maps (.mha)")
+@set_parameter("fileroi", str, default=None, description="ROIs (.mha)")
+@set_parameter("filelabels", str, default=None, description="Labels name mapping (.txt)")
+@set_parameter("excluded", int, default=5, description="number of excluded border slices on each extremity")
+@set_parameter("kernel", int, default=5, description="Kernel size for erosion")
+@set_parameter("roi", int, default=15, description="Min ROI number of pixel for inclusion")
+@set_parameter("threshold", int, default=None, description="maximum value threshold for excluding values")
+def getROIresults_mha(filemap,fileroi,filelabels,excluded,kernel,roi,threshold):
+
+    extension=str.split(filemap,'.')[-1]
+    file_results_ROI=str.split(filemap,".{}".format(extension))[0]+"_ROI_results.csv"
+
+    map_=np.array(io.read(filemap))
+    maskROI=np.array(io.read(fileroi))
+
+    if threshold is None:
+        if "wT1" in filemap:
+            threshold=1700
+        else:
+            threshold=None
+    
+    results=get_ROI_values_image(map_,maskROI,min_ROI_count=roi,return_std=True,excluded_border_slices=excluded,kernel_size=kernel,wT1_threshold=threshold)
+
+    print(results)
+    # if filelabels is not None:
+    #     labels=pd.read_csv(filelabels,skiprows=14,header=None,delim_whitespace=True).iloc[:,-1]
+    #     labels.name="ROI"
+    #     results=pd.merge(results,labels,left_index=True,right_index=True).set_index("ROI")
+
+
+    # print(results)
+    # results.to_csv(file_results_ROI)
+
+    return
+
 def task(ts):
         #global fs_hat
     global max_slices
@@ -4990,6 +6184,15 @@ def task_Ashat_filtered(ch):
     np.save("./fshat/Ashat_filtered_ch{}.npy".format(ch), As_hat_filtered_ch)
     np.save("./fshat/As_hat_normalized_ch{}.npy".format(ch), As_hat_normalized_ch)
 
+def build_basis_bart(dictfile):
+
+    #mrfdict = dictsearch.Dictionary()
+    keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.1))
+
+    u,s,vh=bart(3,"svd -e",values.T)
+    
+    return u
+
 toolbox = Toolbox("script_recoInVivo_3D_machines", description="Reading Siemens 3D MRF data and performing image series reconstruction")
 toolbox.add_program("build_kdata", build_kdata)
 toolbox.add_program("build_coil_sensi", build_coil_sensi)
@@ -5029,10 +6232,16 @@ toolbox.add_program("plot_deformation", plot_deformation)
 toolbox.add_program("build_navigator_images", build_navigator_images)
 toolbox.add_program("generate_random_weights", generate_random_weights)
 toolbox.add_program("build_volumes_singular_allbins_3D", build_volumes_singular_allbins_3D)
+toolbox.add_program("build_volumes_singular_allbins_3D_BART", build_volumes_singular_allbins_3D_BART)
+toolbox.add_program("build_volumes_singular_allbins_3D_BART_v2", build_volumes_singular_allbins_3D_BART_v2)
 toolbox.add_program("build_volumes_iterative", build_volumes_iterative)
 toolbox.add_program("generate_dixon_volumes_for_segmentation", generate_dixon_volumes_for_segmentation)
 toolbox.add_program("generate_mask_roi_from_segmentation", generate_mask_roi_from_segmentation)
 toolbox.add_program("getROIresults", getROIresults)
+toolbox.add_program("getROIresults_mha", getROIresults_mha)
+toolbox.add_program("build_coil_images", build_coil_images)
+toolbox.add_program("calculate_dcomp_voronoi_3D", calculate_dcomp_voronoi_3D)
+toolbox.add_program("plot_image_grid_bart", plot_image_grid_bart)
 
 if __name__ == "__main__":
     toolbox.cli()

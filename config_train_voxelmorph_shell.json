@@ -5,7 +5,7 @@
                   ],
     "optimizer":"Adam",
     "lambda":1.0,
-    "nb_epochs": 2000,
+    "nb_epochs": 1500,
     "batch_size":16,
     "loss":"NCC",
     "lr_decay":0.0015,

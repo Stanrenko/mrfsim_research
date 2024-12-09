@@ -253,26 +253,24 @@ def distrib_angle_traj_3D(total_nspoke, npoint, nspoke, nb_slices, undersampling
     result = np.stack([traj.real,traj.imag, k_z], axis=-1)
     return result.reshape(result.shape[0],-1,result.shape[-1])
 
-def spherical_golden_angle_means_traj_3D(total_nspoke, npoint, nb_slices, undersampling_factor=4,k_max=np.pi):
-    nb_rep = int(nb_slices / undersampling_factor)
-    base_spoke = -k_max+np.arange(npoint)*2*k_max/(npoint-1)
-    base_spoke=base_spoke.reshape(1,-1)
-    #traj = np.reshape(all_spokes, (-1, nspoke * npoint))
-    phi_1=0.4656
-    phi_2=0.6823
-    all_spokes_count=nb_rep*total_nspoke
-    m=np.arange(all_spokes_count)
-    alpha=2*np.pi*np.mod(m*phi_1,1).reshape(-1,1)
-    beta=np.arccos(np.mod(m*phi_2,1)).reshape(-1,1)
-    traj=np.cos(beta)*np.exp(1j*alpha)*base_spoke
-    k_z=np.sin(beta)*base_spoke
-    print(k_z.shape)
-    print(traj.shape)
-    k_z, traj = np.broadcast_arrays(k_z, traj)
-    result = np.stack([traj.real, traj.imag, k_z], axis=-1)
-    #result=result.reshape(total_nspoke,nb_rep,npoint,3)
-    #result=np.moveaxis(result,1,0)
-    return result.reshape(total_nspoke,-1,3)
+def spherical_golden_angle_means_traj_3D(total_nspoke, npoint, npart, undersampling_factor=4,k_max=np.pi):
+    
+    phi1=0.46557123
+    phi2=0.6823278
+    # phi1=0.4656
+    # phi2=0.6823
+
+    theta=2*np.pi*np.mod(np.arange(total_nspoke*npart)*phi2,1)
+    phi=np.arccos(np.mod(np.arange(total_nspoke*npart)*phi1,1))
+
+    rotation=np.stack([np.sin(phi)*np.cos(theta),np.sin(phi)*np.sin(theta),np.cos(phi)],axis=1).reshape(-1,1,3)
+    base_spoke = (-k_max+k_max/(npoint)+np.arange(npoint)*2*k_max/(npoint))
+
+    base_spoke=base_spoke.reshape(-1,1)
+    spokes=np.matmul(base_spoke,rotation).reshape(npart,total_nspoke,npoint,-1)
+    spokes=np.moveaxis(spokes,0,1)
+    return spokes.reshape(total_nspoke,-1,3)
+
 
 
 
@@ -1250,6 +1248,64 @@ def metrics_paramMaps_ROI(map_ref, map2, mask_ref=None, mask2=None, maskROI=None
         df = df.append(pd.DataFrame(columns=[name], index=[std_ssim_label], data=std_ssim))
 
     return df
+
+
+
+
+def get_ROI_values_image(map_,maskROI,kernel_size=5,wT1_threshold=1700,min_ROI_count=15,return_std=True,excluded_border_slices=2):
+
+
+    if excluded_border_slices is not None:
+        print("Excluding {} border slices on each extremity".format(excluded_border_slices))
+        maskROI=maskROI[excluded_border_slices:-excluded_border_slices]
+        
+        map_=map_[excluded_border_slices:-excluded_border_slices]
+        
+
+    mask_from_roi=(maskROI>0)*1
+    if kernel_size is not None:
+        print("Eroding ROIs kernel size {}".format(kernel_size))
+        
+        mask_from_roi_eroded=np.zeros_like(mask_from_roi)
+        for sl in range(mask_from_roi.shape[0]):
+            mask_from_roi_eroded[sl]=erosion(mask_from_roi[sl],footprint=np.ones((kernel_size,kernel_size),np.uint8))
+
+        mask_from_roi=mask_from_roi_eroded
+
+    map_=map_[mask_from_roi>0]    
+    maskROI=maskROI[mask_from_roi>0]
+    mask_from_roi=mask_from_roi[mask_from_roi>0]
+
+    if wT1_threshold is not None:
+        print("Filtering High wT1 values")
+        
+        mask_from_roi=mask_from_roi[map_ < wT1_threshold]
+        maskROI=maskROI[map_ < wT1_threshold]
+        map_=map_[map_<wT1_threshold]
+    
+    #Removing ROIs with less than min_ROI_count values
+    freq = collections.Counter(maskROI)
+    maskROI = np.array([ele if freq[ele] > min_ROI_count else 0 for ele in maskROI])
+
+    results=pd.DataFrame(index=np.unique(maskROI))
+
+    obs=map_
+    df_obs = pd.DataFrame(columns=["Data", "Groups"],
+                              data=np.stack([obs.flatten(), maskROI.flatten()], axis=-1))
+
+    
+
+        
+
+
+            # print(list(pred_std.reshape(1,-1)))
+    results["Mean"]=df_obs.groupby("Groups").mean()[1:]
+
+    if return_std:
+        results[" Std"] = df_obs.groupby("Groups").std()
+
+    results=results.dropna()
+    return results
 
 
 def get_ROI_values(map_,mask,maskROI,kernel_size=5,adj_wT1=False, fat_threshold=0.7,wT1_threshold=1700,kept_keys=None,min_ROI_count=15,return_std=True,excluded_border_slices=2):
@@ -2974,11 +3030,14 @@ def undersampling_operator_singular(volumes,trajectory,b1_all_slices,density_adj
 
     L0=volumes.shape[0]
     size=volumes.shape[1:]
+    nb_slices=size[0]
     nb_channels=b1_all_slices.shape[0]
+    
+    mode=trajectory.paramDict["mode"]
 
-    nb_allspokes = trajectory.paramDict["total_nspokes"]
+    # nb_allspokes = trajectory.paramDict["total_nspokes"]
     traj = trajectory.get_traj()
-    traj = traj.reshape(-1, 3)
+    traj = traj.reshape(-1, 3).astype("float32")
     npoint = trajectory.paramDict["npoint"]
 
     num_k_samples = traj.shape[0]
@@ -2989,14 +3048,34 @@ def undersampling_operator_singular(volumes,trajectory,b1_all_slices,density_adj
     for k in tqdm(range(nb_channels)):
 
         curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
-        print(curr_volumes.shape)
-        curr_kdata = finufft.nufft3d2(traj[:, 2], traj[:, 0], traj[:, 1], curr_volumes)
-        print(curr_kdata.shape)
+        # print(curr_volumes.shape)
+        curr_kdata = finufft.nufft3d2(traj[:, 2], traj[:, 0], traj[:, 1], curr_volumes.reshape((L0*nb_slices,)+size[1:]))
+        # print(curr_kdata.shape)
+        curr_kdata=curr_kdata.reshape(L0,-1,npoint)
+
         if density_adj:
-            curr_kdata=curr_kdata.reshape(L0,-1,npoint)
-            density = np.abs(np.linspace(-1, 1, npoint))
-            density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
-            curr_kdata*=density
+            if mode=="Kushball":
+
+                curr_kdata=curr_kdata.reshape(L0,-1,npoint)
+                density = np.abs(np.linspace(-1, 1, npoint))
+                density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+                curr_kdata *= density**2
+
+
+                # curr_kdata=curr_kdata.reshape(L0,nb_allspokes,nb_slices,-1)
+                # # phi1 = 0.4656
+                # phi = np.arccos(np.mod(np.arange(nb_allspokes * nb_slices) * phi1, 1))
+                # curr_kdata *= np.sin(phi.reshape(nb_slices, nb_allspokes).T[None, :, :, None])
+
+                # curr_kdata=curr_kdata.reshape(L0,-1,npoint)
+                
+
+            else:
+                curr_kdata=curr_kdata.reshape(L0,-1,npoint)
+                density = np.abs(np.linspace(-1, 1, npoint))
+                density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+                curr_kdata*=density
+
 
         if weights is not None:
             weights = weights.reshape(1, -1, 1)
@@ -3008,11 +3087,11 @@ def undersampling_operator_singular(volumes,trajectory,b1_all_slices,density_adj
 
         fk = finufft.nufft3d1(traj[:, 2], traj[:, 0], traj[:, 1], curr_kdata.squeeze(), size)
         print(fk.shape)
-        images_series_rebuilt += b1_all_slices[k].conj()* fk
+        images_series_rebuilt += b1_all_slices[k].conj()[None,:]* fk.reshape((L0,)+size)
 
     images_series_rebuilt /= num_k_samples
 
-    return images_series_rebuilt
+    return images_series_rebuilt.squeeze()
 
 
 def undersampling_operator_singular_new(volumes,trajectory,b1_all_slices=None,ntimesteps=175,density_adj=True,weights=None,retained_timesteps=None):
@@ -4313,6 +4392,8 @@ def build_phi(dictfile,L0):
 
 
 
+
+
 def calc_grad_entropy(v,w=None):
     ndim = v.ndim
     grad_norm = 0
@@ -4861,6 +4942,7 @@ def grad_J_TV(m,axis,alpha=1e-13,is_weighted=True,mask=None,weights=None,shift=1
         weights = 1
 
     W = psiTV(np.abs(delta_m)**2,alpha)
+    print(np.linalg.norm(W))
 
     return delta_adjoint(weights*delta_m/W,axis,shift)
 
@@ -4951,13 +5033,26 @@ def plot_rotated_axes(ax, r, name=None, offset=(0, 0, 0), scale=1):
         ax.text(*offset, name, color="k", va="center", ha="center",bbox={"fc": "w", "alpha": 0.8, "boxstyle": "circle"})
 
 
-
-def gamma_transform(volume,gamma):
+def gamma_transform(volume,gamma,axis=None):
+    if axis is not None:
+        volume=np.moveaxis(volume,axis,0)
+    
     target=copy(volume)
     for sl in range(target.shape[0]):
         target[sl]=((np.abs(volume[sl])-np.min(np.abs(volume[sl])))/(np.max(np.abs(volume[sl]))-np.min(np.abs(volume[sl]))))**gamma
+    
+    if axis is not None:
+        target=np.moveaxis(target,0,axis)
+
     return target
 
+
+def gamma_transform_3D(volume,gamma):
+
+    target=copy(volume)
+    target=((np.abs(volume)-np.min(np.abs(volume)))/(np.max(np.abs(volume))-np.min(np.abs(volume))))**gamma
+    
+    return target
 
 
 def get_volume_geometry(hdr_input, index=-1):

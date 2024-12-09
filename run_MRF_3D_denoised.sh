@@ -16,11 +16,11 @@ INDEX=${4-${INDEX_def}}
 
 # #Extracting k-space and navigator data
 # echo "######################################################"
-# echo "Extracting k-space and navigator data"
-python script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX}
+# # echo "Extracting k-space and navigator data"
+# python script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX}
 
-rm $1.npy
-rm $1.dat
+# # rm $1.npy
+# rm $1.dat
 
 # #Coil compression
 # echo "######################################################"

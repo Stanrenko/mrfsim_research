@@ -48,11 +48,11 @@ echo "Channel $CHANNEL will be used for motion estimation"
 # # # ##Extracting k-space and navigator data
 # # # # #echo "######################################################"
 echo "Extracting k-space and navigator data"
-python script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index -4
+python script_recoInVivo_3D_machines.py build_kdata --filename $1.dat
 # # # #
 
 rm $1.dat
-rm $1.npy
+# rm $1.npy
 
 # # # # ## #Coil compression
 echo "######################################################"
@@ -62,16 +62,16 @@ python script_recoInVivo_3D_machines.py coil_compression_bart --filename-kdata $
 rm $1_kdata.npy
 
 
-# # #   #Estimate displacement, bins and weights
-# # echo "######################################################"
-# # echo "Estimating displacement, bins and weights"
-# python script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -20 --top 40 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --ch $CHANNEL --seasonal-adj True --randomize True --hard-interp True --nbins $NBINS --retained-categories "0,1,2,3,4" --us $US --interp-bad-correl True --sim-us $SIMUS --filename-bins $2_bins.npy #--filename-disp-respi $2_displacement.npy #--soft-weight True #--nav-res-factor 2
+# #   #Estimate displacement, bins and weights
+# echo "######################################################"
+# echo "Estimating displacement, bins and weights"
+python script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -20 --top 40 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --ch $CHANNEL --seasonal-adj True --randomize True --hard-interp True --nbins $NBINS --retained-categories "0,1,2,3,4" --us $US --interp-bad-correl True --sim-us $SIMUS --filename-bins $2_bins.npy #--filename-disp-respi $2_displacement.npy #--soft-weight True #--nav-res-factor 2
 
-# # # # # # NBINS=6
+# # # # # NBINS=6
 
-# cp $1_displacement.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
-# # # # #echo "Please check displacement $1_displacement.jpg. Press any key to continue..."
-# # # # # #read DUMMY
+cp $1_displacement.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# # # #echo "Please check displacement $1_displacement.jpg. Press any key to continue..."
+# # # # #read DUMMY
 
 
 # #Rebuild singular volumes for all bins
@@ -91,7 +91,7 @@ cp $1_bart${NCOMP}_volumes_singular_allbins.npy_sl${SLICE2}_moving_singular_l0.g
 # # # # # ##Denoise singular volumes for all bins by using the motion field
 echo "######################################################"
 echo "Denoising singular volumes for all bins by using the motion field $2_bart${NCOMP}_volumes_allbins_registered_allindex_deformation_map.npy"
-python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins_registered --index-ref ${REF} --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy  --niter $NITER --file-deformation $2_bart${NCOMP}_volumes_allbins_registered_allindex_deformation_map.npy --filename-weights $1_weights.npy --use-wavelet True --lambda-wav 1e-5 --mu 0.1 --kept-bins "0,1,2,3,4" --filename-b1 $2_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --gating-only True #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
+python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins_registered --index-ref ${REF} --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy  --niter $NITER --file-deformation $2_bart${NCOMP}_volumes_allbins_registered_allindex_deformation_map.npy --filename-weights $1_weights.npy --use-wavelet True --lambda-wav 1e-5 --mu 0.1 --kept-bins "0,1,2,3,4" --filename-b1 $2_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --gating-only True --axis 1 #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
 
 #python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins_registered --index-ref ${REF} --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy  --niter $NITER --file-deformation $2_bart${NCOMP}_volumes_allbins_deformation_map.npy --filename-weights $1_weights.npy --use-wavelet True --lambda-wav 1e-5 --mu 0.1 --gating-only True --kept-bins "0,1,2,3,4" --filename-b1 $2_bart${NCOMP}_b12Dplus1_${NCOMP}.npy  #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
 

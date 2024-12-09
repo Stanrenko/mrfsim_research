@@ -215,7 +215,10 @@ def vxm_data_generator_torchvision(x_data_fixed, x_data_moving, transform_list,b
 @set_parameter("nepochs",int,default=None,description="Number of epochs (overwrites config)")
 @set_parameter("lr",float,default=None,description="Learning rate (overwrites config)")
 @set_parameter("init_weights",str,default=None,description="Weights initialization from .h5 file")
-def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolution,nepochs,lr,kept_bins):
+@set_parameter("us",int,default=None,description="Select one every us slice")
+@set_parameter("excluded",int,default=5,description="Excluded slices on both extremities")
+@set_parameter("axis",int,default=None,description="Change registration axis")
+def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolution,nepochs,lr,kept_bins,axis,us,excluded):
 
     all_volumes = np.abs(np.load(filename_volumes))
     print("Volumes shape {}".format(all_volumes.shape))
@@ -227,7 +230,21 @@ def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolutio
         print(kept_bins_list)
         all_volumes=all_volumes[kept_bins_list]
 
+
     nb_gr,nb_slices,npoint,npoint=all_volumes.shape
+
+
+    if axis is not None:
+        all_volumes=np.moveaxis(all_volumes,axis+1,1)
+        # all_volumes=resize(all_volumes,(nb_gr,npoint,npoint,npoint))
+        all_volumes=all_volumes[:,::int(npoint/nb_slices)]
+
+
+    if us is not None:
+        # all_volumes=resize(all_volumes,(nb_gr,npoint,npoint,npoint))
+        all_volumes=all_volumes[:,::us]
+
+    print(all_volumes.shape)
 
     if nepochs is not None:
         config_train["nb_epochs"]=nepochs
@@ -245,8 +262,13 @@ def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolutio
         file_model=filename_volumes.split(".npy")[0]+"_vxm_model_weights_res{}{}.h5".format(resolution,suffix)
         file_checkpoint="/".join(filename_volumes.split("/")[:-1])+"/model_checkpoint_res{}.h5".format(resolution)
     print(file_checkpoint)
+    # run=wandb.init(
+    #     project=str.replace(file_model.split("/")[-1].split("_FULL")[0],"raFin_3D_","")+file_model.split("/")[-1].split("_FULL")[1],
+    #     config=config_train
+    # )
+
     run=wandb.init(
-        project=str.replace(file_model.split("/")[-1].split("_FULL")[0],"raFin_3D_","")+file_model.split("/")[-1].split("_FULL")[1],
+        project="project_test",
         config=config_train
     )
 
@@ -256,7 +278,7 @@ def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolutio
     #pad_amount=tuple(tuple(l) for l in pad_amount)
 
     #Finding the power of 2 "closest" and longer than  x dimension
-    n=all_volumes.shape[-1]
+    n = np.maximum(all_volumes.shape[-1],all_volumes.shape[-2])
     pad_1=2**(int(np.log2(n))+1)-n
     pad_2= 2 ** int(np.log2(n) - 1) * 3 - n
 
@@ -267,8 +289,10 @@ def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolutio
 
     # if n%2==0:
     #     pad=0
+    pad_x=int((2*pad+n-all_volumes.shape[-2])/2)
+    pad_y=int((2*pad+n-all_volumes.shape[-1])/2)
 
-    pad_amount = ((0,0),(pad,pad), (pad,pad))
+    pad_amount = ((0,0),(pad_x,pad_x), (pad_y,pad_y))
     print(pad_amount)
     nb_features=config_train["nb_features"]
     # configure unet features
@@ -288,7 +312,7 @@ def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolutio
     batch_size=config_train["batch_size"] # 16
     lr=config_train["lr"]
 
-    x_train_fixed,x_train_moving=format_input_voxelmorph(all_volumes,pad_amount)
+    x_train_fixed,x_train_moving=format_input_voxelmorph(all_volumes,pad_amount,sl_down=excluded,sl_top=-excluded)
     
 
     # configure unet input shape (concatenation of moving and fixed images)
@@ -353,13 +377,20 @@ def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolutio
 @set_parameter("config_train",type=Config,default=DEFAULT_TRAIN_CONFIG_3D,description="Config training")
 @set_parameter("suffix",str,default="",description="suffix")
 @set_parameter("init_weights",str,default=None,description="Weights initialization from .h5 file")
-def train_voxelmorph_3D(filename_volumes,config_train,suffix,init_weights):
+@set_parameter("kept_bins",str,default=None,description="Bins to keep for training")
+def train_voxelmorph_3D(filename_volumes,config_train,suffix,init_weights,kept_bins):
 
     all_volumes = np.abs(np.load(filename_volumes))
     print("Volumes shape {}".format(all_volumes.shape))
     all_volumes=all_volumes.astype("float32")
+
+    if kept_bins is not None:
+        kept_bins_list=np.array(str.split(kept_bins,",")).astype(int)
+        print(kept_bins_list)
+        all_volumes=all_volumes[kept_bins_list]
     
-    
+    nb_gr,nb_slices,npoint,npoint=all_volumes.shape
+
     file_model=filename_volumes.split(".npy")[0]+"_vxm_model_weights_3D{}.h5".format(suffix)
     file_checkpoint="/".join(filename_volumes.split("/")[:-1])+"/model_checkpoint_3D.h5"
     print(file_checkpoint)
@@ -383,7 +414,7 @@ def train_voxelmorph_3D(filename_volumes,config_train,suffix,init_weights):
     else:
         pad = int(pad_2 / 2)
 
-    n=all_volumes.shape[0]
+    n=all_volumes.shape[1]
     pad_1=2**(int(np.log2(n))+1)-n
     pad_2= 2 ** int(np.log2(n) - 1) * 3 - n
 
@@ -446,7 +477,14 @@ def train_voxelmorph_3D(filename_volumes,config_train,suffix,init_weights):
     
     steps_per_epoch = int(nb_examples/batch_size)+1
     
-    curr_scheduler=lambda epoch,lr: scheduler(epoch,lr,decay)
+
+    if "min_lr" in config_train:
+        min_lr=config_train["min_lr"]
+    else:
+        min_lr=0
+
+
+    curr_scheduler=lambda epoch,lr: scheduler(epoch,lr,decay,min_lr)
     Schedulecallback = tf.keras.callbacks.LearningRateScheduler(curr_scheduler)
     
     callback_checkpoint=WandbModelCheckpoint(filepath=file_checkpoint,save_best_only=True,save_weights_only=True,monitor="vxm_dense_transformer_loss")
@@ -947,8 +985,8 @@ def evaluate_model(filename_volumes,file_model,config_train):
 @set_parameter("niter",int,default=1,description="Number of iterations for registration")
 @set_parameter("resolution",int,default=None,description="Image resolution")
 @set_parameter("metric",["abs","phase","real","imag"],default="abs",description="Metric to register")
-
-def register_allbins_to_baseline(filename_volumes,file_model,config_train,niter,file_deformation,resolution,metric):
+@set_parameter("axis",int,default=None,description="Change registration axis")
+def register_allbins_to_baseline(filename_volumes,file_model,config_train,niter,file_deformation,resolution,metric,axis):
 
     all_volumes = np.load(filename_volumes)
 
@@ -992,11 +1030,13 @@ def register_allbins_to_baseline(filename_volumes,file_model,config_train,niter,
     if resolution is not None:
         all_volumes=resize(all_volumes,(nb_gr,nb_slices,resolution,resolution))
     
-    
+    if axis is not None:
+        all_volumes=np.moveaxis(all_volumes,axis+1,1)
+        # all_volumes=resize(all_volumes,(nb_gr,npoint,npoint,npoint))
     
     #pad_amount=config_train["padding"]
     #pad_amount=tuple(tuple(l) for l in pad_amount)
-    n = all_volumes.shape[-1]
+    n = np.maximum(all_volumes.shape[-1],all_volumes.shape[-2])
     pad_1 = 2 ** (int(np.log2(n)) + 1) - n
     pad_2 = 2 ** int(np.log2(n) - 1) * 3 - n
 
@@ -1007,13 +1047,15 @@ def register_allbins_to_baseline(filename_volumes,file_model,config_train,niter,
 
     # if n%2==0:
     #     pad=0
+    pad_x=int((2*pad+n-all_volumes.shape[-2])/2)
+    pad_y=int((2*pad+n-all_volumes.shape[-1])/2)
 
-    pad_amount = ((0, 0), (pad, pad), (pad, pad))
+    pad_amount = ((0, 0), (pad_x, pad_x), (pad_y, pad_y))
     print(pad_amount)
 
     nb_features=config_train["nb_features"]
     inshape=np.pad(all_volumes[0],pad_amount,mode="constant").shape[1:]
-    #print(inshape)
+    print(inshape)
     vxm_model=vxm.networks.VxmDense(inshape, nb_features, int_steps=0)
     vxm_model.load_weights(file_model)
 
@@ -1032,6 +1074,7 @@ def register_allbins_to_baseline(filename_volumes,file_model,config_train,niter,
     registered_volumes=copy(all_volumes)
     mapxbase_all=np.zeros_like(all_volumes)
     mapybase_all = np.zeros_like(all_volumes)
+    print(registered_volumes.shape)
 
 
     i=0
@@ -1045,6 +1088,14 @@ def register_allbins_to_baseline(filename_volumes,file_model,config_train,niter,
         print(deformation_map.shape)
         i+=1
 
+    if axis is not None:
+        registered_volumes=np.moveaxis(registered_volumes,1,axis+1)
+        # registered_volumes=resize(registered_volumes,(nb_gr,nb_slices,npoint,npoint))
+        # registered_volumes=registered_volumes[:,::int(npoint/nb_slices)]
+        deformation_map=np.moveaxis(deformation_map,2,axis+2)
+        # deformation_map=resize(deformation_map,(2,nb_gr,nb_slices,npoint,npoint))
+
+
     if resolution is not None:
         deformation_map=resize(deformation_map,(2,nb_gr,nb_slices,npoint,npoint),order=3)
     np.save(filename_registered_volumes,registered_volumes)
@@ -1054,10 +1105,13 @@ def register_allbins_to_baseline(filename_volumes,file_model,config_train,niter,
 @set_parameter("file_deformation",str,default=None,description="deformation")
 @set_parameter("gr",int,default=None,description="Respiratory bin")
 @set_parameter("sl",int,default=None,description="Slice")
-def plot_deformation_flow(file_deformation,gr,sl):
+@set_parameter("axis",int,default=None,description="Change registration axis")
+def plot_deformation_flow(file_deformation,gr,sl,axis):
     deformation_map=np.load(file_deformation)
     if gr is None:
         gr=deformation_map.shape[1]-1
+    if axis is not None:
+        deformation_map=np.moveaxis(deformation_map,axis+2,2)
     file_plot=file_deformation.split(".npy")[0]+"_gr{}sl{}.jpg".format(gr,sl)
     print(file_plot)
     plot_deformation_map(deformation_map[:,gr,sl],us=4,save_file=file_plot)
@@ -1066,7 +1120,8 @@ def plot_deformation_flow(file_deformation,gr,sl):
 @machine
 @set_parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
 @set_parameter("file_deformation",str,default=None,description="Initial deformation if doing multiple pass of registration algo")
-def apply_deformation_map(filename_volumes,file_deformation):
+@set_parameter("axis",int,default=None,description="Registration axis")
+def apply_deformation_map(filename_volumes,file_deformation,axis):
     all_volumes = np.load(filename_volumes)
     filename_registered_volumes = filename_volumes.split(".npy")[0] + "_registered_by_deformation.npy"
 
@@ -1089,13 +1144,23 @@ def apply_deformation_map(filename_volumes,file_deformation):
 
     deformation_map=np.load(file_deformation)
 
+    # if axis is not None:
+    #     all_volumes=np.moveaxis(all_volumes,axis+1,1)
+    #     deformation_map=np.moveaxis(deformation_map,axis+2,2)
+
     deformed_volumes = np.zeros_like(all_volumes)
     nb_gr=all_volumes.shape[0]
     print(deformed_volumes.dtype)
     print(all_volumes.dtype)
 
+    
+
     for gr in range(nb_gr):
-        deformed_volumes[gr]= apply_deformation_to_complex_volume(all_volumes[gr], deformation_map[:,gr])
+        deformed_volumes[gr]= apply_deformation_to_complex_volume(all_volumes[gr], deformation_map[:,gr],axis=axis)
+
+    # if axis is not None:
+    #     deformed_volumes=np.moveaxis(deformed_volumes,1,axis+1)
+        
 
     np.save(filename_registered_volumes,deformed_volumes)
 
@@ -1182,11 +1247,14 @@ def register_motionbin(vxm_model,all_volumes,gr,pad_amount,deformation_map=None)
     nb_slices=all_volumes.shape[1]
 
     print(all_volumes.shape)
+    
 
     if deformation_map is None:
-        mapx_base, mapy_base = np.meshgrid(np.arange(all_volumes.shape[2]), np.arange(all_volumes.shape[3]))
+        # print("Here")
+        mapx_base, mapy_base = np.meshgrid(np.arange(all_volumes.shape[-1]), np.arange(all_volumes.shape[-2]))
         mapx_base=np.tile(mapx_base,reps=(nb_slices,1,1))
         mapy_base = np.tile(mapy_base, reps=(nb_slices, 1, 1))
+        # print("Here 2")
     else:
         #print("Applying existing deformation map")
         mapx_base=deformation_map[0,gr]
@@ -1196,11 +1264,11 @@ def register_motionbin(vxm_model,all_volumes,gr,pad_amount,deformation_map=None)
     #print("mapy_base shape: {}".format(mapy_base.shape))
     #print(mapx_base.shape)
     while curr_gr>0:
-        #print(all_volumes[curr_gr-1].shape)
-        #print(moving_volume.shape)
+        # print(all_volumes[curr_gr-1].shape)
+        # print(moving_volume.shape)
 
         input=np.stack([np.pad(all_volumes[curr_gr-1],pad_amount,mode="constant"),moving_volume],axis=0)
-        #print(input.shape)
+        # print(input.shape)
         x_val_fixed,x_val_moving=format_input_voxelmorph(input,((0,0),(0,0),(0,0)),sl_down=0,sl_top=nb_slices,exclude_zero_slices=False)
         val_input=[x_val_moving[...,None],x_val_fixed[...,None]]
         #print(val_input.shape)
@@ -1214,8 +1282,22 @@ def register_motionbin(vxm_model,all_volumes,gr,pad_amount,deformation_map=None)
         mapy_base=mapy_base+unpad(val_pred[1][:,:,:,0],pad_amount)
 
         curr_gr=curr_gr-1
-    #print("Moving volume shape {}:".format(moving_volume.shape))
-    return unpad(moving_volume,pad_amount),mapx_base,mapy_base
+    print("Moving volume shape : {}".format(moving_volume.shape))
+
+    if gr==0:
+        moving_volume/=np.max(moving_volume,axis=(1,2),keepdims=True)
+    unpadded_moving_volume=unpad(moving_volume,pad_amount)
+    # print("Unpadded Moving volume shape : {}".format(unpadded_moving_volume.shape))
+    # print(mapx_base.shape)
+    # print(mapy_base.shape)
+    print("Norm unpadded_moving_volume : {}".format(np.linalg.norm(unpadded_moving_volume)))
+    print("Max unpadded_moving_volume : {}".format(np.max(unpadded_moving_volume)))
+    print("Min unpadded_moving_volume : {}".format(np.min(unpadded_moving_volume)))
+
+
+    
+          
+    return unpadded_moving_volume,mapx_base,mapy_base
 
 
 def register_motionbin_3D(vxm_model,all_volumes,gr,pad_amount,deformation_map=None):

@@ -159,6 +159,7 @@ def simulate(config,base_folder,useGPU,sim_mode,save_volume):
             print(suffix)
             file_map = filename + "_{}_MRF_map.pkl".format(suffix)
             file_volume = filename + "_{}_volumes.npy".format(suffix)
+            file_gif = filename + "_{}_volumes.gif".format(suffix)
 
             group_size=int(str.split(str.split(split_for_reco[-1],"w")[-1],"_")[0])
             print(group_size)
@@ -199,6 +200,14 @@ def simulate(config,base_folder,useGPU,sim_mode,save_volume):
             
             if save_volume:
                 np.save(file_volume,volumes_all)
+                gif=[]
+                volume_for_gif = np.abs(volumes_all)
+                for i in range(volume_for_gif.shape[0]):
+                    img = Image.fromarray(np.uint8(volume_for_gif[i]/np.max(volume_for_gif[i])*255), 'L')
+                    img=img.convert("P")
+                    gif.append(img)
+
+                gif[0].save(file_gif,save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
 
             niter = 0
 

@@ -103,6 +103,9 @@ class Radial3D(Trajectory):
         self.paramDict["random"]=is_random
         self.paramDict["incoherent"]=incoherent
         self.paramDict["mode"] = mode
+        if self.paramDict["mode"]=="Kushball":
+            self.paramDict["incoherent"]=True
+        
         self.paramDict["offset"] = offset
         self.paramDict["golden_angle"]=golden_angle
         self.paramDict["nb_rep_center_part"] = nb_rep_center_part
@@ -122,7 +125,10 @@ class Radial3D(Trajectory):
             nb_rep_center_part=self.paramDict["nb_rep_center_part"]
 
             if self.paramDict["golden_angle"]:
-                if self.paramDict["random"]:
+                if self.paramDict["mode"]=="Kushball":
+                    self.traj=self.traj=spherical_golden_angle_means_traj_3D(total_nspokes, npoint, nb_slices,undersampling_factor)
+
+                elif self.paramDict["random"]:
                     if "frac_center" in self.paramDict:
                         self.traj = radial_golden_angle_traj_random_3D(total_nspokes, npoint, nspoke, nb_slices, undersampling_factor,self.paramDict["frac_center"],self.paramDict["mode"],self.paramDict["incoherent"])
                     else:

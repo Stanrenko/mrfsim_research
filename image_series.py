@@ -13,7 +13,6 @@ from scipy import ndimage
 
 import pandas as pd
 from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series,build_mask_from_volume,generate_kdata,build_mask_single_image,buildROImask,correct_mvt_kdata,create_map
-from mutools.optim.dictsearch import dictsearch
 from mutools.optim.dictsearch import dictmodel
 
 import itertools
