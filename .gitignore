@@ -14,6 +14,7 @@ mrf_dictconf*
 mrf_sequence*
 meas*
 
+dico/*
 wandb/*
 optims/*
 notebooks/*
