@@ -553,6 +553,7 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
     #nb_signals_low_ff = len(ind_low_ff)
     #nb_signals_high_ff = len(ind_high_ff)
     nb_clusters = unique_keys.shape[-1]
+    # print(unique_keys[:])
 
     nb_signals=all_signals_current.shape[-1]
 
@@ -576,6 +577,7 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
             indices = np.argwhere(labels == cl)
             nb_signals_cluster=len(indices)
             num_group = int(nb_signals_cluster / split) + 1
+            
 
             # if j_signal==nb_signals:
             #    break
@@ -583,7 +585,15 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
             keys_fT1 = (keys[:, 1] < unique_keys[:, cl][1] + d_fT1) & ((keys[:, 1] > unique_keys[:, cl][1] - d_fT1))
             keys_B1 = (keys[:, 2] < unique_keys[:, cl][2] + d_B1) & ((keys[:, 2] > unique_keys[:, cl][2] - d_B1))
             keys_DF = (keys[:, 3] < unique_keys[:, cl][3] + d_DF) & ((keys[:, 3] > unique_keys[:, cl][3] - d_DF))
+
+            # print(len(keys_T1))
+            # print(len(keys_fT1))
+            # print(len(keys_B1))
+            # print(len(keys_DF))
+
             retained_signals = np.argwhere(keys_T1 & keys_fT1 & keys_B1 & keys_DF).flatten()
+
+            # print(len(retained_signals))
 
             #print(retained_signals.shape)
 
@@ -602,6 +612,9 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
             for j in range(num_group):
                 j_signal = j * split
                 j_signal_next = np.minimum((j + 1) * split, nb_signals_cluster)
+
+                if j_signal==j_signal_next:
+                    continue
 
                 transformed_all_signals_water = np.transpose(
                     pca_water.transform(np.transpose(all_signals_cluster[:, j_signal:j_signal_next])))
@@ -702,6 +715,7 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
             nb_signals_cluster=len(indices)
             num_group = int(nb_signals_cluster / split) + 1
 
+            # print(nb_signals_cluster)
             # if j_signal==nb_signals:
             #    break
             keys_T1 = (keys[:, 0] < unique_keys[:, cl][0] + d_T1) & ((keys[:, 0] > unique_keys[:, cl][0] - d_T1))
@@ -727,7 +741,11 @@ def match_signals_v2_clustered_on_dico(all_signals_current,keys,pca_water,pca_fa
             for j in range(num_group):
                 j_signal = j * split
                 j_signal_next =cp.minimum((j + 1) * split, nb_signals_cluster)
-
+                if j_signal==j_signal_next:
+                    continue
+                # print("j_signal; {}".format(j_signal))
+                # print("j_signal_next; {}".format(j_signal_next))
+                
                 transformed_all_signals_water = cp.transpose(
                     pca_water.transform(cp.transpose(all_signals_cluster[:, j_signal:j_signal_next])))
                 transformed_all_signals_fat = cp.transpose(
@@ -7264,12 +7282,30 @@ class SimpleDictSearch(Optimizer):
                 all_maps_low_ff = np.array([all_maps_bc_cf_light[0][0][k][ind_low_ff] for k in list(all_maps_bc_cf_light[0][0].keys())[:-1]]).squeeze()
                 all_maps_high_ff = np.array([all_maps_bc_cf_light[0][0][k][ind_high_ff] for k in
                                             list(all_maps_bc_cf_light[0][0].keys())[:-1]]).squeeze()
+                
+                nb_signals_low_ff=ind_low_ff.shape[0]
+                nb_signals_high_ff=ind_high_ff.shape[0]
+
+                if not(nb_signals_high_ff==0):
+                    all_maps_high_ff=all_maps_high_ff.reshape(-1,ind_high_ff.shape[0])  
+                
+                if not(nb_signals_low_ff==0):
+                    all_maps_low_ff=all_maps_low_ff.reshape(-1,ind_low_ff.shape[0])
+                
+
+                # print(all_maps_low_ff.shape)
+                # print(all_maps_high_ff.shape)
+                
+
                 unique_keys, labels = np.unique(all_maps_low_ff, axis=-1, return_inverse=True)
                 #nb_clusters = unique_keys.shape[-1]
                 unique_keys_high_ff, labels_high_ff = np.unique(all_maps_high_ff, axis=-1, return_inverse=True)
 
-                nb_signals_low_ff = len(ind_low_ff)
-                nb_signals_high_ff = len(ind_high_ff)
+                # nb_signals_low_ff = len(ind_low_ff)
+                # nb_signals_high_ff = len(ind_high_ff)
+
+                # print("#################Number of low FF signals : {} ###############################".format(nb_signals_low_ff))
+                # print("#################Number of high FF signals : {} ###############################".format(nb_signals_high_ff))
 
                 idx_max_all_unique = np.zeros(nb_signals)
                 alpha_optim = np.zeros(nb_signals)
@@ -7289,7 +7325,7 @@ class SimpleDictSearch(Optimizer):
                 d_T1 = 400
                 d_fT1 = 100
                 d_B1 = 0.2
-                d_DF = 0.030  # 0.015
+                d_DF = 0.015  # 0.015
 
                 if return_cost:
                     idx_max_all_unique_low_ff, alpha_optim_low_ff,J_optim_low_ff,phase_optim_low_ff = match_signals_v2_clustered_on_dico(all_signals_low_ff,
@@ -7317,7 +7353,7 @@ class SimpleDictSearch(Optimizer):
                 d_T1 = 400
                 d_fT1 = 100
                 d_B1 = 0.2
-                d_DF = 0.030  # 0.015
+                d_DF = 0.015  # 0.015
 
 
                 if return_cost:
@@ -7351,6 +7387,13 @@ class SimpleDictSearch(Optimizer):
                                                                             idx_max_all_unique.astype(int),
                                                                             :].T * np.array(alpha_optim).reshape(1, -1)
                     rho_optim= J_optim*np.linalg.norm(all_signals,axis=0)/np.linalg.norm(matched_signals, axis=0)
+                    
+                    # np.save(np.linalg.norm(all_signals,axis=0), './log/matched_signals_norm_it_{}_{}.npy'.format(int(i), date_time))
+                    # np.save(np.linalg.norm(all_signals,axis=0), './log/all_signals_norm_it_{}_{}.npy'.format(int(i), date_time))
+                    # np.save(J_optim, './log/J_optim_it_{}_{}.npy'.format(int(i), date_time))
+                    # np.save(phase_optim, './log/phase_optim_it_{}_{}.npy'.format(int(i), date_time))
+                    # np.save(mask, './log/mask_it_{}_{}.npy'.format(int(i), date_time))
+                    
 
                 if calculate_matched_signals:
                     matched_signals=array_water_unique[index_water_unique, :][idx_max_all_unique.astype(int), :].T * (1 - np.array(alpha_optim)).reshape(1, -1) + array_fat_unique[index_fat_unique, :][idx_max_all_unique.astype(int), :].T * np.array(alpha_optim).reshape(1, -1)

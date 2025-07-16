@@ -4,7 +4,8 @@ import itertools
 import numpy as np
 from scipy import ndimage
 import sys
-path = r"/home/cslioussarenko/PythonRepositories"
+# path = r"/home/cslioussarenko/PythonRepositories"
+path = r"/home/slioussarenko/PycharmProjects"
 #path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
 #sys.path.append(path+"/epgpy_v3/epgpy")
 sys.path.append(path+"/epgpy")

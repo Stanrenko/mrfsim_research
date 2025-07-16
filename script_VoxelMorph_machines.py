@@ -1,5 +1,6 @@
 # imports
-path = r"/home/cslioussarenko/PythonRepositories"
+# path = r"/home/cslioussarenko/PythonRepositories"
+path = r"/home/slioussarenko/PycharmProjects"
 #path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
 
 import sys
@@ -23,13 +24,19 @@ import voxelmorph as vxm
 import neurite as ne
 from mutools import io
 import matplotlib.pyplot as plt
-
-import SimpleITK as sitk
+try:
+    import SimpleITK as sitk
+except:
+    pass
 import wandb
 from wandb.keras import WandbMetricsLogger,WandbModelCheckpoint
-import torchio as tio
-import torch
-import torchvision.transforms as T
+try:
+    import torchio as tio
+    import torch
+    import torchvision.transforms as T
+except:
+    pass
+
 from sklearn.model_selection import train_test_split
 from keras import backend
 from utils_reco import apply_deformation_to_complex_volume
@@ -349,8 +356,15 @@ def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolutio
     
     if "min_lr" in config_train:
         min_lr=config_train["min_lr"]
+    else:
+        min_lr=0.0002
 
-    curr_scheduler=lambda epoch,lr: scheduler(epoch,lr,decay,min_lr)
+    if "decay_start" in config_train:
+        decay_start=config_train["decay_start"]
+    else:
+        decay_start=20
+
+    curr_scheduler=lambda epoch,lr: scheduler(epoch,lr,decay,min_lr,decay_start)
     Schedulecallback = tf.keras.callbacks.LearningRateScheduler(curr_scheduler)
 
     callback_checkpoint=WandbModelCheckpoint(filepath=file_checkpoint,save_best_only=True,save_weights_only=True,monitor="vxm_dense_transformer_loss")
@@ -481,7 +495,7 @@ def train_voxelmorph_3D(filename_volumes,config_train,suffix,init_weights,kept_b
     if "min_lr" in config_train:
         min_lr=config_train["min_lr"]
     else:
-        min_lr=0
+        min_lr=0.0002
 
 
     curr_scheduler=lambda epoch,lr: scheduler(epoch,lr,decay,min_lr)
@@ -1348,8 +1362,8 @@ def register_motionbin_3D(vxm_model,all_volumes,gr,pad_amount,deformation_map=No
 
 
 
-def scheduler(epoch, lr,decay=0.005,min_lr=None):
-  if epoch < 20:
+def scheduler(epoch, lr,decay=0.005,min_lr=None,decay_start=20):
+  if epoch < decay_start:
     return lr
   else:
     if min_lr is None:

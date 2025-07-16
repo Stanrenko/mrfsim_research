@@ -32,8 +32,10 @@ except:
 
 import cupy as cp
 import cv2
-
-from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
+try:
+    from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
+except:
+    pass
 import neurite as ne
 from skimage.transform import resize
 from numpy.lib import stride_tricks
@@ -189,7 +191,7 @@ def correct_mvt_kdata_zero_filled(trajectory,cond,ntimesteps):
 
 
 def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001,randomize=False,dct_frequency_filter=None,seasonal_adj=False,interp_bad_correl=False):
-    np.save("./log/image_nav.npy",image)
+    # np.save("./log/image_nav.npy",image)
     nb_gating_spokes = image.shape[1]
     nb_slices = image.shape[0]
     npoint_image = image.shape[-1]
@@ -313,7 +315,7 @@ def calculate_displacement_ml(data_for_nav,nb_segments,window=5,device="cuda",ch
 
     image_full=image_full.reshape(-1,image_full.shape[-1]).T
 
-    np.save("./log/image_nav_ml.npy",image_full)
+    # np.save("./log/image_nav_ml.npy",image_full)
     
     sam_checkpoint = "sam_vit_h_4b8939.pth"
     model_type = "vit_h"
@@ -1349,14 +1351,16 @@ def build_volume_singular_2Dplus1_cc(kdata_all_channels_all_slices, b1_all_slice
 
     # for ch in tqdm(range(nb_channels)):
 
+    print("Doing FFT")
     if nb_rep_center_part>1:
         data = np.fft.fftshift(
-            sp.fft.ifft(np.fft.ifftshift(kdata_aggregate_center_part(kdata_all_channels_all_slices,nb_rep_center_part,select_first_rep)*weights, axes=2), axis=2, workers=24), axes=2)
+            sp.fft.ifft(np.fft.ifftshift(kdata_aggregate_center_part(kdata_all_channels_all_slices,nb_rep_center_part,select_first_rep)*weights, axes=2), axis=2, workers=-1), axes=2)
 
     else:
         data = np.fft.fftshift(
-        sp.fft.ifft(np.fft.ifftshift(kdata_all_channels_all_slices * weights, axes=2), axis=2, workers=24), axes=2)
+        sp.fft.ifft(np.fft.ifftshift(kdata_all_channels_all_slices * weights, axes=2), axis=2, workers=-1), axes=2)
 
+    print("Finished FFT")
     data = data.reshape((nb_channels, ntimesteps, window, nb_slices, -1))
     data = np.moveaxis(data, -2, 1)
 

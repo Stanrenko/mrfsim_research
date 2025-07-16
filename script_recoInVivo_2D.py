@@ -222,7 +222,7 @@ for sl in tqdm(range(nb_slices)):
         niter = 0
         start_time = time.time()
         optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=100, pca=True,
-                                     threshold_pca=20, log=False, useGPU_dictsearch=True, useGPU_simulation=False,
+                                     threshold_pca=15, log=False, useGPU_dictsearch=True, useGPU_simulation=False,
                                      gen_mode="other", movement_correction=False, cond=None, ntimesteps=ntimesteps,
                                      b1=b1_all_slices, threshold_ff=0.9, dictfile_light=dictfile_light, mu=1, mu_TV=1,
                                      weights_TV=[1., 0., 0.],

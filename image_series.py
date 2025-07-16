@@ -12,7 +12,7 @@ from scipy import ndimage
 
 
 import pandas as pd
-from utils_mrf import create_random_map,voronoi_volumes,normalize_image_series,build_mask_from_volume,generate_kdata,build_mask_single_image,buildROImask,correct_mvt_kdata,create_map
+from utils_mrf import create_random_map,buildROImask,correct_mvt_kdata
 from mutools.optim.dictsearch import dictmodel
 
 import itertools
@@ -36,6 +36,8 @@ try:
 except:
     pass
 
+
+asca=np.ascontiguousarray
 DEFAULT_wT2 = 40
 DEFAULT_fT1 = 300
 DEFAULT_fT2 = 80
@@ -148,8 +150,17 @@ class ImageSeries(object):
                     self.paramDict["rounding_df"] = DEFAULT_ROUNDING_df
 
 
-        self.fat_amp=[0.0586, 0.0109, 0.0618, 0.1412, 0.66, 0.0673]
-        fat_cs = [-101.1, 208.3, 281.0, 305.7, 395.6, 446.2]
+        
+        if "fat_amp" not in self.paramDict:
+            self.fat_amp=[0.0586, 0.0109, 0.0618, 0.1412, 0.66, 0.0673]
+        else:
+            self.fat_amp=self.paramDict["fat_amp"]
+        
+        if "fat_cs" not in self.paramDict:
+            fat_cs = [-101.1, 208.3, 281.0, 305.7, 395.6, 446.2]
+        else:
+            fat_cs = self.paramDict["fat_cs"]
+
         self.fat_cs = [- value / 1000 for value in fat_cs]  # temp
 
 
@@ -440,7 +451,7 @@ class ImageSeries(object):
                 if not(useGPU):
                     
                     kdata = [
-                                finufft.nufft2d2(t[:, 0], t[:, 1], p,nthreads=nthreads,fftw=fftw)
+                                finufft.nufft2d2(asca(t[:, 0]), asca(t[:, 1]), asca(p),nthreads=nthreads,fftw=fftw)
                                 for t, p in tqdm(zip(traj, images_series))
                             ]
 
@@ -556,7 +567,7 @@ class ImageSeries(object):
                     # ]
                     kdata = []
                     for i in tqdm(range(len(traj))):
-                        kdata.append(finufft.nufft3d2(traj[i,:,2],traj[i, :, 0], traj[i, :, 1], images_series[i]))
+                        kdata.append(finufft.nufft3d2(asca(traj[i,:,2]),asca(traj[i, :, 0]), asca(traj[i, :, 1]), asca(images_series[i])))
 
                 else:
                     kdata = []
@@ -1015,7 +1026,7 @@ class MapFromFile(ImageSeries):
             self.paramDict["file_type"]="GroundTruth" # else "Result"
 
     @wrapper_rounding
-    def buildParamMap(self,mask=None,dico_bumps=None):
+    def buildParamMap(self,mask=None,dico_bumps=None,global_additive_bumps=None,global_multiplicative_bumps=None):
 
         if mask is not None:
             raise ValueError("mask automatically built from wT1 map for file load for now")
@@ -1094,9 +1105,25 @@ class MapFromFile(ImageSeries):
             "ff": map_all_on_mask[:, 6]
         }
 
+        if global_additive_bumps is not None:
+            for k in global_additive_bumps.keys():
+                # print(np.unique(self.paramMap[k]))
+                self.paramMap[k]=np.maximum(np.minimum(self.paramMap[k]+global_additive_bumps[k],PARAMS_WINDOWS[k][1]),PARAMS_WINDOWS[k][0])
+                # print("Additive bump applied to {}".format(k))
+                # print(np.unique(self.paramMap[k]))
+
+        if global_multiplicative_bumps is not None:
+            for k in global_multiplicative_bumps.keys():
+                # print(np.unique(self.paramMap[k]))
+                self.paramMap[k]=np.maximum(np.minimum(self.paramMap[k]*global_multiplicative_bumps[k],PARAMS_WINDOWS[k][1]),PARAMS_WINDOWS[k][0])
+                # print("Multiplicative bump applied to {}".format(k))
+                # print(np.unique(self.paramMap[k]))
+
+
         if dico_bumps is not None:
             for k in dico_bumps.keys():
                 self.paramMap[k]=np.maximum(np.minimum(self.paramMap[k]+dico_bumps[k][self.mask>0],PARAMS_WINDOWS[k][1]),PARAMS_WINDOWS[k][0])
+
                 #print(self.paramMap[k])
 
 

@@ -65,6 +65,7 @@ from datetime import datetime
 import scipy as sp
 from scipy.interpolate import RegularGridInterpolator
 
+asca = np.ascontiguousarray
 
 def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
@@ -1255,7 +1256,7 @@ def metrics_paramMaps_ROI(map_ref, map2, mask_ref=None, mask2=None, maskROI=None
 def get_ROI_values_image(map_,maskROI,kernel_size=5,wT1_threshold=1700,min_ROI_count=15,return_std=True,excluded_border_slices=2):
 
 
-    if excluded_border_slices is not None:
+    if (excluded_border_slices is not None)and(excluded_border_slices>0):
         print("Excluding {} border slices on each extremity".format(excluded_border_slices))
         maskROI=maskROI[excluded_border_slices:-excluded_border_slices]
         
@@ -1765,7 +1766,7 @@ def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6,ntimesteps=None):
     if traj.shape[-1]==2:# For slices
         if not(useGPU):
             kdata = [
-                    finufft.nufft2d2(t[:,0], t[:,1], p)
+                    finufft.nufft2d2(asca(t[:,0]), asca(t[:,1]), asca(p))
                     for t, p in zip(traj, volumes)
                 ]
         else:
@@ -1797,7 +1798,7 @@ def generate_kdata(volumes,trajectory,useGPU=False,eps=1e-6,ntimesteps=None):
         if not (useGPU):
 
             kdata = [
-                finufft.nufft3d2(t[:, 2],t[:, 0], t[:, 1], p)
+                finufft.nufft3d2(asca(t[:, 2]),asca(t[:, 0]), asca(t[:, 1]), asca(p))
                 for t, p in zip(traj, volumes)
             ]
 
@@ -2178,7 +2179,7 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
     if traj[0].shape[-1] == 2:  # 2D
         if not(useGPU):
             images_series_rebuilt = [
-                finufft.nufft2d1(t[:,0], t[:,1], s, size,nthreads=nthreads,fftw=fftw)
+                finufft.nufft2d1(asca(t[:,0]), asca(t[:,1]), asca(s), size,nthreads=nthreads,fftw=fftw)
                 for t, s in zip(traj, kdata)
             ]
         else:
@@ -2224,7 +2225,7 @@ def simulate_radial_undersampled_images(kdata,trajectory,size,density_adj=True,u
             for t,s in tqdm(zip(traj,kdata)):
                 s=s.astype(np.complex64)
                 t=t.astype(np.float32)
-                images_series_rebuilt.append(finufft.nufft3d1(t[:,2],t[:, 0], t[:, 1], s, size))
+                images_series_rebuilt.append(finufft.nufft3d1(asca(t[:,2]),asca(t[:, 0]), asca(t[:, 1]), asca(s), size))
 
         else:
             N1, N2, N3 = size[0], size[1], size[2]
@@ -4374,11 +4375,14 @@ def calc_entropy(v):
 def build_phi(dictfile,L0):
 
     #mrfdict = dictsearch.Dictionary()
-    keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.1))
+    print("Generating full dictionary")
+    keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.2))
 
     import dask.array as da
+    print("Performing svd")
     u,s,vh = da.linalg.svd(da.asarray(values))
 
+    print("SVD done")
     vh=np.array(vh)
     s=np.array(s)
 
@@ -5055,7 +5059,7 @@ def gamma_transform_3D(volume,gamma):
     return target
 
 
-def get_volume_geometry(hdr_input, index=-1):
+def get_volume_geometry(hdr_input, index=-1,is_spherical=False):
     '''
     'sSliceArray.asSlice[0].dThickness',
     'sSliceArray.asSlice[0].dPhaseFOV',
@@ -5096,7 +5100,12 @@ def get_volume_geometry(hdr_input, index=-1):
     #print(protocol_name)
     is3D="3D" in protocol_name
     if is3D:
-        nb_slices=header["sKSpace.lPartitions"]
+        if is_spherical:
+            print("Spherical : assuming isotropic resolution")
+            nb_slices=header['sKSpace.lBaseResolution']
+        else:
+            nb_slices=header["sKSpace.lPartitions"]
+
     else:
         nb_slices=header['sSliceArray.lSize']
     shape = (
@@ -5112,7 +5121,11 @@ def get_volume_geometry(hdr_input, index=-1):
     if shape[-1]==1:
         spacing_z=header['sSliceArray.asSlice[0].dThickness']
     elif is3D:
-        spacing_z=header["sSliceArray.asSlice[0].dThickness"]/nb_slices
+        if is_spherical:
+            print("Spherical : assuming isotropic resolution")
+            spacing_z=header['sSliceArray.asSlice[0].dReadoutFOV']/shape[2]
+        else:
+            spacing_z=header["sSliceArray.asSlice[0].dThickness"]/nb_slices
     else:    
         spacing_z=header['sSliceArray.asSlice[1].sPosition.dTra']-header['sSliceArray.asSlice[0].sPosition.dTra']
 

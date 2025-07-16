@@ -1,0 +1,109 @@
+#set -e
+
+#Step 1 : Uses prescan acquistion to estimate the motion field
+# $1 : Pre-scan data file for motion estimation e.g. data/InVivo/3D/patient.003.v17/meas_MID00020_FID67000_raFin_3D_tra_1x1x5mm_FULL_new_respi.dat
+# $2 : Nb segments (optional - default 1400)
+# $3 : Example slice 1 (optional - default 46)
+# $4 : Example slice 2 (optional - default 20)
+
+NCOMP=12
+NBINS=5
+NSEGMENTS_def=1400
+SLICE1_def=46
+SLICE2_def=20
+
+NSEGMENTS=${2-${NSEGMENTS_def}}
+SLICE1=${3-${SLICE1_def}}
+SLICE2=${4-${SLICE2_def}}
+
+
+
+
+#Extracting k-space and navigator data
+echo "######################################################"
+echo "Extracting k-space and navigator data"
+#python script_recoInVivo_3D_machines.py build_kdata --filename $1.dat #--select-first-rep True --suffix "_firstrep"
+
+echo "Building navigator images to help with channel choice"
+#python script_recoInVivo_3D_machines.py build_navigator_images --filename-nav-save $1_nav.npy
+cp $1_image_nav.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data\ Processed/log_MRF_MoCo
+cp $1_image_nav_diff.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data\ Processed/log_MRF_MoCo
+
+echo "######################################################"
+echo "Based on the navigator images, what is the channel with best contrast for motion estimation ?"
+read CHANNEL
+echo "Channel $CHANNEL will be used for motion estimation"
+
+#Coil compression
+echo "######################################################"
+echo "Coil Compression $NCOMP virtual coils"
+#python script_recoInVivo_3D_machines.py coil_compression --filename-kdata $1_kdata.npy --n-comp $NCOMP
+
+#Estimate displacement, bins and weights
+echo "######################################################"
+echo "Estimating displacement, bins and weights"
+#python script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --use-ml True --incoherent False --ch $CHANNEL --ntimesteps 1 --nb-segments $NSEGMENTS --equal-spoke-per-bin True --nbins $NBINS --retained-categories "1,2,3"
+
+#python script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -30 --top 30 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --equal-spoke-per-bin True --ch $CHANNEL --nbins $NBINS
+
+#Rebuild and denoise volumes for all bins
+echo "######################################################"
+echo "Rebuilding and denoising volumes for all bins"
+#python script_recoInVivo_3D_machines.py build_volumes_allbins --filename-kdata $1_kdata.npy --n-comp $NCOMP
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins.npy --sl ${SLICE1}
+cp $1_volumes_allbins.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data\ Processed/log_MRF_MoCo
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins.npy --sl ${SLICE2}
+cp $1_volumes_allbins.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data\ Processed/log_MRF_MoCo
+
+#exit
+
+#python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins --filename-volume $1_volumes_allbins.npy --filename-b1 $1_b12Dplus1_$NCOMP.npy --mu-TV 0.5 --mu-bins 0. --gamma 0.8 --niter 5
+
+python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins --filename-volume $1_volumes_allbins.npy --filename-b1 $1_b12Dplus1_$NCOMP.npy --mu-bins 0. --gamma 0.8 --niter 2 --use-wavelet True --lambda-wav 0.5e-5
+
+
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins_denoised_gamma_0_8.npy --sl ${SLICE1}
+
+cp $1_volumes_allbins_denoised_gamma_0_8.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data\ Processed/log_MRF_MoCo
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins_denoised_gamma_0_8.npy --sl ${SLICE2}
+cp $1_volumes_allbins_denoised_gamma_0_8.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data\ Processed/log_MRF_MoCo
+
+#exit
+
+#Initialization of deformation fields
+echo "######################################################"
+echo "Initialization of deformation field"
+python  script_VoxelMorph_machines.py train_voxelmorph --filename-volumes $1_volumes_allbins_denoised_gamma_0_8.npy --config-train config_train_voxelmorph_shell.json --nepochs 2000 #--lr 0.0002 --init-weights $1_volumes_allbins_denoised_gamma_0_8_vxm_model_weights.h5
+python script_VoxelMorph_machines.py register_allbins_to_baseline --filename-volumes $1_volumes_allbins_denoised_gamma_0_8.npy --file-model $1_volumes_allbins_denoised_gamma_0_8_vxm_model_weights.h5 --config-train config_train_voxelmorph_shell.json
+
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins_denoised_gamma_0_8_registered.npy --sl ${SLICE1}
+cp $1_volumes_allbins_denoised_gamma_0_8_registered.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data\ Processed/log_MRF_MoCo
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins_denoised_gamma_0_8_registered.npy --sl ${SLICE2}
+cp $1_volumes_allbins_denoised_gamma_0_8_registered.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data\ Processed/log_MRF_MoCo
+
+
+
+#Refine volumes reconstruction with deformation field
+echo "######################################################"
+echo "Refining volumes reconstruction with deformation field"
+python script_recoInVivo_3D_machines.py build_volumes_iterative_allbins_registered_allindex --filename-volume $1_volumes_allbins.npy --filename-b1 $1_b12Dplus1_$NCOMP.npy --niter 1 --file-deformation $1_volumes_allbins_denoised_gamma_0_8_deformation_map.npy
+
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins_registered_allindex.npy --sl ${SLICE1}
+cp $1_volumes_allbins_registered_allindex.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data\ Processed/log_MRF_MoCo
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins_registered_allindex.npy --sl ${SLICE2}
+cp $1_volumes_allbins_registered_allindex.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data\ Processed/log_MRF_MoCo
+
+
+#Refine deformation field estimation
+echo "######################################################"
+echo "Refining deformation field estimation"
+python  script_VoxelMorph_machines.py train_voxelmorph --filename-volumes $1_volumes_allbins_registered_allindex.npy --config-train config_train_voxelmorph_shell.json --nepochs 1500
+python script_VoxelMorph_machines.py register_allbins_to_baseline --filename-volumes $1_volumes_allbins_registered_allindex.npy --file-model $1_volumes_allbins_registered_allindex_vxm_model_weights.h5 --config-train config_train_voxelmorph_shell.json
+
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins_registered_allindex_registered.npy --sl ${SLICE1}
+cp $1_volumes_allbins_registered_allindex_registered.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data\ Processed/log_MRF_MoCo
+python script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_volumes_allbins_registered_allindex_registered.npy --sl ${SLICE2}
+cp $1_volumes_allbins_registered_allindex_registered.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data\ Processed/log_MRF_MoCo
+
+
+

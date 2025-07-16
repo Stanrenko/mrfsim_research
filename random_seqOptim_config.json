@@ -1,7 +1,7 @@
 {
  "spokes_count": 760,
- "sigma":0.03 ,
- "noise_type":"Absolute",
+ "sigma":0.6 ,
+ "noise_type":"Relative",
  "noise_size":100,
  "DFs":[-30,0,30],
  "FFs":[0,0.1,0.2,0.3,0.4,0.5],

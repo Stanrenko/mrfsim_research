@@ -260,7 +260,7 @@ def optimize_sequence_random_FA_undersampling(optimizer_config):
 @set_parameter("optimizer_config",type=Config,default=DEFAULT_RANDOM_FA_US_VARSP_OPT_CONFIG,description="Optimizer parameters")
 @set_parameter("workers",int,default=24,description="Number of workers for differential evolution")
 def optimize_sequence_random_FA_undersampling_variablesp(optimizer_config,workers):
-
+    
     global map_index
     global optimizer_config_for_cost
 
@@ -269,7 +269,13 @@ def optimize_sequence_random_FA_undersampling_variablesp(optimizer_config,worker
     now = datetime.now()
     date_time = now.strftime("%Y%m%d_%H%M%S")
 
-    with open("./mrf_dictconf_SimReco2.json") as f:
+    if "dict_config_file" in optimizer_config:
+        dict_config_file=optimizer_config["dict_config_file"]
+    else:
+        dict_config_file="./mrf_dictconf_SimReco2.json"
+
+
+    with open(dict_config_file) as f:
         dict_config = json.load(f)
 
     fat_amp = np.array(dict_config["fat_amp"])
@@ -277,6 +283,10 @@ def optimize_sequence_random_FA_undersampling_variablesp(optimizer_config,worker
 
     optimizer_config["fat_amp"]=list(fat_amp)
     optimizer_config["fat_shift"] = list(fat_shift)
+    optimizer_config["wT2"]=dict_config["water_T2"]
+    optimizer_config["fT2"]=dict_config["fat_T2"]
+    optimizer_config["fT1"]=dict_config["fat_T1"][0]
+
 
     H = optimizer_config["H"]
     num_params_FA=2*H
@@ -310,6 +320,7 @@ def optimize_sequence_random_FA_undersampling_variablesp(optimizer_config,worker
 
     with open("./optims/random_FA_opt_config_{}.json".format(date_time), "w") as file:
         json.dump(optimizer_config, file)
+    
     
     log_cost = LogCost(cost_function,optimizer_config["dumpfile"],num_maps,date_time=date_time)
     res = differential_evolution(cost_function, bounds=bounds, callback=log_cost,maxiter=maxiter,constraints=(),workers=workers)
@@ -500,8 +511,10 @@ def optimize_sequence_random_FA_crlb(optimizer_config):
 @set_parameter("suffix",str,default="",description="Suffix to identify optimized sequence")
 @set_parameter("dictconf",str,default="mrf_dictconf_Dico2_Invivo.json",description="Dictionary grid")
 @set_parameter("dictconf_light",str,default="mrf_dictconf_Dico2_Invivo_light_for_matching.json",description="Light dictionary grid")
+@set_parameter("echo_spacing",float,default=2.22,description="Time between TE and next RF (ms)")
 
-def generate_dico_and_files(ts,proportional,suffix,dictconf,dictconf_light):
+
+def generate_dico_and_files(ts,proportional,suffix,dictconf,dictconf_light,echo_spacing):
 
     file_params="./optims/res_simul_random_FA_US_{}.pkl".format(ts)
     file_config="./optims/random_FA_opt_config_{}.json".format(ts)
@@ -525,7 +538,7 @@ def generate_dico_and_files(ts,proportional,suffix,dictconf,dictconf_light):
     num_breaks_TE=config["num_breaks_TE"]
     H=config["H"]
     num_params_FA=2*H
-    min_TR_delay=2.22*10**-3
+    min_TR_delay=echo_spacing/1000
 
     if "spokes_count" not in config.keys():
         spokes_count = 520 + 8 * int(x[-1] * (1400 - 520) / 8)
@@ -1131,9 +1144,13 @@ def cost_function_simul_breaks_random_FA_KneePhantom_variablesp(params,**kwargs)
     useGPU=kwargs["useGPU"]
 
 
+    wT2=kwargs["wT2"]
+    fT1=kwargs["fT1"]
+    fT2=kwargs["fT2"]
+
     file = kwargs["file_phantom"][map_index]
 
-    m_ = MapFromFile("Phantom_Optim", file=file, rounding=True)
+    m_ = MapFromFile("Phantom_Optim", file=file, rounding=True,default_wT2=wT2,default_fT1=fT1,default_fT2=fT2,fat_amp=fat_amp,fat_cs=fat_shift)
 
 
     if ("maskROI" in kwargs.keys())and(not(kwargs["maskROI"]=="")):
@@ -1156,16 +1173,26 @@ def cost_function_simul_breaks_random_FA_KneePhantom_variablesp(params,**kwargs)
                     #print(bump_values[maskROI==roi])
             dico_bumps[k]=bump_values
 
-        #print(dico_bumps)
-
-
-
-
-
     else:
         dico_bumps=None
 
-    m_.buildParamMap(dico_bumps=dico_bumps)
+
+    if "global_additive_bumps" in kwargs.keys():
+        global_additive_bumps=kwargs["global_additive_bumps"]
+
+    else:
+        global_additive_bumps=None
+
+    
+    if "global_multiplicative_bumps" in kwargs.keys():
+        global_multiplicative_bumps=kwargs["global_multiplicative_bumps"]
+    else:
+        global_multiplicative_bumps=None
+
+        #print(dico_bumps)
+
+
+    m_.buildParamMap(dico_bumps=dico_bumps,global_additive_bumps=global_additive_bumps,global_multiplicative_bumps=global_multiplicative_bumps)
     if compression_factor>1:
         m_.change_resolution(compression_factor)
     npoint_image=m_.image_size[-1]
@@ -1181,6 +1208,9 @@ def cost_function_simul_breaks_random_FA_KneePhantom_variablesp(params,**kwargs)
     bound_max_FA=params[-2]
     params_for_curve=params[:-2]
     TR_, FA_, TE_ = convert_params_to_sequence_breaks_proportional_random_FA(params_for_curve, min_TR_delay,spokes_count,num_breaks_TE,num_params_FA,bound_min_FA,bound_max_FA,inversion)
+
+    
+    
 
     if include_flat_part:
         print("Include flat part")
@@ -1201,7 +1231,7 @@ def cost_function_simul_breaks_random_FA_KneePhantom_variablesp(params,**kwargs)
 
     m_.build_ref_images_bloch(TR_,FA_,TE_)
 
-    s, s_w, s_f, keys = simulate_gen_eq_signal(TR_, FA_, TE_, FFs, DFs, T1s, 300 / 1000,B1s, T_2w=40 / 1000, T_2f=80 / 1000,
+    s, s_w, s_f, keys = simulate_gen_eq_signal(TR_, FA_, TE_, FFs, DFs, T1s, fT1 / 1000,B1s, T_2w=wT2 / 1000, T_2f=fT2 / 1000,
                                                amp=fat_amp, shift=fat_shift, sigma=None, group_size=group_size,
                                                return_fat_water=True,return_combined_signal=False)  # ,amp=np.array([1]),shift=np.array([-418]),sigma=None):
 
@@ -1209,8 +1239,8 @@ def cost_function_simul_breaks_random_FA_KneePhantom_variablesp(params,**kwargs)
     s_f = s_f.reshape(s_f.shape[0], -1).T
 
 
-    s_light, s_w_light, s_f_light, keys_light = simulate_gen_eq_signal(TR_, FA_, TE_, FFs, DFs_light, T1s_light, 300 / 1000, B1s_light, T_2w=40 / 1000,
-                                               T_2f=80 / 1000,
+    s_light, s_w_light, s_f_light, keys_light = simulate_gen_eq_signal(TR_, FA_, TE_, FFs, DFs_light, T1s_light, fT1 / 1000, B1s_light, T_2w=wT2 / 1000,
+                                               T_2f=fT2 / 1000,
                                                amp=fat_amp, shift=fat_shift, sigma=None, group_size=group_size,
                                                return_fat_water=True,
                                                return_combined_signal=False)  # ,amp=np.array([1]),shift=np.array([-418]),sigma=None):
