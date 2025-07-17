@@ -1,6 +1,6 @@
 
 from utils_simu import *
-from dictoptimizers import SimpleDictSearch
+from mrfsim.dictoptimizers import SimpleDictSearch
 import json
 from scipy.optimize import differential_evolution
 import pickle

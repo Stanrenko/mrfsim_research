@@ -16,14 +16,13 @@ from utils_mrf import create_random_map,buildROImask,correct_mvt_kdata
 from mutools.optim.dictsearch import dictmodel
 
 import itertools
-from mrfsim import groupby,makevol,load_data,loadmat
+from scipy.io import loadmat
 import finufft
 from tqdm import tqdm
 import matplotlib.animation as animation
 from trajectory import *
 
 try:
-    import pycuda.autoinit
     from pycuda.gpuarray import GPUArray, to_gpu
     from cufinufft import cufinufft
 

@@ -2,7 +2,7 @@
 #import matplotlib
 #matplotlib.use("TkAgg")
 from image_series import *
-from dictoptimizers import SimpleDictSearch,BruteDictSearch
+from mrfsim.dictoptimizers import SimpleDictSearch,BruteDictSearch
 from mutools.optim.dictsearch import dictmodel
 
 from PIL import Image

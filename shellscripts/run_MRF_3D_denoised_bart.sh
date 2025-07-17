@@ -20,22 +20,22 @@ INDEX=${4-${INDEX_def}}
 #Extracting k-space and navigator data
 echo "######################################################"
 echo "Extracting k-space and navigator data"
-python script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX}
+python scripts/script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX}
 
-rm $1.dat
+# rm $1.dat
 
 #Coil compression
 echo "######################################################"
 echo "Coil Compression $NCOMP virtual coils"
 # python script_recoInVivo_3D_machines.py coil_compression --filename-kdata $1_kdata.npy --n-comp $NCOMP --invert-dens-adj True --res 16
-python script_recoInVivo_3D_machines.py coil_compression_bart --filename-kdata $1_kdata.npy --n-comp $NCOMP
+python scripts/script_recoInVivo_3D_machines.py coil_compression_bart --filename-kdata $1_kdata.npy --n-comp $NCOMP
 rm $1_kdata.npy
 
 #Rebuild singular volumes for all bins
 echo "######################################################"
 echo "Rebuilding singular volumes"
 # python script_recoInVivo_3D_machines.py build_volumes_singular --filename-kdata $1_bart${NCOMP}_kdata.npy --n-comp $NCOMP --L0 $NSING --dictfile $2 --useGPU False --filename-weights $1_us_weights.npy:
-python script_recoInVivo_3D_machines.py build_volumes_singular --filename-kdata $1_bart${NCOMP}_kdata.npy --n-comp $NCOMP --L0 $NSING --dictfile $2 --useGPU False --filename-seqParams $1_seqParams.pkl
+python scripts/script_recoInVivo_3D_machines.py build_volumes_singular --filename-kdata $1_bart${NCOMP}_kdata.npy --n-comp $NCOMP --L0 $NSING --dictfile $2 --useGPU False --filename-seqParams $1_seqParams.pkl
 rm $1_bart${NCOMP}_kdata.npy
 
 
@@ -43,10 +43,10 @@ rm $1_bart${NCOMP}_kdata.npy
 echo "######################################################"
 echo "Denoising singular volumes"
 # python script_recoInVivo_3D_machines.py build_volumes_iterative --filename-volume $1_bart${NCOMP}_volumes_singular.npy  --niter $NITER  --filename-weights $1_us_weights.npy --use-wavelet True --lambda-wav 1e-5 --mu 0.1 --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
-python script_recoInVivo_3D_machines.py build_volumes_iterative --filename-volume $1_bart${NCOMP}_volumes_singular.npy  --niter $NITER  --filename-weights $1_us_weights.npy --use-wavelet True --lambda-wav 5e-5 --mu 0.1 --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --filename-seqParams $1_seqParams.pkl #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
+python scripts/script_recoInVivo_3D_machines.py build_volumes_iterative --filename-volume $1_bart${NCOMP}_volumes_singular.npy  --niter $NITER  --filename-weights $1_us_weights.npy --use-wavelet True --lambda-wav 5e-5 --mu 0.1 --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --filename-seqParams $1_seqParams.pkl #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
 
 
-python script_recoInVivo_3D_machines.py build_mask_from_singular_volume --filename-volume $1_bart${NCOMP}_volumes_singular_denoised.npy --l 0 --threshold 0.02 --it 1
+python scripts/script_recoInVivo_3D_machines.py build_mask_from_singular_volume --filename-volume $1_bart${NCOMP}_volumes_singular_denoised.npy --l 0 --threshold 0.02 --it 1
 
 #python script_recoInVivo_3D_machines.py build_mask_from_singular_volume --filename-volume $1_bart${NCOMP}_volumes_singular.npy --l 0 --threshold 0.015 --it 1
 
@@ -54,7 +54,7 @@ python script_recoInVivo_3D_machines.py build_mask_from_singular_volume --filena
 #Build maps for all bins
 #echo "######################################################"
 #echo "Building MRF maps for all bins"
-python script_recoInVivo_3D_machines.py build_maps --filename-volume "$1_bart${NCOMP}_volumes_singular_denoised.npy" --filename-mask "$1_bart${NCOMP}_volumes_singular_denoised_l0_mask.npy" --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --dictfile $2 --dictfile-light $3 --optimizer-config opt_config_iterative_singular_shell.json --filename $1.dat
+python scripts/script_recoInVivo_3D_machines.py build_maps --filename-volume "$1_bart${NCOMP}_volumes_singular_denoised.npy" --filename-mask "$1_bart${NCOMP}_volumes_singular_denoised_l0_mask.npy" --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --dictfile dico/$2 --dictfile-light dico/$3 --optimizer-config opt_config_iterative_singular_shell.json --filename $1.dat
 #python script_recoInVivo_3D_machines.py build_maps --filename-volume "$1_bart${NCOMP}_volumes_singular.npy" --filename-mask "$1_bart${NCOMP}_volumes_singular_l0_mask.npy" --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --dictfile $2 --dictfile-light $3 --optimizer-config opt_config_iterative_singular_shell.json --filename $1.dat
 
 

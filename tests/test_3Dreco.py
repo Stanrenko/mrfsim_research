@@ -1,18 +1,7 @@
 import unittest
-from mrfsim import T1MRF
 from image_series import *
-from dictoptimizers import SimpleDictSearch
 from utils_mrf import *
-import json
-import readTwix as rT
-import time
-import os
-from numpy.lib.format import open_memmap
-from numpy import memmap
-import pickle
 
-from script_recoInVivo_3D_machines import build_coil_sensi
-from machines import factory,MemoryStorage
 
 
 try:

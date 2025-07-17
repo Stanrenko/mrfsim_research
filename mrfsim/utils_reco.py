@@ -17,7 +17,6 @@ from datetime import datetime
 import scipy as sp
 from tqdm import tqdm
 import pandas as pd
-from mrfsim import groupby
 from Transformers import PCAComplex
 
 import finufft

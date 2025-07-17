@@ -1,21 +1,13 @@
 
 
 import numpy as np
-from mrfsim import T1MRF
 from image_series import *
-from dictoptimizers import SimpleDictSearch,GaussianWeighting,BruteDictSearch
+from mrfsim.dictoptimizers import SimpleDictSearch,GaussianWeighting,BruteDictSearch
 from utils_mrf import *
 import json
-import readTwix as rT
-import time
 import os
-from numpy.lib.format import open_memmap
-from numpy import memmap
 import pickle
-from scipy.io import loadmat,savemat
 from mutools import io
-from sklearn import linear_model
-from scipy.optimize import minimize
 from movements import TranslationBreathing
 from bart import bart
 import matplotlib.pyplot as plt
@@ -679,9 +671,8 @@ plt.title("Std per ROI distribution")
 #import matplotlib
 #matplotlib.u<se("TkAgg")
 import numpy as np
-from mrfsim import T1MRF
 from image_series import *
-from dictoptimizers import SimpleDictSearch,GaussianWeighting
+from mrfsim.dictoptimizers import SimpleDictSearch,GaussianWeighting
 from utils_mrf import *
 import json
 import readTwix as rT
