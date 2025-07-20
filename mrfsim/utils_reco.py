@@ -9,7 +9,8 @@ import numpy as np
 from scipy.signal import savgol_filter
 from statsmodels.nonparametric.smoothers_lowess import lowess
 from sklearn.decomposition import PCA
-from trajectory import Navigator3D,Radial
+
+
 
 from copy import copy,deepcopy
 
@@ -17,7 +18,7 @@ from datetime import datetime
 import scipy as sp
 from tqdm import tqdm
 import pandas as pd
-from Transformers import PCAComplex
+
 
 import finufft
 try:
@@ -28,11 +29,14 @@ try:
 
 except:
     pass
+try:
+    import cupy as cp
+except:
+    pass
 
-import cupy as cp
 import cv2
 try:
-    from segment_anything import sam_model_registry, SamAutomaticMaskGenerator, SamPredictor
+    from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
 except:
     pass
 import neurite as ne
@@ -41,8 +45,10 @@ from numpy.lib import stride_tricks
 import dask.array as da
 import pywt
 from scipy.interpolate import RegularGridInterpolator
-import ot
 
+
+from mrfsim.trajectory import Navigator3D,Radial
+from mrfsim.Transformers import PCAComplex
 
 def calculate_sensitivity_map_3D_for_nav(kdata, trajectory, res=16, image_size=(400,)):
     traj = trajectory.get_traj()
@@ -579,12 +585,12 @@ def estimate_weights_bins(displacements,nb_slices,nb_segments,nb_gating_spokes,n
         if retained_categories is None:
             retained_categories = list(range(0, nb_bins))
 
-        if disp_respi is not None:
-            print("Matching displacement distribution on provided displacement")
-            ot_emd = ot.da.EMDTransport()
-            # ot_emd=ot.da.SinkhornTransport(reg_e=1e-1)
-            ot_emd.fit(Xs=displacement_for_binning.reshape(-1, 1), Xt=disp_respi.reshape(-1, 1))
-            displacement_for_binning = ot_emd.transform(Xs=displacement_for_binning.reshape(-1, 1))[:,0]
+        # if disp_respi is not None:
+        #     print("Matching displacement distribution on provided displacement")
+        #     ot_emd = ot.da.EMDTransport()
+        #     # ot_emd=ot.da.SinkhornTransport(reg_e=1e-1)
+        #     ot_emd.fit(Xs=displacement_for_binning.reshape(-1, 1), Xt=disp_respi.reshape(-1, 1))
+        #     displacement_for_binning = ot_emd.transform(Xs=displacement_for_binning.reshape(-1, 1))[:,0]
 
     print(bins)
 

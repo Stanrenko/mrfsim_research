@@ -1,15 +1,14 @@
 
 #import matplotlib
 #matplotlib.use("TkAgg")
-from image_series import *
-from mrfsim.dictoptimizers import SimpleDictSearch,BruteDictSearch
-from mutools.optim.dictsearch import dictmodel
+from mrfsim.image_series import *
+from mrfsim.dictoptimizers import SimpleDictSearch
 
 from PIL import Image
-from utils_simu import *
+from mrfsim.utils_simu import *
 #from utils_reco import calculate_sensitivity_map_3D,kdata_aggregate_center_part,calculate_displacement,build_volume_singular_2Dplus1_cc_allbins_registered,simulate_nav_images_multi,calculate_displacement_ml,estimate_weights_bins,calculate_displacements_singlechannel,calculate_displacements_singlechannel,calculate_displacements_allchannels,coil_compression_2Dplus1,build_volume_2Dplus1_cc_allbins
-from utils_reco import *
-from utils_mrf import *
+from mrfsim.utils_reco import *
+from mrfsim.utils_mrf import *
 import math
 import nibabel as nib
 try :
@@ -17,30 +16,41 @@ try :
 except:
     pass
 # machines
-# path = r"/home/cslioussarenko/PythonRepositories"
-path = r"/home/slioussarenko/PycharmProjects"
-#path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
+
+import machines as ma
+
+
+from machines import Toolbox
+
 
 import sys
-sys.path.append(path+"/epgpy")
-sys.path.append(path+"/machines")
-sys.path.append(path+"/mutools")
-sys.path.append(path+"/dicomstack")
-
-from machines import machine, Toolbox, Config, set_parameter, set_output, printer, file_handler, Parameter, RejectException, get_context
-
-
 os.environ['PATH'] = os.environ['TOOLBOX_PATH'] + ":" + os.environ['PATH']
 sys.path.append(os.environ['TOOLBOX_PATH'] + "/python/")
 import cfl
 from bart import bart
 
-DEFAULT_OPT_CONFIG="opt_config.json"
-DEFAULT_OPT_CONFIG_2STEPS="opt_config_twosteps.json"
+DEFAULT_OPT_CONFIG_2STEPS={
+    "type": "CF_iterative_2Dplus1",
+    "pca":10,
+    "split":200,
+    "useGPU": True,
+    "niter": 0,
+    "mu":1,
+    "mu_TV":0.5,
+    "weights_TV":[1.0,0.1,0.1],
+    "volumes_type":"Singular",
+    "nspoke":1400,
+    "return_matched_signals":False,
+    "return_cost":True,
+    "clustering":True,
+    "mu_bins":None,
+    "log":False
+}
 
-@machine
-@set_parameter("filename", str, default=None, description="Siemens K-space data .dat file")
-@set_parameter("index", int, default=-1, description="Header index")
+
+@ma.machine()
+@ma.parameter("filename", str, default=None, description="Siemens K-space data .dat file")
+@ma.parameter("index", int, default=-1, description="Header index")
 def getTR(filename,index):
     # twix = twixtools.read_twix(filename, optional_additional_maps=["sWipMemBlock"],
                                 #    optional_additional_arrays=["SliceThickness"])
@@ -65,8 +75,8 @@ def getTR(filename,index):
     return
 
 
-@machine
-@set_parameter("filepickle", str, default=None, description=".pkl")
+@ma.machine()
+@ma.parameter("filepickle", str, default=None, description=".pkl")
 def showPickle(filepickle):
     with open(filepickle,"rb") as file:
         dico=pickle.load(file)
@@ -74,11 +84,11 @@ def showPickle(filepickle):
 
     return
 
-@machine
-@set_parameter("filename", str, default=None, description="Filename for getting metatada")
-@set_parameter("filemha", str, default=None, description="Map (.mha)")
-@set_parameter("suffix",str,default="")
-@set_parameter("nifti",bool,default=False)
+@ma.machine()
+@ma.parameter("filename", str, default=None, description="Filename for getting metatada")
+@ma.parameter("filemha", str, default=None, description="Map (.mha)")
+@ma.parameter("suffix",str,default="")
+@ma.parameter("nifti",bool,default=False)
 def getGeometry(filename,filemha,suffix,nifti):
     if filename is None:
         filename=str.split(filemha,"_MRF_map")[0]+".dat"
@@ -104,14 +114,14 @@ def getGeometry(filename,filemha,suffix,nifti):
     io.write(filemha_adjusted,vol)
     return
 
-@machine
-@set_parameter("filedico", str, default=None, description="Dictionary .pkl containing parameters")
-@set_parameter("filevolume", str, default=None, description="Volume (.npy)")
-@set_parameter("suffix",str,default="")
-@set_parameter("nifti",bool,default=False)
-@set_parameter("apply_offset",bool,default=False,description="Apply offset (for having the absolute position in space) - should be false for unwarping volumes")
-@set_parameter("reorient",bool,default=True,description="Reorient input volumes")
-@set_parameter("gr",int,default=None,description="Bin number if dynamic data")
+@ma.machine()
+@ma.parameter("filedico", str, default=None, description="Dictionary .pkl containing parameters")
+@ma.parameter("filevolume", str, default=None, description="Volume (.npy)")
+@ma.parameter("suffix",str,default="")
+@ma.parameter("nifti",bool,default=False)
+@ma.parameter("apply_offset",bool,default=False,description="Apply offset (for having the absolute position in space) - should be false for unwarping volumes")
+@ma.parameter("reorient",bool,default=True,description="Reorient input volumes")
+@ma.parameter("gr",int,default=None,description="Bin number if dynamic data")
 def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset,reorient,gr):
 
 
@@ -188,12 +198,12 @@ def convertArrayToImage(filedico,filevolume,suffix,nifti,apply_offset,reorient,g
     io.write(filemha_adjusted,vol)
     return
 
-@machine
-@set_parameter("folder", str, default=None, description="Folder containing the .mha")
-@set_parameter("key", str, default=None, description="Substring for matching volumes")
-@set_parameter("suffix",str,default="_corrected_offset.nii")
-@set_parameter("spacing",[float, float, float],default=[2,2,2],description="Target spacing")
-@set_parameter("overlap",[float, float, float],default=[0,0,0],description="Overlap between regions")
+@ma.machine()
+@ma.parameter("folder", str, default=None, description="Folder containing the .mha")
+@ma.parameter("key", str, default=None, description="Substring for matching volumes")
+@ma.parameter("suffix",str,default="_corrected_offset.nii")
+@ma.parameter("spacing",[float, float, float],default=[2,2,2],description="Target spacing")
+@ma.parameter("overlap",[float, float, float],default=[0,0,0],description="Overlap between regions")
 def concatenateVolumes(folder,key,spacing,suffix,overlap):
     print(folder+"/*{}{}".format(key,suffix))
     files_list=glob.glob(folder+"/*{}{}".format(key,suffix))
@@ -208,14 +218,14 @@ def concatenateVolumes(folder,key,spacing,suffix,overlap):
 
 
 
-@machine
-@set_parameter("filename", str, default=None, description="Siemens K-space data .dat file")
-@set_parameter("dens_adj", bool, default=True, description="Radial density adjustment")
-@set_parameter("save", bool, default=False, description="save intermediary npy file")
-@set_parameter("suffix",str,default="")
-@set_parameter("select_first_rep", bool, default=False, description="Select the first central partition repetition")
-@set_parameter("index", int, default=-1, description="Header index")
-@set_parameter("nb_rep", int, default=None, description="nb rep selection for kushball undersampling simulation")
+@ma.machine()
+@ma.parameter("filename", str, default=None, description="Siemens K-space data .dat file")
+@ma.parameter("dens_adj", bool, default=True, description="Radial density adjustment")
+@ma.parameter("save", bool, default=False, description="save intermediary npy file")
+@ma.parameter("suffix",str,default="")
+@ma.parameter("select_first_rep", bool, default=False, description="Select the first central partition repetition")
+@ma.parameter("index", int, default=-1, description="Header index")
+@ma.parameter("nb_rep", int, default=None, description="nb rep selection for kushball undersampling simulation")
 def build_kdata(filename,suffix,dens_adj,nb_rep,select_first_rep,index,save):
 
     if dens_adj:
@@ -232,31 +242,7 @@ def build_kdata(filename,suffix,dens_adj,nb_rep,select_first_rep,index,save):
 
     if str.split(filename_seqParams, "/")[-1] not in os.listdir(folder):
 
-        # twix = twixtools.read_twix(filename, optional_additional_maps=["sWipMemBlock", "sKSpace"],
-        #                            optional_additional_arrays=["SliceThickness"])
-        #
-        # if np.max(np.argwhere(np.array(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]) > 0)) >= 16:
-        #     use_navigator_dll = True
-        # else:
-        #     use_navigator_dll = False
-
-
-
-
-        # alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
-        # x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
-        # y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
-        # z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
-        # dTR=twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["adFree"][1]-twix[-1]["hdr"]["Meas"]["alTE"][0]/1000
-        # total_TR=twix[-1]["hdr"]["Meas"]["alTR"][0]/1e6
-        #
-        # nb_part = twix[-1]["hdr"]["Meas"]["Partitions"]
-        #
-        # dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV, "z_FOV": z_FOV,
-        #                   "use_navigator_dll": use_navigator_dll, "nb_part": nb_part,"total_TR":total_TR,"dTR":dTR}
-
-
-        #del alFree
+       
         hdr = io_twixt.parse_twixt_header(filename)
         print(len(hdr))
         print(index)
@@ -363,11 +349,6 @@ def build_kdata(filename,suffix,dens_adj,nb_rep,select_first_rep,index,save):
 
     nb_part_center=int(nb_part/2)
     nb_part = nb_part + nb_rep_center_part - 1
-    # print(nb_part)
-    # print(nb_rep_center_part)
-    # print(nb_gating_spokes)
-    # print(dico_seqParams["alFree"])
-
     del dico_seqParams
 
     if meas_sampling_mode==1:
@@ -530,706 +511,15 @@ def build_kdata(filename,suffix,dens_adj,nb_rep,select_first_rep,index,save):
 
     return
 
-@machine
-@set_parameter("filename", str, default=None, description="Siemens K-space data .dat file")
-@set_parameter("ch_opt", int, default=None, description="Optimal Channel For Pilot tone frequency extraction")
-@set_parameter("fmin", int, default=230, description="Min frequency For Pilot tone frequency extraction")
-@set_parameter("fmax", int, default=290, description="Max frequency For Pilot tone frequency extraction")
-@set_parameter("dens_adj", bool, default=True, description="Radial density adjustment")
-@set_parameter("suffix",str,default="")
-def build_kdata_pilot_tone(filename,ch_opt,fmin,fmax,dens_adj,suffix):
 
-    #Not very clean - global variables to allow for using Multiprocessing Pool inside the function
-    global npoint
-    global data_chopt
-    global data
-    global max_slices
-    global f_list
-    global nb_channels
-    global fs_hat
-    global nb_allspokes
-    global As_hat
-
-
-    filename_kdata = str.split(filename,".dat") [0]+"_kdata_no_dens_adj{}.npy".format("")
-    filename_kdata_pt_corr = str.split(filename,".dat") [0]+"_kdata{}.npy".format("")
-    filename_displacement_pt = str.split(filename,".dat") [0]+"_displacement_pt{}.npy".format("")
-    filename_Ashat = str.split(filename,".dat") [0]+"_Ashat{}.npy".format("")
-    filename_fshat = str.split(filename,".dat") [0]+"_fshat{}.npy".format("")
-    filename_save = str.split(filename, ".dat")[0] + ".npy"
-    filename_nav_save = str.split(filename, ".dat")[0] + "_nav.npy"
-    filename_seqParams = str.split(filename, ".dat")[0] + "_seqParams.pkl"
-
-    folder = "/".join(str.split(filename, "/")[:-1])
-
-
-    if str.split(filename_seqParams, "/")[-1] not in os.listdir(folder):
-
-        twix = twixtools.read_twix(filename, optional_additional_maps=["sWipMemBlock", "sKSpace"],
-                                   optional_additional_arrays=["SliceThickness"])
-
-        if np.max(np.argwhere(np.array(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]) > 0)) >= 16:
-            use_navigator_dll = True
-        else:
-            use_navigator_dll = False
-
-        alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
-        x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
-        y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
-        z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
-        dTR=twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["adFree"][1]-twix[-1]["hdr"]["Meas"]["alTE"][0]/1000
-        total_TR=twix[-1]["hdr"]["Meas"]["alTR"][0]/1e6
-
-        nb_part = twix[-1]["hdr"]["Meas"]["Partitions"]
-
-        dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV, "z_FOV": z_FOV,
-                          "use_navigator_dll": use_navigator_dll, "nb_part": nb_part,"total_TR":total_TR,"dTR":dTR}
-
-        del alFree
-
-        file = open(filename_seqParams, "wb")
-        pickle.dump(dico_seqParams, file)
-        file.close()
-
-    else:
-        file = open(filename_seqParams, "rb")
-        dico_seqParams = pickle.load(file)
-        file.close()
-
-    use_navigator_dll = dico_seqParams["use_navigator_dll"]
-
-    nb_segments = dico_seqParams["alFree"][4]
-
-    if use_navigator_dll:
-        meas_sampling_mode = dico_seqParams["alFree"][15]
-        nb_gating_spokes = dico_seqParams["alFree"][6]
-        if int(nb_segments/nb_gating_spokes)<(nb_segments/nb_gating_spokes):
-            print("Nb segments not divisible by nb_gating_spokes - adjusting nb_gating_spokes")
-            nb_gating_spokes+=1
-    else:
-        meas_sampling_mode = dico_seqParams["alFree"][12]
-        nb_gating_spokes = 0
-
-    
-
-    
-
-
-    nb_part = dico_seqParams["nb_part"]
-    dummy_echos = dico_seqParams["alFree"][5]
-    nb_rep_center_part = dico_seqParams["alFree"][11]
-    nb_part=nb_part + nb_rep_center_part-1
-
-    nb_part = int(nb_part)
-
-    del dico_seqParams
-
-    if str.split(filename_save, "/")[-1] not in os.listdir(folder):
-        if 'twix' not in locals():
-            print("Re-loading raw data")
-            twix = twixtools.read_twix(filename)
-
-        mdb_list = twix[-1]['mdb']
-        if nb_gating_spokes == 0:
-            data = []
-
-            for i, mdb in enumerate(mdb_list):
-                if mdb.is_image_scan():
-                    data.append(mdb)
-
-        else:
-            print("Reading Navigator Data....")
-            data_for_nav = []
-            data = []
-            nav_size_initialized = False
-            # k = 0
-            for i, mdb in enumerate(mdb_list):
-                if mdb.is_image_scan():
-                    if not (mdb.mdh[14][9]):
-                        mdb_data_shape = mdb.data.shape
-                        mdb_dtype = mdb.data.dtype
-                        nav_size_initialized = True
-                        break
-
-            for i, mdb in enumerate(mdb_list):
-                if mdb.is_image_scan():
-                    if not (mdb.mdh[14][9]):
-                        data.append(mdb)
-                    else:
-                        data_for_nav.append(mdb)
-                        data.append(np.zeros(mdb_data_shape, dtype=mdb_dtype))
-
-                    # print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
-                    # k += 1
-            data_for_nav = np.array([mdb.data for mdb in data_for_nav])
-            data_for_nav = data_for_nav.reshape(
-                (int(nb_part + dummy_echos), int(nb_gating_spokes)) + data_for_nav.shape[1:])
-
-            if data_for_nav.ndim == 3:
-                data_for_nav = np.expand_dims(data_for_nav, axis=-2)
-            data_for_nav = data_for_nav[dummy_echos:]
-            data_for_nav = np.moveaxis(data_for_nav, -2, 0)
-            np.save(filename_nav_save, data_for_nav)
-
-        data = np.array([mdb.data for mdb in data])
-        data = data.reshape((-1, int(nb_segments)) + data.shape[1:])
-        data = data[dummy_echos:]
-        data = np.moveaxis(data, 2, 0)
-        data = np.moveaxis(data, 2, 1)
-
-        del mdb_list
-
-        ##################################################
-        try:
-            del twix
-        except:
-            pass
-
-        np.save(filename_save, data)
-
-    else:
-        data = np.load(filename_save)
-        if nb_gating_spokes > 0:
-            data_for_nav = np.load(filename_nav_save)
-
-    npoint = data.shape[-1]
-    nb_channels=data.shape[0]
-    nb_allspokes=data.shape[1]
-    #image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
-
-    np.save(filename_kdata, data)
-
-    fig,ax=plt.subplots(6,6)
-    axli=ax.flatten()
-    all_radial_proj_all_ch_no_corr=[]
-    sl=int(nb_part/2)
-
-    from scipy.stats import kurtosis
-
-    print("Drawing radial projection figures")
-
-    for ch in range(nb_channels):
-        kdata_PT=data[ch]
-        #traj_PT=radial_traj.get_traj().reshape(nb_allspokes,nb_slices,-1,3)
-
-        #finufft.nufft3d1(traj_PT[0][0],kdata_PT[0][0])
-
-        all_radial_proj=[]
-
-        for j in range(nb_allspokes):
-            radial_proj=np.abs((np.fft.fft((kdata_PT[j][sl]))))
-            all_radial_proj.append(radial_proj)
-
-        all_radial_proj=np.array(all_radial_proj)
-
-
-
-        axli[ch].plot(all_radial_proj[::27].T)
-        axli[ch].set_title(ch)
-        all_radial_proj_all_ch_no_corr.append(all_radial_proj)
-
-        #all_kurt.append(np.mean(kurtosis(all_radial_proj[1::28],axis=-1)))
-    
-    plt.savefig(str.split(filename,".dat") [0]+"_radial_proj_allchannels.jpg")
-
-   
-    
-    print("Channels sorted by radial projection kurtosis")
-    print(np.argsort(np.mean(kurtosis(np.array(all_radial_proj_all_ch_no_corr)[:,1::28],axis=-1),axis=1))[::-1])
-
-    if ch_opt is None:
-        ch_opt=np.argsort(np.mean(kurtosis(np.array(all_radial_proj_all_ch_no_corr)[:,1::28],axis=-1),axis=1))[-1]
-
-    plt.figure()
-    plt.imshow(all_radial_proj_all_ch_no_corr[ch_opt])
-    plt.savefig(str.split(filename,".dat") [0]+"_radial_proj_allspokes_chopt.jpg")
-
-
-    print("Extracting pilot tone frequency")
-
-    max_slices=int(nb_part)
-    fs_hat=np.zeros((nb_allspokes,max_slices))
-
-    f_list = np.expand_dims(np.arange(fmin, fmax, 0.01), axis=(1, 2))
-
-
-    
-
-    from multiprocessing import Pool
-
-    if str.split(filename_fshat, "/")[-1] not in os.listdir(folder):
-
-        data_chopt=data[ch_opt]
-
-        with Pool(24) as pool:
-            # perform calculations
-            results = pool.map(task, range(nb_allspokes))
-
-
-        for ts in tqdm(range(nb_allspokes)):
-            fs_hat[ts, :] =np.load("./fshat/fshat_{}.npy".format(ts))
-        np.save(filename_fshat,fs_hat)
-    else:
-        fs_hat=np.load(filename_fshat)
-
-    print("Calculating Pilot Tone Amplitude Ashat")
-
-
-    kdata_with_pt_corrected=np.zeros(data.shape,dtype=data.dtype)
-    As_hat=np.zeros((nb_channels,nb_allspokes,max_slices))
-    
-    with Pool(24) as pool:
-        # perform calculations
-        results = pool.map(task_Ashat, range(nb_allspokes))
-
-
-    for ts in tqdm(range(nb_allspokes)):
-        As_hat[:,ts,:] =np.load("./fshat/Ashat_{}.npy".format(ts))
-    for ts in tqdm(range(nb_allspokes)):
-        kdata_with_pt_corrected[:,ts,:] =np.load("./fshat/kdata_pt_corrected_{}.npy".format(ts))
-
-    As_hat[:,::28,:]=As_hat[:,1::28,:]
-
-    np.save(filename_Ashat,As_hat)
-
-
-    if dens_adj:
-        print("Performing Density Adjustment....")
-        density = np.abs(np.linspace(-1, 1, npoint))
-        density = np.expand_dims(density, tuple(range(kdata_with_pt_corrected.ndim - 1)))
-        kdata_with_pt_corrected *= density
-
-    np.save(filename_kdata_pt_corr,kdata_with_pt_corrected)
-
-
-    print("Drawing radial projection for all spokes non corrected and corrected")
-    plt.close("all")
-    sl = np.random.randint(max_slices)
-    all_radial_proj_all_ch=[]
-    for ch in range(nb_channels):
-        kdata_PT=kdata_with_pt_corrected[ch]
-
-        all_radial_proj=[]
-
-        for j in range(nb_allspokes):
-            radial_proj=np.abs(np.fft.fft(kdata_PT[j,sl]))
-            all_radial_proj.append(radial_proj)
-
-        all_radial_proj=np.array(all_radial_proj)
-
-        all_radial_proj_all_ch.append(all_radial_proj)
-
-    kdata_all_channels_all_slices=np.load(filename_kdata)
-    all_radial_proj_all_ch_no_corr=[]
-    for ch in range(nb_channels):
-        kdata_PT=kdata_all_channels_all_slices[ch]
-        #finufft.nufft3d1(traj_PT[0][0],kdata_PT[0][0])
-
-        all_radial_proj=[]
-
-        for j in range(nb_allspokes):
-            radial_proj=np.abs((np.fft.fft((kdata_PT[j][sl]))))
-            all_radial_proj.append(radial_proj)
-
-        all_radial_proj=np.array(all_radial_proj)
-
-        all_radial_proj_all_ch_no_corr.append(all_radial_proj)
-
-
-
-    ch=np.random.randint(nb_channels)
-    #ch=ch_opt
-    #ch=6
-    #ch=33
-    print(ch)
-    plt.figure()
-    plt.title("Radial Projection Corrected from PT ch {} sl {}".format(ch,sl))
-    plt.imshow(all_radial_proj_all_ch[ch],vmin=0,vmax=0.001)
-    plt.savefig(str.split(filename,".dat") [0]+"_radial_proj_allspokes_ch{}_corrected.jpg".format(ch))
-
-    plt.figure()
-    plt.title("Radial Projection ch {} sl {}".format(ch,sl))
-    plt.imshow(all_radial_proj_all_ch_no_corr[ch],vmin=0,vmax=0.001)
-    plt.savefig(str.split(filename,".dat") [0]+"_radial_proj_allspokes_ch{}.jpg".format(ch))
-
-    plt.close("all")
-
-
-    print("Extracting displacement from Pilot Tone amplitude")
-    from scipy.signal import savgol_filter
-    from statsmodels.nonparametric.smoothers_lowess import lowess
-
-    
-
-    with Pool(24) as pool:
-        # perform calculations
-        results = pool.map(task_Ashat_filtered, range(nb_channels))
-
-    As_hat_normalized=np.zeros(As_hat.shape)
-    As_hat_filtered=np.zeros(As_hat.shape)
-
-    for ch in tqdm(range(nb_channels)):
-        As_hat_filtered[ch] =np.load("./fshat/Ashat_filtered_ch{}.npy".format(ch))
-        As_hat_normalized[ch] = np.load("./fshat/As_hat_normalized_ch{}.npy".format(ch))
-
-
-    data_for_pca=np.moveaxis(As_hat_filtered,-1,-2)
-    data_for_pca=data_for_pca.reshape(nb_channels,-1)
-
-    from sklearn.decomposition import PCA
-    pca=PCA(n_components=1)
-    pca.fit(data_for_pca.T)
-    pcs=pca.components_@data_for_pca
-    movement_all_slices=pcs[0]
-
-    np.save(filename_displacement_pt,movement_all_slices.reshape(nb_part,nb_allspokes))
-
-    return
-
-
-@machine
-@set_parameter("filename", str, default=None, description="Siemens K-space data .dat file")
-@set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
-@set_parameter("nspokes_per_z_encoding", int, default=8, description="Number of spokes per z encoding")
-@set_parameter("nb_ref_lines", int, default=24, description="Number of reference lines for Grappa calibration")
-@set_parameter("suffix",str,default="")
-def build_data_for_grappa_simulation(filename,undersampling_factor,nspokes_per_z_encoding,nb_ref_lines,suffix):
-
-    filename_kdata = str.split(filename, ".dat")[0] + suffix + "_kdata.npy"
-    filename_save = str.split(filename, ".dat")[0] + ".npy"
-    filename_seqParams = str.split(filename, ".dat")[0] + "_seqParams.pkl"
-    filename_save_us = str.split(filename, ".dat")[0] + "_us{}ref{}_us.npy".format(undersampling_factor, nb_ref_lines)
-    filename_save_calib = str.split(filename, ".dat")[0] + "_us{}ref{}_calib.npy".format(undersampling_factor,
-                                                                                         nb_ref_lines)
-
-
-    folder = "/".join(str.split(filename, "/")[:-1])
-
-    if str.split(filename_seqParams, "/")[-1] not in os.listdir(folder):
-
-        twix = twixtools.read_twix(filename, optional_additional_maps=["sWipMemBlock", "sKSpace"],
-                                   optional_additional_arrays=["SliceThickness"])
-
-        alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
-        x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
-        y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
-        z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
-
-        nb_slices = twix[-1]["hdr"]["Meas"]["lPartitions"]
-
-        dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV, "z_FOV": z_FOV, "US": undersampling_factor,
-                          "nb_slices": nb_slices, "nb_ref_lines": nb_ref_lines}
-
-        del alFree
-
-        file = open(filename_seqParams, "wb")
-        pickle.dump(dico_seqParams, file)
-        file.close()
-
-    else:
-        file = open(filename_seqParams, "rb")
-        dico_seqParams = pickle.load(file)
-
-    nb_segments = dico_seqParams["alFree"][4]
-    nb_slices = dico_seqParams["nb_slices"]
-    del dico_seqParams
-
-    if str.split(filename_save_us, "/")[-1] not in os.listdir(folder):
-
-        if str.split(filename_save, "/")[-1] not in os.listdir(folder):
-            if 'twix' not in locals():
-                print("Re-loading raw data")
-                twix = twixtools.read_twix(filename)
-            mdb_list = twix[-1]['mdb']
-            data = []
-
-            for i, mdb in enumerate(mdb_list):
-                if mdb.is_image_scan():
-                    data.append(mdb)
-
-            data = np.array([mdb.data for mdb in data])
-            data = data.reshape((-1, int(nb_segments)) + data.shape[1:])
-            data = np.moveaxis(data, 2, 0)
-            data = np.moveaxis(data, 2, 1)
-
-            try:
-                del twix
-            except:
-                pass
-
-            np.save(filename_save, data)
-
-        else:
-            data = np.load(filename_save)
-
-        data = groupby(data, nspokes_per_z_encoding, axis=1)
-        # data=np.array(data)
-
-        all_lines = np.arange(nb_slices).astype(int)
-
-        shift = 0
-        data_calib = []
-
-        for ts in tqdm(range(len(data))):
-            lines_measured = all_lines[shift::undersampling_factor]
-            lines_to_estimate = list(set(all_lines) - set(lines_measured))
-            center_line = int(nb_slices / 2)
-            lines_ref = all_lines[(center_line - int(nb_ref_lines / 2)):(center_line + int(nb_ref_lines / 2))]
-
-            data_calib.append(data[ts][:, :, lines_ref, :])
-            data[ts] = data[ts][:, :, lines_measured, :]
-            shift += 1
-            shift = shift % (undersampling_factor)
-
-        data_calib = np.array(data_calib)
-        data = np.array(data)
-
-        data = np.moveaxis(data, 0, 1)
-        data_calib = np.moveaxis(data_calib, 0, 1)
-
-        data = data.reshape(data.shape[0], -1, data.shape[-2], data.shape[-1])
-        data_calib = data_calib.reshape(data_calib.shape[0], -1, data_calib.shape[-2], data_calib.shape[-1])
-
-        np.save(filename_save_us, data)
-        np.save(filename_save_calib, data_calib)
-
-
-    try:
-        del twix
-    except:
-        pass
-
-
-    return
-
-
-@machine
-@set_parameter("filename_save_calib", str, default=None, description="Calib data .npy file")
-@set_parameter("nspokes_per_z_encoding", int, default=8, description="Number of spokes per z encoding")
-@set_parameter("len_kery", int, default=2, description="Number of lines in each kernel")
-@set_parameter("len_kerx", int, default=7, description="Number of readout points in each line of the kernel")
-@set_parameter("calibration_mode", ["Standard","Tikhonov"], default="Standard", description="Calibration methodology for Grappa")
-@set_parameter("lambd", float, default=None, description="Regularization parameter")
-@set_parameter("suffix", str, default="")
-def calib_and_estimate_kdata_grappa(filename_save_calib, nspokes_per_z_encoding,len_kery,len_kerx,calibration_mode,lambd,suffix):
-    data_calib = np.load(filename_save_calib)
-    nb_channels=data_calib.shape[0]
-
-    filename_split = str.split(filename_save_calib,"_us")
-    filename = filename_split[0]+".dat"
-    filename_seqParams = str.split(filename, ".dat")[0] + "_seqParams.pkl"
-
-    filename_split_params = filename_split[1].split("ref")
-    undersampling_factor = int(filename_split_params[0])
-    nb_ref_lines=int(filename_split_params[1].split("_")[0])
-
-    filename_save_us = str.split(filename, ".dat")[0] + "_us{}ref{}_us.npy".format(undersampling_factor, nb_ref_lines)
-
-    if calibration_mode == "Tikhonov":
-        if lambd is None:
-            lambd = 0.01
-            print("Warning : lambd was not set for Tikhonov calibration. Using default value of 0.01")
-
-        str_lambda=str(lambd)
-        str_lambda=str.split(str_lambda,".")
-        str_lambda="_".join(str_lambda)
-        filename_kdata_grappa = str.split(filename, ".dat")[0] + "_{}_{}_us{}ref{}_kdata_grappa.npy".format(calibration_mode,str_lambda,undersampling_factor,
-                                                                                                  nb_ref_lines)
-
-        filename_currtraj_grappa = str.split(filename, ".dat")[0] + "_{}_{}_us{}ref{}_currtraj_grappa.npy".format(calibration_mode,str_lambda,
-            undersampling_factor, nb_ref_lines)
-
-    else:
-        filename_kdata_grappa = str.split(filename, ".dat")[0] + "_{}__us{}ref{}_kdata_grappa.npy".format(
-            undersampling_factor,
-            nb_ref_lines)
-
-        filename_currtraj_grappa = str.split(filename, ".dat")[0] + "_us{}ref{}_currtraj_grappa.npy".format(
-            undersampling_factor, nb_ref_lines)
-
-    print(filename_kdata_grappa)
-
-    file = open(filename_seqParams, "rb")
-    dico_seqParams = pickle.load(file)
-    file.close()
-
-    data = np.load(filename_save_us)
-
-    indices_kz = list(range(1, (undersampling_factor)))
-
-    kernel_y = np.arange(len_kery)
-    kernel_x = np.arange(-(int(len_kerx / 2) - 1), int(len_kerx / 2))
-
-    pad_y = ((np.array(kernel_y) < 0).sum(), (np.array(kernel_y) > 0).sum())
-    pad_x = ((np.array(kernel_x) < 0).sum(), (np.array(kernel_x) > 0).sum())
-
-    data_calib_padded = np.pad(data_calib, ((0, 0), (0, 0), pad_y, pad_x), mode="constant")
-    data_padded = np.pad(data, ((0, 0), (0, 0), pad_y, pad_x), mode="constant")
-
-    kdata_all_channels_completed_all_ts = []
-    curr_traj_completed_all_ts = []
-
-    replace_calib_lines = True
-    useGPU = True
-
-    shift=0
-
-    nb_segments = dico_seqParams["alFree"][4]
-    nb_allspokes= nb_segments
-    npoint=data.shape[-1]
-    nb_slices = dico_seqParams["nb_slices"]
-
-    meas_sampling_mode = dico_seqParams["alFree"][12]
-    if meas_sampling_mode == 1:
-        incoherent = False
-        mode = None
-    elif meas_sampling_mode == 2:
-        incoherent = True
-        mode = "old"
-    elif meas_sampling_mode == 3:
-        incoherent = True
-        mode = "new"
-
-    radial_traj_all = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=1, npoint=npoint, nb_slices=nb_slices,
-                               incoherent=incoherent, mode=mode, nspoke_per_z_encoding=nspokes_per_z_encoding)
-    traj_all = radial_traj_all.get_traj().reshape(nb_allspokes, nb_slices, npoint, 3)
-
-    all_lines = np.arange(nb_slices).astype(int)
-
-
-    for ts in tqdm(range(nb_allspokes)):
-
-        if ((ts) % nspokes_per_z_encoding == 0) and (not (ts == 0)):
-            shift += 1
-            shift = shift % (undersampling_factor)
-
-        lines_measured = all_lines[shift::undersampling_factor]
-        lines_to_estimate = list(set(all_lines) - set(lines_measured))
-        center_line = int(nb_slices / 2)
-        lines_ref = all_lines[(center_line - int(nb_ref_lines / 2)):(center_line + int(nb_ref_lines / 2))]
-
-        calib_lines = []
-        calib_lines_ref_indices = []
-        for i in indices_kz:
-            current_calib_lines = []
-            current_calib_lines_ref_indices = []
-
-            for j in range(undersampling_factor * (kernel_y[0]) + i,
-                           nb_ref_lines - (kernel_y[-1] * undersampling_factor - i)):
-                current_calib_lines.append(lines_ref[j])
-                current_calib_lines_ref_indices.append(j)
-            calib_lines.append(current_calib_lines)
-            calib_lines_ref_indices.append(current_calib_lines_ref_indices)
-
-        calib_lines = np.array(calib_lines).astype(int)
-        calib_lines_ref_indices = np.array(calib_lines_ref_indices).astype(int)
-
-        weights = np.zeros((len(calib_lines), nb_channels, nb_channels * len(kernel_x) * len(kernel_y)),
-                           dtype=data_calib.dtype)
-
-        for index_ky_target in range(len(calib_lines_ref_indices)):
-            calib_lines_ref_index = calib_lines_ref_indices[index_ky_target]
-            F_target_calib = data_calib[:, ts, calib_lines_ref_indices[index_ky_target], :]  # .reshape(nb_channels,-1)
-            F_source_calib = np.zeros((nb_channels * len(kernel_x) * len(kernel_y),) + F_target_calib.shape[1:],
-                                      dtype=F_target_calib.dtype)
-
-            for i, l in enumerate(calib_lines_ref_indices[index_ky_target]):
-                l0 = l - (index_ky_target + 1)
-                for j in range(npoint):
-                    local_indices = np.stack(np.meshgrid(pad_y[0] + l0 + undersampling_factor * np.array(kernel_y),
-                                                         pad_x[0] + j + np.array(kernel_x)), axis=0).T.reshape(-1, 2)
-                    F_source_calib[:, i, j] = data_calib_padded[:, ts, local_indices[:, 0],
-                                              local_indices[:, 1]].flatten()
-
-            F_source_calib = F_source_calib.reshape(nb_channels * len(kernel_x) * len(kernel_y), -1)
-            F_target_calib = F_target_calib.reshape(nb_channels, -1)
-
-            if calibration_mode == "Tikhonov":
-                F_source_calib_cupy = cp.asarray(F_source_calib)
-                F_target_calib_cupy = cp.asarray(F_target_calib)
-                weights[index_ky_target] = (F_target_calib_cupy @ F_source_calib_cupy.conj().T @ cp.linalg.inv(
-                    F_source_calib_cupy @ F_source_calib_cupy.conj().T + lambd * cp.eye(
-                        F_source_calib_cupy.shape[0]))).get()
-
-            else:
-                weights[index_ky_target] = (
-                            cp.asarray(F_target_calib) @ cp.linalg.pinv(cp.asarray(F_source_calib))).get()
-
-
-        F_target_estimate = np.zeros((nb_channels, len(lines_to_estimate), npoint), dtype=data.dtype)
-
-        for i, l in (enumerate(lines_to_estimate)):
-            F_source_estimate = np.zeros((nb_channels * len(kernel_x) * len(kernel_y), npoint),
-                                         dtype=data_calib.dtype)
-            index_ky_target = (l) % (undersampling_factor) - 1
-            try:
-                l0 = np.argwhere(np.array(lines_measured - shift) == l - (index_ky_target + 1))[0][0]
-            except:
-                print("Line {} for Ts {} not estimated".format(l, ts))
-                continue
-            for j in range(npoint):
-                local_indices = np.stack(
-                    np.meshgrid(pad_y[0] + l0 + np.array(kernel_y), pad_x[0] + j + np.array(kernel_x)),
-                    axis=0).T.reshape(-1, 2)
-                F_source_estimate[:, j] = data_padded[:, ts, local_indices[:, 0], local_indices[:, 1]].flatten()
-            F_target_estimate[:, i, :] = weights[index_ky_target] @ F_source_estimate
-
-        F_target_estimate[:,:,:pad_x[0]]=0
-        F_target_estimate[:, :, -pad_x[1]:] = 0
-
-        max_measured_line=np.max(lines_measured)
-        min_measured_line=np.min(lines_measured)
-
-        for i, l in (enumerate(lines_to_estimate)):
-            if (l<min_measured_line)or(l>max_measured_line):
-                F_target_estimate[:, i, :]=0
-
-        for i, l in (enumerate(lines_to_estimate)):
-            if l in lines_ref.flatten():
-                ind_line = np.argwhere(lines_ref.flatten() == l).flatten()[0]
-                F_target_estimate[:, i, :] = data_calib[:, ts, ind_line, :]
-
-        kdata_all_channels_completed = np.concatenate([data[:, ts], F_target_estimate], axis=1)
-        curr_traj_estimate = traj_all[ts, lines_to_estimate, :, :]
-        curr_traj_completed = np.concatenate([traj_all[ts,lines_measured,:,:], curr_traj_estimate],
-                                             axis=0)
-
-        kdata_all_channels_completed = kdata_all_channels_completed.reshape((nb_channels, -1))
-        curr_traj_completed = curr_traj_completed.reshape((-1, 3))
-
-        kdata_all_channels_completed_all_ts.append(kdata_all_channels_completed)
-        curr_traj_completed_all_ts.append(curr_traj_completed)
-
-    kdata_all_channels_completed_all_ts = np.array(kdata_all_channels_completed_all_ts)
-    kdata_all_channels_completed_all_ts = np.moveaxis(kdata_all_channels_completed_all_ts, 0, 1)
-    curr_traj_completed_all_ts = np.array(curr_traj_completed_all_ts)
-
-    for ts in tqdm(range(curr_traj_completed_all_ts.shape[0])):
-        ind = np.lexsort((curr_traj_completed_all_ts[ts][:, 0], curr_traj_completed_all_ts[ts][:, 2]))
-        curr_traj_completed_all_ts[ts] = curr_traj_completed_all_ts[ts, ind, :]
-        kdata_all_channels_completed_all_ts[:, ts] = kdata_all_channels_completed_all_ts[:, ts, ind]
-
-    kdata_all_channels_completed_all_ts = kdata_all_channels_completed_all_ts.reshape(nb_channels, nb_allspokes,
-                                                                                      nb_slices, npoint)
-    #kdata_all_channels_completed_all_ts[:, :, :, :pad_x[0]] = 0
-    #kdata_all_channels_completed_all_ts[:, :, :, -pad_x[1]:] = 0
-    #kdata_all_channels_completed_all_ts[:, :, :((undersampling_factor - 1) * pad_y[0]), :] = 0
-    #kdata_all_channels_completed_all_ts[:, :, (-(undersampling_factor - 1) * pad_y[1]):, :] = 0
-
-    np.save(filename_kdata_grappa, kdata_all_channels_completed_all_ts)
-    np.save(filename_currtraj_grappa, curr_traj_completed_all_ts)
-
-    return
-
-
-@machine
-@set_parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
-@set_parameter("filename_traj", str, default=None, description="Saved traj data .npy file (useful for traj not covered by Trajectory object e.g. Grappa rebuilt data")
-@set_parameter("sampling_mode", ["stack","incoherent_old","incoherent_new"], default="stack", description="Radial sampling strategy over partitions")
-@set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
-@set_parameter("dens_adj", bool, default=False, description="Memory usage")
-@set_parameter("suffix",str,default="")
-@set_parameter("nb_rep_center_part", int, default=1, description="Center partition repetitions")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
+@ma.parameter("filename_traj", str, default=None, description="Saved traj data .npy file (useful for traj not covered by Trajectory object e.g. Grappa rebuilt data")
+@ma.parameter("sampling_mode", ["stack","incoherent_old","incoherent_new"], default="stack", description="Radial sampling strategy over partitions")
+@ma.parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
+@ma.parameter("dens_adj", bool, default=False, description="Memory usage")
+@ma.parameter("suffix",str,default="")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Center partition repetitions")
 def build_coil_sensi(filename_kdata,filename_traj,sampling_mode,undersampling_factor,dens_adj,suffix,nb_rep_center_part):
 
     kdata_all_channels_all_slices = np.load(filename_kdata)
@@ -1307,16 +597,16 @@ def build_coil_sensi(filename_kdata,filename_traj,sampling_mode,undersampling_fa
     return
 
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
-@set_parameter("filename_traj", str, default=None, description="Saved traj data .npy file (useful for traj not covered by Trajectory object e.g. Grappa rebuilt data")
-@set_parameter("sampling_mode", ["stack","incoherent_old","incoherent_new"], default="stack", description="Radial sampling strategy over partitions")
-@set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
-@set_parameter("ntimesteps", int, default=175, description="Number of timesteps for the image serie")
-@set_parameter("use_GPU", bool, default=True, description="Use GPU")
-@set_parameter("light_mem", bool, default=True, description="Memory usage")
-@set_parameter("dens_adj", bool, default=False, description="Density adjustment for radial data")
-@set_parameter("suffix",str,default="")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
+@ma.parameter("filename_traj", str, default=None, description="Saved traj data .npy file (useful for traj not covered by Trajectory object e.g. Grappa rebuilt data")
+@ma.parameter("sampling_mode", ["stack","incoherent_old","incoherent_new"], default="stack", description="Radial sampling strategy over partitions")
+@ma.parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
+@ma.parameter("ntimesteps", int, default=175, description="Number of timesteps for the image serie")
+@ma.parameter("use_GPU", bool, default=True, description="Use GPU")
+@ma.parameter("light_mem", bool, default=True, description="Memory usage")
+@ma.parameter("dens_adj", bool, default=False, description="Density adjustment for radial data")
+@ma.parameter("suffix",str,default="")
 def build_volumes(filename_kdata,filename_traj,sampling_mode,undersampling_factor,ntimesteps,use_GPU,light_mem,dens_adj,suffix):
 
     kdata_all_channels_all_slices = np.load(filename_kdata)
@@ -1373,317 +663,27 @@ def build_volumes(filename_kdata,filename_traj,sampling_mode,undersampling_facto
     return
 
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
-@set_parameter("filename_nav_save", str, default=None, description="Saved K-space navigator data .npy file")
-@set_parameter("filename_traj", str, default=None, description="Saved traj data .npy file (useful for traj not covered by Trajectory object e.g. Grappa rebuilt data")
-@set_parameter("sampling_mode", ["stack","incoherent_old","incoherent_new"], default="stack", description="Radial sampling strategy over partitions")
-@set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
-@set_parameter("light_mem", bool, default=True, description="Memory usage")
-@set_parameter("dens_adj", bool, default=False, description="Density adjustment for radial data")
-@set_parameter("suffix",str,default="")
-def build_data_autofocus(filename_kdata,filename_traj,filename_nav_save,sampling_mode,undersampling_factor,light_mem,dens_adj,suffix):
-    # b1_all_slices=b1_full
 
-    print("Loading Files...")
-    kdata_all_channels_all_slices = np.load(filename_kdata)
 
-    print("Loading coil sensi")
-    filename_b1 = ("_b1" + suffix).join(str.split(filename_kdata, "_kdata"))
-    b1_all_slices = np.load(filename_b1)
-
-    print("Parsing parameters")
-    filename_kdata_modif = ("_kdata_modif" + suffix).join(str.split(filename_kdata, "_kdata"))
-    #print(filename_volume)
-    sampling_mode_list = str.split(sampling_mode, "_")
-
-    if sampling_mode_list[0] == "stack":
-        incoherent = False
-    else:
-        incoherent = True
-
-    if len(sampling_mode_list) > 1:
-        mode = sampling_mode_list[1]
-    else:
-        mode = "old"
-
-    data_shape = kdata_all_channels_all_slices.shape
-    nb_segments = data_shape[1]
-    npoint = data_shape[-1]
-    nb_slices = data_shape[2] * undersampling_factor
-    image_size = (nb_slices, int(npoint / 2), int(npoint / 2))
-
-    print(data_shape)
-
-    print("Processing Nav Data...")
-    data_for_nav = np.load(filename_nav_save)
-
-    print(data_for_nav.shape)
-
-    nb_allspokes = nb_segments
-    nb_slices = data_for_nav.shape[1]
-    nb_gating_spokes=data_for_nav.shape[2]
-    nb_channels = data_for_nav.shape[0]
-    npoint_for_nav = data_for_nav.shape[-1]
-
-
-    all_timesteps = np.arange(nb_allspokes)
-    nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
-
-    nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint_for_nav, nb_slices=nb_slices,
-                           applied_timesteps=list(nav_timesteps))
-
-    nav_image_size = (npoint_for_nav,)
-
-    print("Rebuilding Nav Images...")
-    #print("Calculating Sensitivity Maps for Nav Images...")
-    #b1_nav = calculate_sensitivity_map_3D_for_nav(data_for_nav, nav_traj, res=16, image_size=nav_image_size)
-    #b1_nav_mean = np.mean(b1_nav, axis=(1, 2))
-
-    #images_nav = np.abs(
-    #    simulate_nav_images_multi(data_for_nav, nav_traj, nav_image_size, b1=b1_nav_mean))
-
-    best_ch=9
-    images_nav = np.abs(simulate_nav_images_multi(np.expand_dims(data_for_nav[best_ch],axis=0), nav_traj, nav_image_size, b1=None))
-
-
-
-
-    #print("Estimating Movement...")
-    shifts = list(range(-30, 30))
-    #bottom = -shifts[0]
-    #top = nav_image_size[0]-shifts[-1]
-
-    bottom = 40
-    top=120
-    displacements = calculate_displacement(images_nav, bottom, top, shifts, lambda_tv=0.00)
-
-    if filename_traj is None:
-        radial_traj = Radial3D(total_nspokes=nb_allspokes, undersampling_factor=undersampling_factor, npoint=npoint,
-                               nb_slices=nb_slices, incoherent=incoherent, mode=mode)
-    else:
-        curr_traj_completed_all_ts=np.load(filename_traj)
-        radial_traj=Radial3D(total_nspokes=nb_allspokes, undersampling_factor=1, npoint=npoint,
-                                  nb_slices=nb_slices, incoherent=incoherent, mode=mode)
-        radial_traj.traj = curr_traj_completed_all_ts
-
-    spoke_groups = np.argmin(np.abs(
-        np.arange(0, nb_segments * nb_slices, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_slices,
-                                                                          nb_segments / nb_gating_spokes).reshape(1,
-                                                                                                                  -1)),
-        axis=-1)
-
-    if not (nb_segments == nb_gating_spokes):
-        spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
-        spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
-            nb_segments / nb_gating_spokes / 2) + 1:] - 1
-        spoke_groups = spoke_groups.flatten()
-
-    displacements_extrapolated = np.array([displacements[j] for j in spoke_groups])
-
-    #x = np.arange(-1.0, 1.01, 0.1)
-    #y = np.array([0])
-    #z = np.arange(-0.5, 0.51, 0.1)
-
-    #print("Calculating Entropy for all movement ranges...")
-    #entropy_all = []
-    #ent_min = np.inf
-    #for dx in tqdm(x):
-    #    entropy_xzy = []
-    #    for dz in z:
-    #        entropy_zy=[]
-    #        for dy in y:
-    #            alpha = np.array([dx, dy, dz])
-    #            dr = np.expand_dims(alpha, axis=(0, 1)) * np.expand_dims(
-    #                displacements_extrapolated.reshape(nb_slices, nb_segments).T, axis=(2))
-    #            modif = np.exp(
-    #                1j * np.sum((radial_traj.get_traj().reshape(nb_segments, -1, npoint, 3) * np.expand_dims(dr, axis=2)),
-    #                            axis=-1))
-    #            data_modif = kdata_all_channels_all_slices * modif
-    #            volume_full_modif = \
-    #                simulate_radial_undersampled_images_multi(data_modif, radial_traj, image_size, b1=b1_all_slices,
-    #                                                          density_adj=dens_adj, ntimesteps=1, useGPU=False,
-    #                                                          normalize_kdata=False, memmap_file=None,
-    #                                                          light_memory_usage=light_mem,
-    #                                                          normalize_volumes=True)[0]
-    #            ent = calc_grad_entropy(volume_full_modif)
-    #            entropy_zy.append(ent)
-    #            if ent < ent_min:
-    #                modif_final = modif
-    #                alpha_min = alpha
-    #                ent_min = ent
-
-    #        entropy_xzy.append(entropy_zy)
-    #    entropy_all.append(entropy_xzy)
-
-    #print("Alpha min: {}".format(alpha_min))
-
-    #filename_entropy = str.split(filename_kdata, ".npy")[0] + "_entropy.npy"
-    #np.save(filename_entropy,np.array(entropy_all))
-
-    ###########################
-    #X, Y = np.meshgrid(x, y)
-
-
-    #fig = plt.figure(figsize=(15, 15))
-    #ax = fig.gca(projection='3d')
-    #surf = ax.plot_surface(X, Y, np.array(entropy_all), rstride=1, cstride=1, cmap='hot', linewidth=0,
-    #                       antialiased=False)
-
-    #filename_entropy_image = str.split(filename_kdata, ".npy")[0] + "_entropy.jpg"
-    #plt.savefig(filename_entropy_image)
-    ##################################""
-
-    alpha = np.array([1, 0, 0])
-    dr = np.expand_dims(alpha, axis=(0, 1)) * np.expand_dims(
-                    displacements_extrapolated.reshape(nb_slices, nb_segments).T, axis=(2))
-    modif_final = np.exp(
-                    1j * np.sum((radial_traj.get_traj().reshape(nb_segments, -1, npoint, 3) * np.expand_dims(dr, axis=2)),
-                                axis=-1))
-
-    np.save(filename_kdata_modif, kdata_all_channels_all_slices*modif_final)
-
-
-    # gif=[]
-    # sl=int(volumes_all.shape[1]/2)
-    # volume_for_gif = np.abs(volumes_all[:,sl,:,:])
-    # for i in range(volume_for_gif.shape[0]):
-    #     img = Image.fromarray(np.uint8(volume_for_gif[i]/np.max(volume_for_gif[i])*255), 'L')
-    #     img=img.convert("P")
-    #     gif.append(img)
-    #
-    # filename_gif = str.split(filename_volume,".npy") [0]+".gif"
-    # gif[0].save(filename_gif,save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
-
-    return
-
-
-
-@machine
-@set_parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
-@set_parameter("filename_df_groups_global", str, default=None, description="Number of spokes per cycle per acquisition")
-@set_parameter("filename_categories_global", str, default=None, description="Cycle for each spoke for each acquisition")
-@set_parameter("nb_gating_spokes", int, default=50, description="Number of gating spokes per repetition")
-@set_parameter("files_config", type=Config, default=None, description="Kdata filenames to use for aggregation")
-@set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
-
-
-def aggregate_kdata(filename_kdata,filename_df_groups_global,filename_categories_global,files_config,nb_gating_spokes,undersampling_factor):
-    # b1_all_slices=b1_full
-
-    print("Loading Files...")
-    kdata_all_channels_all_slices = np.load(filename_kdata)
-
-    folder = "/".join(str.split(filename_kdata, "/")[:-1])
-    base_folder="/".join(str.split(filename_kdata, "/")[:-2])
-
-    bin_width=int(str.split(filename_categories_global, "bw")[-1][:-4])
-
-
-
-    data_shape = kdata_all_channels_all_slices.shape
-    nb_channels=data_shape[0]
-    nb_segments = data_shape[1]
-    npoint = data_shape[-1]
-    nb_slices = data_shape[2] * undersampling_factor
-    nb_part = nb_slices
-
-    print(data_shape)
-    print(folder)
-
-    files = files_config["files"]
-    print(files)
-
-    filename_kdata_final = base_folder + str.split(files[0], "_1.dat")[0] + "_bw{}_aggregated_kdata.npy".format(
-        bin_width)
-
-    categories_global = np.load(filename_categories_global)
-    df_groups_global = pd.read_pickle(filename_df_groups_global)
-
-    idx_cat = df_groups_global.displacement.idxmax()
-
-    kdata_final = np.zeros(data_shape, dtype=kdata_all_channels_all_slices.dtype)
-    del kdata_all_channels_all_slices
-    count = np.zeros((nb_segments, nb_slices))
-
-    for i, localfile in tqdm(enumerate(files)):
-
-        filename = base_folder + localfile
-
-        retained_nav_spokes = (categories_global[i] == idx_cat)
-
-        retained_nav_spokes_index = np.argwhere(retained_nav_spokes).flatten()
-        spoke_groups = np.argmin(np.abs(
-            np.arange(0, nb_segments * nb_part, 1).reshape(-1, 1) - np.arange(0, nb_segments * nb_part,
-                                                                              nb_segments / nb_gating_spokes).reshape(1,
-                                                                                                                      -1)),
-                                 axis=-1)
-
-        if not (nb_segments == nb_gating_spokes):
-            spoke_groups = spoke_groups.reshape(nb_slices, nb_segments)
-            spoke_groups[:-1, -int(nb_segments / nb_gating_spokes / 2) + 1:] = spoke_groups[:-1, -int(
-                nb_segments / nb_gating_spokes / 2) + 1:] - 1
-            spoke_groups = spoke_groups.flatten()
-
-        included_spokes = np.array([s in retained_nav_spokes_index for s in spoke_groups])
-
-        included_spokes[::int(nb_segments / nb_gating_spokes)] = False
-        included_spokes = included_spokes.reshape(nb_slices, nb_segments)
-        included_spokes = included_spokes.T
-
-        filename_kdata = str.split(filename, ".dat")[0] + "_kdata{}.npy".format("")
-
-        print("Loading kdata for file {}".format(localfile))
-        kdata_all_channels_all_slices = np.load(filename_kdata)
-        #print(included_spokes.shape)
-        kdata_all_channels_all_slices = kdata_all_channels_all_slices.reshape(nb_channels, nb_segments, nb_slices,
-                                                                              npoint)
-        print("Aggregating kdata for file {}".format(localfile))
-        for ch in tqdm(range(nb_channels)):
-            kdata_final[ch] += (np.expand_dims(1 * included_spokes, axis=-1)) * kdata_all_channels_all_slices[ch]
-        count += (1 * included_spokes)
-
-    count[count == 0] = 1
-
-    print("Normalizing Final Kdata")
-    for ch in tqdm(range(nb_channels)):
-        kdata_final[ch] /= np.expand_dims(count, axis=(-1))
-
-    np.save(filename_kdata_final, kdata_final)
-
-
-    # gif=[]
-    # sl=int(volumes_all.shape[1]/2)
-    # volume_for_gif = np.abs(volumes_all[:,sl,:,:])
-    # for i in range(volume_for_gif.shape[0]):
-    #     img = Image.fromarray(np.uint8(volume_for_gif[i]/np.max(volume_for_gif[i])*255), 'L')
-    #     img=img.convert("P")
-    #     gif.append(img)
-    #
-    # filename_gif = str.split(filename_volume,".npy") [0]+".gif"
-    # gif[0].save(filename_gif,save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
-
-    return
-
-@machine
-@set_parameter("file_deformation", str, default=None, description="Deformation map file")
-@set_parameter("gr", int, default=4, description="Motion state")
-@set_parameter("sl", int, default=None, description="Slice")
+@ma.machine()
+@ma.parameter("file_deformation", str, default=None, description="Deformation map file")
+@ma.parameter("gr", int, default=4, description="Motion state")
+@ma.parameter("sl", int, default=None, description="Slice")
 def plot_deformation(file_deformation,gr,sl):
     deformation_map=np.load(file_deformation)[:,gr,sl]
     file_deformation_plot=str.split(file_deformation,".npy")[0]+"_gr{}sl{}.jpg".format(gr,sl)
     plot_deformation_map(deformation_map,save_file=file_deformation_plot)
 
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
-@set_parameter("filename_traj", str, default=None, description="Saved traj data .npy file (useful for traj not covered by Trajectory object e.g. Grappa rebuilt data")
-@set_parameter("sampling_mode", ["stack","incoherent_old","incoherent_new"], default="stack", description="Radial sampling strategy over partitions")
-@set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
-@set_parameter("dens_adj", bool, default=False, description="Memory usage")
-@set_parameter("threshold", float, default=None, description="Threshold for mask")
-@set_parameter("suffix",str,default="")
-@set_parameter("nb_rep_center_part", int, default=1, description="Center partition repetitions")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="Saved K-space data .npy file")
+@ma.parameter("filename_traj", str, default=None, description="Saved traj data .npy file (useful for traj not covered by Trajectory object e.g. Grappa rebuilt data")
+@ma.parameter("sampling_mode", ["stack","incoherent_old","incoherent_new"], default="stack", description="Radial sampling strategy over partitions")
+@ma.parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
+@ma.parameter("dens_adj", bool, default=False, description="Memory usage")
+@ma.parameter("threshold", float, default=None, description="Threshold for mask")
+@ma.parameter("suffix",str,default="")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Center partition repetitions")
 def build_mask(filename_kdata,filename_traj,sampling_mode,undersampling_factor,dens_adj,threshold,suffix,nb_rep_center_part):
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
@@ -1747,11 +747,11 @@ def build_mask(filename_kdata,filename_traj,sampling_mode,undersampling_factor,d
     return
 
 
-@machine
-@set_parameter("filename_volume", str, default=None, description="Singular volumes")
-@set_parameter("l", int, default=0, description="Singular volume number for mask calculation")
-@set_parameter("threshold", float, default=None, description="Threshold for mask")
-@set_parameter("it", int, default=3, description="Binary closing iterations")
+@ma.machine()
+@ma.parameter("filename_volume", str, default=None, description="Singular volumes")
+@ma.parameter("l", int, default=0, description="Singular volume number for mask calculation")
+@ma.parameter("threshold", float, default=None, description="Threshold for mask")
+@ma.parameter("it", int, default=3, description="Binary closing iterations")
 def build_mask_from_singular_volume(filename_volume,l,threshold,it):
     filename_mask="".join(filename_volume.split(".npy"))+"_l{}_mask.npy".format(l)
     volumes=np.load(filename_volume)
@@ -1794,8 +794,8 @@ def build_mask_from_singular_volume(filename_volume,l,threshold,it):
     return
 
 
-@machine
-@set_parameter("filename_mask", str, default=None, description="Mask")
+@ma.machine()
+@ma.parameter("filename_mask", str, default=None, description="Mask")
 def build_mask_full_from_mask(filename_mask):
     filename_mask_full=filename_mask.split("_mask.npy")[0]+"_mask_full.npy"
     mask=np.load(filename_mask)
@@ -1831,76 +831,50 @@ def build_mask_full_from_mask(filename_mask):
 
     return
 
-@machine
-@set_parameter("filename_volume", str, default=None, description="MRF time series")
-@set_parameter("filename_mask", str, default=None, description="Mask")
-@set_parameter("filename_b1", str, default=None, description="B1")
-@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
-@set_parameter("filename", str, default=None, description="filename for parameters")
-@set_parameter("undersampling_factor", int, default=None, description="Kz undersampling factor")
-@set_parameter("dictfile", str, default=None, description="Dictionary file")
-@set_parameter("dictfile_light", str, default=None, description="Light Dictionary file for 2 steps matching")
-@set_parameter("optimizer_config",type=Config,default=DEFAULT_OPT_CONFIG_2STEPS,description="Optimizer parameters")
-@set_parameter("slices",str,default=None,description="Slices to consider for pattern matching")
-@set_parameter("file_deformation", str, default=None, description="File with deformation map for motion correction")
-@set_parameter("nb_rep_center_part", int, default=1, description="Center partition repetitions")
-def build_maps(filename_volume,filename_mask,filename_b1,filename_weights,filename,undersampling_factor,dictfile,dictfile_light,optimizer_config,slices,file_deformation,nb_rep_center_part):
 
+@ma.machine()
+@ma.parameter("filename_volume", str, default=None, description="MRF time series")
+@ma.parameter("filename_mask", str, default=None, description="Mask")
+@ma.parameter("dico_full_file", str, default=None, description="Dictionary file")
+@ma.parameter("optimizer_config",type=ma.Config(),default=DEFAULT_OPT_CONFIG_2STEPS,description="Optimizer parameters")
+@ma.parameter("slices",str,default=None,description="Slices to consider for pattern matching")
+@ma.parameter("config_clustering",str,default=None,description=".json file with clustering windows for 2 steps matching")
+def build_maps(filename_volume,filename_mask,dico_full_file,optimizer_config,slices,config_clustering):
+    '''
+    builds MRF maps using bi-component dictionary matching (Slioussarenko et al. MRM 2024)
+    inputs:
+    filename_volume - .npy file containing time serie of undersampled volumes size ntimesteps x nb_slices x npoint/2 x npoint/2 (numpy array)
+    filename_mask - .npy file containing mask of size nb_slices x npoint/2 x npoint/2 (numpy array)
+    dico_full_file - light and full dictionaries with headers (.pkl)
+    optimizer_config - optimization options
+    slices - list of slices to consider for pattern matching (e.g. "0,1,2,3")
+    volumes_type - "raw" or "singular" - depending on the input volumes ("raw" time serie of undersampled volumes / "singular" singular volumes)
+    
 
+    outputs:
+    all_maps: tuple containing for all iterations 
+            (maps - dictionary with parameter maps for all keys
+             mask - numpy array
+             cost map (OPTIONAL)
+             phase map - numpy array (OPTIONAL)
+             proton density map - numpy array (OPTIONAL)
+             matched_signals - numpy array  (OPTIONAL))
+
+    '''
+
+    try:
+        import cupy
+    except:
+        print("Could not import cupy - not using gpu")
+        useGPU=False
+    
     opt_type = optimizer_config["type"]
     print(opt_type)
-    print(filename_volume)
+
+
     file_map = "".join(filename_volume.split(".npy")) + "_{}_MRF_map.pkl".format(opt_type)
-    volumes_all = np.load(filename_volume)
-
-    print(filename_mask)
-    mask=np.load(filename_mask)
-
-    print(volumes_all.shape)
-
-    if file_deformation is not None:
-        deformation_map=np.load(file_deformation)
-    else:
-        deformation_map=None
-
-    ##filename_mask_full = filename_mask.split(".npy")[0] + "_full.npy"
-    ##x_min=np.min(np.argwhere(mask>0)[:,1])
-    ##y_min=np.min(np.argwhere(mask>0)[:,2])
-
-    ##x_max=np.max(np.argwhere(mask>0)[:,1])
-    ##y_max=np.max(np.argwhere(mask>0)[:,2])
-
-    ##mask[:,x_min:(x_max+1),y_min:(y_max+1)]=1
-    ##np.save(filename_mask_full,mask)
-
-    if volumes_all.ndim>=5:# first bin is the respiratory bin
-        offset=1
-    else:
-        offset=0
-    ntimesteps=volumes_all.shape[offset]
-    print("There are {} volumes to match for the fingerprinting".format(ntimesteps))
-
-    if filename is None:
-        filename = filename_volume.split("_volumes.npy")[0] + ".dat"
-
-
-    folder = "/".join(str.split(filename, "/")[:-1])
-    dico_seqParams = build_dico_seqParams(filename, folder)
-
-
-    x_FOV = dico_seqParams["x_FOV"]
-    y_FOV = dico_seqParams["y_FOV"]
-    z_FOV = dico_seqParams["z_FOV"]
-    #nb_part = dico_seqParams["nb_part"]
-
-
-    npoint=2*volumes_all.shape[offset+2]
-    nb_slices=volumes_all.shape[offset+1]
-    dx = x_FOV / (npoint / 2)
-    dy = y_FOV / (npoint / 2)
-    dz = z_FOV / nb_slices
-
-
+    volumes_all_slices = np.load(filename_volume)
+    masks_all_slices=np.load(filename_mask)
 
     if slices is not None:
         sl = np.array(slices.split(",")).astype(int)
@@ -1911,267 +885,29 @@ def build_maps(filename_volume,filename_mask,filename_b1,filename_weights,filena
             sl=[str(s) for s in sl]
             file_map = "".join(filename_volume.split(".npy")) + "_sl{}_{}_MRF_map.pkl".format("_".join(sl),opt_type)
 
-    print(file_map)
-
-    # if (slices is not None) and ("spacing" in slices) and not(len(slices["spacing"])==0):
-    #     spacing=slices["spacing"]
-    # else:
-    #     spacing = [5, 1, 1]
-
-
 
     threshold_pca=optimizer_config["pca"]
     split=optimizer_config["split"]
     useGPU = optimizer_config["useGPU"]
+    volumes_type=optimizer_config["volumes_type"]
+    return_cost = optimizer_config["return_cost"]
+    clustering_windows=config_clustering
 
-    if "niter" in optimizer_config.keys():
-        niter=optimizer_config["niter"]
-    else:
-        niter=0
+    optimizer = SimpleDictSearch(mask=masks_all_slices, split=split, pca=True,
+                                                threshold_pca=threshold_pca,threshold_ff=1.1,return_cost=return_cost,useGPU_dictsearch=useGPU,volumes_type=volumes_type,clustering_windows=clustering_windows)
+                
+    all_maps=optimizer.search_patterns_test_multi_2_steps_dico(dico_full_file,volumes_all_slices)
 
-    print(opt_type)
-
-    if opt_type=="CF":
-        optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=None, split=split, pca=True,
-                                     threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
-                                     useGPU_simulation=False, gen_mode="other")
-        all_maps = optimizer.search_patterns_test(dictfile, volumes_all)
-
-    elif opt_type=="Matrix":
-        optimizer = SimpleDictSearch(mask=mask, niter=0, seq=None, trajectory=None, split=split, pca=True,
-                                 threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
-                                 useGPU_simulation=False, gen_mode="other")
-        all_maps = optimizer.search_patterns_matrix(dictfile, volumes_all)
-
-    elif opt_type=="Brute":
-        
-        if "volumes_type" in optimizer_config:
-            volumes_type=optimizer_config["volumes_type"]
-        else:
-            volumes_type="Standard"
-
-        if volumes_type=="Singular":
-
-            print("Projecting dictionary on singular basis")
-        
-            L0=ntimesteps
-            print(dictfile)
-            filename_phi=str.split(dictfile,".dict") [0]+"_phi_L0_{}.npy".format(L0)
-
-            if filename_phi not in os.listdir():
-                #mrfdict = dictsearch.Dictionary()
-
-                print("Generating Phi : {}".format(filename_phi))
-                keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.1))
-
-                import dask.array as da
-                u,s,vh = da.linalg.svd(da.asarray(values))
-
-                vh=np.array(vh)
-                #s=np.array(s)
-
-                phi=vh[:L0]
-                np.save(filename_phi,phi.astype("complex64"))
-                #del mrfdict
-                del keys
-                del values
-                del u
-                del s
-                del vh
-            else:
-                phi=np.load(filename_phi)
-
-
-            mrfdict = dictmodel.Dictionary()
-            mrfdict.load(dictfile, force=True)
-            keys = mrfdict.keys
-            array_water = mrfdict.values[:, :, 0]
-            array_fat = mrfdict.values[:, :, 1]
-            array_water_projected=array_water@phi.T.conj()
-            array_fat_projected=array_fat@phi.T.conj()
-            optimizer=BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=split, pca=True,
-                                    threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,n_clusters_dico=100,pruning=0.05
-                                    )
-            all_maps = optimizer.search_patterns((array_water_projected,array_fat_projected,keys), volumes_all)
-
-        else:
-            optimizer=BruteDictSearch(FF_list=np.arange(0,1.01,0.05),mask=mask,split=split, pca=True,
-                                    threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,n_clusters_dico=100,pruning=0.05
-                                    )
-            all_maps = optimizer.search_patterns(dictfile, volumes_all)
-
-
-    if opt_type=="CF_twosteps":
-        
-        
-
-        if "log" in optimizer_config:
-            log=optimizer_config["log"]
-        else:
-            log=False
-        optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=None, split=split, pca=True,
-                                     threshold_pca=threshold_pca, log=log, useGPU_dictsearch=useGPU,
-                                     useGPU_simulation=False, gen_mode="other",threshold_ff=0.9,dictfile_light=dictfile_light,ntimesteps=ntimesteps)
-        all_maps = optimizer.search_patterns_test_multi_2_steps_dico(dictfile, volumes_all)
-
-    elif opt_type=="CF_iterative":
-        niter=optimizer_config["niter"]
-        mu=optimizer_config["mu"]
-        if undersampling_factor is None:
-            undersampling_factor=optimizer_config["US"]
-        nspoke=optimizer_config["nspoke"]
-
-        if "use_navigator_dll" in dico_seqParams:
-            use_navigator_dll = dico_seqParams["use_navigator_dll"]
-
-        else:
-            use_navigator_dll=False
-        if use_navigator_dll:
-            meas_sampling_mode = dico_seqParams["alFree"][14]
-        else:
-            meas_sampling_mode = dico_seqParams["alFree"][12]
-
-        if meas_sampling_mode == 1:
-            incoherent = False
-            mode = None
-        elif meas_sampling_mode == 2:
-            incoherent = True
-            mode = "old"
-        elif meas_sampling_mode == 3:
-            incoherent = True
-            mode = "new"
-
-        print("incoherent {}".format(incoherent))
-
-        nb_segments = dico_seqParams["alFree"][4]
-
-
-        radial_traj = Radial3D(total_nspokes=nb_segments, undersampling_factor=undersampling_factor, npoint=npoint,
-                               nb_slices=nb_slices, incoherent=incoherent, mode=mode)
-
-        filename_b1 = filename_volume.split("_volumes.npy")[0] + "_b1.npy"
-        b1_all_slices=np.load(filename_b1)
-
-        if "mu_TV" not in optimizer_config:
-            optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=split, pca=True,
-                                         threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
-                                         useGPU_simulation=False, gen_mode="other",b1=b1_all_slices,mu=mu,ntimesteps=ntimesteps)
-        else:
-            if "weights_TV" not in optimizer_config:
-                optimizer_config["weights_TV"]=[1.0,0.0,0.0]
-
-            optimizer = SimpleDictSearch(mask=mask, niter=niter, seq=None, trajectory=radial_traj, split=split,
-                                         pca=True,
-                                         threshold_pca=threshold_pca, log=False, useGPU_dictsearch=useGPU,
-                                         useGPU_simulation=False, gen_mode="other", b1=b1_all_slices, mu=mu,
-                                         ntimesteps=int(nb_segments / nspoke),mu_TV=optimizer_config["mu_TV"],weights_TV=optimizer_config["weights_TV"])
-
-        all_maps = optimizer.search_patterns_test_multi(dictfile, volumes_all)
-
-
-    elif opt_type=="CF_iterative_2Dplus1":
-
-        
-        clustering=optimizer_config["clustering"]
-        niter=optimizer_config["niter"]
-        mu=optimizer_config["mu"]
-        mu_TV=optimizer_config["mu_TV"]
-        weights_TV=optimizer_config["weights_TV"]
-        nspoke=optimizer_config["nspoke"]
-        volumes_type=optimizer_config["volumes_type"]
-        return_matched_signals=optimizer_config["return_matched_signals"]
-        return_cost = optimizer_config["return_cost"]
-        radial_traj=Radial(total_nspokes=nspoke,npoint=npoint)
-        mu_bins=optimizer_config["mu_bins"]
-        if "log" in optimizer_config:
-            log=optimizer_config["log"]
-        else:
-            log=False
-
-        L0=ntimesteps
-        filename_phi=str.split(dictfile,".dict") [0]+"_phi_L0_{}.npy".format(L0)
-
-        if filename_phi not in os.listdir():
-            #mrfdict = dictsearch.Dictionary()
-
-            print("Generating Phi : {}".format(filename_phi))
-            keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.2))
-
-            import dask.array as da
-            u,s,vh = da.linalg.svd(da.asarray(values))
-
-            vh=np.array(vh)
-            #s=np.array(s)
-
-            phi=vh[:L0]
-            np.save(filename_phi,phi.astype("complex64"))
-            #del mrfdict
-            del keys
-            del values
-            del u
-            del s
-            del vh
-        else:
-            phi=np.load(filename_phi)
-
-        mrfdict = dictmodel.Dictionary()
-        mrfdict.load(dictfile, force=True)
-        keys = mrfdict.keys
-        array_water = mrfdict.values[:, :, 0]
-        array_fat = mrfdict.values[:, :, 1]
-        array_water_projected=array_water@phi.T.conj()
-        array_fat_projected=array_fat@phi.T.conj()
-
-        mrfdict_light = dictmodel.Dictionary()
-        mrfdict_light.load(dictfile_light, force=True)
-        keys_light = mrfdict_light.keys
-        array_water = mrfdict_light.values[:, :, 0]
-        array_fat = mrfdict_light.values[:, :, 1]
-        array_water_light_projected=array_water@phi.T.conj()
-        array_fat_light_projected=array_fat@phi.T.conj()
-
-        b1_all_slices=np.load(filename_b1)
-        if filename_weights is not None:
-            weights=np.load(filename_weights)
-        else:
-            weights=1
-
-        optimizer = SimpleDictSearch(mask=mask,niter=niter,seq=None,trajectory=radial_traj,split=split,pca=True,threshold_pca=threshold_pca,log=log,useGPU_dictsearch=useGPU,useGPU_simulation=False,gen_mode="other",movement_correction=False,cond=None,ntimesteps=ntimesteps,b1=b1_all_slices,threshold_ff=0.9,dictfile_light=(array_water_light_projected,array_fat_light_projected,keys_light),mu=1,mu_TV=mu_TV,weights_TV=weights_TV,weights=weights,volumes_type=volumes_type,return_matched_signals=return_matched_signals,return_cost=return_cost,clustering=clustering,mu_bins=mu_bins,deformation_map=deformation_map,nb_rep_center_part=nb_rep_center_part)
-        all_maps=optimizer.search_patterns_test_multi_2_steps_dico((array_water_projected,array_fat_projected,keys),volumes_all,retained_timesteps=None)
-
-
-
-
-    curr_file=file_map
-    file = open(curr_file, "wb")
-    pickle.dump(all_maps,file)
-    file.close()
-
-    for iter in list(all_maps.keys()):
-
-        map_rebuilt=all_maps[iter][0]
-        mask=all_maps[iter][1]
-
-        map_rebuilt["wT1"][map_rebuilt["ff"] > 0.7] = 0.0
-
-        keys_simu = list(map_rebuilt.keys())
-        values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
-        map_for_sim = dict(zip(keys_simu, values_simu))
-
-        #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
-        #map_Python.buildParamMap()
-
-
-        for key in ["ff","wT1","df","attB1"]:
-            file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
-            io.write(file_mha,map_for_sim[key],tags={"spacing":[dz,dx,dy]})
-
+    save_pickle(file_map,all_maps)
+    
     return
 
 
-@machine
-@set_parameter("file_map",str,default=None,description="map file (.pkl)")
-@set_parameter("file_ref",str,default=None,description="reference file for spacing (.mha)")
+
+
+@ma.machine()
+@ma.parameter("file_map",str,default=None,description="map file (.pkl)")
+@ma.parameter("file_ref",str,default=None,description="reference file for spacing (.mha)")
 def build_additional_maps(file_map,file_ref):
 
     curr_file=file_map
@@ -2207,10 +943,10 @@ def build_additional_maps(file_map,file_ref):
 
 
 
-@machine
-@set_parameter("file_map",str,default=None,description="map file (.pkl)")
-@set_parameter("config_image_maps",type=Config,default=None,description="Image Config")
-@set_parameter("suffix", str, default="", description="suffix")
+@ma.machine()
+@ma.parameter("file_map",str,default=None,description="map file (.pkl)")
+@ma.parameter("config_image_maps",type=ma.Config(),default=None,description="Image Config")
+@ma.parameter("suffix", str, default="", description="suffix")
 def generate_image_maps(file_map,config_image_maps,suffix):
     return_cost=config_image_maps["return_cost"]
     return_matched_signals=config_image_maps["return_matched_signals"]
@@ -2289,9 +1025,9 @@ def generate_image_maps(file_map,config_image_maps,suffix):
     return
 
 
-@machine
-@set_parameter("file_volume",str,default=None,description="volume file (.mha)")
-@set_parameter("l", int, default=0, description="Singular volume")
+@ma.machine()
+@ma.parameter("file_volume",str,default=None,description="volume file (.mha)")
+@ma.parameter("l", int, default=0, description="Singular volume")
 def extract_singular_volume_allbins(file_volume,l):
     file_volume_target=str.replace(file_volume,"volumes_singular","volume_singular_l{}".format(l))
     volumes=np.load(file_volume)
@@ -2300,9 +1036,9 @@ def extract_singular_volume_allbins(file_volume,l):
     return
 
 
-@machine
-@set_parameter("file_volume",str,default=None,description="volume file (.mha)")
-@set_parameter("gr", int, default=0, description="Motion bin state")
+@ma.machine()
+@ma.parameter("file_volume",str,default=None,description="volume file (.mha)")
+@ma.parameter("gr", int, default=0, description="Motion bin state")
 def extract_allsingular_volumes_bin(file_volume,gr):
     file_volume_target=str.replace(file_volume,"volumes_singular_allbins","volumes_singular_gr{}".format(gr))
     volumes=np.load(file_volume)
@@ -2310,16 +1046,16 @@ def extract_allsingular_volumes_bin(file_volume,gr):
     np.save(file_volume_target,volumes[gr,:])
     return
 
-@machine
-@set_parameter("file_volume",str,default=None,description="volume file (.mha)")
-@set_parameter("nb_gr",int,default=4,description="number of respiratory bins")
-@set_parameter("sl", int, default=None, description="Slice")
-@set_parameter("x", int, default=None, description="x")
-@set_parameter("y", int, default=None, description="y")
-@set_parameter("slice_res_factor", int, default=5, description="Factor between slice thickness and in plane resolution")
-@set_parameter("l", int, default=0, description="Singular volume")
-@set_parameter("metric", ["abs","phase","real","imag"], default="abs", description="Metric to plot")
-@set_parameter("single_volume", bool, default=False, description="One single volume - No bin or singular volume")
+@ma.machine()
+@ma.parameter("file_volume",str,default=None,description="volume file (.mha)")
+@ma.parameter("nb_gr",int,default=4,description="number of respiratory bins")
+@ma.parameter("sl", int, default=None, description="Slice")
+@ma.parameter("x", int, default=None, description="x")
+@ma.parameter("y", int, default=None, description="y")
+@ma.parameter("slice_res_factor", int, default=5, description="Factor between slice thickness and in plane resolution")
+@ma.parameter("l", int, default=0, description="Singular volume")
+@ma.parameter("metric", ["abs","phase","real","imag"], default="abs", description="Metric to plot")
+@ma.parameter("single_volume", bool, default=False, description="One single volume - No bin or singular volume")
 def generate_movement_gif(file_volume,nb_gr,sl,x,y,l,metric,slice_res_factor,single_volume):
     if sl is not None:
         filename_gif = str.split(file_volume.format(nb_gr), ".mha")[0] + "_sl{}_moving_singular.gif".format(sl)
@@ -2407,10 +1143,10 @@ def generate_movement_gif(file_volume,nb_gr,sl,x,y,l,metric,slice_res_factor,sin
     print(filename_gif)
     return
 
-@machine
-@set_parameter("file_map",str,default=None,description="map file (.pkl)")
-@set_parameter("config_image_maps",type=Config,default=None,description="Image Config")
-@set_parameter("suffix", str, default="", description="suffix")
+@ma.machine()
+@ma.parameter("file_map",str,default=None,description="map file (.pkl)")
+@ma.parameter("config_image_maps",type=ma.Config(),default=None,description="Image Config")
+@ma.parameter("suffix", str, default="", description="suffix")
 def generate_matchedvolumes_allgroups(file_map,config_image_maps,suffix):
     curr_file=file_map
     file = open(curr_file, "rb")
@@ -2452,10 +1188,10 @@ def generate_matchedvolumes_allgroups(file_map,config_image_maps,suffix):
 
 
 
-@machine
-@set_parameter("files_config",type=Config,default=None,description="Files to consider for aggregate kdata reconstruction")
-@set_parameter("disp_config",type=Config,default=None,description="Parameters for movement identification")
-@set_parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
+@ma.machine()
+@ma.parameter("files_config",type=ma.Config(),default=None,description="Files to consider for aggregate kdata reconstruction")
+@ma.parameter("disp_config",type=ma.Config(),default=None,description="Parameters for movement identification")
+@ma.parameter("undersampling_factor", int, default=1, description="Kz undersampling factor")
 def build_data_nacq(files_config,disp_config,undersampling_factor):
 
     base_folder = "./data/InVivo/3D"
@@ -2605,9 +1341,9 @@ def build_data_nacq(files_config,disp_config,undersampling_factor):
 
     return
 
-@machine
-@set_parameter("filename_nav_save", str, default=None, description="Navigator data")
-@set_parameter("seasonal_adj", bool, default=False, description="Seasonal adjustement")
+@ma.machine()
+@ma.parameter("filename_nav_save", str, default=None, description="Navigator data")
+@ma.parameter("seasonal_adj", bool, default=False, description="Seasonal adjustement")
 def build_navigator_images(filename_nav_save,seasonal_adj):
     filename_image_nav= filename_nav_save.split("_nav.npy")[0] + "_image_nav.npy"
     filename_image_nav_plot = filename_nav_save.split("_nav.npy")[0] + "_image_nav.jpg"
@@ -2660,39 +1396,39 @@ def build_navigator_images(filename_nav_save,seasonal_adj):
     return
 
 
-@machine
-@set_parameter("filename_nav_save", str, default=None, description="Navigator data")
-@set_parameter("filename_displacement", str, default=None, description="Displacement data")
-@set_parameter("nb_segments", int, default=1400, description="MRF Total Spoke number")
-@set_parameter("bottom", int, default=-30, description="Lowest displacement for displacement estimation")
-@set_parameter("top", int, default=30, description="Highest displacement for displacement estimation")
-@set_parameter("ntimesteps", int, default=175, description="Number of MRF images")
-@set_parameter("nspoke_per_z", int, default=8, description="number of spokes before partition jump when undersampling")
-@set_parameter("us", int, default=1, description="undersampling_factor")
-@set_parameter("incoherent", bool, default=True, description="3D sampling type")
-@set_parameter("lambda_tv", float, default=0.001, description="Temporal regularization for displacement estimation")
-@set_parameter("ch", int, default=None, description="channel if single channel estimation")
-@set_parameter("filename_bins", str, default=None, description="bins file if data is binned according to another scan")
-@set_parameter("filename_disp_respi", str, default=None, description="source displacement for distribution matching")
-@set_parameter("retained_categories", str, default=None, description="retained bins")
-@set_parameter("nbins", int, default=5, description="Number of motion states")
-@set_parameter("gating_only", bool, default=False, description="Weights for gating only and not for density compensation")
-@set_parameter("pad", int, default=10, description="Navigator images padding")
-@set_parameter("randomize", bool, default=False, description="Randomization for baseline navigator image for displacement calc")
-@set_parameter("equal_spoke_per_bin", bool, default=False, description="Distribute evenly the number of spokes per bin")
-@set_parameter("use_ml", bool, default=False, description="Use segment anything for motion estimation")
-@set_parameter("useGPU", bool, default=True, description="Use GPU")
-@set_parameter("force_recalc_disp", bool, default=True, description="Force calculation of displacement")
-@set_parameter("dct_frequency_filter", int, default=None, description="DCT filtering for displacement smoothing")
-@set_parameter("seasonal_adj", bool, default=False, description="Seasonal adjustement")
-@set_parameter("hard_interp", bool, default=False, description="Hard interpolation for inversion")
-@set_parameter("nb_rep_center_part", int, default=1, description="Central partition repetitions")
-@set_parameter("sim_us", int, default=1, description="Undersampling simulation")
-@set_parameter("us_file", str, default=None, description="Undersampling simulation from file ")
-@set_parameter("interp_bad_correl", bool, default=False, description="Interpolate displacements with neighbours when poorly correlated")
-@set_parameter("nav_res_factor", int, default=None, description="bins rescaling if resolution of binning navigator different from current input")
-@set_parameter("soft_weight", bool, default=False, description="use soft weight for full inspiration")
-@set_parameter("stddisp", float, default=None, description="outlier exclusion for irregular breathing")
+@ma.machine()
+@ma.parameter("filename_nav_save", str, default=None, description="Navigator data")
+@ma.parameter("filename_displacement", str, default=None, description="Displacement data")
+@ma.parameter("nb_segments", int, default=1400, description="MRF Total Spoke number")
+@ma.parameter("bottom", int, default=-30, description="Lowest displacement for displacement estimation")
+@ma.parameter("top", int, default=30, description="Highest displacement for displacement estimation")
+@ma.parameter("ntimesteps", int, default=175, description="Number of MRF images")
+@ma.parameter("nspoke_per_z", int, default=8, description="number of spokes before partition jump when undersampling")
+@ma.parameter("us", int, default=1, description="undersampling_factor")
+@ma.parameter("incoherent", bool, default=True, description="3D sampling type")
+@ma.parameter("lambda_tv", float, default=0.001, description="Temporal regularization for displacement estimation")
+@ma.parameter("ch", int, default=None, description="channel if single channel estimation")
+@ma.parameter("filename_bins", str, default=None, description="bins file if data is binned according to another scan")
+@ma.parameter("filename_disp_respi", str, default=None, description="source displacement for distribution matching")
+@ma.parameter("retained_categories", str, default=None, description="retained bins")
+@ma.parameter("nbins", int, default=5, description="Number of motion states")
+@ma.parameter("gating_only", bool, default=False, description="Weights for gating only and not for density compensation")
+@ma.parameter("pad", int, default=10, description="Navigator images padding")
+@ma.parameter("randomize", bool, default=False, description="Randomization for baseline navigator image for displacement calc")
+@ma.parameter("equal_spoke_per_bin", bool, default=False, description="Distribute evenly the number of spokes per bin")
+@ma.parameter("use_ml", bool, default=False, description="Use segment anything for motion estimation")
+@ma.parameter("useGPU", bool, default=True, description="Use GPU")
+@ma.parameter("force_recalc_disp", bool, default=True, description="Force calculation of displacement")
+@ma.parameter("dct_frequency_filter", int, default=None, description="DCT filtering for displacement smoothing")
+@ma.parameter("seasonal_adj", bool, default=False, description="Seasonal adjustement")
+@ma.parameter("hard_interp", bool, default=False, description="Hard interpolation for inversion")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Central partition repetitions")
+@ma.parameter("sim_us", int, default=1, description="Undersampling simulation")
+@ma.parameter("us_file", str, default=None, description="Undersampling simulation from file ")
+@ma.parameter("interp_bad_correl", bool, default=False, description="Interpolate displacements with neighbours when poorly correlated")
+@ma.parameter("nav_res_factor", int, default=None, description="bins rescaling if resolution of binning navigator different from current input")
+@ma.parameter("soft_weight", bool, default=False, description="use soft weight for full inspiration")
+@ma.parameter("stddisp", float, default=None, description="outlier exclusion for irregular breathing")
 
 def calculate_displacement_weights(filename_nav_save,filename_displacement,nb_segments,bottom,top,ntimesteps,us,incoherent,lambda_tv,ch,filename_bins,retained_categories,nbins,gating_only,pad,randomize,equal_spoke_per_bin,use_ml,useGPU,force_recalc_disp,dct_frequency_filter,seasonal_adj,hard_interp,nb_rep_center_part,sim_us,us_file,interp_bad_correl,nspoke_per_z,nav_res_factor,soft_weight,stddisp,filename_disp_respi):
 
@@ -2807,16 +1543,16 @@ def calculate_displacement_weights(filename_nav_save,filename_displacement,nb_se
     return
 
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("dens_adj", bool, default=False, description="Radial density adjustment")
-@set_parameter("n_comp", int, default=None, description="Number of virtual coils")
-@set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
-@set_parameter("invert_dens_adj", bool, default=False, description="Remove Radial density adjustment")
-@set_parameter("res",int,default=16,description="central points kept for coil sensitivity calc")
-@set_parameter("res_kz",int,default=None,description="central partitions kept for coil sensitivity calc when no coil compression")
-@set_parameter("cc_res",int,default=None,description="central points kept for coil compression")
-@set_parameter("cc_res_kz",int,default=None,description="central partitions kept for coil compression")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@ma.parameter("n_comp", int, default=None, description="Number of virtual coils")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@ma.parameter("invert_dens_adj", bool, default=False, description="Remove Radial density adjustment")
+@ma.parameter("res",int,default=16,description="central points kept for coil sensitivity calc")
+@ma.parameter("res_kz",int,default=None,description="central partitions kept for coil sensitivity calc when no coil compression")
+@ma.parameter("cc_res",int,default=None,description="central points kept for coil compression")
+@ma.parameter("cc_res_kz",int,default=None,description="central partitions kept for coil compression")
 def coil_compression(filename_kdata, dens_adj,n_comp,nb_rep_center_part,invert_dens_adj,res,cc_res,res_kz,cc_res_kz):
     kdata_all_channels_all_slices = np.load(filename_kdata)
     
@@ -2882,9 +1618,9 @@ def coil_compression(filename_kdata, dens_adj,n_comp,nb_rep_center_part,invert_d
 
 
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("dens_adj", bool, default=False, description="Radial density adjustment")
 def build_coil_images(filename_kdata,dens_adj):
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
@@ -2929,9 +1665,9 @@ def build_coil_images(filename_kdata,dens_adj):
 
     return
 
-@machine
-@set_parameter("file_bart", str, default=None, description="bart file")
-@set_parameter("sl", int, default=30, description="Slice number")
+@ma.machine()
+@ma.parameter("file_bart", str, default=None, description="bart file")
+@ma.parameter("sl", int, default=30, description="Slice number")
 def plot_image_grid_bart(file_bart,sl):
     file_plot=file_bart+".jpg"
     img_LLR=cfl.readcfl(file_bart)
@@ -2944,17 +1680,17 @@ def plot_image_grid_bart(file_bart,sl):
 
 
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("filename_seqParams", str, default=None, description="Seq params")
-@set_parameter("dens_adj", bool, default=False, description="Radial density adjustment")
-@set_parameter("lowmem", bool, default=False, description="Low memory nufft in bart")
-@set_parameter("n_comp", int, default=None, description="Number of virtual coils")
-@set_parameter("filename_cc", str, default=None, description="Filename for coil compression")
-@set_parameter("calc_sensi", bool, default=True, description="Calculate coil sensitivities")
-@set_parameter("iskushball", bool, default=False, description="3D Kushball sampling")
-@set_parameter("spoke_start", int, default=None, description="Starting segment to avoid inversion")
-@set_parameter("us", int, default=1, description="undersampling partitions")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_seqParams", str, default=None, description="Seq params")
+@ma.parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@ma.parameter("lowmem", bool, default=False, description="Low memory nufft in bart")
+@ma.parameter("n_comp", int, default=None, description="Number of virtual coils")
+@ma.parameter("filename_cc", str, default=None, description="Filename for coil compression")
+@ma.parameter("calc_sensi", bool, default=True, description="Calculate coil sensitivities")
+@ma.parameter("iskushball", bool, default=False, description="3D Kushball sampling")
+@ma.parameter("spoke_start", int, default=None, description="Starting segment to avoid inversion")
+@ma.parameter("us", int, default=1, description="undersampling partitions")
 def coil_compression_bart(filename_kdata,dens_adj,n_comp,filename_cc,calc_sensi,iskushball,filename_seqParams,spoke_start,us,lowmem):
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
@@ -3109,9 +1845,9 @@ def coil_compression_bart(filename_kdata,dens_adj,n_comp,filename_cc,calc_sensi,
 
 
 
-@machine
-@set_parameter("filename_volume", str, default=None, description="Volume time serie")
-@set_parameter("sl", str, default=None, description="Slices to select")
+@ma.machine()
+@ma.parameter("filename_volume", str, default=None, description="Volume time serie")
+@ma.parameter("sl", str, default=None, description="Slices to select")
 def select_slices_volume(filename_volume, sl):
     filename_volume_new=filename_volume.split(".npy")[0]+"_{}.npy".format(sl)
     
@@ -3124,19 +1860,19 @@ def select_slices_volume(filename_volume, sl):
     return
 
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("filename_b1", str, default=None, description="B1")
-@set_parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
-@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
-@set_parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
-@set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
-@set_parameter("dens_adj", bool, default=False, description="Radial density adjustment")
-@set_parameter("in_phase", bool, default=False, description="Select only in phase spokes from original MRF sequence")
-@set_parameter("out_phase", bool, default=False, description="Select only out of phase spokes from original MRF sequence")
-@set_parameter("full_volume", bool, default=False, description="Build one volume with all spokes (weights are not used)")
-@set_parameter("nb_rep_center_part", int, default=1, description="Center partition repetitions")
-@set_parameter("us", int, default=1, description="Undersampling")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
+@ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
+@ma.parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
+@ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
+@ma.parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@ma.parameter("in_phase", bool, default=False, description="Select only in phase spokes from original MRF sequence")
+@ma.parameter("out_phase", bool, default=False, description="Select only out of phase spokes from original MRF sequence")
+@ma.parameter("full_volume", bool, default=False, description="Build one volume with all spokes (weights are not used)")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Center partition repetitions")
+@ma.parameter("us", int, default=1, description="Undersampling")
 def build_volumes_allbins(filename_kdata,filename_b1,filename_pca,filename_weights,n_comp,gating_only,dens_adj,in_phase,out_phase,full_volume,nb_rep_center_part,us):
     '''
     Build single volume for each motion phase with all spokes (for motion deformation field estimation)
@@ -3221,24 +1957,24 @@ def build_volumes_allbins(filename_kdata,filename_b1,filename_pca,filename_weigh
     return
 
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("filename_b1", str, default=None, description="B1")
-@set_parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
-@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
-@set_parameter("filename_phi", str, default=None, description="MRF temporal basis components")
-@set_parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
-@set_parameter("L0", int, default=10, description="Number of retained temporal basis functions")
-@set_parameter("file_deformation_map", str, default=None, description="Deformation map from bin 0 to other bins")
-@set_parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
-@set_parameter("useGPU", bool, default=True, description="Use GPU")
-@set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
-@set_parameter("index_ref", int, default=0, description="Reference bin for deformation")
-@set_parameter("interp", str, default=None, description="Registration interpolation")
-@set_parameter("suffix", str, default="", description="Suffix")
-@set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
-@set_parameter("select_first_rep", bool, default=False, description="Select firt repetition of central partition only")
-@set_parameter("axis", int, default=None, description="Registration axis")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
+@ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
+@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
+@ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
+@ma.parameter("L0", int, default=10, description="Number of retained temporal basis functions")
+@ma.parameter("file_deformation_map", str, default=None, description="Deformation map from bin 0 to other bins")
+@ma.parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
+@ma.parameter("useGPU", bool, default=True, description="Use GPU")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@ma.parameter("index_ref", int, default=0, description="Reference bin for deformation")
+@ma.parameter("interp", str, default=None, description="Registration interpolation")
+@ma.parameter("suffix", str, default="", description="Suffix")
+@ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
+@ma.parameter("select_first_rep", bool, default=False, description="Select firt repetition of central partition only")
+@ma.parameter("axis", int, default=None, description="Registration axis")
 def build_volumes_singular_allbins_registered(filename_kdata, filename_b1, filename_pca, filename_weights,filename_phi,dictfile,L0,file_deformation_map,n_comp,useGPU,nb_rep_center_part,index_ref,interp,gating_only,suffix,select_first_rep,axis):
     '''
     Build singular volumes for MRF registered to the same motion phase and averaged (first iteration of the gradient descent for motion-corrected MRF)
@@ -3319,20 +2055,20 @@ def build_volumes_singular_allbins_registered(filename_kdata, filename_b1, filen
 
 
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("filename_b1", str, default=None, description="B1")
-@set_parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
-@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
-@set_parameter("filename_phi", str, default=None, description="MRF temporal basis components")
-@set_parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
-@set_parameter("L0", int, default=10, description="Number of retained temporal basis functions")
-@set_parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
-@set_parameter("useGPU", bool, default=True, description="Use GPU")
-@set_parameter("dens_adj", bool, default=False, description="Radial density adjustment")
-@set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
-@set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
-@set_parameter("us", int, default=1, description="Undersampling")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
+@ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
+@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
+@ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
+@ma.parameter("L0", int, default=10, description="Number of retained temporal basis functions")
+@ma.parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
+@ma.parameter("useGPU", bool, default=True, description="Use GPU")
+@ma.parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
+@ma.parameter("us", int, default=1, description="Undersampling")
 
 
 def build_volumes_singular_allbins(filename_kdata, filename_b1, filename_pca, filename_weights,filename_phi,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,us):
@@ -3465,10 +2201,10 @@ def build_volumes_singular_allbins(filename_kdata, filename_b1, filename_pca, fi
     return
 
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("filename_weights", str, default=None, description="Weights")
-@set_parameter("filename_seqParams", str, default=None, description="Seq params")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_weights", str, default=None, description="Weights")
+@ma.parameter("filename_seqParams", str, default=None, description="Seq params")
 def calculate_dcomp_voronoi_3D(filename_kdata,filename_weights,filename_seqParams):
     '''
     Build singular volumes for MRF for all motion bins
@@ -3558,10 +2294,10 @@ def calculate_dcomp_voronoi_3D(filename_kdata,filename_weights,filename_seqParam
 
 
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("filename_weights", str, default=None, description="Weights")
-@set_parameter("filename_seqParams", str, default=None, description="Seq params")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_weights", str, default=None, description="Weights")
+@ma.parameter("filename_seqParams", str, default=None, description="Seq params")
 def calculate_dcomp_pysap_3D(filename_kdata,filename_weights,filename_seqParams):
     '''
     Build singular volumes for MRF for all motion bins
@@ -3647,21 +2383,21 @@ def calculate_dcomp_pysap_3D(filename_kdata,filename_weights,filename_seqParams)
 
     return
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("filename_b1", str, default=None, description="B1")
-@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
-@set_parameter("filename_phi", str, default=None, description="MRF temporal basis components")
-@set_parameter("filename_seqParams", str, default=None, description="Seq params")
-@set_parameter("filename_dcomp", str, default=None, description="Seq params")
-@set_parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
-@set_parameter("L0", int, default=10, description="Number of retained temporal basis functions")
-@set_parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
-@set_parameter("useGPU", bool, default=True, description="Use GPU")
-@set_parameter("dens_adj", bool, default=False, description="Radial density adjustment")
-@set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
-@set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
-@set_parameter("incoherent", bool, default=False, description="Use GPU")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
+@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
+@ma.parameter("filename_seqParams", str, default=None, description="Seq params")
+@ma.parameter("filename_dcomp", str, default=None, description="Seq params")
+@ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
+@ma.parameter("L0", int, default=10, description="Number of retained temporal basis functions")
+@ma.parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
+@ma.parameter("useGPU", bool, default=True, description="Use GPU")
+@ma.parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
+@ma.parameter("incoherent", bool, default=False, description="Use GPU")
 
 def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weights,filename_dcomp,filename_phi,filename_seqParams,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,incoherent):
     '''
@@ -3828,22 +2564,22 @@ def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weig
 
 
 
-@machine
-@set_parameter("bart_command", str, default=None, description="bart pics command")
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("filename_b1", str, default=None, description="B1")
-@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
-@set_parameter("filename_phi", str, default=None, description="MRF temporal basis components")
-@set_parameter("filename_seqParams", str, default=None, description="Seq params")
-@set_parameter("filename_dcomp", str, default=None, description="Seq params")
-@set_parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
-@set_parameter("L0", int, default=10, description="Number of retained temporal basis functions")
-@set_parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
-@set_parameter("useGPU", bool, default=True, description="Use GPU")
-@set_parameter("log", bool, default=True, description="log bin results")
-@set_parameter("dens_adj", bool, default=False, description="Radial density adjustment")
-@set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
-@set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
+@ma.machine()
+@ma.parameter("bart_command", str, default=None, description="bart pics command")
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
+@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
+@ma.parameter("filename_seqParams", str, default=None, description="Seq params")
+@ma.parameter("filename_dcomp", str, default=None, description="Seq params")
+@ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
+@ma.parameter("L0", int, default=10, description="Number of retained temporal basis functions")
+@ma.parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
+@ma.parameter("useGPU", bool, default=True, description="Use GPU")
+@ma.parameter("log", bool, default=True, description="log bin results")
+@ma.parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
 def build_volumes_singular_allbins_3D_BART(bart_command,filename_kdata, filename_b1, filename_weights,filename_dcomp,filename_phi,filename_seqParams,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,log):
     '''
     Build singular volumes for MRF for all motion bins
@@ -3952,26 +2688,6 @@ def build_volumes_singular_allbins_3D_BART(bart_command,filename_kdata, filename
     b1_bart=np.moveaxis(b1_all_slices_2Dplus1_pca,0,-1)
     b1_bart=np.moveaxis(b1_bart,0,-2)
 
-    
-
-    # if nb_slices>nb_slices_b1:
-    #     us_b1 = int(nb_slices / nb_slices_b1)
-    #     print("B1 map on x{} coarser grid. Interpolating B1 map on a finer grid".format(us_b1))
-    #     b1_all_slices_2Dplus1_pca=interp_b1(b1_all_slices_2Dplus1_pca,us=us_b1,start=0)
-
-    #     print("Warning: pca_dict can only be interpolated when no coil compression for the moment")
-    #     pca_dict={}
-    #     for sl in range(nb_slices):
-    #         pca=PCAComplex(n_components_=nb_channels)
-    #         pca.explained_variance_ratio_=[1]
-    #         pca.components_=np.eye(nb_channels)
-    #         pca_dict[sl]=deepcopy(pca)
-
-    # if (nb_slices>nb_slices_b1)or(npoint_image>npoint_b1):
-        
-    #     print("Regridding b1")
-    #     new_shape=(nb_slices,npoint_image,npoint_image)
-    #     b1_all_slices_2Dplus1_pca=interp_b1_resize(b1_all_slices_2Dplus1_pca,new_shape)
 
 
     all_weights = np.load(filename_weights)
@@ -4074,19 +2790,19 @@ def build_volumes_singular_allbins_3D_BART(bart_command,filename_kdata, filename
     return
 
 
-@machine
-@set_parameter("bart_command", str, default="nlinv -w1. -d5 -i9", description="bart pics command")
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
-@set_parameter("filename_phi", str, default=None, description="MRF temporal basis components")
-@set_parameter("filename_seqParams", str, default=None, description="Seq params")
-@set_parameter("filename_dcomp", str, default=None, description="Seq params")
-@set_parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
-@set_parameter("L0", int, default=10, description="Number of retained temporal basis functions")
-@set_parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
-@set_parameter("useGPU", bool, default=True, description="Use GPU")
-@set_parameter("log", bool, default=True, description="log bin results")
-@set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
+@ma.machine()
+@ma.parameter("bart_command", str, default="nlinv -w1. -d5 -i9", description="bart pics command")
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
+@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
+@ma.parameter("filename_seqParams", str, default=None, description="Seq params")
+@ma.parameter("filename_dcomp", str, default=None, description="Seq params")
+@ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
+@ma.parameter("L0", int, default=10, description="Number of retained temporal basis functions")
+@ma.parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
+@ma.parameter("useGPU", bool, default=True, description="Use GPU")
+@ma.parameter("log", bool, default=True, description="log bin results")
+@ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
 def build_volumes_singular_allbins_3D_BART_inv(bart_command,filename_kdata, filename_weights,filename_dcomp,filename_phi,filename_seqParams,dictfile,L0,n_comp,useGPU,gating_only,log):
     '''
     Build singular volumes for MRF for all motion bins
@@ -4179,28 +2895,6 @@ def build_volumes_singular_allbins_3D_BART_inv(bart_command,filename_kdata, file
     if dictfile is not None:
         filename_phi = str.split(dictfile, ".dict")[0] + "_phi_L0_{}.npy".format(L0)
 
-    
-
-    
-
-    # if nb_slices>nb_slices_b1:
-    #     us_b1 = int(nb_slices / nb_slices_b1)
-    #     print("B1 map on x{} coarser grid. Interpolating B1 map on a finer grid".format(us_b1))
-    #     b1_all_slices_2Dplus1_pca=interp_b1(b1_all_slices_2Dplus1_pca,us=us_b1,start=0)
-
-    #     print("Warning: pca_dict can only be interpolated when no coil compression for the moment")
-    #     pca_dict={}
-    #     for sl in range(nb_slices):
-    #         pca=PCAComplex(n_components_=nb_channels)
-    #         pca.explained_variance_ratio_=[1]
-    #         pca.components_=np.eye(nb_channels)
-    #         pca_dict[sl]=deepcopy(pca)
-
-    # if (nb_slices>nb_slices_b1)or(npoint_image>npoint_b1):
-        
-    #     print("Regridding b1")
-    #     new_shape=(nb_slices,npoint_image,npoint_image)
-    #     b1_all_slices_2Dplus1_pca=interp_b1_resize(b1_all_slices_2Dplus1_pca,new_shape)
 
 
     all_weights = np.load(filename_weights)
@@ -4293,22 +2987,22 @@ def build_volumes_singular_allbins_3D_BART_inv(bart_command,filename_kdata, file
 
     return
 
-@machine
-@set_parameter("bart_command", str, default=None, description="bart pics command")
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("filename_b1", str, default=None, description="B1")
-@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
-@set_parameter("filename_phi", str, default=None, description="MRF temporal basis components")
-@set_parameter("filename_seqParams", str, default=None, description="Seq params")
-@set_parameter("filename_dcomp", str, default=None, description="Seq params")
-@set_parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
-@set_parameter("L0", int, default=10, description="Number of retained temporal basis functions")
-@set_parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
-@set_parameter("useGPU", bool, default=True, description="Use GPU")
-@set_parameter("log", bool, default=True, description="log bin results")
-@set_parameter("dens_adj", bool, default=False, description="Radial density adjustment")
-@set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
-@set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
+@ma.machine()
+@ma.parameter("bart_command", str, default=None, description="bart pics command")
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
+@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
+@ma.parameter("filename_seqParams", str, default=None, description="Seq params")
+@ma.parameter("filename_dcomp", str, default=None, description="Seq params")
+@ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
+@ma.parameter("L0", int, default=10, description="Number of retained temporal basis functions")
+@ma.parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
+@ma.parameter("useGPU", bool, default=True, description="Use GPU")
+@ma.parameter("log", bool, default=True, description="log bin results")
+@ma.parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
 def build_volumes_singular_allbins_3D_BART_v2(bart_command,filename_kdata, filename_b1, filename_weights,filename_dcomp,filename_phi,filename_seqParams,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,log):
     '''
     Build singular volumes for MRF for all motion bins
@@ -4417,28 +3111,6 @@ def build_volumes_singular_allbins_3D_BART_v2(bart_command,filename_kdata, filen
     b1_bart=np.moveaxis(b1_all_slices_2Dplus1_pca,0,-1)
     b1_bart=np.moveaxis(b1_bart,0,-2)
 
-    
-
-    # if nb_slices>nb_slices_b1:
-    #     us_b1 = int(nb_slices / nb_slices_b1)
-    #     print("B1 map on x{} coarser grid. Interpolating B1 map on a finer grid".format(us_b1))
-    #     b1_all_slices_2Dplus1_pca=interp_b1(b1_all_slices_2Dplus1_pca,us=us_b1,start=0)
-
-    #     print("Warning: pca_dict can only be interpolated when no coil compression for the moment")
-    #     pca_dict={}
-    #     for sl in range(nb_slices):
-    #         pca=PCAComplex(n_components_=nb_channels)
-    #         pca.explained_variance_ratio_=[1]
-    #         pca.components_=np.eye(nb_channels)
-    #         pca_dict[sl]=deepcopy(pca)
-
-    # if (nb_slices>nb_slices_b1)or(npoint_image>npoint_b1):
-        
-    #     print("Regridding b1")
-    #     new_shape=(nb_slices,npoint_image,npoint_image)
-    #     b1_all_slices_2Dplus1_pca=interp_b1_resize(b1_all_slices_2Dplus1_pca,new_shape)
-
-
     all_weights = np.load(filename_weights)
     nbins=all_weights.shape[0]
 
@@ -4523,44 +3195,27 @@ def build_volumes_singular_allbins_3D_BART_v2(bart_command,filename_kdata, filen
         volumes_singular_allbins.append(volume_singular_gr.squeeze())
 
 
-    #     # 'pics -i1 -e -S -d3 -b 5 -RL:$(bart bitmask 5):$(bart bitmask 0 1 2):0.01 -t'
-    #     if dens_adj:
-    #         tile_shape=list(kdata_bart_gr.shape[1:])
-    #         tile_shape[0]=1
-    #         tile_shape=tuple(tile_shape)
-    #         density_curr=np.expand_dims(density,tuple(range(1,len(tile_shape))))
-    #         density_curr=np.tile(density_curr,reps=tile_shape)
-    #         density_curr=density_curr[None,:]
-    #         cfl.writecfl("density",np.sqrt(density_curr))
-    #         volume_singular_gr=bart(1,bart_command+" -p density -t",traj_python_bart_gr,kdata_bart_gr,b1_bart)
-    #     else:
-    #         volume_singular_gr=bart(1,bart_command+" -t",traj_python_bart_gr,kdata_bart_gr,b1_bart)
-    #     volumes_singular_allbins.append(volume_singular_gr.squeeze())
-
-    #     if log:
-    #         np.save(filename_volumes_log.format(gr),np.moveaxis(volume_singular_gr.squeeze(),-1,0))
-
     volumes_singular_allbins=np.array(volumes_singular_allbins)
     volumes_singular_allbins=np.moveaxis(volumes_singular_allbins,-1,1)
     np.save(filename_volumes,volumes_singular_allbins)
 
     return
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("filename_seqParams", str, default=None, description="Seq params")
-@set_parameter("filename_b1", str, default=None, description="B1")
-@set_parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
-@set_parameter("filename_phi", str, default=None, description="MRF temporal basis components")
-@set_parameter("filename_weights", str, default=None, description="Weights file to simulate undersampling from binning")
-@set_parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
-@set_parameter("L0", int, default=10, description="Number of retained temporal basis functions")
-@set_parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
-@set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
-@set_parameter("useGPU", bool, default=True, description="Use GPU")
-@set_parameter("full_volume", bool, default=False, description="Build full volume")
-@set_parameter("in_phase", bool, default=False, description="MRF T1-FF : Select in phase spokes from original MRF sequence")
-@set_parameter("out_phase", bool, default=False, description="MRF T1-FF : Select out of phase spokes from original MRF sequence")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_seqParams", str, default=None, description="Seq params")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
+@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
+@ma.parameter("filename_weights", str, default=None, description="Weights file to simulate undersampling from binning")
+@ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
+@ma.parameter("L0", int, default=10, description="Number of retained temporal basis functions")
+@ma.parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@ma.parameter("useGPU", bool, default=True, description="Use GPU")
+@ma.parameter("full_volume", bool, default=False, description="Build full volume")
+@ma.parameter("in_phase", bool, default=False, description="MRF T1-FF : Select in phase spokes from original MRF sequence")
+@ma.parameter("out_phase", bool, default=False, description="MRF T1-FF : Select out of phase spokes from original MRF sequence")
 
 def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_phi,dictfile,L0,n_comp,nb_rep_center_part,useGPU,filename_weights,full_volume,in_phase,out_phase,filename_seqParams):
     '''
@@ -4760,12 +3415,12 @@ def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_ph
 
 
 
-@machine
-@set_parameter("filename_kdata", str, default=None, description="MRF raw data")
-@set_parameter("nbins", int, default=5, description="Number of bins")
-@set_parameter("nkept", int, default=4, description="Number of bins kept")
-@set_parameter("nb_gating_spokes", int, default=50, description="Gating spokes count")
-@set_parameter("equal_spoke_per_bin", bool, default=False, description="Equal number of spokes per bin")
+@ma.machine()
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("nbins", int, default=5, description="Number of bins")
+@ma.parameter("nkept", int, default=4, description="Number of bins kept")
+@ma.parameter("nb_gating_spokes", int, default=50, description="Gating spokes count")
+@ma.parameter("equal_spoke_per_bin", bool, default=False, description="Equal number of spokes per bin")
 def generate_random_weights(filename_kdata, nbins,nkept,nb_gating_spokes,equal_spoke_per_bin):
     '''
     Build singular volumes for MRF (no binning)
@@ -4855,31 +3510,31 @@ def generate_random_weights(filename_kdata, nbins,nkept,nb_gating_spokes,equal_s
     return
 
 
-@machine
-@set_parameter("filename_volume", str, default=None, description="MRF raw data")
-@set_parameter("filename_b1", str, default=None, description="B1")
-@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
-@set_parameter("filename_seqParams", str, default=None, description="Undersampling weights")
-@set_parameter("mu", float, default=1, description="Gradient step size")
-@set_parameter("mu_TV", float, default=1, description="Spatial Regularization")
-@set_parameter("weights_TV", [float,float,float], default=[1.0,0.2,0.2], description="Spatial Regularization Weights")
-@set_parameter("lambda_wav", float, default=0.5e-5, description="Lambda wavelet")
-@set_parameter("lambda_LLR", float, default=0.0005, description="Lambda LLR")
-@set_parameter("mu_bins", float, default=None, description="Interbin regularization")
-@set_parameter("niter", int, default=None, description="Number of iterations")
-@set_parameter("suffix", str, default="", description="Suffix")
-@set_parameter("gamma", float, default=None, description="Gamma Correction")
-@set_parameter("isgamma3D", bool, default=False, description="Do gamma intensity correction on the whole volume")
-@set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
-@set_parameter("dens_adj", bool, default=True, description="Use Radial density adjustment")
-@set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
-@set_parameter("select_first_rep", bool, default=False, description="Select firt repetition of central partition only")
-@set_parameter("use_wavelet", bool, default=False, description="Wavelet regularization instead of TV")
-@set_parameter("use_proximal_TV", bool, default=False, description="Proximal gradient (FISTA) instead of gradient descent")
-@set_parameter("us", int, default=1, description="Undersampling")
-@set_parameter("use_LLR", bool, default=False, description="LLR regularization instead of TV")
-@set_parameter("block", str, default="4,10,10", description="Block size for LLR regularization")
-@set_parameter("axis", int, default=None, description="Gamma correction axis - default 0")
+@ma.machine()
+@ma.parameter("filename_volume", str, default=None, description="MRF raw data")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
+@ma.parameter("filename_seqParams", str, default=None, description="Undersampling weights")
+@ma.parameter("mu", float, default=1, description="Gradient step size")
+@ma.parameter("mu_TV", float, default=1, description="Spatial Regularization")
+@ma.parameter("weights_TV", [float,float,float], default=[1.0,0.2,0.2], description="Spatial Regularization Weights")
+@ma.parameter("lambda_wav", float, default=0.5e-5, description="Lambda wavelet")
+@ma.parameter("lambda_LLR", float, default=0.0005, description="Lambda LLR")
+@ma.parameter("mu_bins", float, default=None, description="Interbin regularization")
+@ma.parameter("niter", int, default=None, description="Number of iterations")
+@ma.parameter("suffix", str, default="", description="Suffix")
+@ma.parameter("gamma", float, default=None, description="Gamma Correction")
+@ma.parameter("isgamma3D", bool, default=False, description="Do gamma intensity correction on the whole volume")
+@ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
+@ma.parameter("dens_adj", bool, default=True, description="Use Radial density adjustment")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@ma.parameter("select_first_rep", bool, default=False, description="Select firt repetition of central partition only")
+@ma.parameter("use_wavelet", bool, default=False, description="Wavelet regularization instead of TV")
+@ma.parameter("use_proximal_TV", bool, default=False, description="Proximal gradient (FISTA) instead of gradient descent")
+@ma.parameter("us", int, default=1, description="Undersampling")
+@ma.parameter("use_LLR", bool, default=False, description="LLR regularization instead of TV")
+@ma.parameter("block", str, default="4,10,10", description="Block size for LLR regularization")
+@ma.parameter("axis", int, default=None, description="Gamma correction axis - default 0")
 def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights,filename_seqParams,mu,mu_TV,mu_bins,niter,gamma,suffix,gating_only,dens_adj,nb_rep_center_part,select_first_rep,use_proximal_TV,use_wavelet,lambda_wav,us,use_LLR,lambda_LLR,block,axis,isgamma3D,weights_TV):
     filename_target=filename_volume.split("_volumes_allbins.npy")[0] + "_volumes_allbins_denoised{}.npy".format(suffix)
 
@@ -5204,22 +3859,22 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
     return
 
 
-@machine
-@set_parameter("filename_volume", str, default=None, description="MRF raw data")
-@set_parameter("filename_b1", str, default=None, description="B1")
-@set_parameter("filename_weights", str, default=None, description="Undersampling weights")
-@set_parameter("filename_seqParams", str, default=None, description="Undersampling weights")
-@set_parameter("mu", float, default=1, description="Gradient step size")
-@set_parameter("mu_TV", float, default=1, description="Spatial Regularization")
-@set_parameter("lambda_wav", float, default=0.5e-5, description="Lambda wavelet")
-@set_parameter("lambda_LLR", float, default=0.0005, description="Lambda LLR")
-@set_parameter("niter", int, default=None, description="Number of iterations")
-@set_parameter("suffix", str, default="", description="Suffix")
-@set_parameter("gamma", float, default=None, description="Gamma Correction")
-@set_parameter("dens_adj", bool, default=True, description="Use Radial density adjustment")
-@set_parameter("use_wavelet", bool, default=False, description="Wavelet regularization instead of TV")
-@set_parameter("use_LLR", bool, default=False, description="LLR regularization instead of TV")
-@set_parameter("block", str, default="2,10,10", description="Block size for LLR regularization")
+@ma.machine()
+@ma.parameter("filename_volume", str, default=None, description="MRF raw data")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_weights", str, default=None, description="Undersampling weights")
+@ma.parameter("filename_seqParams", str, default=None, description="Undersampling weights")
+@ma.parameter("mu", float, default=1, description="Gradient step size")
+@ma.parameter("mu_TV", float, default=1, description="Spatial Regularization")
+@ma.parameter("lambda_wav", float, default=0.5e-5, description="Lambda wavelet")
+@ma.parameter("lambda_LLR", float, default=0.0005, description="Lambda LLR")
+@ma.parameter("niter", int, default=None, description="Number of iterations")
+@ma.parameter("suffix", str, default="", description="Suffix")
+@ma.parameter("gamma", float, default=None, description="Gamma Correction")
+@ma.parameter("dens_adj", bool, default=True, description="Use Radial density adjustment")
+@ma.parameter("use_wavelet", bool, default=False, description="Wavelet regularization instead of TV")
+@ma.parameter("use_LLR", bool, default=False, description="LLR regularization instead of TV")
+@ma.parameter("block", str, default="2,10,10", description="Block size for LLR regularization")
 
 def build_volumes_iterative(filename_volume, filename_b1,filename_weights,filename_seqParams, mu, mu_TV, niter, gamma,
                                     suffix, dens_adj, use_wavelet, lambda_wav, use_LLR, lambda_LLR, block):
@@ -5554,30 +4209,30 @@ def build_volumes_iterative(filename_volume, filename_b1,filename_weights,filena
 
     return
 
-@machine
-@set_parameter("filename_volume", str, default=None, description="MRF raw data")
-@set_parameter("filename_b1", str, default=None, description="B1")
-@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
-@set_parameter("file_deformation", str, default=None, description="Deformation")
-@set_parameter("filename_seqParams", str, default=None, description="Undersampling weights")
-@set_parameter("index_ref", int, default=0, description="Registration reference")
-@set_parameter("mu", float, default=2, description="Gradient step size")
-@set_parameter("mu_TV", float, default=None, description="Spatial Regularization")
-@set_parameter("weights_TV", [float,float,float], default=[1.0,0.2,0.2], description="Spatial Regularization Weights")
-@set_parameter("niter", int, default=None, description="Number of iterations")
-@set_parameter("suffix", str, default="", description="Suffix")
-@set_parameter("gamma", float, default=None, description="Gamma Correction")
-@set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
-@set_parameter("dens_adj", bool, default=True, description="Use Radial density adjustment")
-@set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
-@set_parameter("beta", float, default=None, description="Relative importance of registered volumes vs volume of reference")
-@set_parameter("interp", str, default=None, description="Registration interpolation")
-@set_parameter("select_first_rep", bool, default=False, description="Select firt repetition of central partition only")
-@set_parameter("lambda_wav", float, default=0.5e-5, description="Lambda wavelet")
-@set_parameter("use_wavelet", bool, default=False, description="Wavelet regularization instead of TV")
-@set_parameter("us", int, default=1, description="Undersampling")
-@set_parameter("kept_bins",str,default=None,description="Bins to keep")
-@set_parameter("axis", int, default=None, description="Registration axis")
+@ma.machine()
+@ma.parameter("filename_volume", str, default=None, description="MRF raw data")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
+@ma.parameter("file_deformation", str, default=None, description="Deformation")
+@ma.parameter("filename_seqParams", str, default=None, description="Undersampling weights")
+@ma.parameter("index_ref", int, default=0, description="Registration reference")
+@ma.parameter("mu", float, default=2, description="Gradient step size")
+@ma.parameter("mu_TV", float, default=None, description="Spatial Regularization")
+@ma.parameter("weights_TV", [float,float,float], default=[1.0,0.2,0.2], description="Spatial Regularization Weights")
+@ma.parameter("niter", int, default=None, description="Number of iterations")
+@ma.parameter("suffix", str, default="", description="Suffix")
+@ma.parameter("gamma", float, default=None, description="Gamma Correction")
+@ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
+@ma.parameter("dens_adj", bool, default=True, description="Use Radial density adjustment")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@ma.parameter("beta", float, default=None, description="Relative importance of registered volumes vs volume of reference")
+@ma.parameter("interp", str, default=None, description="Registration interpolation")
+@ma.parameter("select_first_rep", bool, default=False, description="Select firt repetition of central partition only")
+@ma.parameter("lambda_wav", float, default=0.5e-5, description="Lambda wavelet")
+@ma.parameter("use_wavelet", bool, default=False, description="Wavelet regularization instead of TV")
+@ma.parameter("us", int, default=1, description="Undersampling")
+@ma.parameter("kept_bins",str,default=None,description="Bins to keep")
+@ma.parameter("axis", int, default=None, description="Registration axis")
 def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filename_weights,filename_seqParams,mu,mu_TV,niter,gamma,suffix,gating_only,dens_adj,nb_rep_center_part,file_deformation,index_ref,beta,interp,select_first_rep,lambda_wav,use_wavelet,us,kept_bins,axis,weights_TV):
     filename_target=filename_volume.split("_volumes_allbins.npy")[0] + "_volumes_allbins_registered_ref{}{}.npy".format(index_ref,suffix)
 
@@ -5709,50 +4364,10 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
     if not(incoherent):
         radial_traj = Radial(total_nspokes=nb_allspokes, npoint=npoint)
 
-    # elif mode=="Kushball":
-    #     radial_traj = Radial3D(total_nspokes=nb_allspokes,npoint=npoint,nb_slices=nb_slices,undersampling_factor=undersampling_factor,incoherent=incoherent,mode=mode)
+
     else:
         radial_traj = Radial3D(total_nspokes=nb_allspokes,npoint=npoint,nb_slices=nb_part,undersampling_factor=1,incoherent=incoherent,mode=mode)
 
-        # cond_us = np.zeros((nb_slices, nb_segments))
-
-        # cond_us = cond_us.reshape((nb_slices, -1, 8))
-
-        # curr_start = 0
-        # for sl in range(nb_slices):
-        #     cond_us[sl, curr_start::undersampling_factor, :] = 1
-        #     curr_start = curr_start + 1
-        #     curr_start = curr_start % undersampling_factor
-
-        # cond_us = cond_us.flatten()
-        # included_spokes = cond_us
-        # included_spokes = (included_spokes > 0)
-
-        # radial_traj_allspokes = Radial3D(total_nspokes=nb_segments, undersampling_factor=1, npoint=npoint,
-        #                                  nb_slices=nb_slices, incoherent=incoherent, mode=mode)
-
-        # from utils_reco import correct_mvt_kdata_zero_filled
-        # weights, retained_timesteps = correct_mvt_kdata_zero_filled(radial_traj_allspokes, included_spokes, 1)
-
-        # weights = weights.reshape(1, -1, 8, nb_slices)
-        # import math
-        # nb_rep = math.ceil(nb_slices / undersampling_factor)
-        # weights_us = np.zeros(shape=(1, 175, 8, nb_rep), dtype=weights.dtype)
-
-        # shift = 0
-
-        # for sl in range(nb_slices):
-        #     if int(sl / undersampling_factor) < nb_rep:
-        #         weights_us[:, shift::undersampling_factor, :, int(sl / undersampling_factor)] = weights[:,
-        #                                                                                         shift::undersampling_factor,
-        #                                                                                         :, sl]
-        #         shift += 1
-        #         shift = shift % (undersampling_factor)
-        #     else:
-        #         continue
-
-        # weights_us = weights_us.reshape(1, -1, nb_rep)
-        # weights_us = weights_us[..., None]
 
     if file_deformation is None:#identity by default
         X,Y=np.meshgrid(np.arange(npoint_image),np.arange(npoint_image))
@@ -5767,26 +4382,6 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
     nb_slices_def=deformation_map.shape[2]
     npoint_def=deformation_map.shape[-1]
 
-    # if nb_slices>nb_slices_def:
-    #     us_def = int(nb_slices / nb_slices_def)
-    #     print("Deformation map on x{} coarser grid. Interpolating deformation map on a finer grid".format(us_def))
-    #     deformation_map=interp_deformation(deformation_map,us=us_def,start=0)
-
-    # nb_slices_b1=b1_all_slices_2Dplus1_pca.shape[1]
-    # npoint_b1=b1_all_slices_2Dplus1_pca.shape[-1]
-    # nb_channels=b1_all_slices_2Dplus1_pca.shape[0]
-
-    # if nb_slices>nb_slices_b1:
-    #     us_b1 = int(nb_slices / nb_slices_b1)
-    #     print("B1 map on x{} coarser grid. Interpolating B1 map on a finer grid".format(us_b1))
-    #     b1_all_slices_2Dplus1_pca=interp_b1(b1_all_slices_2Dplus1_pca,us=us_b1,start=0)
-    #     print("Warning: pca_dict can only be interpolated when no coil compression for the moment")
-    #     pca_dict={}
-    #     for sl in range(nb_slices):
-    #         pca=PCAComplex(n_components_=nb_channels)
-    #         pca.explained_variance_ratio_=[1]
-    #         pca.components_=np.eye(nb_channels)
-    #         pca_dict[sl]=deepcopy(pca)
 
     if (nb_slices>nb_slices_def)or(npoint_image>npoint_def):
         print("Regridding deformation map")
@@ -6019,25 +4614,25 @@ def build_volumes_iterative_allbins_registered(filename_volume,filename_b1,filen
 
     return
 
-@machine
-@set_parameter("filename_volume", str, default=None, description="MRF raw data")
-@set_parameter("filename_b1", str, default=None, description="B1")
-@set_parameter("filename_weights", str, default=None, description="Motion bin weights")
-@set_parameter("filename_seqParams", str, default=None, description="Undersampling weights")
-@set_parameter("file_deformation", str, default=None, description="Deformation")
-@set_parameter("mu", float, default=1, description="Gradient step size")
-@set_parameter("mu_TV", float, default=None, description="Spatial Regularization")
-@set_parameter("niter", int, default=None, description="Number of iterations")
-@set_parameter("suffix", str, default="", description="Suffix")
-@set_parameter("gamma", float, default=None, description="Gamma Correction")
-@set_parameter("gating_only", bool, default=False, description="Use weights only for gating")
-@set_parameter("dens_adj", bool, default=True, description="Use Radial density adjustment")
-@set_parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
-@set_parameter("beta", float, default=None, description="Relative importance of registered volumes vs volume of reference")
-@set_parameter("interp", str, default=None, description="Registration interpolation")
-@set_parameter("select_first_rep", bool, default=False, description="Select firt repetition of central partition only")
-@set_parameter("us", int, default=1, description="Undersampling")
-@set_parameter("axis", int, default=None, description="Registration axis")
+@ma.machine()
+@ma.parameter("filename_volume", str, default=None, description="MRF raw data")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
+@ma.parameter("filename_seqParams", str, default=None, description="Undersampling weights")
+@ma.parameter("file_deformation", str, default=None, description="Deformation")
+@ma.parameter("mu", float, default=1, description="Gradient step size")
+@ma.parameter("mu_TV", float, default=None, description="Spatial Regularization")
+@ma.parameter("niter", int, default=None, description="Number of iterations")
+@ma.parameter("suffix", str, default="", description="Suffix")
+@ma.parameter("gamma", float, default=None, description="Gamma Correction")
+@ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
+@ma.parameter("dens_adj", bool, default=True, description="Use Radial density adjustment")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@ma.parameter("beta", float, default=None, description="Relative importance of registered volumes vs volume of reference")
+@ma.parameter("interp", str, default=None, description="Registration interpolation")
+@ma.parameter("select_first_rep", bool, default=False, description="Select firt repetition of central partition only")
+@ma.parameter("us", int, default=1, description="Undersampling")
+@ma.parameter("axis", int, default=None, description="Registration axis")
 def build_volumes_iterative_allbins_registered_allindex(filename_volume,filename_b1,filename_weights,filename_seqParams,mu,mu_TV,niter,gamma,suffix,gating_only,dens_adj,nb_rep_center_part,file_deformation,beta,interp,select_first_rep,us,axis):
     filename_target=filename_volume.split("_volumes_allbins.npy")[0] + "_volumes_allbins_registered_allindex{}.npy".format(suffix)
 
@@ -6286,44 +4881,32 @@ def build_volumes_iterative_allbins_registered_allindex(filename_volume,filename
     return
 
 
-@machine
-@set_parameter("sequence_file", str, default="mrf_sequence_adjusted.json", description="Sequence File")
-@set_parameter("reco", float, default=4, description="Recovery (s)")
-@set_parameter("min_TR_delay", float, default=1.14, description="TR delay (ms)")
-@set_parameter("dictconf", str, default="mrf_dictconf_Dico2_Invivo_overshoot.json", description="Dictionary grid")
-@set_parameter("dictconf_light", str, default="mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot.json", description="Coarse dictionary grid (clustering)")
-@set_parameter("inversion", bool, default=True, description="Use initial inversion")
-@set_parameter("TI", float, default=None, description="Inversion time (ms)")
-def generate_dictionaries(sequence_file,reco,min_TR_delay,dictconf,dictconf_light,inversion,TI):
-    with open(sequence_file,"r") as file:
-        sequence_config=json.load(file)
 
-    TR_list,FA_list,TE_list=load_sequence_file(sequence_file,reco,min_TR_delay/1000)
 
-    new_sequence_file=str.split(sequence_file,".json")[0]+"_{}.json".format(np.round(min_TR_delay,2))
-    print(new_sequence_file)
-    if TI is not None:
-        new_sequence_file = str.replace(new_sequence_file,".json","_TI{}.json".format("_".join(str.split(str(TI),"."))))
-
-    print(new_sequence_file)
-
-    if inversion:
-        generate=generate_epg_dico_T1MRFSS
-    else:
-        generate=generate_epg_dico_T1MRFSS_NoInv
-    generate(new_sequence_file,dictconf,FA_list,TE_list,reco,min_TR_delay/1000,TI=TI)
-    generate(new_sequence_file,dictconf_light,FA_list,TE_list,reco,min_TR_delay/1000,TI=TI)
+@ma.machine()
+@ma.parameter("sequence_file", str, default="../dico/mrf_sequence_adjusted.json", description="Sequence File")
+@ma.parameter("reco", float, default=4, description="Recovery (s)")
+@ma.parameter("min_TR_delay", float, default=1.14, description="TR delay (ms)")
+@ma.parameter("dictconf", str, default="../dico/mrf_dictconf_Dico2_Invivo_overshoot.json", description="Dictionary grid")
+@ma.parameter("dictconf_light", str, default="../dico/mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot.json", description="Coarse dictionary grid (clustering)")
+@ma.parameter("diconame", str, default="dico", description="Dictionary prefix name")
+@ma.parameter("inversion", bool, default=True, description="Use initial inversion")
+@ma.parameter("TI", float, default=8.32, description="Inversion time (ms)")
+@ma.parameter("is_build_phi", bool, default=True, description="Whether to build temporal basis phi")
+@ma.parameter("L0", int, default=6, description="Number of temporal components")
+def generate_dictionaries_T1FF(sequence_file,reco,min_TR_delay,dictconf,dictconf_light,inversion,TI, is_build_phi,L0,diconame):
+    generate_dictionaries(sequence_file,reco,min_TR_delay,dictconf,dictconf_light,TI=TI, dest=None,diconame=diconame,is_build_phi=is_build_phi,L0=L0)
     return
 
 
 
 
-@machine
-@set_parameter("filemap", str, default=None, description="MRF maps (.pkl)")
-@set_parameter("fileseq", str, default="mrf_sequence_adjusted.json", description="Sequence File")
-@set_parameter("spacing", [float,float,float], default=[1,1,5], description="Voxel size")
-@set_parameter("reorient", bool, default=True, description="Reorient to match usual orientation")
-@set_parameter("filename", str, default=None, description=".dat file for adding geometry if necessary")
+@ma.machine()
+@ma.parameter("filemap", str, default=None, description="MRF maps (.pkl)")
+@ma.parameter("fileseq", str, default="mrf_sequence_adjusted.json", description="Sequence File")
+@ma.parameter("spacing", [float,float,float], default=[1,1,5], description="Voxel size")
+@ma.parameter("reorient", bool, default=True, description="Reorient to match usual orientation")
+@ma.parameter("filename", str, default=None, description=".dat file for adding geometry if necessary")
 def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient,filename):
     gen_mode="other"
 
@@ -6391,13 +4974,6 @@ def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient,fil
     file_ip=split[0]+"ip.mha"
     file_oop=split[0]+"oop.mha"
 
-    # split=str.split(filemap,"/")
-    # folder_path="/".join(split[:-1])
-    # file_ip=folder_path+"/vol_ip.mha"
-    # file_oop=folder_path+"/vol_oop.mha"
-    # print(file_ip)
-
-    #spacing=[1, 1,5]
     if filename is None:
         io.write(file_ip, volume_ip, tags={"spacing": spacing})
         io.write(file_oop, volume_oop, tags={"spacing": spacing})
@@ -6425,8 +5001,8 @@ def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient,fil
 
 
 
-@machine
-@set_parameter("fileseg", str, default=None, description="Segmentation (.nii or .nii.gz)")
+@ma.machine()
+@ma.parameter("fileseg", str, default=None, description="Segmentation (.nii or .nii.gz)")
 def generate_mask_roi_from_segmentation(fileseg):
 
     file_maskROI=str.split(fileseg,".nii")[0]+"_maskROI.npy"
@@ -6440,15 +5016,15 @@ def generate_mask_roi_from_segmentation(fileseg):
     return
 
 
-@machine
-@set_parameter("filemap", str, default=None, description="Maps (.pkl)")
-@set_parameter("fileroi", str, default=None, description="ROIs (.npy)")
-@set_parameter("filelabels", str, default=None, description="Labels name mapping (.txt)")
-@set_parameter("adj_wT1", bool, default=True, description="Filter water T1 value for FF")
-@set_parameter("fat_threshold", float, default=0.7, description="FF threshold for water T1 filtering")
-@set_parameter("excluded", int, default=5, description="number of excluded border slices on each extremity")
-@set_parameter("kernel", int, default=5, description="Kernel size for erosion")
-@set_parameter("roi", int, default=15, description="Min ROI number of pixel for inclusion")
+@ma.machine()
+@ma.parameter("filemap", str, default=None, description="Maps (.pkl)")
+@ma.parameter("fileroi", str, default=None, description="ROIs (.npy)")
+@ma.parameter("filelabels", str, default=None, description="Labels name mapping (.txt)")
+@ma.parameter("adj_wT1", bool, default=True, description="Filter water T1 value for FF")
+@ma.parameter("fat_threshold", float, default=0.7, description="FF threshold for water T1 filtering")
+@ma.parameter("excluded", int, default=5, description="number of excluded border slices on each extremity")
+@ma.parameter("kernel", int, default=5, description="Kernel size for erosion")
+@ma.parameter("roi", int, default=15, description="Min ROI number of pixel for inclusion")
 def getROIresults(filemap,fileroi,filelabels,adj_wT1,fat_threshold,excluded,kernel,roi):
 
     file_results_ROI=str.split(filemap,".pkl")[0]+"_ROI_results.csv"
@@ -6475,14 +5051,14 @@ def getROIresults(filemap,fileroi,filelabels,adj_wT1,fat_threshold,excluded,kern
 
 
 
-@machine
-@set_parameter("filemap", str, default=None, description="Maps (.mha)")
-@set_parameter("fileroi", str, default=None, description="ROIs (.mha)")
-@set_parameter("filelabels", str, default=None, description="Labels name mapping (.txt)")
-@set_parameter("excluded", int, default=5, description="number of excluded border slices on each extremity")
-@set_parameter("kernel", int, default=5, description="Kernel size for erosion")
-@set_parameter("roi", int, default=15, description="Min ROI number of pixel for inclusion")
-@set_parameter("threshold", int, default=None, description="maximum value threshold for excluding values")
+@ma.machine()
+@ma.parameter("filemap", str, default=None, description="Maps (.mha)")
+@ma.parameter("fileroi", str, default=None, description="ROIs (.mha)")
+@ma.parameter("filelabels", str, default=None, description="Labels name mapping (.txt)")
+@ma.parameter("excluded", int, default=5, description="number of excluded border slices on each extremity")
+@ma.parameter("kernel", int, default=5, description="Kernel size for erosion")
+@ma.parameter("roi", int, default=15, description="Min ROI number of pixel for inclusion")
+@ma.parameter("threshold", int, default=None, description="maximum value threshold for excluding values")
 def getROIresults_mha(filemap,fileroi,filelabels,excluded,kernel,roi,threshold):
 
     extension=str.split(filemap,'.')[-1]
@@ -6500,81 +5076,10 @@ def getROIresults_mha(filemap,fileroi,filelabels,excluded,kernel,roi,threshold):
     results=get_ROI_values_image(map_,maskROI,min_ROI_count=roi,return_std=True,excluded_border_slices=excluded,kernel_size=kernel,wT1_threshold=threshold)
 
     print(results)
-    # if filelabels is not None:
-    #     labels=pd.read_csv(filelabels,skiprows=14,header=None,delim_whitespace=True).iloc[:,-1]
-    #     labels.name="ROI"
-    #     results=pd.merge(results,labels,left_index=True,right_index=True).set_index("ROI")
-
-
-    # print(results)
-    # results.to_csv(file_results_ROI)
 
     return
 
-def task(ts):
-        #global fs_hat
-    global max_slices
-    global f_list
-    global npoint
-    global data_chopt
-    npoint_list = np.expand_dims(np.arange(npoint), axis=(0, 1))
-    fun_correl_matrix = -np.abs(np.sum(np.expand_dims(data_chopt[ts, :max_slices].conj(), axis=0) * np.exp(
-            2 * 1j * np.pi * f_list * npoint_list / npoint), axis=-1))
 
-        # cost_padded=np.array([cost[0]]+cost+[cost[-1]])
-        # cost=np.maximum(cost_padded[1:-1]-0.5*(cost_padded[:-2]+cost_padded[2:]),0)
-
-        # x = minimize(fun_correl, x0=(f_min+f_max)/2, bounds=[(f_min, f_max)], tol=1e-8)
-
-        # f_opt=x.x[0]
-    np.save("./fshat/fshat_{}.npy".format(ts),f_list[np.argmin(fun_correl_matrix, axis=0)].squeeze())
-
-def task_Ashat(ts):
-    global nb_channels
-    global fs_hat
-    global data
-    global max_slices
-    global npoint
-    As_hat_ts = np.zeros((nb_channels, max_slices))
-    kdata_with_pt_corrected_ts=np.zeros((nb_channels,max_slices,npoint),dtype=data.dtype)
-    for ch in tqdm(range(nb_channels)):
-        for sl in range(max_slices):
-            f_opt = fs_hat[ts, sl]
-                # f_opt=fs[ts,sl]
-            scalar_product = np.sum(
-                    data[ch, ts, sl].conj() * np.exp(2 * 1j * np.pi * f_opt * np.arange(npoint) / npoint))
-            A_opt = np.abs(scalar_product)
-            phase = -np.angle(scalar_product)
-                # A_opt=As[ts,sl]*npoint
-            kdata_with_pt_corrected_ts[ch, sl] = data[ch, ts, sl] - A_opt / npoint * np.exp(
-                    2 * 1j * np.pi * f_opt * np.arange(npoint) / npoint) * np.exp(1j * phase)
-            As_hat_ts[ch,sl]=A_opt
-    np.save("./fshat/Ashat_{}.npy".format(ts), As_hat_ts)
-    np.save("./fshat/kdata_pt_corrected_{}.npy".format(ts), kdata_with_pt_corrected_ts)
-
-
-def task_Ashat_filtered(ch):
-    global nb_allspokes
-    global As_hat
-    global max_slices
-    As_hat_filtered_ch = np.zeros((nb_allspokes, max_slices))
-    As_hat_normalized_ch = np.zeros((nb_allspokes, max_slices))
-    for sl in tqdm(range(max_slices)):
-        signal = As_hat[ch, :, sl]
-        min_=np.min(signal)
-        max_=np.max(signal)
-        signal = (signal - min_) / (max_ - min_)
-        As_hat_normalized_ch[:, sl] = signal
-            # mean=np.mean(signal)
-            # std=np.std(signal)
-            # ind=np.argwhere(signal<(mean-std)).flatten()
-            # signal[ind]=signal[ind-1]
-        signal_filtered = savgol_filter(signal, 41, 3)
-        signal_filtered = lowess(signal_filtered, np.arange(len(signal_filtered)), frac=0.1)[:, 1]
-        #As_hat_filtered_ch[:, sl] = (max_-min_)*signal_filtered+min_
-        As_hat_filtered_ch[:, sl] = signal_filtered
-    np.save("./fshat/Ashat_filtered_ch{}.npy".format(ch), As_hat_filtered_ch)
-    np.save("./fshat/As_hat_normalized_ch{}.npy".format(ch), As_hat_normalized_ch)
 
 def build_basis_bart(dictfile):
 
@@ -6590,10 +5095,6 @@ toolbox.add_program("build_kdata", build_kdata)
 toolbox.add_program("build_coil_sensi", build_coil_sensi)
 toolbox.add_program("build_volumes", build_volumes)
 toolbox.add_program("build_mask", build_mask)
-toolbox.add_program("build_data_for_grappa_simulation", build_data_for_grappa_simulation)
-toolbox.add_program("calib_and_estimate_kdata_grappa", calib_and_estimate_kdata_grappa)
-toolbox.add_program("build_data_autofocus", build_data_autofocus)
-toolbox.add_program("aggregate_kdata", aggregate_kdata)
 toolbox.add_program("build_maps", build_maps)
 toolbox.add_program("build_additional_maps", build_additional_maps)
 toolbox.add_program("generate_image_maps", generate_image_maps)
@@ -6611,10 +5112,9 @@ toolbox.add_program("build_volumes_iterative_allbins", build_volumes_iterative_a
 toolbox.add_program("build_mask_from_singular_volume", build_mask_from_singular_volume)
 toolbox.add_program("build_mask_full_from_mask", build_mask_full_from_mask)
 toolbox.add_program("select_slices_volume", select_slices_volume)
-toolbox.add_program("generate_dictionaries", generate_dictionaries)
+toolbox.add_program("generate_dictionaries_T1FF", generate_dictionaries_T1FF)
 toolbox.add_program("extract_singular_volume_allbins", extract_singular_volume_allbins)
 toolbox.add_program("extract_allsingular_volumes_bin", extract_allsingular_volumes_bin)
-toolbox.add_program("build_kdata_pilot_tone", build_kdata_pilot_tone)
 toolbox.add_program("build_volumes_iterative_allbins_registered", build_volumes_iterative_allbins_registered)
 toolbox.add_program("build_volumes_iterative_allbins_registered_allindex", build_volumes_iterative_allbins_registered_allindex)
 toolbox.add_program("getTR", getTR)

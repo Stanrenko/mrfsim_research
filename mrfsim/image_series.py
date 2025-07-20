@@ -7,20 +7,20 @@ except:
     pass
 
 
-from utils_simu import simulate_gen_eq_signal
+from mrfsim.utils_simu import simulate_gen_eq_signal
+from mrfsim.utils_mrf import create_random_map,buildROImask,correct_mvt_kdata
 from scipy import ndimage
 
-
+import numpy as np
 import pandas as pd
-from utils_mrf import create_random_map,buildROImask,correct_mvt_kdata
-from mutools.optim.dictsearch import dictmodel
+
+from mrfsim.dictmodel import Dictionary
 
 import itertools
 from scipy.io import loadmat
 import finufft
 from tqdm import tqdm
 import matplotlib.animation as animation
-from trajectory import *
 
 try:
     from pycuda.gpuarray import GPUArray, to_gpu
@@ -254,7 +254,7 @@ class ImageSeries(object):
             keys = list(itertools.product(wT1_in_map, wT2_in_map, fT1_in_map, fT2_in_map, attB1_in_map, df_in_map))
             values = np.stack(np.broadcast_arrays(water, fat), axis=-1)
             values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
-        mrfdict = dictmodel.Dictionary(keys, values)
+        mrfdict = Dictionary(keys, values)
 
         images_series = np.zeros(self.image_size + (values.shape[-2],), dtype=np.complex_)
         #water_series = images_series.copy()
@@ -351,7 +351,7 @@ class ImageSeries(object):
         else :
             values = np.stack(np.broadcast_arrays(water, fat), axis=-1)
             values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
-        mrfdict = dictmodel.Dictionary(keys, values)
+        mrfdict = Dictionary(keys, values)
 
         images_series = np.zeros(self.image_size + (values.shape[-2],), dtype=np.complex_)
         #water_series = images_series.copy()

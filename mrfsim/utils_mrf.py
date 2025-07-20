@@ -4,24 +4,20 @@ try:
 except:
     pass
 import matplotlib.animation as animation
-from mutools.optim.dictsearch import dictsearch#,groupmatch
-from mutools import io
-from mutools.io import io_twixt
+# from mutools.optim.dictsearch import dictsearch#,groupmatch
+# from mutools import io
+from mrfsim.io import io_twixt
 
 from functools import reduce
 import numpy as np
 import finufft
-from scipy import ndimage,signal
+from scipy import ndimage
 #from sklearn.decomposition import PCA
 from tqdm import tqdm
 from scipy.spatial import Voronoi,ConvexHull
-from Transformers import PCAComplex
 import pickle
 import twixtools
 import os
-from scipy.signal import savgol_filter
-from statsmodels.nonparametric.smoothers_lowess import lowess
-from sklearn.decomposition import PCA
 #from utils_reco import calculate_displacement,correct_mvt_kdata_zero_filled
 #from trajectory import Navigator3D,Radial
 import math
@@ -42,7 +38,6 @@ try:
     from sigpy.mri import spiral
 except:
     pass
-import cv2
 import pywt
 from mpl_toolkits.axes_grid1 import ImageGrid
 from skimage.metrics import structural_similarity as ssim
@@ -59,39 +54,61 @@ except:
     pass
 
 from copy import copy,deepcopy
-import psutil
 from datetime import datetime
 import scipy as sp
 from scipy.interpolate import RegularGridInterpolator
 
 asca = np.ascontiguousarray
 
-def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
+# def read_mrf_dict(dict_file ,FF_list ,aggregate_components=True):
 
-    mrfdict = dictsearch.Dictionary()
-    mrfdict.load(dict_file, force=True)
+#     mrfdict = dictsearch.Dictionary()
+#     mrfdict.load(dict_file, force=True)
 
-    if aggregate_components :
+#     if aggregate_components :
         
-        ff = np.zeros(mrfdict.values.shape[:-1 ] +(len(FF_list),))
-        ff_matrix =np.tile(np.array(FF_list) ,ff.shape[:-1 ] +(1,))
+#         ff = np.zeros(mrfdict.values.shape[:-1 ] +(len(FF_list),))
+#         ff_matrix =np.tile(np.array(FF_list) ,ff.shape[:-1 ] +(1,))
 
-        water_signal =np.expand_dims(mrfdict.values[: ,: ,0] ,axis=-1 ) *(1-ff_matrix)
-        fat_signal =np.expand_dims(mrfdict.values[: ,: ,1] ,axis=-1 ) *(ff_matrix)
+#         water_signal =np.expand_dims(mrfdict.values[: ,: ,0] ,axis=-1 ) *(1-ff_matrix)
+#         fat_signal =np.expand_dims(mrfdict.values[: ,: ,1] ,axis=-1 ) *(ff_matrix)
 
-        signal =water_signal +fat_signal
+#         signal =water_signal +fat_signal
 
-        signal_reshaped =np.moveaxis(signal ,-1 ,-2)
-        signal_reshaped =signal_reshaped.reshape((-1 ,signal_reshaped.shape[-1]))
+#         signal_reshaped =np.moveaxis(signal ,-1 ,-2)
+#         signal_reshaped =signal_reshaped.reshape((-1 ,signal_reshaped.shape[-1]))
 
-        keys_with_ff = list(itertools.product(mrfdict.keys, FF_list))
-        keys_with_ff = [(*res, f) for res, f in keys_with_ff]
+#         keys_with_ff = list(itertools.product(mrfdict.keys, FF_list))
+#         keys_with_ff = [(*res, f) for res, f in keys_with_ff]
 
-        return keys_with_ff,signal_reshaped
+#         return keys_with_ff,signal_reshaped
 
-    else:
-        return mrfdict.keys,mrfdict.values
+#     else:
+#         return mrfdict.keys,mrfdict.values
 
+
+
+
+def combine_mrf_dict_components(mrfdict ,FF_list):
+    '''
+    Combine the water and fat components of the dictionary with FF_list to create a single dictionary with all the FFs
+    '''
+
+    ff = np.zeros(mrfdict.values.shape[:-1 ] +(len(FF_list),))
+    ff_matrix =np.tile(np.array(FF_list) ,ff.shape[:-1 ] +(1,))
+
+    water_signal =np.expand_dims(mrfdict.values[: ,: ,0] ,axis=-1 ) *(1-ff_matrix)
+    fat_signal =np.expand_dims(mrfdict.values[: ,: ,1] ,axis=-1 ) *(ff_matrix)
+
+    signal =water_signal +fat_signal
+
+    signal_reshaped =np.moveaxis(signal ,-1 ,-2)
+    signal_reshaped =signal_reshaped.reshape((-1 ,signal_reshaped.shape[-1]))
+
+    keys_with_ff = list(itertools.product(mrfdict.keys, FF_list))
+    keys_with_ff = [(*res, f) for res, f in keys_with_ff]
+
+    return keys_with_ff,signal_reshaped
 
 
 def animate_images(images_series,interval=200,metric=np.abs,cmap=None):
@@ -194,168 +211,6 @@ def find_klargest_freq(ft, k=1, remove_central_peak=True):
         freq_image = len(ft) - 1 - (freq_image + n_min)
 
     return freq_image
-
-def SearchMrf(kdata,trajectory, dictfile, niter, method, metric, shape,density_adj=False, setup_opts={}, search_opts= {}):
-    """ Estimate parameters """
-    # constants
-    shape = tuple(shape)
-
-    nspoke=trajectory.paramDict["nspoke"]
-    npoint=trajectory.paramDict["npoint"]
-    traj = trajectory.get_traj()
-
-    if density_adj:
-        density = np.abs(np.linspace(-1, 1, npoint))
-    else:
-        density=np.ones(npoint)
-
-    # printer(f"Load dictionary: {dictfile}")
-    mrfdict = dictsearch.Dictionary()
-    mrfdict.load(dictfile, force=True)
-
-    print(f"Init solver ({method})")
-    if method == "brute":
-        solver = dictsearch.DictSearch()
-        setupopts = {"pca": True, **parse_options(setup_opts)}
-        searchopts = {"metric": metric, "parallel": True, **parse_options(search_opts)}
-    elif method == "group":
-        solver = groupmatch.GroupMatch()
-        setupopts = {"pca": True, "group_ratio": 0.05, **parse_options(setup_opts)}
-        searchopts = {"metric": metric, "parallel": True, "group_threshold": 1e-1, **parse_options(search_opts)}
-    solver.setup(mrfdict.keys, mrfdict.values, **setupopts)
-
-    # group trajectories and kspace
-    #traj = np.reshape(groupby(traj, nspoke), (-1, npoint * nspoke))
-    kdata = np.array([(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata])
-
-    #kdata = np.reshape(groupby(kdata * density, nspoke), (-1, npoint * nspoke))
-
-    print(f"Build volumes ({nspoke} groups)")
-
-    # NUFFT
-    kdata /= np.sum(np.abs(kdata)**2)**0.5 / len(kdata)
-    volumes = [
-        finufft.nufft2d1(t.real, t.imag, s, shape)
-        for t, s in zip(traj, kdata)
-    ]
-
-    # init mask
-    mask = False
-    volumes0 = volumes
-    kdata0 = kdata
-    info = {}
-    for i in range(niter + 1):
-
-        # auto mask
-        unique = np.histogram(np.abs(volumes), 100)[1]
-        mask = mask | (np.mean(np.abs(volumes), axis=0) > unique[len(unique) // 10])
-        mask = ndimage.binary_closing(mask, iterations=3)
-
-        print(f"Search data (iteration {i})")
-        obs = np.transpose([vol[mask] for vol in volumes])
-        res = solver.search(obs, **searchopts)
-
-        info[f"iteration {i}"] = solver.info
-
-        if i == niter:
-            break
-
-        # generate prediction volumes
-        pred = np.asarray(solver.predict(res)).T
-
-        # predict spokes
-        kdata = [
-            finufft.nufft2d2(t.real, t.imag, makevol(p, mask))
-            for t, p in zip(traj, pred)
-        ]
-        kdatai = np.array([(np.reshape(k, (-1, npoint)) * density).flatten() for k in kdata])
-
-        # NUFFT
-        kdatai /= np.sum(np.abs(kdatai)**2)**0.5 / len(kdatai)
-        volumesi = [
-            finufft.nufft2d1(t.real, t.imag, s, shape)
-            for t, s in zip(traj, kdatai)
-        ]
-
-        # correct volumes
-        volumes = [2 * vol0 - voli for vol0, voli in zip(volumes0, volumesi)]
-
-
-    # make maps
-    wt1map = makevol([p[0] for p in res.parameters], mask)
-    ft1map = makevol([p[1] for p in res.parameters], mask)
-    b1map = makevol([p[2] for p in res.parameters], mask)
-    dfmap = makevol([p[3] for p in res.parameters], mask)
-    wmap =  makevol([s[0] for s in res.scales], mask)
-    fmap =  makevol([s[1] for s in res.scales], mask)
-    ffmap = makevol([s[1]/(s[0] + s[1]) for s in res.scales], mask)
-
-
-
-    return {
-        "mask": mask,
-        "wt1map": wt1map,
-        "ft1map": ft1map,
-        "b1map": b1map,
-        "dfmap": dfmap,
-        "wmap": wmap,
-        "fmap": fmap,
-        "ffmap": ffmap,
-        "info": {"search": info, "options": solver.options},
-    }
-
-def basicDictSearch(all_signals,dictfile):
-    #Basic dic search with component separation
-    #
-    mrfdict = dictsearch.Dictionary()
-    mrfdict.load(dictfile, force=True)
-
-    array_water = mrfdict.values[:, :, 0]
-    array_fat = mrfdict.values[:, :, 1]
-
-    var_w = np.sum(array_water * array_water.conj(), axis=1).real
-    var_f = np.sum(array_fat * array_fat.conj(), axis=1).real
-    sig_wf = np.sum(array_water * array_fat.conj(), axis=1).real
-
-    print("Removing duplicate dictionary entries and signals")
-    array_water_unique, index_water_unique = np.unique(array_water, axis=0, return_inverse=True)
-    array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
-    all_signals_unique, index_signals_unique = np.unique(all_signals, axis=1, return_inverse=True)
-
-    print("Calculating correlations")
-    sig_ws_all_unique = np.matmul(array_water_unique, all_signals_unique[:, :].conj()).real
-    sig_fs_all_unique = np.matmul(array_fat_unique, all_signals_unique[:, :].conj()).real
-    sig_ws_all = sig_ws_all_unique[index_water_unique, :]
-    sig_fs_all = sig_fs_all_unique[index_fat_unique, :]
-
-    print("Calculating optimal fat fraction and best pattern per signal")
-    var_w = np.reshape(var_w, (-1, 1))
-    var_f = np.reshape(var_f, (-1, 1))
-    sig_wf = np.reshape(sig_wf, (-1, 1))
-
-    alpha_all_unique = (sig_wf * sig_ws_all-var_w*sig_fs_all) / ((sig_ws_all + sig_fs_all) * sig_wf-var_w*sig_fs_all-var_f*sig_ws_all)
-    one_minus_alpha_all = 1 - alpha_all_unique
-    J_all = (one_minus_alpha_all * sig_ws_all + alpha_all_unique * sig_fs_all) / np.sqrt(
-        one_minus_alpha_all ** 2 * var_w + alpha_all_unique ** 2 * var_f + 2 * alpha_all_unique * one_minus_alpha_all * sig_wf)
-    idx_max_all_unique = np.argmax(J_all, axis=0)
-    #idx_max_all = idx_max_all_unique[index_signals_unique]
-
-    print("Building the maps")
-    #alpha_all = alpha_all_unique[:, index_signals_unique]
-
-    params_all_unique = np.array([mrfdict.keys[idx] + (alpha_all_unique[idx, i],) for i, idx in enumerate(idx_max_all_unique)])
-    params_all = params_all_unique[index_signals_unique]
-
-
-
-    return {
-            "wT1": params_all[:, 0],
-            "fT1": params_all[:, 1],
-            "attB1": params_all[:, 2],
-            "df": params_all[:, 3],
-            "ff": params_all[:, 4]
-
-            }
 
 
 
@@ -2241,20 +2096,7 @@ def simulate_radial_undersampled_images_multi(kdata, trajectory, size, density_a
                         images_series_rebuilt[i] = np.sum(b1.conj() * fk, axis=0)
 
                 else:
-                    flush_condition = (memmap_file is not None) and (
-                                (psutil.virtual_memory().cached + psutil.virtual_memory().free) / 1e9 < 2) and (
-                                          not (flushed))
-                    if flush_condition:
-                        print("Flushed Memory")
-                        offset = i * images_series_rebuilt.itemsize * i * np.prod(images_series_rebuilt.shape[1:])
-                        i0 = i
-                        new_shape = (output_shape[0] - i,) + output_shape[1:]
-                        images_series_rebuilt.flush()
-                        del images_series_rebuilt
-                        flushed = True
-                        normalize_volumes = False
-                        images_series_rebuilt = np.memmap(memmap_file, dtype="complex64", mode="r+", shape=new_shape,
-                                                          offset=offset)
+                    
 
                     if flushed:
                         for j in tqdm(range(nb_channels)):
@@ -4061,11 +3903,34 @@ def calc_entropy(v):
     return np.sum(-np.log2(p) * p)
 
 
-def build_phi(dictfile,L0):
+# def build_phi(dictfile,L0):
+
+#     #mrfdict = dictsearch.Dictionary()
+#     print("Generating full dictionary")
+#     keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.2))
+
+#     import dask.array as da
+#     print("Performing svd")
+#     u,s,vh = da.linalg.svd(da.asarray(values))
+
+#     print("SVD done")
+#     vh=np.array(vh)
+#     s=np.array(s)
+
+#     phi=vh[:L0]
+#     #phi=vh
+
+#     filename_phi=str.split(dictfile, ".dict")[0] + "_phi_L0_{}.npy".format(L0)
+#     np.save(filename_phi,phi)
+
+#     return phi
+
+
+def build_phi(mrfdict,FFs=np.arange(0.1,1.09,0.1)):
 
     #mrfdict = dictsearch.Dictionary()
     print("Generating full dictionary")
-    keys,values=read_mrf_dict(dictfile,np.arange(0.,1.01,0.2))
+    keys,values=combine_mrf_dict_components(mrfdict,FFs)
 
     import dask.array as da
     print("Performing svd")
@@ -4075,15 +3940,10 @@ def build_phi(dictfile,L0):
     vh=np.array(vh)
     s=np.array(s)
 
-    phi=vh[:L0]
+    # phi=vh[:L0]
     #phi=vh
 
-    filename_phi=str.split(dictfile, ".dict")[0] + "_phi_L0_{}.npy".format(L0)
-    np.save(filename_phi,phi)
-
-    return phi
-
-
+    return vh
 
 
 
@@ -5011,15 +4871,6 @@ def concatenate_images(image_list,ignore_zero=True,spacing=None,method="linear",
 
 
 
-# load kspace data
-def load_data(filename):
-    """ load k-space data """
-    filename = str(pathlib.Path(filename).expanduser().resolve())
-    matobj = loadmat(filename)
-    traj = 2 * np.pi * matobj["KSpaceTraj"].T
-    data = matobj["KSpaceData"].T
-    return data, traj
-
 def load_parammap(filename):
     filename = str(pathlib.Path(filename).expanduser().resolve())
     matobj = loadmat(filename)["paramMap"]
@@ -5061,3 +4912,32 @@ def makevol(values, mask):
     new = np.zeros(mask.shape, dtype=values.dtype)
     new[mask] = values
     return new
+
+
+def load_pickle(filename):
+    import pickle
+
+    with open(filename, "rb") as fp:
+        return pickle.load(fp)
+    
+def save_pickle(filename,data):
+    import pickle
+    with open(filename, "wb") as fp:
+        pickle.dump(data, fp)
+
+
+def add_temporal_basis(dico,L0=None):
+    if "phi" not in dico.keys():
+        print("Building temporal basis from dictionary")
+        # mrfdict=dico["mrfdict"]
+        mrfdict=dico["mrfdict_light"]
+        # phi=build_phi(mrfdict)
+        phi=build_phi(mrfdict, FFs=np.arange(0.1,1.09,0.15))
+        dico["phi"]=phi
+
+    if (L0 is not None)and(("mrfdict_light_L0{}".format(L0) not in dico.keys())or("mrfdict_L0{}".format(L0) not in dico.keys())):
+        phi=dico["phi"]
+        print("Projecting dictionaries on subspace formed by first {} temporal components".format(L0))
+        dico=compress_dictionary(dico,phi,L0)
+    return dico
+    

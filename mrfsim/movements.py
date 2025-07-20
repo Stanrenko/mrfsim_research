@@ -1,7 +1,6 @@
 import numpy as np
-from scipy import ndimage
 from scipy.ndimage import affine_transform
-from utils_mrf import translation_breathing
+from mrfsim.utils_mrf import translation_breathing
 try:
     import cupy as cp
     from cupyx.scipy.ndimage import affine_transform as cupy_affine_transform

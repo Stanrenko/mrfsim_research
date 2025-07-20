@@ -1,5 +1,5 @@
 import numpy as np
-from utils_mrf import groupby
+from mrfsim.utils_mrf import groupby
 import math
 
 

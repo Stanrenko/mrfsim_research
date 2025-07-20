@@ -13,10 +13,16 @@ Requires-Dist: finufft
 Requires-Dist: tqdm
 Requires-Dist: matplotlib
 Requires-Dist: requests
+Requires-Dist: opencv-python
+Requires-Dist: pandas
 Requires-Dist: pywavelets
+Requires-Dist: statsmodels
 Requires-Dist: scikit-image
+Requires-Dist: tf-keras
+Requires-Dist: voxelmorph
 Requires-Dist: twixtools@ git+https://github.com/StanRenko/twixtools.git
 Requires-Dist: epgpy@ git+https://github.com/py-baudin/epgpy.git
 Requires-Dist: dicomstack@ git+https://github.com/py-baudin/dicomstack.git
+Requires-Dist: machines@ git+https://github.com/py-baudin/machines.git
 Provides-Extra: cupy
 Requires-Dist: cupy; extra == "cupy"
