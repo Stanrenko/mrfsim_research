@@ -1,6 +1,6 @@
 try:
     import matplotlib
-    matplotlib.use('TkAgg')
+    matplotlib.use('Agg')
 
     import matplotlib.pyplot as plt
 except:

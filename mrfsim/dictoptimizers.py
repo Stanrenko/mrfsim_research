@@ -7,6 +7,7 @@ from datetime import datetime
 from copy import copy
 import os
 import pickle
+from mrfsim.Transformers import PCAComplex
 
 try:
     import cupy as cp
@@ -782,7 +783,7 @@ class Optimizer(object):
 
 class SimpleDictSearch(Optimizer):
 
-    def __init__(self,seq=None,split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,remove_duplicate_signals=False,threshold=None,return_matched_signals=False,volumes_type="raw",clustering_windows=DEFAULT_CLUSTERING_WINDOWS,**kwargs):
+    def __init__(self,split=500,pca=True,threshold_pca=15,useGPU_dictsearch=False,remove_duplicate_signals=False,threshold=None,return_matched_signals=False,volumes_type="raw",clustering_windows=DEFAULT_CLUSTERING_WINDOWS,force_pca=True,**kwargs):
         
         super().__init__(**kwargs)
         self.paramDict["split"] = split
@@ -799,7 +800,12 @@ class SimpleDictSearch(Optimizer):
             raise ValueError('volumes_type must be either "singular" or "raw".')
         
         self.paramDict["volumes_type"]=volumes_type
+
+        if clustering_windows is None:
+            clustering_windows = DEFAULT_CLUSTERING_WINDOWS
         self.paramDict["clustering_windows"]=clustering_windows
+
+        self.paramDict["force_pca"]=force_pca
 
 
     def search_patterns_test_multi(self, dicofull_file, volumes, retained_timesteps=None):
@@ -816,6 +822,7 @@ class SimpleDictSearch(Optimizer):
         split = self.paramDict["split"]
         pca = self.paramDict["pca"]
         threshold_pca = self.paramDict["threshold_pca"]
+        force_pca = self.paramDict["force_pca"]
 
         useGPU_dictsearch = self.paramDict["useGPU_dictsearch"]
 
@@ -887,7 +894,7 @@ class SimpleDictSearch(Optimizer):
         del array_fat
 
         if pca:
-            if not(volumes_type=="raw") or ("pca_light_{}".format(threshold_pca) not in dicofull.keys()):
+            if not(volumes_type=="raw") or ("pca_light_{}".format(threshold_pca) not in dicofull.keys()) or (force_pca):
                 pca_water = PCAComplex(n_components_=threshold_pca)
                 pca_fat = PCAComplex(n_components_=threshold_pca)
 
@@ -911,7 +918,7 @@ class SimpleDictSearch(Optimizer):
             transformed_array_water_unique = None
             transformed_array_fat_unique = None
 
-        if not(volumes_type=="raw") or ("vars_light" not in dicofull.keys()):
+        if not(volumes_type=="raw") or ("vars_light" not in dicofull.keys()) or (force_pca):
             var_w = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
             var_f = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
             sig_wf = np.sum(array_water_unique[index_water_unique] * array_fat_unique[index_fat_unique].conj(),
@@ -997,6 +1004,8 @@ class SimpleDictSearch(Optimizer):
 
         split = self.paramDict["split"]
         pca = self.paramDict["pca"]
+
+        force_pca = self.paramDict["force_pca"]
 
         if volumes.ndim==5:
             ntimesteps=volumes.shape[1]
@@ -1104,7 +1113,7 @@ class SimpleDictSearch(Optimizer):
         array_fat_unique, index_fat_unique = np.unique(array_fat, axis=0, return_inverse=True)
 
 
-        if not(volumes_type=="raw") or ("vars" not in dicofull.keys()):
+        if not(volumes_type=="raw") or ("vars" not in dicofull.keys()) or (force_pca):
 
             var_w_total = np.sum(array_water_unique * array_water_unique.conj(), axis=1).real
             var_f_total = np.sum(array_fat_unique * array_fat_unique.conj(), axis=1).real
@@ -1126,7 +1135,7 @@ class SimpleDictSearch(Optimizer):
             (var_w_total,var_f_total,sig_wf_total,index_water_unique,index_fat_unique)=dicofull["vars"]
 
         if pca:
-            if not(volumes_type=="raw") or ("pca_{}".format(threshold_pca) not in dicofull.keys()):
+            if not(volumes_type=="raw") or ("pca_{}".format(threshold_pca) not in dicofull.keys()) or (force_pca):
                 pca_water = PCAComplex(n_components_=threshold_pca)
                 pca_fat = PCAComplex(n_components_=threshold_pca)
 
@@ -1135,6 +1144,7 @@ class SimpleDictSearch(Optimizer):
 
                 transformed_array_water_unique = pca_water.transform(array_water_unique)
                 transformed_array_fat_unique = pca_fat.transform(array_fat_unique)
+
                 if volumes_type=="raw":
                     dicofull["pca_{}".format(threshold_pca)]=(pca_water,pca_fat,transformed_array_water_unique,transformed_array_fat_unique)    
                     with open(dicofull_file,"wb") as file:
@@ -1148,8 +1158,6 @@ class SimpleDictSearch(Optimizer):
             pca_fat = None
             transformed_array_water_unique = None
             transformed_array_fat_unique = None
-
-
 
         if useGPU_dictsearch:
             var_w_total = cp.asarray(var_w_total)

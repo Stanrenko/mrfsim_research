@@ -8,12 +8,13 @@
 *.json
 *.txt
 *.text
-x_random*.pkl
+*.pkl
 dictionary_phi*.npy
 mrf_dictconf*
 mrf_sequence*
 meas*
 
+mrf_dict*/
 dico/*
 wandb/*
 optims/*

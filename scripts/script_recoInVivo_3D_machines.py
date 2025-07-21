@@ -1,14 +1,18 @@
 
-#import matplotlib
-#matplotlib.use("TkAgg")
+import matplotlib
+matplotlib.use("Agg")
 from mrfsim.image_series import *
 from mrfsim.dictoptimizers import SimpleDictSearch
+
+from pathlib import Path
 
 from PIL import Image
 from mrfsim.utils_simu import *
 #from utils_reco import calculate_sensitivity_map_3D,kdata_aggregate_center_part,calculate_displacement,build_volume_singular_2Dplus1_cc_allbins_registered,simulate_nav_images_multi,calculate_displacement_ml,estimate_weights_bins,calculate_displacements_singlechannel,calculate_displacements_singlechannel,calculate_displacements_allchannels,coil_compression_2Dplus1,build_volume_2Dplus1_cc_allbins
 from mrfsim.utils_reco import *
 from mrfsim.utils_mrf import *
+from mrfsim.trajectory import *
+
 import math
 import nibabel as nib
 try :
@@ -38,7 +42,7 @@ DEFAULT_OPT_CONFIG_2STEPS={
     "mu":1,
     "mu_TV":0.5,
     "weights_TV":[1.0,0.1,0.1],
-    "volumes_type":"Singular",
+    "volumes_type":"singular",
     "nspoke":1400,
     "return_matched_signals":False,
     "return_cost":True,
@@ -838,8 +842,10 @@ def build_mask_full_from_mask(filename_mask):
 @ma.parameter("dico_full_file", str, default=None, description="Dictionary file")
 @ma.parameter("optimizer_config",type=ma.Config(),default=DEFAULT_OPT_CONFIG_2STEPS,description="Optimizer parameters")
 @ma.parameter("slices",str,default=None,description="Slices to consider for pattern matching")
+@ma.parameter("L0",int,default=6,description="Number of singular volumes")
+@ma.parameter("force_pca",bool,default=False,description="Force recalculation of the PCA on the dictionary")
 @ma.parameter("config_clustering",str,default=None,description=".json file with clustering windows for 2 steps matching")
-def build_maps(filename_volume,filename_mask,dico_full_file,optimizer_config,slices,config_clustering):
+def build_maps(filename_volume,filename_mask,dico_full_file,optimizer_config,slices,config_clustering,L0,force_pca):
     '''
     builds MRF maps using bi-component dictionary matching (Slioussarenko et al. MRM 2024)
     inputs:
@@ -862,15 +868,26 @@ def build_maps(filename_volume,filename_mask,dico_full_file,optimizer_config,sli
 
     '''
 
+    opt_type = optimizer_config["type"]
+    print(opt_type)
+    useGPU = optimizer_config["useGPU"]
+    threshold_pca=optimizer_config["pca"]
+    split=optimizer_config["split"]
+    volumes_type=optimizer_config["volumes_type"]
+    return_cost = optimizer_config["return_cost"]
+    clustering_windows=config_clustering
+
     try:
         import cupy
     except:
         print("Could not import cupy - not using gpu")
         useGPU=False
     
-    opt_type = optimizer_config["type"]
-    print(opt_type)
-
+    
+    if volumes_type=="singular":
+        threshold_pca=float(L0)
+        
+            
 
     file_map = "".join(filename_volume.split(".npy")) + "_{}_MRF_map.pkl".format(opt_type)
     volumes_all_slices = np.load(filename_volume)
@@ -886,15 +903,10 @@ def build_maps(filename_volume,filename_mask,dico_full_file,optimizer_config,sli
             file_map = "".join(filename_volume.split(".npy")) + "_sl{}_{}_MRF_map.pkl".format("_".join(sl),opt_type)
 
 
-    threshold_pca=optimizer_config["pca"]
-    split=optimizer_config["split"]
-    useGPU = optimizer_config["useGPU"]
-    volumes_type=optimizer_config["volumes_type"]
-    return_cost = optimizer_config["return_cost"]
-    clustering_windows=config_clustering
+    
 
     optimizer = SimpleDictSearch(mask=masks_all_slices, split=split, pca=True,
-                                                threshold_pca=threshold_pca,threshold_ff=1.1,return_cost=return_cost,useGPU_dictsearch=useGPU,volumes_type=volumes_type,clustering_windows=clustering_windows)
+                                                threshold_pca=threshold_pca,threshold_ff=1.1,return_cost=return_cost,useGPU_dictsearch=useGPU,volumes_type=volumes_type,clustering_windows=clustering_windows,force_pca=force_pca)
                 
     all_maps=optimizer.search_patterns_test_multi_2_steps_dico(dico_full_file,volumes_all_slices)
 
@@ -1218,7 +1230,7 @@ def build_data_nacq(files_config,disp_config,undersampling_factor):
         filename_disp_image=str.split(filename, ".dat")[0] + "_nav_image.jpg".format("")
 
 
-        dico_seqParams = build_dico_seqParams(filename, folder)
+        dico_seqParams = build_dico_seqParams(filename)
 
         use_navigator_dll = dico_seqParams["use_navigator_dll"]
 
@@ -3208,8 +3220,8 @@ def build_volumes_singular_allbins_3D_BART_v2(bart_command,filename_kdata, filen
 @ma.parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
 @ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
 @ma.parameter("filename_weights", str, default=None, description="Weights file to simulate undersampling from binning")
-@ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
-@ma.parameter("L0", int, default=10, description="Number of retained temporal basis functions")
+@ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis (.pkl)")
+@ma.parameter("L0", int, default=6, description="Number of retained temporal basis functions")
 @ma.parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
 @ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
 @ma.parameter("useGPU", bool, default=True, description="Use GPU")
@@ -3222,6 +3234,8 @@ def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_ph
     Build singular volumes for MRF (no binning)
     Output shape nb_motion_bins x L0 x nz x nx x ny
     '''
+
+    print("Using GPU: {}".format(useGPU))
 
     if filename_seqParams is None:
         filename_seqParams =filename_kdata.split("_kdata.npy")[0] + "_seqParams.pkl"
@@ -3317,11 +3331,18 @@ def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_ph
         window=8
         phi=np.ones((1,1))
     else:
-        if filename_phi not in os.listdir():
-            print("Build singular basis from dictionary {}".format(dictfile))
-            phi=build_phi(dictfile,L0)
-        else:
-            phi = np.load(filename_phi)
+        # if filename_phi not in os.listdir():
+        #     print("Build singular basis from dictionary {}".format(dictfile))
+        #     phi=build_phi(dictfile,L0)
+        # else:
+        #     phi = np.load(filename_phi)
+
+        mrf_dict = load_pickle(dictfile)
+        if "phi" not in mrf_dict.keys():
+            mrf_dict=add_temporal_basis(mrf_dict,L0)
+            save_pickle(mrf_dict,mrf_dict)
+        phi=mrf_dict["phi"]
+
 
     if filename_weights is not None:
         print("Applying weights mask to k-space")
@@ -4900,6 +4921,75 @@ def generate_dictionaries_T1FF(sequence_file,reco,min_TR_delay,dictconf,dictconf
 
 
 
+@ma.machine()
+@ma.parameter("dest",ma.Path(),default="mrf_dict",help="Destination directory for MRF dictionary")
+@ma.parameter("folder",ma.Path(exists=True),default=None,help="Directory of sequence and dictionary configuration files.")
+@ma.parameter("seqfile",ma.Path(),default="./dico/mrf_sequence_adjusted.json",help="Sequence parameter file (.json)")
+@ma.parameter("dictconf",ma.Path(),default="./dico/mrf_dictconf_Dico2_Invivo_overshoot.json",help="Full dictionary grid (.json)")
+@ma.parameter("dictconf_light",ma.Path(),default="./dico/mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot.json",help="Light dictionary grid (.json)")
+@ma.parameter("datafile",ma.Path(),default=None,help="MRF .dat file to get echo spacing")
+@ma.parameter("index",int,default=-1,help="Index of the .dat file for multiple acquisitions (default -1 for single acquisition).")
+@ma.parameter("wait_time",float,default=5.0,help="Waiting time (s) at the end of each MRF repetition.")
+@ma.parameter("echo_spacing",float,default=None,help="Waiting time (ms) from echo time to next RF pulse.")
+@ma.parameter("is_build_phi",bool,default=True,help="Whether to build temporal basis from dictionary")
+@ma.parameter("pca",int,default=6,help="Number of components for the dictionary projection on the temporal basis")
+@ma.parameter("force",bool,default=False,help="Force generation even if folder already exists")
+@ma.parameter("inversion_time", float, default=8.32, help="Inversion time (ms).")
+def mrf_gendict(dest,folder,seqfile,dictconf,dictconf_light,datafile,wait_time,echo_spacing,inversion_time,is_build_phi,pca,force,index):
+    
+
+    # if seqfile is None:
+    #     print("No sequence file provided. Using default SEQ_CONFIG")
+    #     seqfile = cfg_mrf.SEQ_CONFIG
+    # if dictconf is None:
+    #     print("No dictionary config file provided. Using default DICT_CONFIG")
+    #     dictconf = cfg_mrf.DICT_CONFIG
+    # if dictconf_light is None:
+    #     print(
+    #         "No dictionary light config file provided. Using default DICT_LIGHT_CONFIG"
+    #     )
+    #     dictconf_light = cfg_mrf.DICT_LIGHT_CONFIG
+
+    if folder is not None:
+        folder = Path(folder)
+        if type(seqfile) == str:
+            seqfile = folder / seqfile
+        if type(dictconf) == str:
+            dictconf = folder / dictconf
+        if type(dictconf_light) == str:
+            dictconf_light = folder / dictconf_light
+
+    # dest
+
+    if datafile is None:
+        if echo_spacing is None:
+            raise ma.ExpectedError("Echo spacing should be provided when no datafile is given")
+    else:
+        import numpy as np
+        seq_params = build_dico_seqParams(str(datafile),index)
+        echo_spacing=np.round(seq_params["dTR"],2)
+        inversion_time=np.round(seq_params["TI"],2)
+        print("Echo spacing of {} ms read in the .dat file".format(echo_spacing))
+        print("Inversion time of {} ms read in the .dat file".format(inversion_time))
+
+    dest = Path(dest)
+    if not(force) and (dest.exists() and list(dest.glob("*"))):
+        raise ma.ExpectedError(f"Output directory ({dest}) is not empty. Aborting.")
+    dest.mkdir(exist_ok=True, parents=True)
+
+    generate_dictionaries(
+        seqfile,
+        wait_time,
+        echo_spacing,
+        dictconf,
+        dictconf_light,
+        TI=inversion_time,
+        dest=dest,
+        is_build_phi=is_build_phi,
+        L0=pca
+    )
+
+
 
 @ma.machine()
 @ma.parameter("filemap", str, default=None, description="MRF maps (.pkl)")
@@ -5113,6 +5203,7 @@ toolbox.add_program("build_mask_from_singular_volume", build_mask_from_singular_
 toolbox.add_program("build_mask_full_from_mask", build_mask_full_from_mask)
 toolbox.add_program("select_slices_volume", select_slices_volume)
 toolbox.add_program("generate_dictionaries_T1FF", generate_dictionaries_T1FF)
+toolbox.add_program("mrf_gendict", mrf_gendict)
 toolbox.add_program("extract_singular_volume_allbins", extract_singular_volume_allbins)
 toolbox.add_program("extract_allsingular_volumes_bin", extract_allsingular_volumes_bin)
 toolbox.add_program("build_volumes_iterative_allbins_registered", build_volumes_iterative_allbins_registered)

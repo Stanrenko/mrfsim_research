@@ -12,7 +12,8 @@ import epgpy as epg
 #from image_series import
 from mrfsim.utils_mrf import *
 from mrfsim.movements import *
-
+from .dictmodel import Dictionary
+import pathlib
 
 #from dictoptimizers import *
 

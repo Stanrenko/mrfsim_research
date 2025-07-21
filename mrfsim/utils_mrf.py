@@ -3973,42 +3973,101 @@ def calc_entropy(v):
     #p[p==0]=1 #pixel with value 0 are crashing the algo
     return np.sum(-np.log2(p) * p)
 
-def build_dico_seqParams(filename,folder):
-    filename_seqParams = str.split(filename, ".dat")[0] + "_seqParams.pkl"
+# def build_dico_seqParams(filename,folder):
+#     filename_seqParams = str.split(filename, ".dat")[0] + "_seqParams.pkl"
 
-    if str.split(filename_seqParams, "/")[-1] not in os.listdir(folder):
+#     if str.split(filename_seqParams, "/")[-1] not in os.listdir(folder):
 
-        twix = twixtools.read_twix(filename, optional_additional_maps=["sWipMemBlock", "sKSpace"],
-                                   optional_additional_arrays=["SliceThickness"])
+#         twix = twixtools.read_twix(filename, optional_additional_maps=["sWipMemBlock", "sKSpace"],
+#                                    optional_additional_arrays=["SliceThickness"])
 
-        if np.max(np.argwhere(np.array(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]) > 0)) >= 16:
+#         if np.max(np.argwhere(np.array(twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]) > 0)) >= 16:
+#             use_navigator_dll = True
+#         else:
+#             use_navigator_dll = False
+
+#         alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
+#         x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
+#         y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
+#         z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
+
+#         nb_part = twix[-1]["hdr"]["Meas"]["Partitions"]
+
+#         dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV, "z_FOV": z_FOV,
+#                           "use_navigator_dll": use_navigator_dll, "nb_part": nb_part}
+
+#         del alFree
+
+#         file = open(filename_seqParams, "wb")
+#         pickle.dump(dico_seqParams, file)
+#         file.close()
+
+#     else:
+#         file = open(filename_seqParams, "rb")
+#         dico_seqParams = pickle.load(file)
+#         file.close()
+
+#     return dico_seqParams
+
+
+
+def build_dico_seqParams(filename,index=-1):
+    
+    hdr = io_twixt.parse_twixt_header(filename)
+ 
+    alFree = get_specials(hdr, type="alFree",index=index)
+    adFree = get_specials(hdr, type="adFree",index=index)
+    geometry, is3D, orientation, offset = get_volume_geometry(hdr,index=index)
+    
+    protocol=hdr[index]["tProtocolName"]
+    print(protocol)
+    
+    if (protocol=="T1_mapping")or("raFin_1400Seg_1400Interleaved" in protocol)or("T1MAP" in protocol)or("customIR_Reco" in protocol)or("T1_MAP" in protocol):
+        nb_segments=alFree[3]
+    else:
+        nb_segments=alFree[4]
+
+    # print(nb_segments)
+    if is3D:
+        print("3D data")
+        x_FOV = hdr[index]['sSliceArray.asSlice[0].dReadoutFOV']
+        y_FOV = hdr[index]['sSliceArray.asSlice[0].dReadoutFOV']
+        z_FOV = hdr[index]['sSliceArray.asSlice[0].dThickness']
+        nb_part = hdr[index]['sKSpace.lPartitions']
+        minTE = hdr[index]["alTE[0]"] / 1e3
+        echoSpacing = adFree[1]
+        dTR = echoSpacing - minTE
+        total_TR = hdr[index]["alTR[0]"] / 1e6
+        invTime = adFree[0]
+
+        if np.max(np.argwhere(alFree> 0)) >= 16:
             use_navigator_dll = True
         else:
             use_navigator_dll = False
-
-        alFree = twix[-1]["hdr"]["Meas"]["sWipMemBlock"]["alFree"]
-        x_FOV = twix[-1]["hdr"]["Meas"]["RoFOV"]
-        y_FOV = twix[-1]["hdr"]["Meas"]["PeFOV"]
-        z_FOV = twix[-1]["hdr"]["Meas"]["SliceThickness"][0]
-
-        nb_part = twix[-1]["hdr"]["Meas"]["Partitions"]
-
-        dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV, "z_FOV": z_FOV,
-                          "use_navigator_dll": use_navigator_dll, "nb_part": nb_part}
-
-        del alFree
-
-        file = open(filename_seqParams, "wb")
-        pickle.dump(dico_seqParams, file)
-        file.close()
-
+        dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV,"z_FOV": z_FOV, "TI": invTime, "total_TR": total_TR,
+                            "dTR": dTR, "is3D": is3D, "orientation": orientation, "nb_part": nb_part, "offset": offset,"use_navigator_dll":use_navigator_dll,"nb_segments":nb_segments}
+        dico_seqParams.update(geometry)
+        
     else:
-        file = open(filename_seqParams, "rb")
-        dico_seqParams = pickle.load(file)
-        file.close()
+        # print("2D data")
 
+        
+        
+
+        x_FOV = hdr[index]['sSliceArray.asSlice[0].dReadoutFOV']
+        y_FOV = hdr[index]['sSliceArray.asSlice[0].dReadoutFOV']
+        minTE=hdr[index]["alTE[0]"]/1e3
+        echoSpacing=adFree[0]
+        dTR=echoSpacing-minTE
+        total_TR=hdr[index]["alTR[0]"]/1e6
+        invTime=adFree[1]
+
+        
+        
+        dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV,"TI":invTime,"total_TR":total_TR,"dTR":dTR,"offset": offset,"is3D": is3D, "orientation": orientation,"nb_segments":nb_segments}
+        dico_seqParams.update(geometry)
+        
     return dico_seqParams
-
 
 def build_data(filename,folder, nb_segments, nb_gating_spokes):
     filename_save = str.split(filename, ".dat")[0] + ".npy"
@@ -4941,3 +5000,23 @@ def add_temporal_basis(dico,L0=None):
         dico=compress_dictionary(dico,phi,L0)
     return dico
     
+
+def compress_dictionary(dico,phi,L0):
+    phi=phi[:L0]
+    mrfdict=dico["mrfdict"]
+    keys = mrfdict.keys
+    array_water = mrfdict.values[:, :, 0]
+    array_fat = mrfdict.values[:, :, 1]
+    array_water_projected=array_water@phi.T.conj()
+    array_fat_projected=array_fat@phi.T.conj()
+
+    mrfdict_light=dico["mrfdict_light"]
+    keys_light = mrfdict_light.keys
+    array_water = mrfdict_light.values[:, :, 0]
+    array_fat = mrfdict_light.values[:, :, 1]
+    array_water_light_projected=array_water@phi.T.conj()
+    array_fat_light_projected=array_fat@phi.T.conj()
+
+    dico["mrfdict_light_L0{}".format(L0)]=(array_water_light_projected,array_fat_light_projected,keys_light)
+    dico["mrfdict_L0{}".format(L0)]=(array_water_projected,array_fat_projected,keys)
+    return dico
