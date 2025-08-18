@@ -3,25 +3,25 @@
 #Processing whole body hybrid scan data
 # $1 : Folder containing all the .dat
 # $2 : Nb segments respi (optional - default 1400)
-# $3 : Nb segments mrf (optional - default 1400)
+# $3 : Nb segments mrf (optional - default 1024)
 # $4 : Example slice 1 (optional - default 46)
 # $5 : Example slice 2 (optional - default 20)
 
 
 # New dictionaries
-# DICTFILE="mrf_dictconf_Dico2_Invivo_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.1_reco2.99_w8_simmean.dict"
-# DICTFILE_LIGHT="mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.1_reco2.99_w8_simmean.dict"
+DICTFILE="mrf_dictconf_Dico2_Invivo_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.1_reco2.99_w8_simmean.dict"
+DICTFILE_LIGHT="mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.1_reco2.99_w8_simmean.dict"
 
-# DICTFILE_LOWBODY="mrf_dictconf_Dico2_Invivo_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.06_reco2.99_w8_simmean.dict"
-# DICTFILE_LOWBODY_LIGHT="mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.06_reco2.99_w8_simmean.dict"
+DICTFILE_LOWBODY="mrf_dictconf_Dico2_Invivo_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.06_reco2.99_w8_simmean.dict"
+DICTFILE_LOWBODY_LIGHT="mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.06_reco2.99_w8_simmean.dict"
 
 # Old dictionaries
 
-DICTFILE="mrf_dictconf_Dico2_Invivo_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.17_reco2.99_w8_simmean.dict"
-DICTFILE_LIGHT="mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.17_reco2.99_w8_simmean.dict"
+# DICTFILE="mrf_dictconf_Dico2_Invivo_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.17_reco2.99_w8_simmean.dict"
+# DICTFILE_LIGHT="mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.17_reco2.99_w8_simmean.dict"
 
-DICTFILE_LOWBODY="mrf_dictconf_Dico2_Invivo_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.12_reco2.99_w8_simmean.dict"
-DICTFILE_LOWBODY_LIGHT="mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.12_reco2.99_w8_simmean.dict"
+# DICTFILE_LOWBODY="mrf_dictconf_Dico2_Invivo_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.12_reco2.99_w8_simmean.dict"
+# DICTFILE_LOWBODY_LIGHT="mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.12_reco2.99_w8_simmean.dict"
 
 
 
@@ -46,36 +46,36 @@ filepath=$(dirname "$line")
 file_respi="${filename%.*}"
 file_respi_full=${targetfolder}/${file_respi}
 
-# echo "######################################################"
-# echo "Processing motion scan data"
+echo "######################################################"
+echo "Processing motion scan data"
 
-# echo ${filepath}/${file_respi}
-# echo "Copying ${filepath}/${filename} in ${targetfolder}"
-# cp ${filepath}/${filename} ${targetfolder}
-# echo "Copied ${filepath}/${filename} in ${targetfolder}"
+echo ${filepath}/${file_respi}
+echo "Copying ${filepath}/${filename} in ${targetfolder}"
+cp ${filepath}/${filename} ${targetfolder}
+echo "Copied ${filepath}/${filename} in ${targetfolder}"
 
 
 
-# echo ${file_respi_full}
-# ##### Extracting k-space and navigator data
-# echo "######################################################"
-# echo "Extracting k-space and navigator data"
-# python script_recoInVivo_3D_machines.py build_kdata --filename ${file_respi_full}.dat #--select-first-rep True --suffix "_firstrep"
+echo ${file_respi_full}
+##### Extracting k-space and navigator data
+echo "######################################################"
+echo "Extracting k-space and navigator data"
+python script_recoInVivo_3D_machines.py build_kdata --filename ${file_respi_full}.dat #--select-first-rep True --suffix "_firstrep"
 
-# rm ${file_respi_full}.dat
-# # rm ${file_respi_full}.npy
+rm ${file_respi_full}.dat
+# rm ${file_respi_full}.npy
 
-# echo "Building navigator images to help with channel choice"
-# python script_recoInVivo_3D_machines.py build_navigator_images --filename-nav-save ${file_respi_full}_nav.npy
-# cp ${file_respi_full}_image_nav.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
-# cp ${file_respi_full}_image_nav_diff.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+echo "Building navigator images to help with channel choice"
+python script_recoInVivo_3D_machines.py build_navigator_images --filename-nav-save ${file_respi_full}_nav.npy
+cp ${file_respi_full}_image_nav.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+cp ${file_respi_full}_image_nav_diff.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
-# echo "######################################################"
-# echo "Based on the navigator images, what is the channel with best contrast for motion estimation ?"
-# read CHANNEL
-# echo "Channel $CHANNEL will be used for motion estimation"
+echo "######################################################"
+echo "Based on the navigator images, what is the channel with best contrast for motion estimation ?"
+read CHANNEL
+echo "Channel $CHANNEL will be used for motion estimation"
 
-# sh shellscripts/run_MRF_MoCo_step1_us_bart_axial_nochannel.sh ${file_respi_full} ${CHANNEL} ${NSEGMENTS} ${SLICE1} ${SLICE2}
+sh shellscripts/run_MRF_MoCo_step1_us_bart_axial_nochannel.sh ${file_respi_full} ${CHANNEL} ${NSEGMENTS} ${SLICE1} ${SLICE2}
 
 
 EXAM=-4
@@ -90,12 +90,12 @@ find $1 -type f -name "*mrf*.dat" | sort | while read -r line ; do
     file_mrf="${filename%.*}"
 
 
-    if [ $EXAM -eq -4 ]
-    then
+    # if [ $EXAM -eq -4 ]
+    # then
         
-        EXAM=$((EXAM+1))
-        continue
-    fi
+    #     EXAM=$((EXAM+1))
+    #     continue
+    # fi
 
     # if [ $EXAM -eq -3 ]
     # then

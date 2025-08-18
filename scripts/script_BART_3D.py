@@ -1,22 +1,22 @@
 
-
+import sys
+os.environ['PATH'] = os.environ['TOOLBOX_PATH'] + ":" + os.environ['PATH']
+sys.path.append(os.environ['TOOLBOX_PATH'] + "/python/")
 import numpy as np
 from image_series import *
 from mrfsim.dictoptimizers import SimpleDictSearch,GaussianWeighting,BruteDictSearch
-from utils_mrf import *
+from mrfsim.utils_mrf import *
 import json
 import os
 import pickle
 from mutools import io
-from movements import TranslationBreathing
+from mrfsim.movements import TranslationBreathing
 from bart import bart
 import matplotlib.pyplot as plt
 
 import cfl
 import os
-import sys
-os.environ['PATH'] = os.environ['TOOLBOX_PATH'] + ":" + os.environ['PATH']
-sys.path.append(os.environ['TOOLBOX_PATH'] + "/python/")
+
 
 
 use_GPU = True
