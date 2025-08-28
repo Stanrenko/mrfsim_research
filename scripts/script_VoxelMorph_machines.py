@@ -12,9 +12,10 @@ sys.path.append(path+"/dicomstack")
 # third party imports
 import numpy as np
 import tensorflow as tf
+import json
 assert tf.__version__.startswith('2.'), 'This tutorial assumes Tensorflow 2.0+'
 from copy import copy
-from utils_reco import unpad,format_input_voxelmorph,format_input_voxelmorph_3D,plot_deformation_map
+from mrfsim.utils_reco import unpad,format_input_voxelmorph,format_input_voxelmorph_3D,plot_deformation_map,apply_deformation_to_complex_volume
 from skimage.transform import resize
 
 print(tf.config.experimental.list_physical_devices("GPU"))
@@ -29,7 +30,7 @@ try:
 except:
     pass
 import wandb
-from wandb.keras import WandbMetricsLogger,WandbModelCheckpoint
+from wandb.integration.keras import WandbMetricsLogger,WandbModelCheckpoint
 try:
     import torchio as tio
     import torch
@@ -39,12 +40,12 @@ except:
 
 from sklearn.model_selection import train_test_split
 from keras import backend
-from utils_reco import apply_deformation_to_complex_volume
 
-from machines import machine, Toolbox, Config, set_parameter, set_output, printer, file_handler, Parameter, RejectException, get_context
+import machines as ma
+from machines import Toolbox
 
-DEFAULT_TRAIN_CONFIG="config_train_voxelmorph.json"
-DEFAULT_TRAIN_CONFIG_3D="config_train_voxelmorph_3D.json"
+DEFAULT_TRAIN_CONFIG="../config/config_train_voxelmorph.json"
+DEFAULT_TRAIN_CONFIG_3D="../config/config_train_voxelmorph_3D.json"
 # You should most often have this import together with all other imports at the top,
 # but we include here here explicitly to show where data comes from
 
@@ -213,19 +214,22 @@ def vxm_data_generator_torchvision(x_data_fixed, x_data_moving, transform_list,b
 
         yield (inputs, outputs)
 
-@machine
-@set_parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
-@set_parameter("config_train",type=Config,default=DEFAULT_TRAIN_CONFIG,description="Config training")
-@set_parameter("kept_bins",str,default=None,description="Bins to keep for training")
-@set_parameter("suffix",str,default="",description="suffix")
-@set_parameter("resolution",int,default=None,description="image resolution")
-@set_parameter("nepochs",int,default=None,description="Number of epochs (overwrites config)")
-@set_parameter("lr",float,default=None,description="Learning rate (overwrites config)")
-@set_parameter("init_weights",str,default=None,description="Weights initialization from .h5 file")
-@set_parameter("us",int,default=None,description="Select one every us slice")
-@set_parameter("excluded",int,default=5,description="Excluded slices on both extremities")
-@set_parameter("axis",int,default=None,description="Change registration axis")
-def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolution,nepochs,lr,kept_bins,axis,us,excluded):
+@ma.machine()
+@ma.parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
+@ma.parameter("file_config_train",str,default=DEFAULT_TRAIN_CONFIG,description="Config training")
+@ma.parameter("kept_bins",str,default=None,description="Bins to keep for training")
+@ma.parameter("suffix",str,default="",description="suffix")
+@ma.parameter("resolution",int,default=None,description="image resolution")
+@ma.parameter("nepochs",int,default=None,description="Number of epochs (overwrites config)")
+@ma.parameter("lr",float,default=None,description="Learning rate (overwrites config)")
+@ma.parameter("init_weights",str,default=None,description="Weights initialization from .h5 file")
+@ma.parameter("us",int,default=None,description="Select one every us slice")
+@ma.parameter("excluded",int,default=5,description="Excluded slices on both extremities")
+@ma.parameter("axis",int,default=None,description="Change registration axis")
+def train_voxelmorph(filename_volumes,file_config_train,suffix,init_weights,resolution,nepochs,lr,kept_bins,axis,us,excluded):
+
+    with open(file_config_train,"r") as f:
+        config_train=json.load(f)
 
     all_volumes = np.abs(np.load(filename_volumes))
     print("Volumes shape {}".format(all_volumes.shape))
@@ -325,8 +329,12 @@ def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolutio
     # configure unet input shape (concatenation of moving and fixed images)
     inshape = x_train_fixed.shape[1:]
 
-    vxm_model = vxm.networks.VxmDense(inshape, nb_features, int_steps=0)
+    print(inshape)
 
+    print(nb_features)
+
+    vxm_model = vxm.networks.VxmDense(inshape, nb_features, int_steps=0)
+    print("Model defined")
     # voxelmorph has a variety of custom loss classes
 
     if loss=="MSE":
@@ -385,14 +393,19 @@ def train_voxelmorph(filename_volumes,config_train,suffix,init_weights,resolutio
     plt.xlabel('epoch')
     plt.savefig(file_model.split(".h5")[0]+"_loss.jpg")
 
+    return
 
-@machine
-@set_parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
-@set_parameter("config_train",type=Config,default=DEFAULT_TRAIN_CONFIG_3D,description="Config training")
-@set_parameter("suffix",str,default="",description="suffix")
-@set_parameter("init_weights",str,default=None,description="Weights initialization from .h5 file")
-@set_parameter("kept_bins",str,default=None,description="Bins to keep for training")
-def train_voxelmorph_3D(filename_volumes,config_train,suffix,init_weights,kept_bins):
+
+@ma.machine()
+@ma.parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
+@ma.parameter("file_config_train",str,default=DEFAULT_TRAIN_CONFIG_3D,description="Config training")
+@ma.parameter("suffix",str,default="",description="suffix")
+@ma.parameter("init_weights",str,default=None,description="Weights initialization from .h5 file")
+@ma.parameter("kept_bins",str,default=None,description="Bins to keep for training")
+def train_voxelmorph_3D(filename_volumes,file_config_train,suffix,init_weights,kept_bins):
+
+    with open(file_config_train,"r") as f:
+        config_train=json.load(f)
 
     all_volumes = np.abs(np.load(filename_volumes))
     print("Volumes shape {}".format(all_volumes.shape))
@@ -521,13 +534,16 @@ def train_voxelmorph_3D(filename_volumes,config_train,suffix,init_weights,kept_b
 
 
 
-@machine
-@set_parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
-@set_parameter("config_train",type=Config,default=DEFAULT_TRAIN_CONFIG,description="Config training")
-@set_parameter("suffix",str,default="",description="suffix")
-@set_parameter("init_weights",str,default=None,description="Weights initialization from .h5 file")
-def train_voxelmorph_torchio(filename_volumes,config_train,suffix,init_weights):
+@ma.machine()
+@ma.parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
+@ma.parameter("file_config_train",str,default=DEFAULT_TRAIN_CONFIG,description="Config training")
+@ma.parameter("suffix",str,default="",description="suffix")
+@ma.parameter("init_weights",str,default=None,description="Weights initialization from .h5 file")
+def train_voxelmorph_torchio(filename_volumes,file_config_train,suffix,init_weights):
     
+    with open(file_config_train,"r") as f:
+        config_train=json.load(f)
+
     all_volumes = np.load(filename_volumes)
     print("Volumes shape {}".format(all_volumes.shape))
     all_volumes=all_volumes.astype("float32")
@@ -640,13 +656,16 @@ def train_voxelmorph_torchio(filename_volumes,config_train,suffix,init_weights):
     plt.xlabel('epoch')
     plt.savefig(file_model.split(".h5")[0]+"_loss.jpg")
 
-@machine
-@set_parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
-@set_parameter("config_train",type=Config,default=DEFAULT_TRAIN_CONFIG,description="Config training")
-@set_parameter("suffix",str,default="",description="suffix")
-@set_parameter("init_weights",str,default=None,description="Weights initialization from .h5 file")
-def train_voxelmorph_torchvision(filename_volumes,config_train,suffix,init_weights):
+@ma.machine()
+@ma.parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
+@ma.parameter("file_config_train",str,default=DEFAULT_TRAIN_CONFIG,description="Config training")
+@ma.parameter("suffix",str,default="",description="suffix")
+@ma.parameter("init_weights",str,default=None,description="Weights initialization from .h5 file")
+def train_voxelmorph_torchvision(filename_volumes,file_config_train,suffix,init_weights):
     
+    with open(file_config_train,"r") as f:
+        config_train=json.load(f)
+
     all_volumes = np.load(filename_volumes)
     print("Volumes shape {}".format(all_volumes.shape))
     all_volumes=np.abs(all_volumes).astype("float32")
@@ -758,12 +777,15 @@ def train_voxelmorph_torchvision(filename_volumes,config_train,suffix,init_weigh
     plt.savefig(file_model.split(".h5")[0]+"_loss.jpg")
 
 
-@machine
-@set_parameter("config_train", type=Config, default=DEFAULT_TRAIN_CONFIG, description="Config training")
-@set_parameter("kept_bins", str, default=None, description="Bins to keep for training")
-@set_parameter("suffix", str, default="", description="suffix")
-@set_parameter("init_weights", str, default=None, description="Weights initialization from .h5 file")
-def train_voxelmorph_torchvision_multiple_patients(config_train, suffix, init_weights, kept_bins):
+@ma.machine()
+@ma.parameter("file_config_train", str, default=DEFAULT_TRAIN_CONFIG, description="Config training")
+@ma.parameter("kept_bins", str, default=None, description="Bins to keep for training")
+@ma.parameter("suffix", str, default="", description="suffix")
+@ma.parameter("init_weights", str, default=None, description="Weights initialization from .h5 file")
+def train_voxelmorph_torchvision_multiple_patients(file_config_train, suffix, init_weights, kept_bins):
+    with open(file_config_train,"r") as f:
+        config_train=json.load(f)
+
     filenames = config_train["filenames"]
     folder = config_train["folder"]
 
@@ -929,12 +951,15 @@ def train_voxelmorph_torchvision_multiple_patients(config_train, suffix, init_we
     plt.xlabel('epoch')
     plt.savefig(file_model.split(".h5")[0] + "_loss.jpg")
 
-@machine
-@set_parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
-@set_parameter("file_model",str,default=None,description="Trained Model weights")
-@set_parameter("config_train",type=Config,default=DEFAULT_TRAIN_CONFIG,description="Config training")
+@ma.machine()
+@ma.parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
+@ma.parameter("file_model",str,default=None,description="Trained Model weights")
+@ma.parameter("file_config_train",str,default=DEFAULT_TRAIN_CONFIG,description="Config training")
 
-def evaluate_model(filename_volumes,file_model,config_train):
+def evaluate_model(filename_volumes,file_model,file_config_train):
+    with open(file_config_train,"r") as f:
+        config_train=json.load(f)
+
     dx=1# Might want to change that (but not that important for now given that the registration is 2D)
     dy=1
     dz=5
@@ -991,16 +1016,19 @@ def evaluate_model(filename_volumes,file_model,config_train):
         sitk.WriteImage(moved_3D,file_model.split(".h5")[0]+"_moved_vm_gr{}.mha".format(gr))
 
 
-@machine
-@set_parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
-@set_parameter("file_model",str,default=None,description="Trained Model weights")
-@set_parameter("config_train",type=Config,default=DEFAULT_TRAIN_CONFIG,description="Config training")
-@set_parameter("file_deformation",str,default=None,description="Initial deformation if doing multiple pass of registration algo")
-@set_parameter("niter",int,default=1,description="Number of iterations for registration")
-@set_parameter("resolution",int,default=None,description="Image resolution")
-@set_parameter("metric",["abs","phase","real","imag"],default="abs",description="Metric to register")
-@set_parameter("axis",int,default=None,description="Change registration axis")
-def register_allbins_to_baseline(filename_volumes,file_model,config_train,niter,file_deformation,resolution,metric,axis):
+@ma.machine()
+@ma.parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
+@ma.parameter("file_model",str,default=None,description="Trained Model weights")
+@ma.parameter("file_config_train",str,default=DEFAULT_TRAIN_CONFIG,description="Config training")
+@ma.parameter("file_deformation",str,default=None,description="Initial deformation if doing multiple pass of registration algo")
+@ma.parameter("niter",int,default=1,description="Number of iterations for registration")
+@ma.parameter("resolution",int,default=None,description="Image resolution")
+@ma.parameter("metric",["abs","phase","real","imag"],default="abs",description="Metric to register")
+@ma.parameter("axis",int,default=None,description="Change registration axis")
+def register_allbins_to_baseline(filename_volumes,file_model,file_config_train,niter,file_deformation,resolution,metric,axis):
+
+    with open(file_config_train,"r") as f:
+        config_train=json.load(f)
 
     all_volumes = np.load(filename_volumes)
 
@@ -1115,11 +1143,11 @@ def register_allbins_to_baseline(filename_volumes,file_model,config_train,niter,
     np.save(filename_registered_volumes,registered_volumes)
     np.save(filename_deformation, deformation_map)
     
-@machine
-@set_parameter("file_deformation",str,default=None,description="deformation")
-@set_parameter("gr",int,default=None,description="Respiratory bin")
-@set_parameter("sl",int,default=None,description="Slice")
-@set_parameter("axis",int,default=None,description="Change registration axis")
+@ma.machine()
+@ma.parameter("file_deformation",str,default=None,description="deformation")
+@ma.parameter("gr",int,default=None,description="Respiratory bin")
+@ma.parameter("sl",int,default=None,description="Slice")
+@ma.parameter("axis",int,default=None,description="Change registration axis")
 def plot_deformation_flow(file_deformation,gr,sl,axis):
     deformation_map=np.load(file_deformation)
     if gr is None:
@@ -1131,10 +1159,10 @@ def plot_deformation_flow(file_deformation,gr,sl,axis):
     plot_deformation_map(deformation_map[:,gr,sl],us=4,save_file=file_plot)
 
 
-@machine
-@set_parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
-@set_parameter("file_deformation",str,default=None,description="Initial deformation if doing multiple pass of registration algo")
-@set_parameter("axis",int,default=None,description="Registration axis")
+@ma.machine()
+@ma.parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
+@ma.parameter("file_deformation",str,default=None,description="Initial deformation if doing multiple pass of registration algo")
+@ma.parameter("axis",int,default=None,description="Registration axis")
 def apply_deformation_map(filename_volumes,file_deformation,axis):
     all_volumes = np.load(filename_volumes)
     filename_registered_volumes = filename_volumes.split(".npy")[0] + "_registered_by_deformation.npy"
@@ -1180,13 +1208,16 @@ def apply_deformation_map(filename_volumes,file_deformation,axis):
 
     return
 
-@machine
-@set_parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
-@set_parameter("file_model",str,default=None,description="Trained Model weights")
-@set_parameter("config_train",type=Config,default=DEFAULT_TRAIN_CONFIG_3D,description="Config training")
-@set_parameter("file_deformation",str,default=None,description="Initial deformation if doing multiple pass of registration algo")
-@set_parameter("niter",int,default=1,description="Number of iterations for registration")
-def register_allbins_to_baseline_3D(filename_volumes,file_model,config_train,niter,file_deformation):
+@ma.machine()
+@ma.parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
+@ma.parameter("file_model",str,default=None,description="Trained Model weights")
+@ma.parameter("file_config_train",str,default=DEFAULT_TRAIN_CONFIG_3D,description="Config training")
+@ma.parameter("file_deformation",str,default=None,description="Initial deformation if doing multiple pass of registration algo")
+@ma.parameter("niter",int,default=1,description="Number of iterations for registration")
+def register_allbins_to_baseline_3D(filename_volumes,file_model,file_config_train,niter,file_deformation):
+
+    with open(file_config_train,"r") as f:
+        config_train=json.load(f)
 
     all_volumes = np.abs(np.load(filename_volumes))
     filename_registered_volumes=filename_volumes.split(".npy")[0]+"_registered_3D.npy"

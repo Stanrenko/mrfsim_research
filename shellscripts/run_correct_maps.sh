@@ -1,7 +1,7 @@
 eval "$(conda shell.bash hook)"
 conda deactivate
 eval "$(conda shell.bash hook)"
-conda activate mrf
+conda activate mrfsim-research-v2
 
 find $1 -type f -name "*_seqParams.pkl" | while read -r line ; do
     echo "Processing $line"
@@ -25,8 +25,8 @@ find $1 -type f -name "*_seqParams.pkl" | while read -r line ; do
 
     find $1 -type f -name "${file_no_ext}*wT1.mha" | while read -r line2 ; do
         echo "Processing $line2"
-        # python script_recoInVivo_3D_machines.py getGeometry --filemha ${line2} --filename ${line} --suffix "_adjusted"
-        python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${line2} --filedico ${filepath}/${filedico} --nifti True
+        # python scripts/script_recoInVivo_3D_machines.py getGeometry --filemha ${line2} --filename ${line} --suffix "_adjusted"
+        python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${line2} --filedico ${filepath}/${filedico} --nifti True
 
         filemha=$(basename "$line2")
         filemha_no_ext="${filemha%.*}"
@@ -43,18 +43,18 @@ find $1 -type f -name "*_seqParams.pkl" | while read -r line ; do
         conda deactivate
 
         eval "$(conda shell.bash hook)"
-        conda activate mrf
+        conda activate mrfsim-research-v2
 
-        python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filedico} --suffix "_offset" --apply-offset True --nifti True --reorient False
+        python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filedico} --suffix "_offset" --apply-offset True --nifti True --reorient False
 
-        python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filenii} --filedico ${filepath}/${filedico} --suffix "_offset" --apply-offset True --nifti True --reorient False
+        python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filenii} --filedico ${filepath}/${filedico} --suffix "_offset" --apply-offset True --nifti True --reorient False
             
     done
 
     find $1 -type f -name "${file_no_ext}*ff.mha" | while read -r line2 ; do
         echo "Processing $line2"
-        # python script_recoInVivo_3D_machines.py getGeometry --filemha ${line2} --filename ${line} --suffix "_adjusted"
-        python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${line2} --filedico ${filepath}/${filedico} --nifti True
+        # python scripts/script_recoInVivo_3D_machines.py getGeometry --filemha ${line2} --filename ${line} --suffix "_adjusted"
+        python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${line2} --filedico ${filepath}/${filedico} --nifti True
 
         filemha=$(basename "$line2")
         filemha_no_ext="${filemha%.*}"
@@ -70,11 +70,11 @@ find $1 -type f -name "*_seqParams.pkl" | while read -r line ; do
         conda deactivate
 
         eval "$(conda shell.bash hook)"
-        conda activate mrf
+        conda activate mrfsim-research-v2
 
-        python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filedico} --suffix "_offset" --apply-offset True --nifti True --reorient False
+        python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filedico} --suffix "_offset" --apply-offset True --nifti True --reorient False
 
-        python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filenii} --filedico ${filepath}/${filedico} --suffix "_offset" --apply-offset True --nifti True --reorient False
+        python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filenii} --filedico ${filepath}/${filedico} --suffix "_offset" --apply-offset True --nifti True --reorient False
             
     done
 

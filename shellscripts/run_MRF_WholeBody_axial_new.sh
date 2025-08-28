@@ -9,8 +9,8 @@
 
 
 # New dictionaries
-DICTFILE="mrf_dictconf_Dico2_Invivo_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.1_reco2.99_w8_simmean.dict"
-DICTFILE_LIGHT="mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.1_reco2.99_w8_simmean.dict"
+DICTFILE="dico/mrf_dictconf_Dico2_Invivo_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.1_reco2.99_w8_simmean.dict"
+DICTFILE_LIGHT="dico/mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.1_reco2.99_w8_simmean.dict"
 
 DICTFILE_LOWBODY="mrf_dictconf_Dico2_Invivo_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.06_reco2.99_w8_simmean.dict"
 DICTFILE_LOWBODY_LIGHT="mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot_B1df_random_FA_varsp_varparam_allparams_2.22_2.06_reco2.99_w8_simmean.dict"
@@ -160,7 +160,6 @@ echo "Generating whole-body maps"
 echo "######################################################"
 echo "Correcting maps for distortion and applying offset"
 
-sh shellscripts/copy_processed_MRF_files.sh ${1}
 sh shellscripts/run_correct_maps.sh ${targetfolder}
 
 echo "######################################################"

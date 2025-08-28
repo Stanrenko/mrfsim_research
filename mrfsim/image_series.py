@@ -1,6 +1,6 @@
 try:
     import matplotlib
-    matplotlib.use('Agg')
+    # matplotlib.use('Agg')
 
     import matplotlib.pyplot as plt
 except:
@@ -52,7 +52,7 @@ DEFAULT_ROUNDING_ff=2
 DEFAULT_IMAGE_SIZE =(256,256)
 
 UNITS ={
-    "attB1":"a.u",
+    "att":"a.u",
     "df":"kHz",
     "wT1":"ms",
     "fT1":"ms",
@@ -62,7 +62,7 @@ UNITS ={
 }
 
 PARAMS_WINDOWS={
-    "attB1":[0,2],
+    "att":[0,2],
     "df":[-0.5,0.5],
     "wT1":[0,2000],
     "fT1":[0,1000],
@@ -143,8 +143,8 @@ class ImageSeries(object):
                     self.paramDict["rounding_fT2"] = DEFAULT_ROUNDING_fT2
                 if "rounding_ff" not in self.paramDict:
                     self.paramDict["rounding_ff"] = DEFAULT_ROUNDING_ff
-                if "rounding_attB1" not in self.paramDict:
-                    self.paramDict["rounding_attB1"] = DEFAULT_ROUNDING_attB1
+                if "rounding_att" not in self.paramDict:
+                    self.paramDict["rounding_att"] = DEFAULT_ROUNDING_attB1
                 if "rounding_df" not in self.paramDict:
                     self.paramDict["rounding_df"] = DEFAULT_ROUNDING_df
 
@@ -168,7 +168,7 @@ class ImageSeries(object):
         if self.paramMap is None:
             return ValueError("buildparamMap should be called prior to image simulation")
 
-        list_keys = ["wT1","wT2","fT1","fT2","attB1","df","ff"]
+        list_keys = ["wT1","wT2","fT1","fT2","att","df","ff"]
         for k in list_keys:
             if k not in self.paramMap:
                 raise ValueError("key {} should be in the paramMap".format(k))
@@ -215,15 +215,16 @@ class ImageSeries(object):
 
         # fat
         print("Simulating Fat Signal")
-        eval = "dot(signal, amps)"
-        args = {"amps": self.fat_amp}
+        # eval = "dot(signal, amps)"
+        # args = {"amps": self.fat_amp}
 
 
         if self.paramDict["gen_mode"] == "loop":
             fat_list = []
             print("Simulation in loop mode")
             for param in tqdm(params_unique):
-                current_fat = seq(T1=param[2], T2=param[3], att=param[4], g=[cs + param[5] for cs in self.fat_cs],eval=eval,args=args)
+                current_fat = seq(T1=param[2], T2=param[3], att=param[4], g=[cs + param[5] for cs in self.fat_cs])#,eval=eval,args=args)
+                current_fat=current_fat @ self.fat_amp
                 fat_list.append(current_fat)
             fat = np.squeeze(np.array(fat_list))
             del fat_list
@@ -232,8 +233,8 @@ class ImageSeries(object):
         else:
             # merge df and fat_cs df to dict
             fatdf_in_map = [[cs + f for cs in self.fat_cs] for f in df_in_map]
-            fat = seq(T1=[fT1_in_map], T2=fT2_in_map, att=[[attB1_in_map]], g=[[[fatdf_in_map]]], eval=eval, args=args)
-
+            fat = seq(T1=[fT1_in_map], T2=fT2_in_map, att=[[attB1_in_map]], g=[[[fatdf_in_map]]])#, eval=eval, args=args)
+            fat = fat @ self.fat_amp
         # if self.paramDict["sim_mode"]=="mean":
         #     fat = [np.mean(gp, axis=0) for gp in groupby(fat, window)]
         # elif self.paramDict["sim_mode"]=="mid_point":
@@ -252,9 +253,12 @@ class ImageSeries(object):
             values = np.moveaxis(values, 0, 1)
         else :
             keys = list(itertools.product(wT1_in_map, wT2_in_map, fT1_in_map, fT2_in_map, attB1_in_map, df_in_map))
+            print(water.shape)
+            print(fat.shape)
             values = np.stack(np.broadcast_arrays(water, fat), axis=-1)
             values = np.moveaxis(values.reshape(len(values), -1, 2), 0, 1)
         mrfdict = Dictionary(keys, values)
+        
 
         images_series = np.zeros(self.image_size + (values.shape[-2],), dtype=np.complex_)
         #water_series = images_series.copy()
@@ -302,7 +306,7 @@ class ImageSeries(object):
         if self.paramMap is None:
             return ValueError("buildparamMap should be called prior to image simulation")
 
-        list_keys = ["wT1","wT2","fT1","fT2","attB1","df","ff"]
+        list_keys = ["wT1","wT2","fT1","fT2","att","df","ff"]
         for k in list_keys:
             if k not in self.paramMap:
                 raise ValueError("key {} should be in the paramMap".format(k))
@@ -983,7 +987,7 @@ class RandomMap(ImageSeries):
             "wT2": map_all_on_mask[:, 1],
             "fT1": map_all_on_mask[:, 2],
             "fT2": map_all_on_mask[:, 3],
-            "attB1": map_all_on_mask[:, 4],
+            "att": map_all_on_mask[:, 4],
             "df": map_all_on_mask[:, 5],
             "ff": map_all_on_mask[:, 6]
 
@@ -1099,7 +1103,7 @@ class MapFromFile(ImageSeries):
             "wT2": map_all_on_mask[:, 1],
             "fT1": map_all_on_mask[:, 2],
             "fT2": map_all_on_mask[:, 3],
-            "attB1": map_all_on_mask[:, 4],
+            "att": map_all_on_mask[:, 4],
             "df": -map_all_on_mask[:, 5]/1000,
             "ff": map_all_on_mask[:, 6]
         }
@@ -1166,7 +1170,7 @@ class MapFromDict(ImageSeries):
         map_fT1 = mask*self.paramDict["default_fT1"]
         map_fT2 = mask*self.paramDict["default_fT2"]
 
-        map_all = np.stack((paramMap["wT1"], map_wT2, map_fT1, map_fT2, paramMap["attB1"], paramMap["df"], paramMap["ff"]), axis=-1)
+        map_all = np.stack((paramMap["wT1"], map_wT2, map_fT1, map_fT2, paramMap["att"], paramMap["df"], paramMap["ff"]), axis=-1)
         map_all_on_mask = map_all[mask > 0]
 
         self.paramMap = {
@@ -1174,7 +1178,7 @@ class MapFromDict(ImageSeries):
             "wT2": map_all_on_mask[:, 1],
             "fT1": map_all_on_mask[:, 2],
             "fT2": map_all_on_mask[:, 3],
-            "attB1": map_all_on_mask[:, 4],
+            "att": map_all_on_mask[:, 4],
             "df": map_all_on_mask[:, 5],
             "ff": map_all_on_mask[:, 6]
         }
@@ -1401,7 +1405,7 @@ class MapFromFile3D(ImageSeries3D):
             "wT2": map_all_on_mask[:, 1],
             "fT1": map_all_on_mask[:, 2],
             "fT2": map_all_on_mask[:, 3],
-            "attB1": map_all_on_mask[:, 4],
+            "att": map_all_on_mask[:, 4],
             "df": -map_all_on_mask[:, 5] / 1000,
             "ff": map_all_on_mask[:, 6]
         }
@@ -1456,7 +1460,7 @@ class MapFromDict3D(ImageSeries3D):
         map_fT1 = mask*self.paramDict["default_fT1"]
         map_fT2 = mask*self.paramDict["default_fT2"]
 
-        map_all = np.stack((paramMap["wT1"], map_wT2, map_fT1, map_fT2, paramMap["attB1"], paramMap["df"], paramMap["ff"]), axis=-1)
+        map_all = np.stack((paramMap["wT1"], map_wT2, map_fT1, map_fT2, paramMap["att"], paramMap["df"], paramMap["ff"]), axis=-1)
         map_all_on_mask = map_all[mask > 0]
 
         self.paramMap = {
@@ -1464,7 +1468,7 @@ class MapFromDict3D(ImageSeries3D):
             "wT2": map_all_on_mask[:, 1],
             "fT1": map_all_on_mask[:, 2],
             "fT2": map_all_on_mask[:, 3],
-            "attB1": map_all_on_mask[:, 4],
+            "att": map_all_on_mask[:, 4],
             "df": map_all_on_mask[:, 5],
             "ff": map_all_on_mask[:, 6]
         }
@@ -1552,7 +1556,7 @@ class RandomMap3D(ImageSeries3D):
             "wT2": map_all_on_mask[:, 1],
             "fT1": map_all_on_mask[:, 2],
             "fT2": map_all_on_mask[:, 3],
-            "attB1": map_all_on_mask[:, 4],
+            "att": map_all_on_mask[:, 4],
             "df": map_all_on_mask[:, 5],
             "ff": map_all_on_mask[:, 6]
 

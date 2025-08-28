@@ -1,6 +1,6 @@
 
 import matplotlib
-matplotlib.use("Agg")
+# matplotlib.use("Agg")
 from mrfsim.image_series import *
 from mrfsim.dictoptimizers import SimpleDictSearch
 
@@ -12,6 +12,7 @@ from mrfsim.utils_simu import *
 from mrfsim.utils_reco import *
 from mrfsim.utils_mrf import *
 from mrfsim.trajectory import *
+from mrfsim import io
 
 import math
 import nibabel as nib
@@ -25,6 +26,7 @@ import machines as ma
 
 
 from machines import Toolbox
+import glob
 
 
 import sys
@@ -247,56 +249,7 @@ def build_kdata(filename,suffix,dens_adj,nb_rep,select_first_rep,index,save):
     if str.split(filename_seqParams, "/")[-1] not in os.listdir(folder):
 
        
-        hdr = io_twixt.parse_twixt_header(filename)
-        print(len(hdr))
-        print(index)
-        #index=5
-        alFree = get_specials(hdr, type="alFree",index=index)
-        adFree = get_specials(hdr, type="adFree",index=index)
-        print(alFree)
-
-        if np.max(np.argwhere(alFree> 0)) >= 19:
-            use_kushball_dll = True
-        else:
-            use_kushball_dll = False
-
-        if np.max(np.argwhere(alFree> 0)) >= 16:
-            use_navigator_dll = True
-        else:
-            use_navigator_dll = False
-
-
-        if use_kushball_dll:
-            meas_sampling_mode=alFree[16]
-        elif use_navigator_dll:
-            meas_sampling_mode=alFree[15]
-
-        if meas_sampling_mode==4:
-            print("3D Kushball sampling")
-            is_spherical=True
-        else:
-            is_spherical =False
-            
-        geometry, is3D, orientation, offset = get_volume_geometry(hdr,index=index,is_spherical=is_spherical)
-
-        nb_segments = alFree[4]
-
-        x_FOV = hdr[index]['sSliceArray.asSlice[0].dReadoutFOV']
-        y_FOV = hdr[index]['sSliceArray.asSlice[0].dReadoutFOV']
-        z_FOV = hdr[index]['sSliceArray.asSlice[0].dThickness']
-        nb_part = hdr[index]['sKSpace.lPartitions']
-
-        minTE = hdr[index]["alTE[0]"] / 1e3
-        echoSpacing = adFree[1]
-        dTR = echoSpacing - minTE
-        total_TR = hdr[index]["alTR[0]"] / 1e6
-        invTime = adFree[0]    
-            
-        dico_seqParams = {"alFree": alFree, "x_FOV": x_FOV, "y_FOV": y_FOV,"z_FOV": z_FOV, "TI": invTime, "total_TR": total_TR,
-                          "dTR": dTR, "is3D": is3D, "orientation": orientation, "nb_part": nb_part, "offset": offset,"use_navigator_dll":use_navigator_dll,"use_kushball_dll":use_kushball_dll}
-        dico_seqParams.update(geometry)
-
-        dico_seqParams["Spherical"]=is_spherical
+        dico_seqParams = build_dico_seqParams(filename,index=index)
 
         
 
@@ -385,24 +338,21 @@ def build_kdata(filename,suffix,dens_adj,nb_rep,select_first_rep,index,save):
             print("Reading Navigator Data....")
             data_for_nav = []
             data = []
-            nav_size_initialized = False
             # k = 0
             for i, mdb in enumerate(mdb_list):
                 if mdb.is_image_scan():
-                    if not (mdb.mdh[14][9]):
+                    if not (mdb.mdh.Counter.Ida):
                         mdb_data_shape = mdb.data.shape
                         mdb_dtype = mdb.data.dtype
-                        nav_size_initialized = True
                         break
 
             for i, mdb in enumerate(mdb_list):
                 if mdb.is_image_scan():
-                    if not (mdb.mdh[14][9]):
+                    if not (mdb.mdh.Counter.Ida):
                         data.append(mdb)
                     else:
                         data_for_nav.append(mdb)
                         data.append(np.zeros(mdb_data_shape, dtype=mdb_dtype))
-
                     # print("i : {} / k : {} / Line : {} / Part : {}".format(i, k, mdb.cLin, mdb.cPar))
                     # k += 1
             data_for_nav = np.array([mdb.data for mdb in data_for_nav])
@@ -915,7 +865,49 @@ def build_maps(filename_volume,filename_mask,dico_full_file,optimizer_config,sli
     return
 
 
+@ma.machine()
+@ma.parameter("filename_map", str, default=None, description="Maps .pkl")
+@ma.parameter("filename_seqParams", str, default=None, description="Seq Params .pkl")
+@ma.parameter("params", str, default=None, description="Parameters to output (e.g. 'ff_wT1_df_att' )")
+def generate_image_maps(filename_map,filename_seqParams,params):
 
+    if params is None:
+        params="ff_wT1_df_att"
+
+    params=str.split(params,"_")
+    print(params)
+
+    print(filename_seqParams)
+    print(filename_map)
+    with open(filename_seqParams,"rb") as file:
+        dico=pickle.load(file)
+    
+    dx,dy,dz=dico["spacing"]
+
+    print("dx,dy,dz : ",dx,dy,dz)
+    with open(filename_map,"rb") as filemap:
+        all_maps=pickle.load(filemap)
+
+    print(list(all_maps[0][0].keys()))
+    for iter in list(all_maps.keys()):
+
+        map_rebuilt=all_maps[iter][0]
+        mask=all_maps[iter][1]
+
+        map_rebuilt["wT1"][map_rebuilt["ff"] > 0.7] = 0.0
+
+        keys_simu = list(map_rebuilt.keys())
+        values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+        map_for_sim = dict(zip(keys_simu, values_simu))
+
+        #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+        #map_Python.buildParamMap()
+
+
+        for key in params:
+            file_mha = "/".join(["/".join(str.split(filename_map,"/")[:-1]),"_".join(str.split(str.split(filename_map,"/")[-1],".")[:-1])]) + "_it{}_{}.mha".format(iter,key)
+            io.write(file_mha,map_for_sim[key],tags={"spacing":[dz,dx,dy]})
+    return
 
 @ma.machine()
 @ma.parameter("file_map",str,default=None,description="map file (.pkl)")
@@ -953,88 +945,86 @@ def build_additional_maps(file_map,file_ref):
 
 
 
+# @ma.machine()
+# @ma.parameter("file_map",str,default=None,description="map file (.pkl)")
+# @ma.parameter("config_image_maps",type=ma.Config(),default=None,description="Image Config")
+# @ma.parameter("suffix", str, default="", description="suffix")
+# def generate_image_maps(file_map,config_image_maps,suffix):
+#     return_cost=config_image_maps["return_cost"]
+#     return_matched_signals=config_image_maps["return_matched_signals"]
+#     #keys=list(all_maps.keys())
+#     keys=config_image_maps["keys"]
+#     list_l=config_image_maps["singular_volumes_outputted"]
+
+#     print(keys)
+
+#     distances=config_image_maps["image_distances"]
+#     dx=distances[0]
+#     dy=distances[1]
+#     dz=distances[2]
+
+#     #file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format("")
+#     curr_file=file_map
+#     file = open(curr_file, "rb")
+#     all_maps = pickle.load(file)
+#     file.close()
+
+#     if not(keys):
+#         keys=list(all_maps.keys())
+
+#     for iter in keys:
+
+#         map_rebuilt=all_maps[iter][0]
+#         mask=all_maps[iter][1]
+
+#         map_rebuilt["wT1"][map_rebuilt["ff"] > 0.7] = 0.0
+
+#         keys_simu = list(map_rebuilt.keys())
+#         values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
+#         map_for_sim = dict(zip(keys_simu, values_simu))
+
+#         #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
+#         #map_Python.buildParamMap()
 
 
-@ma.machine()
-@ma.parameter("file_map",str,default=None,description="map file (.pkl)")
-@ma.parameter("config_image_maps",type=ma.Config(),default=None,description="Image Config")
-@ma.parameter("suffix", str, default="", description="suffix")
-def generate_image_maps(file_map,config_image_maps,suffix):
-    return_cost=config_image_maps["return_cost"]
-    return_matched_signals=config_image_maps["return_matched_signals"]
-    #keys=list(all_maps.keys())
-    keys=config_image_maps["keys"]
-    list_l=config_image_maps["singular_volumes_outputted"]
-
-    print(keys)
-
-    distances=config_image_maps["image_distances"]
-    dx=distances[0]
-    dy=distances[1]
-    dz=distances[2]
-
-    #file_map = filename.split(".dat")[0] + "{}_MRF_map.pkl".format("")
-    curr_file=file_map
-    file = open(curr_file, "rb")
-    all_maps = pickle.load(file)
-    file.close()
-
-    if not(keys):
-        keys=list(all_maps.keys())
-
-    for iter in keys:
-
-        map_rebuilt=all_maps[iter][0]
-        mask=all_maps[iter][1]
-
-        map_rebuilt["wT1"][map_rebuilt["ff"] > 0.7] = 0.0
-
-        keys_simu = list(map_rebuilt.keys())
-        values_simu = [makevol(map_rebuilt[k], mask > 0) for k in keys_simu]
-        map_for_sim = dict(zip(keys_simu, values_simu))
-
-        #map_Python = MapFromDict3D("RebuiltMapFromParams_iter{}".format(iter), paramMap=map_for_sim)
-        #map_Python.buildParamMap()
-
-
-        for key in ["ff","wT1","df","attB1"]:
-            file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "{}_it{}_{}.mha".format(suffix,iter,key)
-            if file_mha.startswith("/"):
-                file_mha=file_mha[1:]
-            io.write(file_mha,map_for_sim[key],tags={"spacing":[dz,dx,dy]})
+#         for key in ["ff","wT1","df","att"]:
+#             file_mha = "/".join(["/".join(str.split(curr_file,"/")[:-1]),"_".join(str.split(str.split(curr_file,"/")[-1],".")[:-1])]) + "{}_it{}_{}.mha".format(suffix,iter,key)
+#             if file_mha.startswith("/"):
+#                 file_mha=file_mha[1:]
+#             io.write(file_mha,map_for_sim[key],tags={"spacing":[dz,dx,dy]})
 
 
 
-        if return_matched_signals:
-            for l in list_l:
-                matched_volumes=makevol(all_maps[iter][-1][l],mask>0)
-                #print(matched_volumes)
-                file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
-                                     "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "{}_it{}_l{}_{}.mha".format(suffix,
-                                                                                                                                  iter,l, "matchedvolumes")
-                if file_mha.startswith("/"):
-                    file_mha=file_mha[1:]
-                io.write(file_mha, np.abs(matched_volumes), tags={"spacing": [dz, dx, dy]})
+#         if return_matched_signals:
+#             for l in list_l:
+#                 matched_volumes=makevol(all_maps[iter][-1][l],mask>0)
+#                 #print(matched_volumes)
+#                 file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
+#                                      "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "{}_it{}_l{}_{}.mha".format(suffix,
+#                                                                                                                                   iter,l, "matchedvolumes")
+#                 if file_mha.startswith("/"):
+#                     file_mha=file_mha[1:]
+#                 io.write(file_mha, np.abs(matched_volumes), tags={"spacing": [dz, dx, dy]})
 
 
-        if return_cost:
-            try:
-                file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
-                                     "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "{}_it{}_{}.mha".format(suffix,
-                                                                                                                              iter, "correlation")
-                if file_mha.startswith("/"):
-                    file_mha=file_mha[1:]
-                io.write(file_mha, makevol(all_maps[iter][2],mask>0), tags={"spacing": [dz, dx, dy]})
+#         if return_cost:
+#             try:
+#                 file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
+#                                      "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "{}_it{}_{}.mha".format(suffix,
+#                                                                                                                               iter, "correlation")
+#                 if file_mha.startswith("/"):
+#                     file_mha=file_mha[1:]
+#                 io.write(file_mha, makevol(all_maps[iter][2],mask>0), tags={"spacing": [dz, dx, dy]})
 
-                file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
-                                     "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "{}_it{}_{}.mha".format(suffix,
-                                                                                                                              iter, "phase")
-                if file_mha.startswith("/"):
-                    file_mha=file_mha[1:]
-                io.write(file_mha, makevol(all_maps[iter][3],mask>0), tags={"spacing": [dz, dx, dy]})
-            except:
-                continue
-    return
+#                 file_mha = "/".join(["/".join(str.split(curr_file, "/")[:-1]),
+#                                      "_".join(str.split(str.split(curr_file, "/")[-1], ".")[:-1])]) + "{}_it{}_{}.mha".format(suffix,
+#                                                                                                                               iter, "phase")
+#                 if file_mha.startswith("/"):
+#                     file_mha=file_mha[1:]
+#                 io.write(file_mha, makevol(all_maps[iter][3],mask>0), tags={"spacing": [dz, dx, dy]})
+#             except:
+#                 continue
+#     return
 
 
 @ma.machine()
@@ -1899,7 +1889,6 @@ def build_volumes_allbins(filename_kdata,filename_b1,filename_pca,filename_weigh
 
     print("Loading Kdata")
     kdata_all_channels_all_slices=np.load(filename_kdata)
-
     if dens_adj:
         npoint = kdata_all_channels_all_slices.shape[-1]
         density = np.abs(np.linspace(-1, 1, npoint))
@@ -1974,7 +1963,6 @@ def build_volumes_allbins(filename_kdata,filename_b1,filename_pca,filename_weigh
 @ma.parameter("filename_b1", str, default=None, description="B1")
 @ma.parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
 @ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
-@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
 @ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
 @ma.parameter("L0", int, default=10, description="Number of retained temporal basis functions")
 @ma.parameter("file_deformation_map", str, default=None, description="Deformation map from bin 0 to other bins")
@@ -1987,7 +1975,7 @@ def build_volumes_allbins(filename_kdata,filename_b1,filename_pca,filename_weigh
 @ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
 @ma.parameter("select_first_rep", bool, default=False, description="Select firt repetition of central partition only")
 @ma.parameter("axis", int, default=None, description="Registration axis")
-def build_volumes_singular_allbins_registered(filename_kdata, filename_b1, filename_pca, filename_weights,filename_phi,dictfile,L0,file_deformation_map,n_comp,useGPU,nb_rep_center_part,index_ref,interp,gating_only,suffix,select_first_rep,axis):
+def build_volumes_singular_allbins_registered(filename_kdata, filename_b1, filename_pca, filename_weights,dictfile,L0,file_deformation_map,n_comp,useGPU,nb_rep_center_part,index_ref,interp,gating_only,suffix,select_first_rep,axis):
     '''
     Build singular volumes for MRF registered to the same motion phase and averaged (first iteration of the gradient descent for motion-corrected MRF)
     Output shape L0 x nz x nx x ny
@@ -2009,12 +1997,6 @@ def build_volumes_singular_allbins_registered(filename_kdata, filename_b1, filen
     if filename_weights is None:
         filename_weights = str.split(filename_kdata, "_kdata.npy")[0] + "_weights.npy"
 
-    if ((filename_phi is None) and (dictfile is None)):
-        raise ValueError('Either dictfile or filename_phi should be provided for temporal projection')
-
-    if dictfile is not None:
-        filename_phi = str.split(dictfile, ".dict")[0] + "_phi_L0_{}.npy".format(L0)
-
 
 
     print("Loading B1")
@@ -2031,10 +2013,11 @@ def build_volumes_singular_allbins_registered(filename_kdata, filename_b1, filen
     file.close()
 
     print("Loading Time Basis")
-    if filename_phi not in os.listdir():
-        phi = build_phi(dictfile, L0)
-    else:
-        phi = np.load(filename_phi)
+    mrf_dict = load_pickle(dictfile)
+    if "phi" not in mrf_dict.keys():
+        mrf_dict=add_temporal_basis(mrf_dict,L0)
+        save_pickle(mrf_dict,mrf_dict)
+    phi=mrf_dict["phi"]
     print("Loading Deformation Map")
     deformation_map=np.load(file_deformation_map)
     if not(index_ref==0):
@@ -2072,7 +2055,6 @@ def build_volumes_singular_allbins_registered(filename_kdata, filename_b1, filen
 @ma.parameter("filename_b1", str, default=None, description="B1")
 @ma.parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
 @ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
-@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
 @ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
 @ma.parameter("L0", int, default=10, description="Number of retained temporal basis functions")
 @ma.parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
@@ -2083,7 +2065,7 @@ def build_volumes_singular_allbins_registered(filename_kdata, filename_b1, filen
 @ma.parameter("us", int, default=1, description="Undersampling")
 
 
-def build_volumes_singular_allbins(filename_kdata, filename_b1, filename_pca, filename_weights,filename_phi,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,us):
+def build_volumes_singular_allbins(filename_kdata, filename_b1, filename_pca, filename_weights,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,us):
     '''
     Build singular volumes for MRF for all motion bins
     Output shape nb_motion_bins x L0 x nz x nx x ny
@@ -2118,13 +2100,6 @@ def build_volumes_singular_allbins(filename_kdata, filename_b1, filename_pca, fi
     if filename_weights is None:
         filename_weights = str.split(filename_kdata, "_kdata.npy")[0] + "_weights.npy"
 
-    if ((filename_phi is None) and (dictfile is None)):
-        raise ValueError('Either dictfile or filename_phi should be provided for temporal projection')
-
-    if dictfile is not None:
-        filename_phi = str.split(dictfile, ".dict")[0] + "_phi_L0_{}.npy".format(L0)
-
-    print(filename_phi)
     b1_all_slices_2Dplus1_pca = np.load(filename_b1)
 
     nb_slices_b1=b1_all_slices_2Dplus1_pca.shape[1]
@@ -2192,11 +2167,12 @@ def build_volumes_singular_allbins(filename_kdata, filename_b1, filename_pca, fi
         all_weights *= weights_us
 
 
-    if filename_phi not in os.listdir():
-        phi = build_phi(dictfile, L0)
-    else:
-        phi = np.load(filename_phi)
-
+    mrf_dict = load_pickle(dictfile)
+    if "phi" not in mrf_dict.keys():
+        mrf_dict=add_temporal_basis(mrf_dict,L0)
+        save_pickle(mrf_dict,mrf_dict)
+    phi=mrf_dict["phi"]
+    
     print("Kdata shape {}".format(kdata_all_channels_all_slices.shape))
     print("virtual coils components shape {}".format(pca_dict[0].components_.shape))
     print("Weights shape {}".format(all_weights.shape))
@@ -2399,7 +2375,6 @@ def calculate_dcomp_pysap_3D(filename_kdata,filename_weights,filename_seqParams)
 @ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
 @ma.parameter("filename_b1", str, default=None, description="B1")
 @ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
-@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
 @ma.parameter("filename_seqParams", str, default=None, description="Seq params")
 @ma.parameter("filename_dcomp", str, default=None, description="Seq params")
 @ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
@@ -2411,7 +2386,7 @@ def calculate_dcomp_pysap_3D(filename_kdata,filename_weights,filename_seqParams)
 @ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
 @ma.parameter("incoherent", bool, default=False, description="Use GPU")
 
-def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weights,filename_dcomp,filename_phi,filename_seqParams,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,incoherent):
+def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weights,filename_dcomp,filename_seqParams,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,incoherent):
     '''
     Build singular volumes for MRF for all motion bins
     Output shape nb_motion_bins x L0 x nz x nx x ny
@@ -2497,11 +2472,6 @@ def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weig
     if filename_weights is None:
         filename_weights = str.split(filename_kdata, "_kdata.npy")[0] + "_weights.npy"
 
-    if ((filename_phi is None) and (dictfile is None)):
-        raise ValueError('Either dictfile or filename_phi should be provided for temporal projection')
-
-    if dictfile is not None:
-        filename_phi = str.split(dictfile, ".dict")[0] + "_phi_L0_{}.npy".format(L0)
 
     b1_all_slices_2Dplus1_pca = np.load(filename_b1)
 
@@ -2554,10 +2524,16 @@ def build_volumes_singular_allbins_3D(filename_kdata, filename_b1, filename_weig
         all_weights=all_weights*dcomp
 
 
-    if filename_phi not in os.listdir():
-        phi = build_phi(dictfile, L0)
-    else:
-        phi = np.load(filename_phi)
+    # if filename_phi not in os.listdir():
+    #     phi = build_phi(dictfile, L0)
+    # else:
+    #     phi = np.load(filename_phi)
+
+    mrf_dict = load_pickle(dictfile)
+    if "phi" not in mrf_dict.keys():
+        mrf_dict=add_temporal_basis(mrf_dict,L0)
+        save_pickle(mrf_dict,mrf_dict)
+    phi=mrf_dict["phi"]
 
     print("Kdata shape {}".format(kdata_all_channels_all_slices.shape))
     print("Weights shape {}".format(all_weights.shape))
@@ -2719,10 +2695,16 @@ def build_volumes_singular_allbins_3D_BART(bart_command,filename_kdata, filename
         all_weights=all_weights*dcomp
 
 
-    if filename_phi not in os.listdir():
-        phi = build_phi(dictfile, L0)
-    else:
-        phi = np.load(filename_phi)
+    # if filename_phi not in os.listdir():
+    #     phi = build_phi(dictfile, L0)
+    # else:
+    #     phi = np.load(filename_phi)
+
+    mrf_dict = load_pickle(dictfile)
+    if "phi" not in mrf_dict.keys():
+        mrf_dict=add_temporal_basis(mrf_dict,L0)
+        save_pickle(mrf_dict,mrf_dict)
+    phi=mrf_dict["phi"]
 
     print("Kdata shape {}".format(kdata_all_channels_all_slices.shape))
     print("Weights shape {}".format(all_weights.shape))
@@ -2926,11 +2908,17 @@ def build_volumes_singular_allbins_3D_BART_inv(bart_command,filename_kdata, file
         all_weights=all_weights*dcomp
 
 
-    if filename_phi not in os.listdir():
-        phi = build_phi(dictfile, L0)
-    else:
-        phi = np.load(filename_phi)
-        L0=phi.shape[0]
+    # if filename_phi not in os.listdir():
+    #     phi = build_phi(dictfile, L0)
+    # else:
+    #     phi = np.load(filename_phi)
+    #     L0=phi.shape[0]
+
+    mrf_dict = load_pickle(dictfile)
+    if "phi" not in mrf_dict.keys():
+        mrf_dict=add_temporal_basis(mrf_dict,L0)
+        save_pickle(mrf_dict,mrf_dict)
+    phi=mrf_dict["phi"]
 
     print("Kdata shape {}".format(kdata_all_channels_all_slices.shape))
     print("Weights shape {}".format(all_weights.shape))
@@ -3218,7 +3206,6 @@ def build_volumes_singular_allbins_3D_BART_v2(bart_command,filename_kdata, filen
 @ma.parameter("filename_seqParams", str, default=None, description="Seq params")
 @ma.parameter("filename_b1", str, default=None, description="B1")
 @ma.parameter("filename_pca", str, default=None, description="filename for storing coil compression components")
-@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
 @ma.parameter("filename_weights", str, default=None, description="Weights file to simulate undersampling from binning")
 @ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis (.pkl)")
 @ma.parameter("L0", int, default=6, description="Number of retained temporal basis functions")
@@ -3229,7 +3216,7 @@ def build_volumes_singular_allbins_3D_BART_v2(bart_command,filename_kdata, filen
 @ma.parameter("in_phase", bool, default=False, description="MRF T1-FF : Select in phase spokes from original MRF sequence")
 @ma.parameter("out_phase", bool, default=False, description="MRF T1-FF : Select out of phase spokes from original MRF sequence")
 
-def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_phi,dictfile,L0,n_comp,nb_rep_center_part,useGPU,filename_weights,full_volume,in_phase,out_phase,filename_seqParams):
+def build_volumes_singular(filename_kdata, filename_b1, filename_pca,dictfile,L0,n_comp,nb_rep_center_part,useGPU,filename_weights,full_volume,in_phase,out_phase,filename_seqParams):
     '''
     Build singular volumes for MRF (no binning)
     Output shape nb_motion_bins x L0 x nz x nx x ny
@@ -3307,11 +3294,6 @@ def build_volumes_singular(filename_kdata, filename_b1, filename_pca,filename_ph
     if ((filename_b1 is None)or(filename_pca is None))and(n_comp is None)and(not(incoherent)):
         raise ValueError('n_comp should be provided when B1 or PCA files are missing for stack of stars reco')
 
-    if ((filename_phi is None)and(dictfile is None)and(not(full_volume))):
-        raise ValueError('Either dictfile or filename_phi should be provided for temporal projection')
-
-    if dictfile is not None:
-        filename_phi = str.split(dictfile, ".dict")[0] + "_phi_L0_{}.npy".format(L0)
 
     if filename_b1 is None:
         if (not(incoherent)):
@@ -4904,20 +4886,20 @@ def build_volumes_iterative_allbins_registered_allindex(filename_volume,filename
 
 
 
-@ma.machine()
-@ma.parameter("sequence_file", str, default="../dico/mrf_sequence_adjusted.json", description="Sequence File")
-@ma.parameter("reco", float, default=4, description="Recovery (s)")
-@ma.parameter("min_TR_delay", float, default=1.14, description="TR delay (ms)")
-@ma.parameter("dictconf", str, default="../dico/mrf_dictconf_Dico2_Invivo_overshoot.json", description="Dictionary grid")
-@ma.parameter("dictconf_light", str, default="../dico/mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot.json", description="Coarse dictionary grid (clustering)")
-@ma.parameter("diconame", str, default="dico", description="Dictionary prefix name")
-@ma.parameter("inversion", bool, default=True, description="Use initial inversion")
-@ma.parameter("TI", float, default=8.32, description="Inversion time (ms)")
-@ma.parameter("is_build_phi", bool, default=True, description="Whether to build temporal basis phi")
-@ma.parameter("L0", int, default=6, description="Number of temporal components")
-def generate_dictionaries_T1FF(sequence_file,reco,min_TR_delay,dictconf,dictconf_light,inversion,TI, is_build_phi,L0,diconame):
-    generate_dictionaries(sequence_file,reco,min_TR_delay,dictconf,dictconf_light,TI=TI, dest=None,diconame=diconame,is_build_phi=is_build_phi,L0=L0)
-    return
+# @ma.machine()
+# @ma.parameter("sequence_file", str, default="./dico/mrf_sequence_adjusted.json", description="Sequence File")
+# @ma.parameter("reco", float, default=4, description="Recovery (s)")
+# @ma.parameter("min_TR_delay", float, default=1.14, description="TR delay (ms)")
+# @ma.parameter("dictconf", str, default="./dico/mrf_dictconf_Dico2_Invivo_overshoot.json", description="Dictionary grid")
+# @ma.parameter("dictconf_light", str, default="./dico/mrf_dictconf_Dico2_Invivo_light_for_matching_overshoot.json", description="Coarse dictionary grid (clustering)")
+# @ma.parameter("diconame", str, default="dico", description="Dictionary prefix name")
+# @ma.parameter("inversion", bool, default=True, description="Use initial inversion")
+# @ma.parameter("TI", float, default=8.32, description="Inversion time (ms)")
+# @ma.parameter("is_build_phi", bool, default=True, description="Whether to build temporal basis phi")
+# @ma.parameter("L0", int, default=6, description="Number of temporal components")
+# def generate_dictionaries_T1FF(sequence_file,reco,min_TR_delay,dictconf,dictconf_light,inversion,TI, is_build_phi,L0,diconame):
+#     generate_dictionaries(sequence_file,reco,min_TR_delay,dictconf,dictconf_light,TI=TI, dest=None,diconame=diconame,is_build_phi=is_build_phi,L0=L0)
+#     return
 
 
 
@@ -4993,7 +4975,7 @@ def mrf_gendict(dest,folder,seqfile,dictconf,dictconf_light,datafile,wait_time,e
 
 @ma.machine()
 @ma.parameter("filemap", str, default=None, description="MRF maps (.pkl)")
-@ma.parameter("fileseq", str, default="mrf_sequence_adjusted.json", description="Sequence File")
+@ma.parameter("fileseq", str, default="./dico/mrf_sequence_adjusted.json", description="Sequence File")
 @ma.parameter("spacing", [float,float,float], default=[1,1,5], description="Voxel size")
 @ma.parameter("reorient", bool, default=True, description="Reorient to match usual orientation")
 @ma.parameter("filename", str, default=None, description=".dat file for adding geometry if necessary")
@@ -5034,8 +5016,9 @@ def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient,fil
     #print(all_maps)
     mask=all_maps[0][1]
     map_rebuilt=all_maps[0][0]
-    map_rebuilt["attB1"]=np.ones_like(map_rebuilt["attB1"])
-    #map_rebuilt["attB1"]=1/map_rebuilt["attB1"]
+    print(map_rebuilt.keys())
+    map_rebuilt["att"]=np.ones_like(map_rebuilt["att"])
+    #map_rebuilt["att"]=1/map_rebuilt["att"]
     norm=all_maps[0][4]
     phase=all_maps[0][3]
 
@@ -5188,6 +5171,7 @@ toolbox.add_program("build_mask", build_mask)
 toolbox.add_program("build_maps", build_maps)
 toolbox.add_program("build_additional_maps", build_additional_maps)
 toolbox.add_program("generate_image_maps", generate_image_maps)
+# toolbox.add_program("output_test", output_test)
 toolbox.add_program("generate_movement_gif", generate_movement_gif)
 toolbox.add_program("generate_matchedvolumes_allgroups", generate_matchedvolumes_allgroups)
 toolbox.add_program("build_data_nacq", build_data_nacq)
@@ -5202,7 +5186,6 @@ toolbox.add_program("build_volumes_iterative_allbins", build_volumes_iterative_a
 toolbox.add_program("build_mask_from_singular_volume", build_mask_from_singular_volume)
 toolbox.add_program("build_mask_full_from_mask", build_mask_full_from_mask)
 toolbox.add_program("select_slices_volume", select_slices_volume)
-toolbox.add_program("generate_dictionaries_T1FF", generate_dictionaries_T1FF)
 toolbox.add_program("mrf_gendict", mrf_gendict)
 toolbox.add_program("extract_singular_volume_allbins", extract_singular_volume_allbins)
 toolbox.add_program("extract_allsingular_volumes_bin", extract_allsingular_volumes_bin)

@@ -22,8 +22,6 @@ import pandas as pd
 
 import finufft
 try:
-    import pycuda
-    import pycuda.autoinit
     from pycuda.gpuarray import GPUArray, to_gpu
     from cufinufft import cufinufft
 
@@ -49,6 +47,9 @@ from scipy.interpolate import RegularGridInterpolator
 
 from mrfsim.trajectory import Navigator3D,Radial
 from mrfsim.Transformers import PCAComplex
+from mrfsim.utils_mrf import groupby
+
+asca=np.ascontiguousarray
 
 def calculate_sensitivity_map_3D_for_nav(kdata, trajectory, res=16, image_size=(400,)):
     traj = trajectory.get_traj()
@@ -228,7 +229,7 @@ def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001,randomize=
     max_correls = []
     mvt = []
     # adj=[]
-    all_correls=[]
+    # all_correls=[]
     for j in tqdm(range(nb_images)):
         if (j % nb_gating_spokes == 0)or(max_correl<0.5):
             used_shifts=shifts
@@ -261,9 +262,9 @@ def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001,randomize=
         max_correl=J[ind_max_J]
         max_correls.append(max_correl)
         mvt.append(current_mvt)
-        all_correls.append(corrs)
-    correls_array = np.array(all_correls)
-    np.save("log_all_correls_displacement.npy",correls_array)
+        # all_correls.append(corrs)
+    # correls_array = np.array(all_correls)
+    # np.save("log_all_correls_displacement.npy",correls_array)
     # mvt = [shifts[i] for i in np.argmax(correls_array, axis=-1)]
     # mvt=[shifts[i] for i in np.argmin(correls_array,axis=-1)]
     # mvt=np.array(mvt)+np.array(adj)
@@ -1395,7 +1396,7 @@ def build_volume_singular_2Dplus1_cc(kdata_all_channels_all_slices, b1_all_slice
             kdata_singular = kdata_singular.reshape(L0, -1)
             if useGPU:
                 kdata_singular=kdata_singular.get()
-            fk = finufft.nufft2d1(traj_reco[:, 0], traj_reco[:, 1], kdata_singular.squeeze(), image_size[1:])
+            fk = finufft.nufft2d1(asca(traj_reco[:, 0]), asca(traj_reco[:, 1]), asca(kdata_singular.squeeze()), image_size[1:])
             if fk.ndim==2:
                 images_series_rebuilt[:, sl] += b1_all_slices_2Dplus1_pca[j,sl].conj()* fk
             else:

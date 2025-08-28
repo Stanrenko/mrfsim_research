@@ -6,7 +6,7 @@
 # $3 : Segmentation filename
 
 eval "$(conda shell.bash hook)"
-conda activate mrf
+conda activate mrfsim-research-v2
 
 filename=$(basename "$1")
 echo $filename
@@ -22,8 +22,8 @@ fileroi=${3-${fileroi_def}}
 echo "######################################################"
 echo "Generating in-phase and out-of phase volumes"
 echo ${1}_bart12_volumes_singular_denoised_CF_iterative_2Dplus1_MRF_map.pkl
-python script_recoInVivo_3D_machines.py generate_dixon_volumes_for_segmentation --filemap ${1}_bart12_volumes_singular_denoised_CF_iterative_2Dplus1_MRF_map.pkl --reorient False
-# python script_recoInVivo_3D_machines.py generate_dixon_volumes_for_segmentation --filemap ${1}_bart12_volumes_singular_allbins_volumes_allbins_registered_ref0_CF_iterative_2Dplus1_MRF_map.pkl --reorient False
+python scripts/script_recoInVivo_3D_machines.py generate_dixon_volumes_for_segmentation --filemap ${1}_bart12_volumes_singular_denoised_CF_iterative_2Dplus1_MRF_map.pkl --reorient False
+# python scripts/script_recoInVivo_3D_machines.py generate_dixon_volumes_for_segmentation --filemap ${1}_bart12_volumes_singular_allbins_volumes_allbins_registered_ref0_CF_iterative_2Dplus1_MRF_map.pkl --reorient False
 
 
 
@@ -33,8 +33,8 @@ echo $filename
 echo ${filepath}/${filename}
 find ${filepath} -type f -name "${filename}*ip.mha" | while read -r line2 ; do
     echo "Processing $line2"
-    #     # python script_recoInVivo_3D_machines.py getGeometry --filemha ${line2} --filename ${line} --suffix "_adjusted"
-    python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${line2} --filedico ${filepath}/${filename}_seqParams.pkl --nifti True
+    #     # python scripts/script_recoInVivo_3D_machines.py getGeometry --filemha ${line2} --filename ${line} --suffix "_adjusted"
+    python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${line2} --filedico ${filepath}/${filename}_seqParams.pkl --nifti True
 
     filemha=$(basename "$line2")
     filemha_no_ext="${filemha%.*}"
@@ -50,18 +50,18 @@ find ${filepath} -type f -name "${filename}*ip.mha" | while read -r line2 ; do
     conda deactivate
 
     eval "$(conda shell.bash hook)"
-    conda activate mrf
+    conda activate mrfsim-research-v2
 
-    python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filename}_seqParams.pkl --suffix "_offset" --apply-offset True --reorient False
-    # python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filename}_seqParams.pkl --reorient False
-    # python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filenii} --filedico ${filepath}/${filedico} --suffix "_offset" --apply-offset True --nifti False --reorient False
+    python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filename}_seqParams.pkl --suffix "_offset" --apply-offset True --reorient False
+    # python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filename}_seqParams.pkl --reorient False
+    # python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filenii} --filedico ${filepath}/${filedico} --suffix "_offset" --apply-offset True --nifti False --reorient False
             
 done
 
 find ${filepath} -type f -name "${filename}*oop.mha" | while read -r line2 ; do
     echo "Processing $line2"
-        # python script_recoInVivo_3D_machines.py getGeometry --filemha ${line2} --filename ${line} --suffix "_adjusted"
-    python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${line2} --filedico ${filepath}/${filename}_seqParams.pkl --nifti True
+        # python scripts/script_recoInVivo_3D_machines.py getGeometry --filemha ${line2} --filename ${line} --suffix "_adjusted"
+    python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${line2} --filedico ${filepath}/${filename}_seqParams.pkl --nifti True
 
     filemha=$(basename "$line2")
     filemha_no_ext="${filemha%.*}"
@@ -77,16 +77,16 @@ find ${filepath} -type f -name "${filename}*oop.mha" | while read -r line2 ; do
     conda deactivate
 
     eval "$(conda shell.bash hook)"
-    conda activate mrf
+    conda activate mrfsim-research-v2
 
-    python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filename}_seqParams.pkl --suffix "_offset" --apply-offset True --reorient False #--reorient True
-    # python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filename}_seqParams.pkl --reorient False
-    # python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filenii} --filedico ${filepath}/${filedico} --suffix "_offset" --apply-offset True --nifti False --reorient False
+    python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filename}_seqParams.pkl --suffix "_offset" --apply-offset True --reorient False #--reorient True
+    # python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filename}_seqParams.pkl --reorient False
+    # python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filenii} --filedico ${filepath}/${filedico} --suffix "_offset" --apply-offset True --nifti False --reorient False
             
     
 done
 
-# python script_recoInVivo_3D_machines.py generate_dixon_volumes_for_segmentation --filemap $1_MRF_map.pkl
+# python scripts/script_recoInVivo_3D_machines.py generate_dixon_volumes_for_segmentation --filemap $1_MRF_map.pkl
 
 # exit 
 
@@ -98,4 +98,4 @@ museg-ai segment ${2} ${filename}_bart12_volumes_singular_denoised_ip_corrected_
 conda deactivate
 
 eval "$(conda shell.bash hook)"
-conda activate mrf
+conda activate mrfsim-research-v2

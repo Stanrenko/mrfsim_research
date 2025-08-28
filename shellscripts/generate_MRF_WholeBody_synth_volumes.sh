@@ -65,11 +65,11 @@ done
 
 echo "######################################################"
 echo "Creating whole-body synthetic volumes"
-python script_recoInVivo_3D_machines.py concatenateVolumes --folder ${targetfolder} --key "ip" --suffix "_corrected_offset.mha" --overlap 0.0,0.0,50.0
-python script_recoInVivo_3D_machines.py concatenateVolumes --folder ${targetfolder} --key "oop" --suffix "_corrected_offset.mha" --overlap 0.0,0.0,50.0
+python scripts/script_recoInVivo_3D_machines.py concatenateVolumes --folder ${targetfolder} --key "ip" --suffix "_corrected_offset.mha" --overlap 0.0,0.0,50.0
+python scripts/script_recoInVivo_3D_machines.py concatenateVolumes --folder ${targetfolder} --key "oop" --suffix "_corrected_offset.mha" --overlap 0.0,0.0,50.0
 
-# python script_recoInVivo_3D_machines.py concatenateVolumes --folder ${targetfolder} --key "ip" --suffix "_corrected_offset.mha" --overlap 0.0,0.0,50.0
-# python script_recoInVivo_3D_machines.py concatenateVolumes --folder ${targetfolder} --key "oop" --suffix "_corrected_offset.mha" --overlap 0.0,0.0,50.0
+# python scripts/script_recoInVivo_3D_machines.py concatenateVolumes --folder ${targetfolder} --key "ip" --suffix "_corrected_offset.mha" --overlap 0.0,0.0,50.0
+# python scripts/script_recoInVivo_3D_machines.py concatenateVolumes --folder ${targetfolder} --key "oop" --suffix "_corrected_offset.mha" --overlap 0.0,0.0,50.0
 
 
 # echo "######################################################"
