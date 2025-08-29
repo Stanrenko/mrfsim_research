@@ -9,10 +9,12 @@
 *.txt
 *.text
 *.pkl
+*.whl
 dictionary_phi*.npy
 mrf_dictconf*
 mrf_sequence*
 meas*
+fullWarp_abs.nii.gz
 
 mrf_dict*/
 dico/*
@@ -22,9 +24,9 @@ notebooks/*
 data/*
 plots/
 work/
-dicts/
-datasets/
 images/
 volumes/
-simulations
-fullWarp_abs.nii.gz
+build/
+dist/
+mrfsim.egg-info/
+

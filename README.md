@@ -18,7 +18,7 @@ For correcting distortion due to large FOV, one should create a conda environmen
 For automated segmentation, create a conda environment (name: mutools_dev_new for shell scripts to work) and follow instructions to install museg-ai: 
 RMN_FILES\Outils\mutools\archives\mutools-dev\README.md
 
-## Exemples
+## Examples
 Generating dico from .dat example
 ```
 python scripts/script_recoInVivo_3D_machines.py mrf_gendict --datafile <path/to/.dat> --force True --dest mrf_dict_optim --wait-time 2.99 --seqfile dico/mrf_sequence_random_FA_varsp_varparam_allparams_2.22.json
