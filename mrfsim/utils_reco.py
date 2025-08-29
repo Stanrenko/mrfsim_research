@@ -388,7 +388,7 @@ def simulate_nav_images_multi(kdata, trajectory, image_size=(400,), b1=None):
     # all_channels_images_nav = np.zeros((nb_channels,nb_slices,nb_gating_spokes,int(npoint/2)),dtype=np.complex64)
 
     for i in tqdm(range(nb_channels)):
-        fk = finufft.nufft1d1(traj[0, :, 2], kdata[i, :, :], image_size)
+        fk = finufft.nufft1d1(asca(traj[0, :, 2]), kdata[i, :, :], image_size)
         fk = fk.reshape((nb_slices, nb_gating_spokes, npoint_image))
 
         # all_channels_images_nav[i]=fk
@@ -735,7 +735,7 @@ def estimate_weights_bins(displacements,nb_slices,nb_segments,nb_gating_spokes,n
             cond_us = cond_us.flatten()
             included_spokes = cond_us*(1*(included_spokes))
             included_spokes=(included_spokes>0)
-            np.save("test_us_included_spokes.npy",included_spokes)
+            
 
         elif us>1:
             print("Adjusting Navigators with Undersampling of {} on acquired data".format(us))
@@ -801,10 +801,10 @@ def estimate_weights_bins(displacements,nb_slices,nb_segments,nb_gating_spokes,n
 
                 disp_reshaped=disp_reshaped_new.reshape(nb_slices_no_us,-1)
 
-            np.save("test_us_included_spokes.npy",included_spokes)
+            
 
             
-        np.save("test_us_included_spokes.npy",included_spokes)
+        
         
         weights, retained_timesteps = correct_mvt_kdata_zero_filled(radial_traj, included_spokes, ntimesteps)
 

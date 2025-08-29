@@ -116,7 +116,7 @@ echo "Building MRF maps for all iter"
 #VOLUMESSUFFIX=ref0_it1
 python scripts/script_recoInVivo_3D_machines.py build_maps --filename-volume "$1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy" --filename-mask "$1_bart${NCOMP}_volumes_singular_allbins_volumes_allbins_registered_${VOLUMESSUFFIX}_l0_mask.npy"  --dico-full-file $3 #--filename-b1 $2_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --optimizer-config opt_config_iterative_singular_shell.json --filename $1.dat # --slices "80"
 
-python scripts/script_recoInVivo_3D_machines.py generate_image_maps --filename-map $1_bart${NCOMP}_volumes_singular_allbins_volumes_allbins_registered_ref0_it1_CF_iterative_2Dplus1_MRF_map.pkl --filename-seqParams $1_seqParams.pkl
+python scripts/script_recoInVivo_3D_machines.py generate_image_maps --filename-map $1_bart${NCOMP}_volumes_singular_allbins_volumes_allbins_registered_${VOLUMESSUFFIX}_CF_iterative_2Dplus1_MRF_map.pkl --filename-seqParams $1_seqParams.pkl
 
 
 
