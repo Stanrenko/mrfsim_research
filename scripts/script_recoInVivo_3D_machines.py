@@ -4979,7 +4979,8 @@ def mrf_gendict(dest,folder,seqfile,dictconf,dictconf_light,datafile,wait_time,e
 @ma.parameter("spacing", [float,float,float], default=[1,1,5], description="Voxel size")
 @ma.parameter("reorient", bool, default=True, description="Reorient to match usual orientation")
 @ma.parameter("filename", str, default=None, description=".dat file for adding geometry if necessary")
-def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient,filename):
+@ma.parameter("t1_weighted", bool, default=False, description="Whether to ensure T1 weighting - short TR")
+def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient,filename,t1_weighted):
     gen_mode="other"
 
     if filename is not None :
@@ -4989,10 +4990,14 @@ def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient,fil
         sequence_config = json.load(f)
 
     sequence_config["TE"]=[2.39,3.45]
-    sequence_config["TR"]=list(np.array(sequence_config["TE"])+10000)
+    if t1_weighted:
+        sequence_config["TR"]=list(np.array(sequence_config["TE"])+2)
+    else:
+        sequence_config["TR"]=list(np.array(sequence_config["TE"])+10000)
+    
     sequence_config["B1"]=[3.0,3.0]
 
-    nrep=2
+    nrep=1
     rep=nrep-1
     TR_total = np.sum(sequence_config["TR"])
 
@@ -5003,7 +5008,10 @@ def generate_dixon_volumes_for_segmentation(filemap,fileseq,spacing,reorient,fil
     sequence_config["nrep"]=nrep
     sequence_config["rep"]=rep
 
-    seq=T1MRFSS_NoInv(**sequence_config)
+    if t1_weighted:
+        seq=T1MRFSS(**sequence_config)
+    else:
+        seq=T1MRFSS_NoInv(**sequence_config)
 
     #seq=T1MRF(**sequence_config)
 
