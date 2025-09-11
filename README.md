@@ -13,6 +13,10 @@ pip install -e .
 conda install -c conda-forge cupy=8.3.0 numpy=1.21.0
 ```
 
+For coil compression, [bart](https://github.com/mrirecon/bart) is required - https://github.com/mrirecon/bart/blob/master/README 2.2 Downloading and Compilation. 
+
+
+
 For correcting distortion due to large FOV, one should create a conda environment (name: distortion for shell scripts to work) and install [gradunwarp](https://github.com/Washington-University/gradunwarp) in it.
 
 For automated segmentation, create a conda environment (name: mutools_dev_new for shell scripts to work) and follow instructions to install museg-ai: 
