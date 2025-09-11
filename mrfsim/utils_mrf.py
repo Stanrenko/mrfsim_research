@@ -4735,8 +4735,9 @@ def get_volume_geometry(hdr_input, index=-1,is_spherical=False):
     is3D="3D" in protocol_name
     if is3D:
         if is_spherical:
-            print("Spherical : assuming isotropic resolution")
-            nb_slices=header['sKSpace.lBaseResolution']
+            # print("Spherical : assuming isotropic resolution")
+            # nb_slices=header['sKSpace.lBaseResolution'] 
+            nb_slices=header["sKSpace.lPartitions"] # To check
         else:
             nb_slices=header["sKSpace.lPartitions"]
 
@@ -4748,6 +4749,8 @@ def get_volume_geometry(hdr_input, index=-1,is_spherical=False):
         nb_slices,
     )
 
+
+    print("Number of slices: {}".format(nb_slices))
     # print("Readout FOV: {}".format(header['sSliceArray.asSlice[0].dReadoutFOV']))
     # print("Phase FOV : {}".format(header['sSliceArray.asSlice[0].dPhaseFOV']))
 
@@ -4757,7 +4760,8 @@ def get_volume_geometry(hdr_input, index=-1,is_spherical=False):
     elif is3D:
         if is_spherical:
             print("Spherical : assuming isotropic resolution")
-            spacing_z=header['sSliceArray.asSlice[0].dReadoutFOV']/shape[2]
+            # spacing_z=header['sSliceArray.asSlice[0].dReadoutFOV']/shape[2] # To check
+            spacing_z=header["sSliceArray.asSlice[0].dThickness"]/nb_slices
         else:
             spacing_z=header["sSliceArray.asSlice[0].dThickness"]/nb_slices
     else:    

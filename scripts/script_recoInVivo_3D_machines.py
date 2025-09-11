@@ -1768,13 +1768,17 @@ def coil_compression_bart(filename_kdata,dens_adj,n_comp,filename_cc,calc_sensi,
         npoint / 4)
         traj_python[1] = traj_python[1] / np.max(np.abs(traj_python[1])) * int(
             npoint / 4)
-        if iskushball:
-            traj_python[2] = traj_python[2] / np.max(np.abs(traj_python[2])) * int(
-            npoint / 4)
+        # if iskushball:
+        #     traj_python[2] = traj_python[2] / np.max(np.abs(traj_python[2])) * int(
+        #     npoint / 4)
         
-        else:
-            traj_python[2] = traj_python[2] / np.max(np.abs(traj_python[2])) * int(
-            nb_slices / 2)
+        # else:
+        #     traj_python[2] = traj_python[2] / np.max(np.abs(traj_python[2])) * int(
+        #     nb_slices / 2)
+        
+        
+        traj_python[2] = traj_python[2] / np.max(np.abs(traj_python[2])) * int(
+            nb_slices / 2) # TO CHECK
         
         print(traj_python.shape)
 

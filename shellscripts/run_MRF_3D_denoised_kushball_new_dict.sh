@@ -18,9 +18,9 @@ GAMMA=0.7
 GAMMASTR=$(echo "$GAMMA" | sed "s/\./"_"/")
 
 NCOMP=12
-NBINS=5
 NSING=6
-NITERTV=0
+NITER=0
+
 NSEGMENTS=${3-${NSEGMENTS_def}}
 SLICE1=${4-${SLICE1_def}}
 SLICE2=${5-${SLICE2_def}}
@@ -55,7 +55,7 @@ echo "Rebuilding singular volumes"
 python scripts/script_recoInVivo_3D_machines.py build_volumes_singular --filename-kdata $1_bart${NCOMP}_kdata.npy --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --filename-seqParams $1_seqParams.pkl --L0 $NSING --dictfile $2 --useGPU False
 
 
-python script_recoInVivo_3D_machines.py build_volumes_iterative --filename-volume $1_bart${NCOMP}_volumes_singular.npy  --niter $NITER  --use-wavelet True --lambda-wav 1e-11 --mu 1 --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --filename-seqParams $1_seqParams.pkl #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
+python scripts/script_recoInVivo_3D_machines.py build_volumes_iterative --filename-volume $1_bart${NCOMP}_volumes_singular.npy  --niter $NITER  --use-wavelet True --lambda-wav 1e-11 --mu 1 --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --filename-seqParams $1_seqParams.pkl #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
 
 
 

@@ -1482,7 +1482,7 @@ def build_volume_singular_3D(kdata_all_channels_all_slices, b1_all_slices,radial
         print(kdata_singular.shape)
         print(traj_reco.shape)
 
-        fk = finufft.nufft3d1(traj_reco[:, 2], traj_reco[:, 0], traj_reco[:, 1], kdata_singular.squeeze(), image_size)
+        fk = finufft.nufft3d1(asca(traj_reco[:, 2]), asca(traj_reco[:, 0]), asca(traj_reco[:, 1]), asca(kdata_singular.squeeze()), image_size)
         if fk.ndim==3:
             images_series_rebuilt += b1_all_slices[j].conj()* fk
         else:
