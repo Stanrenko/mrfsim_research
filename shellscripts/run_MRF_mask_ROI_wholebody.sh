@@ -19,7 +19,7 @@ echo $currpath
 
 
 eval "$(conda shell.bash hook)"
-conda activate mrfsim-research-v2
+conda activate mrfsim_research
 
 #Extracting k-space and navigator data
 echo "######################################################"
@@ -36,12 +36,12 @@ conda deactivate
 echo "######################################################"de
 echo "Generating segmentation"
 eval "$(conda shell.bash hook)"
-conda activate mutools-dev-new
+conda activate mutools_prod
 museg-ai segment ${2} ${filename}_bart12_volumes_singular_denoised_ip.mha ${filename}_bart12_volumes_singular_denoised_oop.mha --root ${filepath} --filename ${filename}_bart12_volumes_singular_denoised_ip.nii.gz
 conda deactivate
 
 eval "$(conda shell.bash hook)"
-conda activate mrfsim-research-v2
+conda activate mmrfsim_research
 
 # echo ${filename}_volumes_singular_ip.nii.gz
 # mv ${currpath}/${filename}_volumes_singular_denoised_ip.nii.gz ${filepath}/${filename}_volumes_singular_denoised_ip.nii.gz

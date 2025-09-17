@@ -5,7 +5,7 @@
 # $2 : Model ()
 
 eval "$(conda shell.bash hook)"
-conda activate mrfsim-research-v2
+conda activate mrfsim_research
 
 
 filename=$(basename "$1")
@@ -55,7 +55,7 @@ find ${filepath} -type f -name "${filename}*ip.mha" | while read -r line2 ; do
     conda deactivate
 
     eval "$(conda shell.bash hook)"
-    conda activate mrfsim-research-v2
+    conda activate mrfsim_research
 
 
     python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filename}_seqParams.pkl --suffix "_offset" --apply-offset True --reorient False
@@ -82,7 +82,7 @@ find ${filepath} -type f -name "${filename}*oop.mha" | while read -r line2 ; do
     conda deactivate
 
     eval "$(conda shell.bash hook)"
-    conda activate mrfsim-research-v2
+    conda activate mrfsim_research
 
     python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filename}_seqParams.pkl --suffix "_offset" --apply-offset True --reorient False #--reorient True
     python scripts/script_recoInVivo_3D_machines.py convertArrayToImage --filevolume ${filepath}/${filecorrected} --filedico ${filepath}/${filename}_seqParams.pkl --reorient False
@@ -98,7 +98,7 @@ done
 # echo "######################################################"
 # echo "Generating segmentation"
 # eval "$(conda shell.bash hook)"
-# conda activate mutools-dev-new
+# conda activate mutools_prod
 # museg-ai infer ${2} ${filename}_volumes_singular_denoised_ip_corrected_offset.mha ${filename}_volumes_singular_denoised_oop_corrected_offset.mha --root ${filepath} --filename ${filename}_volumes_singular_denoised_ip_corrected_offset.nii.gz --overwrite
 # conda deactivate
 
