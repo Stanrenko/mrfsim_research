@@ -1,13 +1,13 @@
 # imports
 # path = r"/home/cslioussarenko/PythonRepositories"
-path = r"/home/slioussarenko/PycharmProjects"
+# path = r"/home/slioussarenko/PycharmProjects"
 #path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
 
 import sys
-sys.path.append(path+"/epgpy")
-sys.path.append(path+"/machines")
-sys.path.append(path+"/mutools")
-sys.path.append(path+"/dicomstack")
+# sys.path.append(path+"/epgpy")
+# sys.path.append(path+"/machines")
+# sys.path.append(path+"/mutools")
+# sys.path.append(path+"/dicomstack")
 
 # third party imports
 import numpy as np
@@ -23,7 +23,7 @@ print(tf.config.experimental.list_physical_devices("GPU"))
 # local imports
 import voxelmorph as vxm
 import neurite as ne
-from mutools import io
+# from mutools import io
 import matplotlib.pyplot as plt
 try:
     import SimpleITK as sitk
