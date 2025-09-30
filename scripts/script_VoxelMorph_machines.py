@@ -1,14 +1,4 @@
 # imports
-# path = r"/home/cslioussarenko/PythonRepositories"
-path = r"/home/slioussarenko/PycharmProjects"
-#path = r"/Users/constantinslioussarenko/PythonGitRepositories/MyoMap"
-
-import sys
-sys.path.append(path+"/epgpy")
-sys.path.append(path+"/machines")
-sys.path.append(path+"/mutools")
-sys.path.append(path+"/dicomstack")
-
 # third party imports
 import numpy as np
 import tensorflow as tf
@@ -43,6 +33,30 @@ from keras import backend
 
 import machines as ma
 from machines import Toolbox
+
+
+def get_total_memory_mb():
+    result = subprocess.check_output(
+        ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,nounits,noheader"]
+    )
+    return int(result.decode("utf-8").strip().split("\n")[0])
+
+total_mem = get_total_memory_mb()
+fraction = 0.25
+
+gpus = tf.config.list_physical_devices("GPU")
+print("GPUs:", gpus)
+if gpus:
+    try:
+        mem_limit = int(total_mem * fraction)
+        tf.config.set_logical_device_configuration(
+            gpus[0],
+            [tf.config.LogicalDeviceConfiguration(memory_limit=mem_limit)]
+        )
+        print(f"GPU memory limited to {mem_limit} MB")
+    except RuntimeError as e:
+        print("Error:", e)
+
 
 DEFAULT_TRAIN_CONFIG="../config/config_train_voxelmorph.json"
 DEFAULT_TRAIN_CONFIG_3D="../config/config_train_voxelmorph_3D.json"
