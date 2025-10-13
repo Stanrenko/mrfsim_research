@@ -1145,6 +1145,105 @@ def generate_movement_gif(file_volume,nb_gr,sl,x,y,l,metric,slice_res_factor,sin
     print(filename_gif)
     return
 
+# @ma.machine()
+# @ma.parameter("file_volume",str,default=None,description="volume file (.mha)")
+# @ma.parameter("nb_gr",int,default=4,description="number of respiratory bins")
+# @ma.parameter("sl", int, default=None, description="Slice")
+# @ma.parameter("x", int, default=None, description="x")
+# @ma.parameter("y", int, default=None, description="y")
+# @ma.parameter("slice_res_factor", int, default=5, description="Factor between slice thickness and in plane resolution")
+# @ma.parameter("l", int, default=0, description="Singular volume")
+# @ma.parameter("metric", ["abs","phase","real","imag"], default="abs", description="Metric to plot")
+# @ma.parameter("single_volume", bool, default=False, description="One single volume - No bin or singular volume")
+# def generate_movement_gif_L0(file_volume,nb_gr,sl,x,y,l,metric,slice_res_factor,single_volume):
+#     if sl is not None:
+#         filename_gif = str.split(file_volume.format(nb_gr), ".mha")[0] + "_sl{}_moving_singular.gif".format(sl)
+#     elif x is not None:
+#         filename_gif = str.split(file_volume.format(nb_gr), ".mha")[0] + "_x{}_moving_singular.gif".format(x)
+#     elif y is not None:
+#         filename_gif = str.split(file_volume.format(nb_gr), ".mha")[0] + "_y{}_moving_singular.gif".format(y)
+#     elif single_volume:
+#         filename_gif = str.split(file_volume, ".npy")[0] + "_moving_slices.gif"
+    
+#     if file_volume.find(".mha")>0:
+#         def load(file):
+#             return io.read(file)
+#     else:
+#         def load(file):
+#             return np.load(file)
+    
+#     test_volume=load(file_volume.format(0)).squeeze()
+#     test_volume = np.squeeze(test_volume[nb_ev,:,:,:,:])
+#     print(test_volume.shape)
+
+#     if single_volume:
+#         print("Single volume - The GIF will be a movie navigating along the slices")
+#         test_volume=np.expand_dims(test_volume,axis=1)
+#     print(test_volume.shape)
+#     if test_volume.ndim==3:# each file contains only one motion phase
+#         all_matched_volumes=[]
+#         #print(file_volume)
+#         for gr in np.arange(nb_gr):
+#             file_mha= file_volume.format(gr)
+#             matched_volume=load(file_mha)
+#             matched_volume=np.array(matched_volume)
+#             all_matched_volumes.append(matched_volume)
+
+#         all_matched_volumes=np.array(all_matched_volumes)
+
+#     elif test_volume.ndim==4:#file contains all phases for one singular volume
+#         all_matched_volumes=test_volume
+
+
+#     elif test_volume.ndim==5:#file contains all phases and all singular volumes
+#         all_matched_volumes=test_volume[:,l]
+#         filename_gif=filename_gif.replace("moving_singular.gif","moving_singular_l{}.gif".format(l))
+
+#     print(all_matched_volumes.shape)
+#     if sl is not None:
+#         moving_image=np.concatenate([all_matched_volumes[:,sl],all_matched_volumes[1:-1,sl][::-1]],axis=0)
+#     elif x is not None:
+#         moving_image=np.concatenate([all_matched_volumes[:,:,x],all_matched_volumes[1:-1,:,x][::-1]],axis=0)
+#     elif y is not None:
+#         all_matched_volumes=np.repeat(all_matched_volumes,slice_res_factor,axis=1)
+#         moving_image=np.concatenate([all_matched_volumes[:,:,:,y],all_matched_volumes[1:-1,:,:,y][::-1]],axis=0)
+#     elif single_volume:
+#         moving_image=np.concatenate([all_matched_volumes[:,0],all_matched_volumes[1:-1,0][::-1]],axis=0)
+#     animate_images(moving_image,interval=10)
+
+#     from PIL import Image
+#     gif=[]
+#     print(moving_image.shape)
+#     if metric=="abs":
+#         volume_for_gif = np.abs(moving_image)
+#     elif metric=="phase":
+#         volume_for_gif = np.angle(moving_image)
+#         filename_gif = str.replace(filename_gif,"moving_singular","moving_singular_phase")
+
+#     elif metric=="real":
+#         volume_for_gif = np.real(moving_image)
+#         filename_gif = str.replace(filename_gif,"moving_singular","moving_singular_real")
+
+#     elif metric=="imag":
+#         volume_for_gif = np.imag(moving_image)
+#         filename_gif = str.replace(filename_gif,"moving_singular","moving_singular_imag")
+
+#     else:
+#         raise ValueError("metric unknown - choose from abs/phase/real/imag")
+
+#     for i in range(volume_for_gif.shape[0]):
+#         min_value=np.min(volume_for_gif[i])
+#         max_value=np.max(volume_for_gif[i])
+#         img = Image.fromarray(np.uint8((volume_for_gif[i]-min_value)/(max_value-min_value)*255), 'L')
+#         img=img.convert("P")
+#         gif.append(img)
+
+
+#     gif[0].save(filename_gif,save_all=True, append_images=gif[1:], optimize=False, duration=100, loop=0)
+#     print(filename_gif)
+#     return
+
+
 @ma.machine()
 @ma.parameter("file_map",str,default=None,description="map file (.pkl)")
 @ma.parameter("config_image_maps",type=ma.Config(),default=None,description="Image Config")
@@ -3206,6 +3305,639 @@ def build_volumes_singular_allbins_3D_BART_v2(bart_command,filename_kdata, filen
     return
 
 @ma.machine()
+# @ma.parameter("bart_command", str, default=None, description="bart pics command")
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
+@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
+@ma.parameter("filename_seqParams", str, default=None, description="Seq params")
+@ma.parameter("filename_dcomp", str, default=None, description="Seq params")
+@ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
+@ma.parameter("L0", int, default=10, description="Number of retained temporal basis functions")
+@ma.parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
+@ma.parameter("useGPU", bool, default=True, description="Use GPU")
+@ma.parameter("log", bool, default=True, description="log bin results")
+@ma.parameter("gamma", float, default=None, description="Gamma Correction")
+@ma.parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
+def build_volumes_singular_allbins_3D_BART_bmy(filename_kdata, filename_b1, filename_weights,filename_dcomp,filename_phi,filename_seqParams,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,log, gamma):
+    '''
+    Build singular volumes for MRF for all motion bins
+    Output shape nb_motion_bins x L0 x nz x nx x ny
+    '''
+    filename_volumes = filename_kdata.split("_kdata.npy")[0] + "_volumes_singular_allbins_bart.npy"
+    # filename_volumes_gamma = filename_kdata.split("_kdata.npy")[0] + "_volumes_singular_allbins_bart_gamma.npy"
+    filename_volumes_log = filename_kdata.split("_kdata.npy")[0] + "_volumes_singular_allbins_bart_gr{}.npy"
+    print("Loading Kdata")
+    print(filename_kdata)
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+    print(filename_kdata)
+    print(np.linalg.norm(kdata_all_channels_all_slices))
+
+    nb_channels,nb_segments,nb_part,npoint=kdata_all_channels_all_slices.shape
+
+    if filename_seqParams is not None:
+        file = open(filename_seqParams, "rb")
+        dico_seqParams = pickle.load(file)
+        file.close()
+
+        use_navigator_dll = dico_seqParams["use_navigator_dll"]
+
+        if "use_kushball_dll" in dico_seqParams.keys():
+            use_kushball_dll=dico_seqParams["use_kushball_dll"]
+        else:
+            use_kushball_dll=False
+
+
+        if use_kushball_dll:
+            meas_sampling_mode = dico_seqParams["alFree"][16]
+        elif (use_navigator_dll):
+            meas_sampling_mode = dico_seqParams["alFree"][15]
+        else:
+            meas_sampling_mode = dico_seqParams["alFree"][12]
+
+        print(meas_sampling_mode)
+
+
+
+        undersampling_factor = dico_seqParams["alFree"][9]
+
+        nb_slices=int(dico_seqParams["nb_part"])
+
+
+        if meas_sampling_mode == 1:
+            incoherent = False
+            mode = None
+        elif meas_sampling_mode == 2:
+            incoherent = True
+            mode = "old"
+        elif meas_sampling_mode == 3:
+            incoherent = True
+            mode = "new"
+
+        elif meas_sampling_mode == 4:
+            incoherent = True
+            mode = "Kushball"
+
+
+
+    else:
+        incoherent=False
+        mode="old"
+        undersampling_factor=1
+        nb_slices=nb_part
+        image_size=(100,100,100)
+
+
+
+
+      
+
+        # bart_command=str.replace(bart_command,"-t","-p density -t")
+        # print(bart_command)
+        
+
+
+    if ((filename_b1 is None))and(n_comp is None):
+        raise ValueError('n_comp should be provided when B1 or PCA files are missing')
+
+    if filename_b1 is None:
+        filename_b1=str.split(filename_kdata, "_kdata.npy")[0] + "_bart12_b12Dplus1_{}.npy".format(n_comp)
+
+    if filename_weights is None:
+        filename_weights = str.split(filename_kdata, "_kdata.npy")[0] + "_weights.npy"
+
+    # if ((filename_phi is None) and (dictfile is None)):
+    #     raise ValueError('Either dictfile or filename_phi should be provided for temporal projection')
+
+    # if dictfile is not None:
+    #     filename_u = str.split(dictfile, ".dict")[0] + "_u_bart.npy"
+
+    b1_all_slices_2Dplus1_pca = np.load(filename_b1)
+    
+    image_size=b1_all_slices_2Dplus1_pca.shape[1:]
+
+    b1_bart=np.moveaxis(b1_all_slices_2Dplus1_pca,0,-1)
+    b1_bart=np.moveaxis(b1_bart,0,-2)
+
+    all_weights = np.load(filename_weights)
+    nbins=all_weights.shape[0]
+
+    if dens_adj:
+
+
+        npoint = kdata_all_channels_all_slices.shape[-1]
+        if mode=="Kushball": 
+            density = np.abs(np.linspace(-1, 1, npoint))**2
+            density = density.reshape(1, npoint, 1, 1, 1, 1)
+            density = np.tile(density, (1,1,nb_segments*nb_part,1, 1, nbins))
+            print('Save density compensation')
+            cfl.writecfl('density', np.sqrt(density)) 
+        else:
+            density=np.abs(np.linspace(-1, 1, npoint))
+            density = density.reshape(1, npoint, 1, 1, 1)
+            density = np.tile(density, (1,1,nb_segments*nb_part,1,1))
+            print('Save density compensation')
+            cfl.writecfl('density', np.sqrt(density))
+
+    if gating_only:
+        print("Using weights for gating only")
+        all_weights=(all_weights>0)*1
+
+    if filename_dcomp is not None:
+        print("Weighing by density compensation file")
+        dcomp=np.load(filename_dcomp)
+        print(dcomp.shape)
+        dcomp[:,:,:,:,-1]=dcomp[:,:,:,:,-2]
+        dcomp[:,:,:,:,0]=dcomp[:,:,:,:,1]
+        
+        all_weights=all_weights*dcomp
+
+
+    mrf_dict = load_pickle(dictfile)
+    if "phi" not in mrf_dict.keys():
+        mrf_dict=add_temporal_basis(mrf_dict,L0)
+        save_pickle(mrf_dict,mrf_dict)
+    phi=mrf_dict["phi"]
+    
+
+    # if filename_phi not in os.listdir():
+    #     u = build_basis_bart(dictfile)
+    #     print(u.shape)
+    #     np.save(filename_u,u)
+    # else:
+    #     u = np.load(filename_u)
+
+    # basis=u[:L0,:].T
+    # basis=basis[None,None,None,None,None,:,:]
+
+    # cfl.writecfl("basis",basis)
+
+    print("Kdata shape {}".format(kdata_all_channels_all_slices.shape))
+    print("Weights shape {}".format(all_weights.shape))
+    print("Phi shape {}".format(phi.shape))
+    print("B1 shape {}".format(b1_all_slices_2Dplus1_pca.shape))
+
+    print("nb_part {}".format(nb_part))
+    print("image_size {}".format(image_size))
+
+    
+    kdata_singular = np.zeros((nb_channels,nb_segments, nb_part*npoint) + (L0,), dtype="complex64")
+    data=kdata_all_channels_all_slices.reshape(nb_channels,nb_segments,-1)
+
+    for ch in tqdm(range(nb_channels)):
+        for ts in tqdm(range(nb_segments)):
+            kdata_singular[ch, ts, :, :] = data[ch, ts, :, None] @ (phi[:L0].conj().T[ts][None, :])
+    
+    kdata_singular = kdata_singular[:,:,:,0]
+    
+    # all_weights = all_weights[..., None]
+    radial_traj=Radial3D(total_nspokes=nb_segments,undersampling_factor=1,npoint=npoint,nb_slices=nb_part,incoherent=incoherent,mode=mode)
+    
+        
+    traj_python = radial_traj.get_traj()
+    traj_python_bart = np.reshape(traj_python, (nb_segments, npoint, nb_part, 3), order = 'F')
+    traj_python_bart = np.transpose(traj_python_bart, [3, 1, 0, 2])
+    
+    traj_python_bart[0] = traj_python_bart[0] / np.max(np.abs(traj_python_bart[0])) * int(image_size[0]/2)
+    traj_python_bart[1] = traj_python_bart[1] / np.max(np.abs(traj_python_bart[1])) * int(image_size[1]/2)
+    traj_python_bart[2] = traj_python_bart[2] / np.max(np.abs(traj_python_bart[2])) * int(image_size[2] / 2)
+
+    # traj_python_bart = traj_python.reshape(3, npoint, window*nb_part,1,1,ntimesteps)
+    print(traj_python_bart.shape)
+    
+    traj_python_bart = np.reshape(traj_python_bart, (3, npoint, nb_segments * nb_part, 1, 1, 1), order = 'F') 
+    
+
+        
+    # kdata_singular = np.zeros((nb_channels,ntimesteps, nb_part*npoint*window) + (L0,), dtype="complex64")
+    # kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,nb_segments,nb_partnpoint)
+
+    
+    volumes_singular_allbins=[]
+    kdata_stacked = np.zeros((nb_channels, nb_segments, nb_part, npoint, nbins), dtype="complex64")
+    kdata_singular = np.reshape(kdata_singular, (nb_channels, nb_segments, nb_part, npoint))
+    for gr in tqdm(range(nbins)):
+        print("Building singular volumes for bin {}".format(gr))
+        curr_weights_bart=all_weights[gr]
+
+        
+        print(curr_weights_bart.shape)
+        # print(kdata_all_channels_all_slices.shape)
+        print(kdata_singular.shape)
+        # kdata_stacked[:,:,:,:,:,gr]= kdata_all_channels_all_slices*((curr_weights_bart>0)*1)
+        kdata_stacked[:,:,:,:,gr]= kdata_singular*((curr_weights_bart>0)*1)
+        
+        # kdata_curr_gr=kdata_all_channels_all_slices*((curr_weights_bart>0)*1)
+        # kdata_curr_gr = np.transpose(kdata_curr_gr, (3, 1, 2,0))  # nb_segments, nb_part, nb_channels
+        # kdata_curr_gr = np.reshape(kdata_curr_gr, (1, npoint, nb_segments * nb_part, nb_channels, 1), order = 'F')
+        # kdata_curr_gr = kdata_curr_gr * 100 / np.max(np.abs(kdata_curr_gr))
+        # print(kdata_curr_gr.shape)
+        
+        # if dens_adj:
+        #     volume_singular_gr=bart(1,f'pics --admm -d5 -i30 -p density -R T:2:0:10e-3 -R T:4:0:20e-3 -e -S -t',traj_python_bart,kdata_curr_gr,b1_bart)
+        # else:
+        #     volume_singular_gr=bart(1,f'pics --admm -d5 -i30 -R T:2:0:10e-3 -R T:4:0:20e-3 -e -S -t',traj_python_bart,kdata_curr_gr,b1_bart)
+        # volumes_singular_allbins.append(volume_singular_gr.squeeze())
+
+    kdata_stacked = np.transpose(kdata_stacked, (3, 1, 2, 0, 4))  # nb_segments, nb_part, nb_channels
+    kdata_stacked = np.reshape(kdata_stacked, (1, npoint, nb_segments * nb_part, nb_channels, 1, nbins), order = 'F')
+    kdata_stacked = kdata_stacked * 100 / np.max(np.abs(kdata_stacked))
+    print(kdata_stacked.shape)
+    traj_python_bart = np.tile(traj_python_bart, (1, 1, 1, 1, 1, nbins))
+    if dens_adj:
+        # volumes_singular_allbins=bart(1,f'pics --admm -d5 -i10 -p density -R T:2:0:6e-3 -R T:4:0:6e-3 -R L:7:7:10e-2 -b 8 -N -e -S -t',traj_python_bart,kdata_stacked,b1_bart)
+        # volumes_singular_allbins=bart(1,f'pics --admm -d5 -i50 -p density -R T:2:0:5e-3 -R T:4:0:5e-3 -R L:32:7:10e-2 -b 8 -N -e -S -t',traj_python_bart,kdata_stacked,b1_bart)
+        # volumes_singular_allbins=bart(1,f'pics --admm -d5 -i20 -p density -R T:7:0:3e-3 -R T:32:0:3e-3 -e -S -t',traj_python_bart,kdata_stacked,b1_bart)
+        volumes_singular_allbins=bart(1,f'pics --admm -d5 -i20 -p density -R T:7:0:1e-2 -e -S -t',traj_python_bart,kdata_stacked,b1_bart)
+        # volumes_singular_allbins=bart(1,f'pics --admm -d5 -i100 -p density -R T:2:0:1e-3 -R T:4:0:1e-3 -e -S -t',traj_python_bart,kdata_stacked,b1_bart)
+    else:
+        volumes_singular_allbins=bart(1,f'pics --admm -d5 -i30 -R T:2:0:3e-3 -R T:4:0:5e-3 -R L:7:7:10e-3 -b 8 -N -e -S -t',traj_python_bart,kdata_stacked,b1_bart)
+
+    volumes_singular_allbins = np.squeeze(volumes_singular_allbins)
+    volumes_singular_allbins = np.transpose(volumes_singular_allbins, [3, 0, 1, 2])
+    # volumes_singular_allbins=np.array(volumes_singular_allbins)
+    volumes_singular_allbins=np.moveaxis(volumes_singular_allbins,-1,1)
+    
+    # np.save(filename_volumes,volumes_singular_allbins)
+    # if gamma is not None:
+    #     print('Gamma correction')
+    #     for gr in range(volumes_singular_allbins.shape[0]):
+    #         volumes_singular_allbins[gr,:,:,:] = gamma_transform(volumes_singular_allbins[gr,:,:,:], gamma)
+            
+    # np.save(filename_volumes_gamma,volumes_singular_allbins)
+    np.save(filename_volumes,volumes_singular_allbins)
+    return
+
+@ma.machine()
+# @ma.parameter("bart_command", str, default=None, description="bart pics command")
+@ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
+@ma.parameter("filename_b1", str, default=None, description="B1")
+@ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
+@ma.parameter("filename_phi", str, default=None, description="MRF temporal basis components")
+@ma.parameter("filename_seqParams", str, default=None, description="Seq params")
+@ma.parameter("filename_dcomp", str, default=None, description="Seq params")
+@ma.parameter("dictfile", str, default=None, description="MRF dictionary file for temporal basis")
+@ma.parameter("L0", int, default=10, description="Number of retained temporal basis functions")
+@ma.parameter("n_comp", int, default=None, description="Virtual coils components to load b1 and pca file")
+@ma.parameter("useGPU", bool, default=True, description="Use GPU")
+@ma.parameter("log", bool, default=True, description="log bin results")
+@ma.parameter("gamma", float, default=None, description="Gamma Correction")
+# @ma.parameter("bart_opts", dict, default={'reg_xy': {'action': True, 'type': 'T', 'lambda': 3e-3}, 'reg_z': {'action': True, 'type': 'T', 'lambda': 3e-3}, 'reg_bin': {'action': False, 'type': 'T', 'lambda': 3e-3}, 'reg_L0': {'action': False, 'type': 'L', 'lambda': 1e-2}}, description="Bart reconstruction options")
+@ma.parameter("filename_bart_opts", str, default=None, description="Bart reconstruction options")
+@ma.parameter("dens_adj", bool, default=False, description="Radial density adjustment")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
+@ma.parameter("gating_only", bool, default=False, description="Use weights only for gating")
+def build_volumes_singular_allbins_3D_BART_bmy2(filename_kdata, filename_b1, filename_weights,filename_dcomp,filename_phi,filename_seqParams,dictfile,L0,n_comp,useGPU,dens_adj,nb_rep_center_part,gating_only,log, gamma, filename_bart_opts):
+    '''
+    Build singular volumes for MRF for all motion bins
+    Output shape nb_motion_bins x L0 x nz x nx x ny
+    '''
+    filename_volumes = filename_kdata.split("_kdata.npy")[0] + "_volumes_singular_allbins_bart.npy"
+    # filename_volumes_gamma = filename_kdata.split("_kdata.npy")[0] + "_volumes_singular_allbins_bart_gamma.npy"
+    filename_volumes_log = filename_kdata.split("_kdata.npy")[0] + "_volumes_singular_allbins_bart_gr{}.npy"
+    print("Loading Kdata")
+    print(filename_kdata)
+    kdata_all_channels_all_slices = np.load(filename_kdata)
+    print(filename_kdata)
+    print(np.linalg.norm(kdata_all_channels_all_slices))
+
+    nb_channels,nb_segments,nb_part,npoint=kdata_all_channels_all_slices.shape
+
+    if filename_seqParams is not None:
+        file = open(filename_seqParams, "rb")
+        dico_seqParams = pickle.load(file)
+        file.close()
+
+        use_navigator_dll = dico_seqParams["use_navigator_dll"]
+
+        if "use_kushball_dll" in dico_seqParams.keys():
+            use_kushball_dll=dico_seqParams["use_kushball_dll"]
+        else:
+            use_kushball_dll=False
+
+
+        if use_kushball_dll:
+            meas_sampling_mode = dico_seqParams["alFree"][16]
+        elif (use_navigator_dll):
+            meas_sampling_mode = dico_seqParams["alFree"][15]
+        else:
+            meas_sampling_mode = dico_seqParams["alFree"][12]
+
+        print(meas_sampling_mode)
+
+
+
+        undersampling_factor = dico_seqParams["alFree"][9]
+
+        nb_slices=int(dico_seqParams["nb_part"])
+
+
+        if meas_sampling_mode == 1:
+            incoherent = False
+            mode = None
+        elif meas_sampling_mode == 2:
+            incoherent = True
+            mode = "old"
+        elif meas_sampling_mode == 3:
+            incoherent = True
+            mode = "new"
+
+        elif meas_sampling_mode == 4:
+            incoherent = True
+            mode = "Kushball"
+
+
+
+    else:
+        incoherent=False
+        mode="old"
+        undersampling_factor=1
+        nb_slices=nb_part
+        image_size=(100,100,100)
+
+
+
+
+      
+
+        # bart_command=str.replace(bart_command,"-t","-p density -t")
+        # print(bart_command)
+        
+
+
+    if ((filename_b1 is None))and(n_comp is None):
+        raise ValueError('n_comp should be provided when B1 or PCA files are missing')
+
+    if filename_b1 is None:
+        filename_b1=str.split(filename_kdata, "_kdata.npy")[0] + "_bart12_b12Dplus1_{}.npy".format(n_comp)
+        
+    if filename_bart_opts is None:
+        bart_opts = {'reg_xy': {'action': True, 'type': 'T', 'lambda': 3e-3}, 'reg_z': {'action': True, 'type': 'T', 'lambda': 3e-3}, 'reg_bin': {'action': False, 'type': 'T', 'lambda': 3e-3}, 'reg_L0': {'action': False, 'type': 'L', 'lambda': 1e-2}, 'verbose_level': 5, 'nb_iter': 30}
+    else:
+        with open(filename_bart_opts, "r") as f:
+            bart_opts = json.load(f)
+
+    if filename_weights is None:
+        filename_weights = str.split(filename_kdata, "_kdata.npy")[0] + "_weights.npy"
+
+    # if ((filename_phi is None) and (dictfile is None)):
+    #     raise ValueError('Either dictfile or filename_phi should be provided for temporal projection')
+
+    # if dictfile is not None:
+    #     filename_u = str.split(dictfile, ".dict")[0] + "_u_bart.npy"
+
+    b1_all_slices_2Dplus1_pca = np.load(filename_b1)
+    
+    image_size=b1_all_slices_2Dplus1_pca.shape[1:]
+
+    b1_bart=np.moveaxis(b1_all_slices_2Dplus1_pca,0,-1)
+    b1_bart=np.moveaxis(b1_bart,0,-2)
+
+    all_weights = np.load(filename_weights)
+    nbins=all_weights.shape[0]
+
+    if dens_adj:
+
+
+        npoint = kdata_all_channels_all_slices.shape[-1]
+        if mode=="Kushball": 
+            density = np.abs(np.linspace(-1, 1, npoint))**2
+        else:
+            density=np.abs(np.linspace(-1, 1, npoint))
+            
+        if bart_opts['reg_bin']['action'] and bart_opts['reg_L0']['action']: 
+            density = density.reshape(1, npoint, 1, 1, 1, 1, 1)
+            density = np.tile(density, (1,1,nb_segments*nb_part,1, 1, L0, nbins))
+        elif bart_opts['reg_L0']['action']:
+            density = density.reshape(1, npoint, 1, 1, 1, 1)
+            density = np.tile(density, (1,1,nb_segments*nb_part,1, 1, L0))
+        else:
+            density = density.reshape(1, npoint, 1, 1, 1, 1)
+            density = np.tile(density, (1,1,nb_segments*nb_part,1, 1, nbins))
+        print('Save density compensation')
+        cfl.writecfl('density', np.sqrt(density))
+
+    if gating_only:
+        print("Using weights for gating only")
+        all_weights=(all_weights>0)*1
+
+    if filename_dcomp is not None:
+        print("Weighing by density compensation file")
+        dcomp=np.load(filename_dcomp)
+        print(dcomp.shape)
+        dcomp[:,:,:,:,-1]=dcomp[:,:,:,:,-2]
+        dcomp[:,:,:,:,0]=dcomp[:,:,:,:,1]
+        
+        all_weights=all_weights*dcomp
+
+
+    mrf_dict = load_pickle(dictfile)
+    if "phi" not in mrf_dict.keys():
+        mrf_dict=add_temporal_basis(mrf_dict,L0)
+        save_pickle(mrf_dict,mrf_dict)
+    phi=mrf_dict["phi"]
+    
+
+    # if filename_phi not in os.listdir():
+    #     u = build_basis_bart(dictfile)
+    #     print(u.shape)
+    #     np.save(filename_u,u)
+    # else:
+    #     u = np.load(filename_u)
+
+    # basis=u[:L0,:].T
+    # basis=basis[None,None,None,None,None,:,:]
+
+    # cfl.writecfl("basis",basis)
+
+    print("Kdata shape {}".format(kdata_all_channels_all_slices.shape))
+    print("Weights shape {}".format(all_weights.shape))
+    print("Phi shape {}".format(phi.shape))
+    print("B1 shape {}".format(b1_all_slices_2Dplus1_pca.shape))
+
+    print("nb_part {}".format(nb_part))
+    print("image_size {}".format(image_size))
+
+    
+    kdata_singular = np.zeros((nb_channels,nb_segments, nb_part*npoint) + (L0,), dtype="complex64")
+    data=kdata_all_channels_all_slices.reshape(nb_channels,nb_segments,-1)
+
+    for ch in tqdm(range(nb_channels)):
+        for ts in tqdm(range(nb_segments)):
+            kdata_singular[ch, ts, :, :] = data[ch, ts, :, None] @ (phi[:L0].conj().T[ts][None, :])
+    
+    # kdata_singular = kdata_singular[:,:,:,0]
+    
+    # all_weights = all_weights[..., None]
+    radial_traj=Radial3D(total_nspokes=nb_segments,undersampling_factor=1,npoint=npoint,nb_slices=nb_part,incoherent=incoherent,mode=mode)
+    
+        
+    traj_python = radial_traj.get_traj()
+    traj_python_bart = np.reshape(traj_python, (nb_segments, npoint, nb_part, 3), order = 'F')
+    traj_python_bart = np.transpose(traj_python_bart, [3, 1, 0, 2])
+    
+    traj_python_bart[0] = traj_python_bart[0] / np.max(np.abs(traj_python_bart[0])) * int(image_size[0]/2)
+    traj_python_bart[1] = traj_python_bart[1] / np.max(np.abs(traj_python_bart[1])) * int(image_size[1]/2)
+    traj_python_bart[2] = traj_python_bart[2] / np.max(np.abs(traj_python_bart[2])) * int(image_size[2] / 2)
+
+    # traj_python_bart = traj_python.reshape(3, npoint, window*nb_part,1,1,ntimesteps)
+    print(traj_python_bart.shape)
+    
+    
+    
+
+        
+    # kdata_singular = np.zeros((nb_channels,ntimesteps, nb_part*npoint*window) + (L0,), dtype="complex64")
+    # kdata_all_channels_all_slices=kdata_all_channels_all_slices.reshape(nb_channels,nb_segments,nb_partnpoint)
+
+    kdata_singular = np.reshape(kdata_singular, (nb_channels, nb_segments, nb_part, npoint, L0))  
+    volumes_singular_allbins=[]
+
+    # BART command initialization
+    bart_command = "pics --{} -d{} -i{}".format(bart_opts['algo'], bart_opts['verbose_level'], bart_opts['nb_iter'])
+    if dens_adj:
+        bart_command += " -p density"
+    regularizations = []
+    # BART command regularization terms
+    if bart_opts['reg_xy']['action'] and bart_opts['reg_z']['action']:
+        if bart_opts['reg_xy'] == bart_opts['reg_z']:
+            regularizations.append(f"-R {bart_opts['reg_xy']['type']}:7:0:{bart_opts['reg_xy']['lambda']}")
+        else:
+            regularizations.append(f"-R {bart_opts['reg_xy']['type']}:2:0:{bart_opts['reg_xy']['lambda']}")
+            regularizations.append(f"-R {bart_opts['reg_z']['type']}:4:0:{bart_opts['reg_z']['lambda']}")
+    if bart_opts['reg_bin']['action']:
+        regularizations.append(f"-R {bart_opts['reg_bin']['type']}:32:0:{bart_opts['reg_bin']['lambda']}")
+    if bart_opts['reg_L0']['action']:
+        if not bart_opts['reg_bin']['action']:
+            regularizations.append(f"-R {bart_opts['reg_L0']['type']}:7:7:{bart_opts['reg_L0']['lambda']}")
+        else:
+            regularizations.append(f"-R {bart_opts['reg_L0']['type']}:71:71:{bart_opts['reg_L0']['lambda']}")
+        bart_command += " -b 8 -N"
+    if bart_opts['reg_xy']['action'] and bart_opts['reg_z']['action'] and bart_opts['reg_bin']['action'] and bart_opts['reg_L0']['action']:
+        bart_command += " --lowmem"
+    # Final BART command
+    bart_command += " " + " ".join(regularizations) + " -e -S -t"
+    
+    
+    if bart_opts['reg_bin']['action'] and bart_opts['reg_L0']['action']:
+        traj_python_bart = np.reshape(traj_python_bart, (3, npoint, nb_segments * nb_part, 1, 1, 1, 1), order = 'F')             
+        kdata_stacked = np.zeros((nb_channels, nb_segments, nb_part, npoint, L0, nbins), dtype="complex64")
+
+        for gr in tqdm(range(nbins)):
+            print("Building singular volumes for bin {}".format(gr))
+            curr_weights_bart=all_weights[gr]
+            curr_weights_bart=curr_weights_bart[..., None]
+            
+            print(curr_weights_bart.shape)
+            print(kdata_singular.shape)
+            # kdata_stacked[:,:,:,:,:,gr]= kdata_singular*((curr_weights_bart>0)*1)
+            kdata_stacked[:,:,:,:,:,gr]= kdata_singular*curr_weights_bart
+        
+
+        kdata_stacked = np.transpose(kdata_stacked, (3, 1, 2, 0, 4, 5))  # nb_segments, nb_part, nb_channels
+        kdata_stacked = np.reshape(kdata_stacked, (1, npoint, nb_segments * nb_part, nb_channels, 1, L0, nbins), order = 'F')
+        kdata_stacked = kdata_stacked * 100 / np.max(np.abs(kdata_stacked))
+        print(kdata_stacked.shape)
+        traj_python_bart = np.tile(traj_python_bart, (1, 1, 1, 1, 1, L0, nbins))
+        
+        volumes_singular_allbins=bart(1,bart_command,traj_python_bart,kdata_stacked,b1_bart)
+
+        volumes_singular_allbins = np.squeeze(volumes_singular_allbins)
+        volumes_singular_allbins = np.transpose(volumes_singular_allbins, [4, 3, 0, 1, 2])
+        volumes_singular_allbins=np.moveaxis(volumes_singular_allbins,-1,2)
+    
+    elif bart_opts['reg_L0']['action']:
+        
+        traj_python_bart = np.reshape(traj_python_bart, (3, npoint, nb_segments * nb_part, 1, 1, 1), order = 'F')             
+        traj_python_bart = np.tile(traj_python_bart, (1, 1, 1, 1, 1, L0))
+        
+
+        for gr in tqdm(range(nbins)):
+            
+            print("Reconstruction of singular volumes for bin {}".format(gr))
+            kdata_stacked = np.zeros((nb_channels, nb_segments, nb_part, npoint, L0), dtype="complex64")
+            curr_weights_bart=all_weights[gr]
+            # curr_weights_bart=curr_weights_bart[..., None]
+            
+            print(curr_weights_bart.shape)
+            print(kdata_singular.shape)
+            kdata_stacked = kdata_singular*curr_weights_bart
+        
+
+            kdata_stacked = np.transpose(kdata_stacked, (3, 1, 2, 0, 4))  # nb_segments, nb_part, nb_channels
+            kdata_stacked = np.reshape(kdata_stacked, (1, npoint, nb_segments * nb_part, nb_channels, 1, L0), order = 'F')
+            kdata_stacked = kdata_stacked * 100 / np.max(np.abs(kdata_stacked))
+            print(kdata_stacked.shape)
+
+
+            volumes_singular=bart(1,bart_command,traj_python_bart,kdata_stacked,b1_bart)
+
+
+        volumes_singular_allbins.append(volumes_singular.squeeze())
+        volumes_singular_allbins = np.squeeze(volumes_singular_allbins)
+        volumes_singular_allbins = np.transpose(volumes_singular_allbins, [0, 4, 1, 2, 3])
+        volumes_singular_allbins=np.moveaxis(volumes_singular_allbins,-1,2)        
+        
+    else:
+        traj_python_bart = np.reshape(traj_python_bart, (3, npoint, nb_segments * nb_part, 1, 1, 1), order = 'F')   
+        traj_python_bart = np.tile(traj_python_bart, (1, 1, 1, 1, 1, nbins))            
+        
+      
+        for l in tqdm(range(L0)):
+            print("Building singular volumes {}".format(l))
+            kdata_stacked = np.zeros((nb_channels, nb_segments, nb_part, npoint, nbins), dtype="complex64")
+            kdata_singular_l = kdata_singular[..., l]
+            for gr in tqdm(range(nbins)):
+                curr_weights_bart=all_weights[gr]
+                # curr_weights_bart=curr_weights_bart[..., None]
+                
+                print(curr_weights_bart.shape)
+                print(kdata_singular_l.shape)
+                # kdata_stacked[:,:,:,:,:,gr]= kdata_singular*((curr_weights_bart>0)*1)
+                kdata_stacked[:,:,:,:,gr]= kdata_singular_l*curr_weights_bart
+            
+
+            kdata_stacked = np.transpose(kdata_stacked, (3, 1, 2, 0, 4))  # nb_segments, nb_part, nb_channels
+            kdata_stacked = np.reshape(kdata_stacked, (1, npoint, nb_segments * nb_part, nb_channels, 1, nbins), order = 'F')
+            kdata_stacked = kdata_stacked * 100 / np.max(np.abs(kdata_stacked))
+            print(kdata_stacked.shape)
+
+            volumes_l_allbins=bart(1,bart_command,traj_python_bart,kdata_stacked,b1_bart)
+
+            volumes_singular_allbins.append(volumes_l_allbins.squeeze())
+            
+        volumes_singular_allbins = np.squeeze(volumes_singular_allbins)
+        volumes_singular_allbins = np.transpose(volumes_singular_allbins, [4, 0, 1, 2, 3])
+        volumes_singular_allbins=np.moveaxis(volumes_singular_allbins,-1,2)    
+    
+    np.save(filename_volumes,volumes_singular_allbins)
+    return
+
+
+@ma.machine()
+@ma.parameter("filename_volume", str, default=None, description="Volume to normalize")
+@ma.parameter("gamma", float, default=1, description="Gamma Correction")
+def correct_intensity(filename_volume,gamma):
+    
+    filename_volumes_corrected = filename_volume.split(".npy")[0]+"_gamma_{}.npy".format(str(gamma))
+    print("Loading Volume")
+    print(filename_volume)
+    volumes_singular_allbins = np.load(filename_volume)
+    if volumes_singular_allbins.ndim==4:
+        for gr in range(volumes_singular_allbins.shape[0]):
+            volumes_singular_allbins[gr,:,:,:] = gamma_transform(volumes_singular_allbins[gr,:,:,:], gamma)
+    elif volumes_singular_allbins.ndim==5:    
+        for ev in range(volumes_singular_allbins.shape[0]):
+            for gr in range(volumes_singular_allbins.shape[1]):
+                volumes_singular_allbins[ev,gr,:,:,:] = gamma_transform(volumes_singular_allbins[ev,gr,:,:,:], gamma)
+                
+    np.save(filename_volumes_corrected,volumes_singular_allbins)
+    return
+
+
+@ma.machine()
 @ma.parameter("filename_kdata", str, default=None, description="MRF raw data")
 @ma.parameter("filename_seqParams", str, default=None, description="Seq params")
 @ma.parameter("filename_b1", str, default=None, description="B1")
@@ -5185,6 +5917,7 @@ toolbox.add_program("build_additional_maps", build_additional_maps)
 toolbox.add_program("generate_image_maps", generate_image_maps)
 # toolbox.add_program("output_test", output_test)
 toolbox.add_program("generate_movement_gif", generate_movement_gif)
+# toolbox.add_program("generate_movement_gif_L0", generate_movement_gif_L0)
 toolbox.add_program("generate_matchedvolumes_allgroups", generate_matchedvolumes_allgroups)
 toolbox.add_program("build_data_nacq", build_data_nacq)
 toolbox.add_program("calculate_displacement_weights", calculate_displacement_weights)
@@ -5213,6 +5946,9 @@ toolbox.add_program("generate_random_weights", generate_random_weights)
 toolbox.add_program("build_volumes_singular_allbins_3D", build_volumes_singular_allbins_3D)
 toolbox.add_program("build_volumes_singular_allbins_3D_BART", build_volumes_singular_allbins_3D_BART)
 toolbox.add_program("build_volumes_singular_allbins_3D_BART_v2", build_volumes_singular_allbins_3D_BART_v2)
+toolbox.add_program("build_volumes_singular_allbins_3D_BART_bmy", build_volumes_singular_allbins_3D_BART_bmy)
+toolbox.add_program("build_volumes_singular_allbins_3D_BART_bmy2", build_volumes_singular_allbins_3D_BART_bmy2)
+toolbox.add_program("correct_intensity", correct_intensity)
 toolbox.add_program("build_volumes_singular_allbins_3D_BART_inv", build_volumes_singular_allbins_3D_BART_inv)
 toolbox.add_program("build_volumes_iterative", build_volumes_iterative)
 toolbox.add_program("generate_dixon_volumes_for_segmentation", generate_dixon_volumes_for_segmentation)
