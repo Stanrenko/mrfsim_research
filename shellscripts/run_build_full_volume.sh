@@ -67,7 +67,7 @@ python script_recoInVivo_3D_machines.py convertArrayToImage --filevolume $1_full
 
 eval "$(conda shell.bash hook)"
 conda activate distortion
-gradient_unwarp.py ${1}_full_volume.nii ${1}_full_volume_corrected.nii siemens -g ../gradunwarp/coeff.grad --fovmin -0.6 --fovmax 0.6 -n
+gradient_unwarp.py ${1}_full_volume.nii ${1}_full_volume_corrected.nii siemens -g ../gradunwarp/coeff.grad --fovmin -0.4 --fovmax 0.4 -n
 conda deactivate
 
 

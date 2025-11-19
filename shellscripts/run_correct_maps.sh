@@ -39,7 +39,7 @@ find $1 -type f -name "*_seqParams.pkl" | while read -r line ; do
         eval "$(conda shell.bash hook)"
         conda deactivate
         conda activate distortion
-        gradient_unwarp.py ${filepath}/${filenii} ${filepath}/${filecorrected} siemens -g ../gradunwarp/coeff.grad --fovmin -0.2 --fovmax 0.2 -n
+        gradient_unwarp.py ${filepath}/${filenii} ${filepath}/${filecorrected} siemens -g ../gradunwarp/coeff.grad --fovmin -0.4 --fovmax 0.4 -n
         conda deactivate
 
         eval "$(conda shell.bash hook)"
@@ -66,7 +66,7 @@ find $1 -type f -name "*_seqParams.pkl" | while read -r line ; do
         eval "$(conda shell.bash hook)"
         conda deactivate
         conda activate distortion
-        gradient_unwarp.py ${filepath}/${filenii} ${filepath}/${filecorrected} siemens -g ../gradunwarp/coeff.grad --fovmin -0.2 --fovmax 0.2 -n
+        gradient_unwarp.py ${filepath}/${filenii} ${filepath}/${filecorrected} siemens -g ../gradunwarp/coeff.grad --fovmin -0.4 --fovmax 0.4 -n
         conda deactivate
 
         eval "$(conda shell.bash hook)"
