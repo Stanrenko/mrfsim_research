@@ -46,7 +46,7 @@ find ${filepath} -type f -name "${filename}*ip.mha" | while read -r line2 ; do
     conda deactivate
     eval "$(conda shell.bash hook)"
     conda activate distortion
-    gradient_unwarp.py ${filepath}/${filenii} ${filepath}/${filecorrected} siemens -g ../gradunwarp/coeff.grad --fovmin -0.2 --fovmax 0.2 -n
+    gradient_unwarp.py ${filepath}/${filenii} ${filepath}/${filecorrected} siemens -g ../gradunwarp/coeff.grad --fovmin -0.4 --fovmax 0.4 -n
     conda deactivate
 
     eval "$(conda shell.bash hook)"
@@ -73,7 +73,7 @@ find ${filepath} -type f -name "${filename}*oop.mha" | while read -r line2 ; do
     conda deactivate
     eval "$(conda shell.bash hook)"
     conda activate distortion
-    gradient_unwarp.py ${filepath}/${filenii} ${filepath}/${filecorrected} siemens -g ../gradunwarp/coeff.grad --fovmin -0.2 --fovmax 0.2 -n
+    gradient_unwarp.py ${filepath}/${filenii} ${filepath}/${filecorrected} siemens -g ../gradunwarp/coeff.grad --fovmin -0.4 --fovmax 0.4 -n
     conda deactivate
 
     eval "$(conda shell.bash hook)"
