@@ -30,13 +30,13 @@ SIMUS=1
 US=1
 
 
-# #Extracting k-space and navigator data
-# echo "######################################################"
-# echo "Extracting k-space and navigator data"
-# python scripts/script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX} #--nb-rep 40 #--dens-adj False
+#Extracting k-space and navigator data
+echo "######################################################"
+echo "Extracting k-space and navigator data"
+python scripts/script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX} #--nb-rep 40 #--dens-adj False
 
-# # rm $1.npy
-# rm $1.dat
+# rm $1.npy
+rm $1.dat
 
 echo "Building navigator images to help with channel choice"
 python scripts/script_recoInVivo_3D_machines.py build_navigator_images --filename-nav-save $1_nav.npy
