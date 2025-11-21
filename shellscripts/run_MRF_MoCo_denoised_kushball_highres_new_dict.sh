@@ -29,27 +29,28 @@ INDEX=${6-${INDEX_def}}
 SIMUS=1
 US=1
 
+echo "TEST"
 
-#Extracting k-space and navigator data
-echo "######################################################"
-echo "Extracting k-space and navigator data"
-python scripts/script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX} #--nb-rep 40 #--dens-adj False
+# #Extracting k-space and navigator data
+# echo "######################################################"
+# echo "Extracting k-space and navigator data"
+# python scripts/script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX} #--nb-rep 40 #--dens-adj False
 
-# rm $1.npy
-rm $1.dat
+# # rm $1.npy
+# rm $1.dat
 
-echo "Building navigator images to help with channel choice"
-python scripts/script_recoInVivo_3D_machines.py build_navigator_images --filename-nav-save $1_nav.npy
+# echo "Building navigator images to help with channel choice"
+# python scripts/script_recoInVivo_3D_machines.py build_navigator_images --filename-nav-save $1_nav.npy
 cp $1_image_nav.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 cp $1_image_nav_diff.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
 
-echo "######################################################"
-echo "Based on the navigator images, what is the channel with best contrast for motion estimation ?"
-read CHANNEL
-echo "Channel $CHANNEL will be used for motion estimation"
+# echo "######################################################"
+# echo "Based on the navigator images, what is the channel with best contrast for motion estimation ?"
+# read CHANNEL
+# echo "Channel $CHANNEL will be used for motion estimation"
 
-python scripts/script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -20 --top 45 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --equal-spoke-per-bin True --ch $CHANNEL --nbins $NBINS --retained-categories "0,1,2,3,4" --sim-us $SIMUS --us $US --interp-bad-correl True --seasonal-adj True --randomize True --pad 0 --nspoke-per-z 1 #--soft-weight True #--stddisp 1.5
+# python scripts/script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -20 --top 45 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --equal-spoke-per-bin True --ch $CHANNEL --nbins $NBINS --retained-categories "0,1,2,3,4" --sim-us $SIMUS --us $US --interp-bad-correl True --seasonal-adj True --randomize True --pad 0 --nspoke-per-z 1 #--soft-weight True #--stddisp 1.5
 # python scripts/script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -5 --top 15 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --equal-spoke-per-bin True --ch $CHANNEL --nbins $NBINS --retained-categories "0,1,2,3,4" --sim-us $SIMUS --us $US --interp-bad-correl True --seasonal-adj True --randomize True --pad 0 --nspoke-per-z 1 #--soft-weight True #--stddisp 1.5
 
 cp $1_displacement.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo

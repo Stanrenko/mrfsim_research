@@ -30,3 +30,4 @@ build/
 dist/
 mrfsim.egg-info/
 
+shellscripts/
