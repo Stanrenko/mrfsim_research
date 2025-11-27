@@ -1427,12 +1427,12 @@ def build_navigator_images(filename_nav_save,seasonal_adj):
 @ma.parameter("nb_rep_center_part", int, default=1, description="Central partition repetitions")
 @ma.parameter("sim_us", int, default=1, description="Undersampling simulation")
 @ma.parameter("us_file", str, default=None, description="Undersampling simulation from file ")
-@ma.parameter("interp_bad_correl", bool, default=False, description="Interpolate displacements with neighbours when poorly correlated")
+@ma.parameter("max_correl_for_interp", float, default=None, description="Interpolate displacements with neighbours when poorly correlated")
 @ma.parameter("nav_res_factor", int, default=None, description="bins rescaling if resolution of binning navigator different from current input")
 @ma.parameter("soft_weight", bool, default=False, description="use soft weight for full inspiration")
 @ma.parameter("stddisp", float, default=None, description="outlier exclusion for irregular breathing")
 
-def calculate_displacement_weights(filename_nav_save,filename_displacement,nb_segments,bottom,top,ntimesteps,us,incoherent,lambda_tv,ch,filename_bins,retained_categories,nbins,gating_only,pad,randomize,equal_spoke_per_bin,use_ml,useGPU,force_recalc_disp,dct_frequency_filter,seasonal_adj,hard_interp,nb_rep_center_part,sim_us,us_file,interp_bad_correl,nspoke_per_z,nav_res_factor,soft_weight,stddisp,filename_disp_respi):
+def calculate_displacement_weights(filename_nav_save,filename_displacement,nb_segments,bottom,top,ntimesteps,us,incoherent,lambda_tv,ch,filename_bins,retained_categories,nbins,gating_only,pad,randomize,equal_spoke_per_bin,use_ml,useGPU,force_recalc_disp,dct_frequency_filter,seasonal_adj,hard_interp,nb_rep_center_part,sim_us,us_file,max_correl_for_interp,nspoke_per_z,nav_res_factor,soft_weight,stddisp,filename_disp_respi):
 
     '''
     Displacement calculation from raw navigator K-space data
@@ -1490,7 +1490,136 @@ def calculate_displacement_weights(filename_nav_save,filename_displacement,nb_se
                 displacements=calculate_displacements_allchannels(data_for_nav,nb_segments,shifts = list(range(bottom, top)),lambda_tv=lambda_tv,pad=pad,randomize=randomize)
             else:
                 displacements = calculate_displacements_singlechannel(data_for_nav, nb_segments, shifts=list(range(bottom, top)),
-                                                                    lambda_tv=lambda_tv,ch=ch,pad=pad,randomize=randomize,dct_frequency_filter=dct_frequency_filter,seasonal_adj=seasonal_adj,interp_bad_correl=interp_bad_correl)
+                                                                    lambda_tv=lambda_tv,ch=ch,pad=pad,randomize=randomize,dct_frequency_filter=dct_frequency_filter,seasonal_adj=seasonal_adj,max_correl_for_interp=max_correl_for_interp)
+        np.save(filename_displacement, displacements)
+
+    else:
+        displacements=np.load(filename_displacement)
+
+    if nav_file:
+        nb_slices=data_for_nav.shape[1]
+        nb_gating_spokes=data_for_nav.shape[2]
+    else:
+        nb_slices=displacements.shape[0]
+        nb_gating_spokes=displacements.shape[1]
+
+    if hard_interp:
+        disp_interp=copy(displacements).reshape(-1,nb_gating_spokes)
+        disp_interp[:, :8] = ((disp_interp[:, 7] - disp_interp[:, 0]) / (7 - 0))[:, None] * np.arange(8)[None,
+                                                                                            :] + disp_interp[:, 0][:,
+                                                                                                 None]
+        displacements = disp_interp.flatten()
+        np.save(filename_displacement, displacements)
+
+    filename_displacement_plot = filename_displacement.replace(".npy",".jpg")
+    plt.plot(displacements.flatten())
+    plt.savefig(filename_displacement_plot)
+
+    radial_traj=Radial3D(total_nspokes=nb_segments,undersampling_factor=1,npoint=800,nb_slices=nb_slices*us,incoherent=incoherent,mode="old",nspoke_per_z_encoding=nspoke_per_z)
+
+    if filename_bins is None:
+        dico_traj_retained,dico_retained_ts,bins=estimate_weights_bins(displacements,nb_slices,nb_segments,nb_gating_spokes,ntimesteps,radial_traj,nb_bins=nbins,retained_categories=retained_categories,equal_spoke_per_bin=equal_spoke_per_bin,sim_us=sim_us,us_file=us_file,us=us,soft_weight_for_full_inspi=soft_weight,nb_rep_center_part=nb_rep_center_part,std_disp=stddisp,disp_respi=disp_respi)
+
+        np.save(filename_bins_output,bins)
+    else:
+        bins=np.load(filename_bins)
+        if nav_res_factor is not None:
+            bins=nav_res_factor*bins
+            print("Rescaled bins {}".format(bins))
+        nb_bins=len(bins)+1
+        print(nb_bins)
+        dico_traj_retained,dico_retained_ts,_=estimate_weights_bins(displacements,nb_slices,nb_segments,nb_gating_spokes,ntimesteps,radial_traj,nb_bins=nb_bins,retained_categories=retained_categories,bins=bins,sim_us=sim_us,us_file=us_file,us=us,soft_weight_for_full_inspi=soft_weight,nb_rep_center_part=nb_rep_center_part,disp_respi=disp_respi)
+
+    weights=[]
+    for gr in dico_traj_retained.keys():
+        weights.append(np.expand_dims(dico_traj_retained[gr],axis=-1))
+    weights=np.array(weights)
+    if gating_only:
+        weights=(weights>0)*1
+    print(weights.shape)
+    np.save(filename_weights, weights)
+
+    file = open(filename_retained_ts, "wb")
+    pickle.dump(dico_retained_ts, file)
+    file.close()
+    return
+
+
+
+@ma.machine()
+@ma.parameter("filename_nav_save", str, default=None, description="Navigator data")
+@ma.parameter("filename_displacement", str, default=None, description="Displacement data")
+@ma.parameter("nb_segments", int, default=1400, description="MRF Total Spoke number")
+@ma.parameter("ntimesteps", int, default=175, description="Number of MRF images")
+@ma.parameter("nspoke_per_z", int, default=8, description="number of spokes before partition jump when undersampling")
+@ma.parameter("us", int, default=1, description="undersampling_factor")
+@ma.parameter("incoherent", bool, default=True, description="3D sampling type")
+@ma.parameter("ch", int, default=None, description="channel if single channel estimation")
+@ma.parameter("filename_bins", str, default=None, description="bins file if data is binned according to another scan")
+@ma.parameter("filename_disp_respi", str, default=None, description="source displacement for distribution matching")
+@ma.parameter("retained_categories", str, default=None, description="retained bins")
+@ma.parameter("nbins", int, default=5, description="Number of motion states")
+@ma.parameter("gating_only", bool, default=False, description="Weights for gating only and not for density compensation")
+@ma.parameter("pad", int, default=10, description="Navigator images padding")
+@ma.parameter("equal_spoke_per_bin", bool, default=False, description="Distribute evenly the number of spokes per bin")
+@ma.parameter("force_recalc_disp", bool, default=True, description="Force calculation of displacement")
+@ma.parameter("hard_interp", bool, default=False, description="Hard interpolation for inversion")
+@ma.parameter("nb_rep_center_part", int, default=1, description="Central partition repetitions")
+@ma.parameter("sim_us", int, default=1, description="Undersampling simulation")
+@ma.parameter("us_file", str, default=None, description="Undersampling simulation from file ")
+@ma.parameter("nav_res_factor", int, default=None, description="bins rescaling if resolution of binning navigator different from current input")
+@ma.parameter("soft_weight", bool, default=False, description="use soft weight for full inspiration")
+@ma.parameter("stddisp", float, default=None, description="outlier exclusion for irregular breathing")
+@ma.parameter("center_pattern", int, default=None, description="position of pattern for displacement convolution calculation")
+@ma.parameter("width_pattern", int, default=10, description="width of pattern for displacement convolution calculation")
+def calculate_displacement_weights_new(filename_nav_save,filename_displacement,nb_segments,ntimesteps,us,incoherent,ch,filename_bins,retained_categories,nbins,gating_only,pad,equal_spoke_per_bin,force_recalc_disp,hard_interp,nb_rep_center_part,sim_us,us_file,nspoke_per_z,nav_res_factor,soft_weight,stddisp,filename_disp_respi,center_pattern,width_pattern):
+
+    '''
+    Displacement calculation from raw navigator K-space data
+    Remark:
+    If use_ml is True, bottom, top, randomize, lambda_TV are not useful
+    '''
+
+
+    if filename_nav_save is None:
+        nav_file=False
+    else:
+        nav_file=True
+
+    if filename_displacement is None:
+        filename_displacement=filename_nav_save.split("_nav.npy")[0] + "_displacement.npy"
+        filename_weights=filename_nav_save.split("_nav.npy")[0] + "_weights.npy"
+        filename_retained_ts=filename_nav_save.split("_nav.npy")[0] + "_retained_ts.pkl"
+        filename_bins_output = filename_nav_save.split("_nav.npy")[0] + "_bins.npy"
+
+        folder = "/".join(str.split(filename_nav_save, "/")[:-1])
+
+    else:
+        print("Displacement file given")
+        filename_weights = filename_displacement.split("_displacement")[0] + "_weights.npy"
+        filename_retained_ts = filename_displacement.split("_displacement")[0] + "_retained_ts.pkl"
+        filename_bins_output = filename_displacement.split("_displacement")[0] + "_bins.npy"
+
+        folder = "/".join(str.split(filename_displacement, "/")[:-1])
+        print(folder)
+
+    if retained_categories is not None:
+        retained_categories = np.array(retained_categories.split(",")).astype(int)
+
+    if nav_file:
+        data_for_nav=np.load(filename_nav_save)
+
+
+    if filename_disp_respi is not None:
+        disp_respi=np.load(filename_disp_respi)
+    else:
+        disp_respi=None
+
+
+    if ((str.split(filename_displacement, "/")[-1] not in os.listdir(folder)) or (force_recalc_disp)):
+        
+        displacements = calculate_displacements_singlechannel_new(data_for_nav, nb_segments,ch,pad,center_pattern,width_pattern)
+        
         np.save(filename_displacement, displacements)
 
     else:
@@ -3314,7 +3443,6 @@ def build_volumes_singular(filename_kdata, filename_b1, filename_pca,dictfile,L0
 
     if full_volume:
         L0=1
-        window=8
         phi=np.ones((1,1))
     else:
         # if filename_phi not in os.listdir():
@@ -5194,6 +5322,7 @@ toolbox.add_program("generate_movement_gif", generate_movement_gif)
 toolbox.add_program("generate_matchedvolumes_allgroups", generate_matchedvolumes_allgroups)
 toolbox.add_program("build_data_nacq", build_data_nacq)
 toolbox.add_program("calculate_displacement_weights", calculate_displacement_weights)
+toolbox.add_program("calculate_displacement_weights_new", calculate_displacement_weights_new)
 toolbox.add_program("coil_compression", coil_compression)
 toolbox.add_program("coil_compression_bart", coil_compression_bart)
 toolbox.add_program("build_volumes_allbins", build_volumes_allbins)
