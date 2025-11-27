@@ -39,7 +39,7 @@ US=1
 # rm $1.dat
 
 # echo "Building navigator images to help with channel choice"
-# python scripts/script_recoInVivo_3D_machines.py build_navigator_images --filename-nav-save $1_nav.npy
+# python scripts/script_recoInVivo_3D_machines.py build_navigator_images --filename-nav-save $1_nav.npy --seasonal-adj True
 # cp $1_image_nav.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 # cp $1_image_nav_diff.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
@@ -49,26 +49,34 @@ US=1
 # read CHANNEL
 # echo "Channel $CHANNEL will be used for motion estimation"
 
+# exit
+
+
+
 # python scripts/script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -20 --top 45 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --equal-spoke-per-bin True --ch $CHANNEL --nbins $NBINS --retained-categories "0,1,2,3,4" --sim-us $SIMUS --us $US --interp-bad-correl True --seasonal-adj True --randomize True --pad 0 --nspoke-per-z 1 #--soft-weight True #--stddisp 1.5
-# # python scripts/script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -5 --top 15 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --equal-spoke-per-bin True --ch $CHANNEL --nbins $NBINS --retained-categories "0,1,2,3,4" --sim-us $SIMUS --us $US --interp-bad-correl True --seasonal-adj True --randomize True --pad 0 --nspoke-per-z 1 #--soft-weight True #--stddisp 1.5
+
+# python scripts/script_recoInVivo_3D_machines.py calculate_displacement_weights_new --filename-nav-save $1_nav.npy --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --equal-spoke-per-bin True --ch $CHANNEL --nbins $NBINS --retained-categories "0,1,2,3,4" --sim-us $SIMUS --us $US --pad 0 --nspoke-per-z 1 --hard-interp True #--soft-weight True #--stddisp 1.5
+
+
+# python scripts/script_recoInVivo_3D_machines.py calculate_displacement_weights --filename-nav-save $1_nav.npy --bottom -5 --top 15 --incoherent False --nb-segments ${NSEGMENTS} --ntimesteps 1 --lambda-tv 0 --equal-spoke-per-bin True --ch $CHANNEL --nbins $NBINS --retained-categories "0,1,2,3,4" --sim-us $SIMUS --us $US --interp-bad-correl True --seasonal-adj True --randomize True --pad 0 --nspoke-per-z 1 #--soft-weight True #--stddisp 1.5
 
 # cp $1_displacement.jpg /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
-# # Coil compression
+# Coil compression
 # echo "######################################################"
 # echo "Coil Compression $NCOMP virtual coils"
 # python scripts/script_recoInVivo_3D_machines.py coil_compression_bart --filename-kdata $1_kdata.npy --n-comp $NCOMP --spoke-start 400 --filename-seqParams $1_seqParams.pkl --lowmem True
 
-# # exit
+# exit
 
 # rm $1_kdata.npy
 
-# # #Rebuild singular volumes for all bins
+# #Rebuild singular volumes for all bins
 # echo "######################################################"
 # echo "Rebuilding singular volumes for all bins"
 # python scripts/script_recoInVivo_3D_machines.py build_volumes_singular_allbins_3D --filename-kdata $1_bart${NCOMP}_kdata.npy --filename-seqParams $1_seqParams.pkl --L0 $NSING --dictfile $2 --useGPU False --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --filename-weights $1_weights.npy --gating-only True
 
-# rm $1_bart${NCOMP}_kdata.npy
+# # rm $1_bart${NCOMP}_kdata.npy
 
 # python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy --sl ${SLICE1} --l 0
 # cp $1_bart${NCOMP}_volumes_singular_allbins.npy_sl${SLICE1}_moving_singular_l0.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
@@ -92,26 +100,26 @@ US=1
 # python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_$GAMMASTR.npy --sl ${SLICE2}
 # cp $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_$GAMMASTR.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
-# exit
-#Initialization of deformation fields
-echo "######################################################"
-echo "Initialization of deformation field"
-python scripts/script_VoxelMorph_machines.py train_voxelmorph --filename-volumes $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}.npy --file-config-train config/config_train_voxelmorph_highres_shell.json --nepochs 1500 --kept-bins "0,1,2,3,4" --excluded 10 --us 4 #--lr 0.0002 --init-weights $1_volumes_allbins_denoised_gamma_0_8_vxm_model_weights.h5
-python scripts/script_VoxelMorph_machines.py register_allbins_to_baseline --filename-volumes $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}.npy --file-model $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_vxm_model_weights.h5 --file-config-train config/config_train_voxelmorph_highres_shell.json --axis 0
+# # exit
+# #Initialization of deformation fields
+# echo "######################################################"
+# echo "Initialization of deformation field"
+# python scripts/script_VoxelMorph_machines.py train_voxelmorph --filename-volumes $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}.npy --file-config-train config/config_train_voxelmorph_highres_shell.json --nepochs 1500 --kept-bins "0,1,2,3,4" --excluded 10 --us 4 #--lr 0.0002 --init-weights $1_volumes_allbins_denoised_gamma_0_8_vxm_model_weights.h5
+# python scripts/script_VoxelMorph_machines.py register_allbins_to_baseline --filename-volumes $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}.npy --file-model $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_vxm_model_weights.h5 --file-config-train config/config_train_voxelmorph_highres_shell.json --axis 0
 
-python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_registered.npy --sl ${SLICE1}
-cp $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_registered.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
-python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_registered.npy --sl ${SLICE2}
-cp $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_registered.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_registered.npy --sl ${SLICE1}
+# cp $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_registered.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_registered.npy --sl ${SLICE2}
+# cp $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_registered.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
-NITER=0
+# NITER=0
 
-python scripts/script_recoInVivo_3D_machines.py build_volumes_iterative_allbins_registered_allindex --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --niter 0 --file-deformation $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_deformation_map.npy --filename-weights $1_weights.npy --axis 0 --filename-seqParams $1_seqParams.pkl #--us 2
+# python scripts/script_recoInVivo_3D_machines.py build_volumes_iterative_allbins_registered_allindex --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --niter 0 --file-deformation $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_deformation_map.npy --filename-weights $1_weights.npy --axis 0 --filename-seqParams $1_seqParams.pkl #--us 2
 
-python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_allindex.npy --sl ${SLICE1}
-cp $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_allindex.npy_sl${SLICE1}_moving_singular_l0.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
-python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_allindex.npy --sl ${SLICE2}
-cp $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_allindex.npy_sl${SLICE2}_moving_singular_l0.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_allindex.npy --sl ${SLICE1}
+# cp $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_allindex.npy_sl${SLICE1}_moving_singular_l0.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_allindex.npy --sl ${SLICE2}
+# cp $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_allindex.npy_sl${SLICE2}_moving_singular_l0.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
 
 
@@ -127,19 +135,19 @@ else
 fi
 echo $VOLUMESSUFFIX
 
-python scripts/script_recoInVivo_3D_machines.py build_volumes_iterative_allbins_registered --index-ref ${REF} --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy  --niter $NITER --file-deformation $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_deformation_map.npy --filename-weights $1_weights.npy --use-wavelet True --lambda-wav 5e-13 --mu 1 --kept-bins "0,1,2,3,4" --filename-seqParams $1_seqParams.pkl --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --gating-only True --axis 0 #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
+# python scripts/script_recoInVivo_3D_machines.py build_volumes_iterative_allbins_registered --index-ref ${REF} --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy  --niter $NITER --file-deformation $1_bart${NCOMP}_volume_singular_l0_allbins_gamma_${GAMMASTR}_deformation_map.npy --filename-weights $1_weights.npy --use-wavelet True --lambda-wav 5e-13 --mu 1 --kept-bins "0,1,2,3,4" --filename-seqParams $1_seqParams.pkl --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --gating-only True --axis 0 #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
 
 
-python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --sl ${SLICE1}
-cp $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
-python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --sl ${SLICE2}
-cp $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --sl ${SLICE1}
+# cp $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy_sl${SLICE1}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# python scripts/script_recoInVivo_3D_machines.py generate_movement_gif --file-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --sl ${SLICE2}
+# cp $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy_sl${SLICE2}_moving_singular.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
 
-# python scripts/script_recoInVivo_3D_machines.py build_mask_from_singular_volume --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --l 0 --threshold 0.015 --it 2
-python scripts/script_recoInVivo_3D_machines.py build_mask_from_singular_volume --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --l 0 --threshold 0.03 --it 2
+# # python scripts/script_recoInVivo_3D_machines.py build_mask_from_singular_volume --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --l 0 --threshold 0.015 --it 2
+# python scripts/script_recoInVivo_3D_machines.py build_mask_from_singular_volume --filename-volume $1_bart${NCOMP}_volumes_singular_allbins.npy_volumes_allbins_registered_${VOLUMESSUFFIX}.npy --l 0 --threshold 0.025 --it 1
 
-cp $1_bart${NCOMP}_volumes_singular_allbins_volumes_allbins_registered_${VOLUMESSUFFIX}_l0_mask.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
+# cp $1_bart${NCOMP}_volumes_singular_allbins_volumes_allbins_registered_${VOLUMESSUFFIX}_l0_mask.gif /mnt/rmn_files/0_Wip/New/1_Methodological_Developments/1_Methodologie_3T/#9_2021_MR_MyoMap/3_Data_Processed/log_MRF_MoCo
 
 # #Build maps for all bins
 echo "######################################################"

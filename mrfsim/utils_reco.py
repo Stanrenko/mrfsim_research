@@ -196,7 +196,7 @@ def correct_mvt_kdata_zero_filled(trajectory,cond,ntimesteps):
     return weights,retained_timesteps
 
 
-def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001,randomize=False,dct_frequency_filter=None,seasonal_adj=False,interp_bad_correl=False):
+def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001,randomize=False,dct_frequency_filter=None,seasonal_adj=False,max_correl_for_interp=None):
     # np.save("./log/image_nav.npy",image)
     nb_gating_spokes = image.shape[1]
     nb_slices = image.shape[0]
@@ -230,6 +230,10 @@ def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001,randomize=
     mvt = []
     # adj=[]
     # all_correls=[]
+    bottom = np.maximum(-shifts[0],int(npoint_image/4))
+    top = np.minimum(int(npoint_image) -shifts[-1],int(3*npoint_image/4))
+    shifts=list(range(-bottom,top))
+
     for j in tqdm(range(nb_images)):
         if (j % nb_gating_spokes == 0)or(max_correl<0.5):
             used_shifts=shifts
@@ -239,6 +243,7 @@ def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001,randomize=
         corrs = np.zeros(len(used_shifts))
         bottom = np.maximum(-used_shifts[0],int(npoint_image/4))
         top = np.minimum(int(npoint_image) -used_shifts[-1],int(3*npoint_image/4))
+         # CS Test 
         # print(bottom)
         # print(top)
         for i, shift in enumerate(used_shifts):
@@ -282,8 +287,8 @@ def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001,randomize=
             displacements_smooth[sl] = sp.fft.idct(transf_disp)
         displacement = displacements_smooth.flatten()
 
-    if interp_bad_correl:
-        ind_bad_correl=np.argwhere(max_correls<0.2)
+    if max_correl_for_interp is not None:
+        ind_bad_correl=np.argwhere(max_correls<max_correl_for_interp)
         displacement_new=copy(displacement)
         for i in ind_bad_correl.flatten():
             if ((np.abs(displacement[i]-displacement[i-1])/np.abs(displacement[i])>0.5)and(np.abs(displacement[i]-displacement[i+1])/np.abs(displacement[i])>0.5)):
@@ -293,6 +298,59 @@ def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001,randomize=
 
 
     return displacement
+
+
+
+def calculate_displacement_new(image,center_pattern,width_pattern):
+    nb_gating_spokes = image.shape[1]
+    nb_slices = image.shape[0]
+    npoint_image = image.shape[-1]
+
+    from statsmodels.tsa.seasonal import seasonal_decompose
+
+    image_reshaped = image.reshape(-1, npoint_image)
+    decomposition = seasonal_decompose(image_reshaped,
+                                           model='multiplicative', period=nb_gating_spokes)
+    image=image_reshaped/decomposition.seasonal
+    image=image.reshape(-1,nb_gating_spokes,npoint_image)
+        
+    all_images = image
+
+
+    image_reshaped=image.reshape(-1, npoint_image)
+    for ind in range(2, nb_gating_spokes):
+        shifted_image = np.concatenate([image_reshaped[ind:], image_reshaped[:ind]],
+                                           axis=0).reshape(nb_slices, nb_gating_spokes, -1)
+        all_images = np.concatenate([all_images, shifted_image], axis=0)
+
+    ft = np.mean(all_images, axis=0)
+    image_nav_for_correl = image.reshape(-1, npoint_image)
+    nb_images = image_nav_for_correl.shape[0]
+    mvt = []
+
+    if center_pattern is None:
+        center_pattern=np.argmax(ft[0,:])
+    pattern=ft[0,center_pattern-width_pattern:center_pattern+width_pattern]
+
+    nb_images = image_nav_for_correl.shape[0]
+    mvt = []
+    all_correls=[]
+
+    for j in tqdm(range(nb_images)):
+        
+        corrs=np.convolve(pattern,image_nav_for_correl[j],mode='valid')
+
+        J=corrs
+        
+        all_correls.append(corrs)
+        ind_max_J=np.argmax(J)
+        current_mvt = ind_max_J - center_pattern + width_pattern
+        # max_correl=J[ind_max_J]
+        # max_correls.append(max_correl)
+        mvt.append(current_mvt)
+    displacement = np.array(mvt)
+    return displacement
+
 
 
 def calculate_displacement_ml(data_for_nav,nb_segments,window=5,device="cuda",ch=None):
@@ -457,7 +515,7 @@ def calculate_displacements_allchannels(data_for_nav,nb_segments,shifts = list(r
     return displacements
 
 
-def calculate_displacements_singlechannel(data_for_nav, nb_segments, shifts=list(range(-5, 5)), lambda_tv=0.001,ch=0,pad=10,randomize=False,dct_frequency_filter=None,seasonal_adj=False,interp_bad_correl=False):
+def calculate_displacements_singlechannel(data_for_nav, nb_segments, shifts=list(range(-5, 5)), lambda_tv=0.001,ch=0,pad=10,randomize=False,dct_frequency_filter=None,seasonal_adj=False,max_correl_for_interp=None):
     print("Processing Nav Data...")
     nb_allspokes = nb_segments
     nb_slices = data_for_nav.shape[1]
@@ -482,7 +540,56 @@ def calculate_displacements_singlechannel(data_for_nav, nb_segments, shifts=list
                                               mode="edge")
 
     image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
-    displacements = calculate_displacement(image_nav_ch, bottom, top, shifts, lambda_tv=lambda_tv,randomize=randomize,dct_frequency_filter=dct_frequency_filter,seasonal_adj=seasonal_adj,interp_bad_correl=interp_bad_correl)
+    displacements = calculate_displacement(image_nav_ch, bottom, top, shifts, lambda_tv=lambda_tv,randomize=randomize,dct_frequency_filter=dct_frequency_filter,seasonal_adj=seasonal_adj,max_correl_for_interp=max_correl_for_interp)
+
+
+    max_slices = nb_slices
+    displacements=displacements.reshape(nb_slices,-1)
+    As_hat_normalized = np.zeros(displacements.shape)
+    As_hat_filtered = np.zeros(displacements.shape)
+
+    for sl in range(max_slices):
+        signal = displacements[sl, :]
+        if np.max(signal) == np.min(signal):
+            signal = 0.5 * np.ones_like(signal)
+        else:
+            min=np.min(signal)
+            max=np.max(signal)
+
+            signal = (signal - min) / (max - min)
+        As_hat_normalized[sl, :] = signal
+        signal_filtered = savgol_filter(signal, 3, 2)
+        signal_filtered = lowess(signal_filtered, np.arange(len(signal_filtered)), frac=0.1)[:, 1]
+        As_hat_filtered[sl, :] = min + (max-min)*signal_filtered
+
+    displacements = As_hat_filtered.flatten()
+
+    return displacements
+
+
+def calculate_displacements_singlechannel_new(data_for_nav, nb_segments,ch=0,pad=10,center_pattern=None,width_pattern=10):
+    print("Processing Nav Data...")
+    nb_allspokes = nb_segments
+    nb_slices = data_for_nav.shape[1]
+    nb_gating_spokes = data_for_nav.shape[2]
+    npoint_nav = data_for_nav.shape[-1]
+
+    all_timesteps = np.arange(nb_allspokes)
+    nav_timesteps = all_timesteps[::int(nb_allspokes / nb_gating_spokes)]
+
+    nav_traj = Navigator3D(direction=[0, 0, 1], npoint=npoint_nav, nb_slices=nb_slices,
+                           applied_timesteps=list(nav_timesteps))
+
+    nav_image_size = (int(npoint_nav),)
+    print("Estimating Movement...")
+
+    images_series_rebuilt_nav_ch = simulate_nav_images_multi(np.expand_dims(data_for_nav[ch], axis=0), nav_traj,
+                                                                 nav_image_size, b1=None)
+    images_series_rebuilt_nav_ch = np.pad(images_series_rebuilt_nav_ch, pad_width=((0, 0), (0, 0), (pad, pad)),
+                                              mode="edge")
+
+    image_nav_ch = np.abs(images_series_rebuilt_nav_ch)
+    displacements = calculate_displacement_new(image_nav_ch,center_pattern,width_pattern)
 
 
     max_slices = nb_slices
