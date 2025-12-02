@@ -241,7 +241,7 @@ def calculate_displacement(image, bottom, top, shifts,lambda_tv=0.001,randomize=
         top = np.minimum(int(npoint_image) -used_shifts[-1],int(3*npoint_image/4))
         # print(bottom)
         # print(top)
-        for i, shift in enumerate(used_shifts):
+        for i, shift in enumerate(used_shifts): #ft : mean navigator , image_nav_for_correl : navigator que l'on shift, on regarde la corr max entre les 2
             
             corr = np.corrcoef(np.concatenate([ft[j % nb_gating_spokes, bottom:top].reshape(1, -1),
                                                image_nav_for_correl[j, (bottom + shift):(top + shift)].reshape(1, -1)],

@@ -30,23 +30,23 @@ SIMUS=1
 US=1
 
 
-#Extracting k-space and navigator data
-echo "######################################################"
-echo "Extracting k-space and navigator data"
-python scripts/script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX} #--nb-rep 40 #--dens-adj False
+# #Extracting k-space and navigator data
+# echo "######################################################"
+# echo "Extracting k-space and navigator data"
+# python scripts/script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX} #--nb-rep 40 #--dens-adj False
 
-# rm $1.npy
-rm $1.dat
+# # rm $1.npy
+# rm $1.dat
 
 
-# Coil compression
-echo "######################################################"
-echo "Coil Compression $NCOMP virtual coils"
-python scripts/script_recoInVivo_3D_machines.py coil_compression_bart --filename-kdata $1_kdata.npy --n-comp $NCOMP --spoke-start 400 --filename-seqParams $1_seqParams.pkl --lowmem True
+# # Coil compression
+# echo "######################################################"
+# echo "Coil Compression $NCOMP virtual coils"
+# python scripts/script_recoInVivo_3D_machines.py coil_compression_bart --filename-kdata $1_kdata.npy --n-comp $NCOMP --spoke-start 400 --filename-seqParams $1_seqParams.pkl --lowmem True
 
-# exit
+# # exit
 
-rm $1_kdata.npy
+# rm $1_kdata.npy
 
 # #Rebuild singular volumes for all bins
 echo "######################################################"
