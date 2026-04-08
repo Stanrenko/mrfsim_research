@@ -54,6 +54,16 @@ DEFAULT_OPT_CONFIG_2STEPS={
 }
 
 
+
+def load_pickle(filename):
+    
+    with open(filename, "rb") as fp:
+        return pickle.load(fp)
+    
+def save_pickle(filename,data):
+    with open(filename, "wb") as fp:
+        pickle.dump(data, fp)
+        
 @ma.machine()
 @ma.parameter("filename", str, default=None, description="Siemens K-space data .dat file")
 @ma.parameter("index", int, default=-1, description="Header index")
@@ -794,7 +804,7 @@ def build_mask_full_from_mask(filename_mask):
 @ma.parameter("slices",str,default=None,description="Slices to consider for pattern matching")
 @ma.parameter("L0",int,default=6,description="Number of singular volumes")
 @ma.parameter("force_pca",bool,default=False,description="Force recalculation of the PCA on the dictionary")
-@ma.parameter("config_clustering",str,default=None,description=".json file with clustering windows for 2 steps matching")
+@ma.parameter("config_clustering",type=ma.Config(),default=None,description=".json file with clustering windows for 2 steps matching")
 def build_maps(filename_volume,filename_mask,dico_full_file,optimizer_config,slices,config_clustering,L0,force_pca):
     '''
     builds MRF maps using bi-component dictionary matching (Slioussarenko et al. MRM 2024)
@@ -837,7 +847,7 @@ def build_maps(filename_volume,filename_mask,dico_full_file,optimizer_config,sli
     if volumes_type=="singular":
         threshold_pca=float(L0)
         
-            
+    print(clustering_windows)
 
     file_map = "".join(filename_volume.split(".npy")) + "_{}_MRF_map.pkl".format(opt_type)
     volumes_all_slices = np.load(filename_volume)
@@ -3346,10 +3356,11 @@ def build_volumes_singular_allbins_3D_BART_v2(bart_command,filename_kdata, filen
 @ma.parameter("nb_rep_center_part", int, default=1, description="Number of center partition repetition")
 @ma.parameter("useGPU", bool, default=True, description="Use GPU")
 @ma.parameter("full_volume", bool, default=False, description="Build full volume")
+@ma.parameter("us_volumes", bool, default=False, description="Build undersampled volumes")
 @ma.parameter("in_phase", bool, default=False, description="MRF T1-FF : Select in phase spokes from original MRF sequence")
 @ma.parameter("out_phase", bool, default=False, description="MRF T1-FF : Select out of phase spokes from original MRF sequence")
 
-def build_volumes_singular(filename_kdata, filename_b1, filename_pca,dictfile,L0,n_comp,nb_rep_center_part,useGPU,filename_weights,full_volume,in_phase,out_phase,filename_seqParams):
+def build_volumes_singular(filename_kdata, filename_b1, filename_pca,dictfile,L0,n_comp,nb_rep_center_part,useGPU,filename_weights,full_volume,in_phase,out_phase,filename_seqParams,us_volumes):
     '''
     Build singular volumes for MRF (no binning)
     Output shape nb_motion_bins x L0 x nz x nx x ny
@@ -3418,6 +3429,8 @@ def build_volumes_singular(filename_kdata, filename_b1, filename_pca,dictfile,L0
             filename_volumes = filename_volumes.split("_volume_full.npy")[0] + "_volume_full_ip.npy"
         elif out_phase:
             filename_volumes = filename_volumes.split("_volume_full.npy")[0] + "_volume_full_oop.npy"
+    if us_volumes:
+        filename_volumes = filename_kdata.split("_kdata.npy")[0] + "_volume_us_ts{}.npy".format(L0)
     print("Loading Kdata")
     kdata_all_channels_all_slices = np.load(filename_kdata)
 
@@ -3437,21 +3450,27 @@ def build_volumes_singular(filename_kdata, filename_b1, filename_pca,dictfile,L0
     if filename_pca is None:
         filename_pca = str.split(filename_kdata, "_kdata.npy")[0] + "_virtualcoils_{}.pkl".format(n_comp)
 
-
+    print("Loading B1")
     b1_all_slices_2Dplus1_pca = np.load(filename_b1)
 
 
     if full_volume:
         L0=1
         phi=np.ones((1,1))
+
+    elif us_volumes:
+        phi=np.eye(L0)
     else:
         # if filename_phi not in os.listdir():
         #     print("Build singular basis from dictionary {}".format(dictfile))
         #     phi=build_phi(dictfile,L0)
         # else:
         #     phi = np.load(filename_phi)
-
+        print("Loading dictionary")
         mrf_dict = load_pickle(dictfile)
+
+        # print(mrf_dict)
+        print("Dictionary loaded")
         if "phi" not in mrf_dict.keys():
             mrf_dict=add_temporal_basis(mrf_dict,L0)
             save_pickle(mrf_dict,mrf_dict)
@@ -3933,7 +3952,7 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
 
 
                 grad = volumesi - volumes0[gr]
-                volumes[gr] = volumes[gr] - mu * grad
+                # volumes[gr] = volumes[gr] - mu * grad
 
 
 
@@ -3943,7 +3962,7 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
                     grad_norm=np.linalg.norm(grad)
                     all_grad_norm+=grad_norm**2
                     print("grad norm {}".format(grad_norm))
-                    del grad
+                    # del grad
                     grad_TV=np.zeros_like(volumes[gr])
                     for ts in tqdm(range(ntimesteps)):
                         for ind_w, w in (enumerate(weights_TV)):
@@ -3956,12 +3975,14 @@ def build_volumes_iterative_allbins(filename_volume,filename_b1,filename_weights
 
                     print("grad_TV_norm {}".format(grad_TV_norm))
 
-                    volumes[gr] -= mu * mu_TV * grad_norm / grad_TV_norm * grad_TV
+                    volumes[gr] -= mu * (grad + mu_TV * grad_norm / grad_TV_norm * grad_TV)
                     del grad_TV
                     del grad_TV_norm
+                    del grad
 
-            all_grad_norm=np.sqrt(all_grad_norm)
+            
             if (mu_bins is not None)and (not(mu_bins==0)):
+                all_grad_norm=np.sqrt(all_grad_norm)
                 grad_TV_bins=grad_J_TV(volumes,0,is_weighted=False,shift=0)
                 grad_TV_bins_norm = np.linalg.norm(grad_TV_bins)
 

@@ -4,7 +4,12 @@ try:
 except:
     pass
 
-import voxelmorph as vxm
+try:
+    import voxelmorph as vxm
+    import neurite as ne
+except:
+    pass
+
 import numpy as np
 from scipy.signal import savgol_filter
 from statsmodels.nonparametric.smoothers_lowess import lowess
@@ -37,7 +42,6 @@ try:
     from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
 except:
     pass
-import neurite as ne
 from skimage.transform import resize
 from numpy.lib import stride_tricks
 import dask.array as da
@@ -2051,8 +2055,9 @@ def format_input_voxelmorph(all_volumes,pad_amount,sl_down=5,sl_top=-5,normalize
     moving_volume=moving_volume.reshape(-1,moving_volume.shape[-2],moving_volume.shape[-1])
 
     if normalize:
-        fixed_volume/=np.max(fixed_volume,axis=(1,2),keepdims=True)
-        moving_volume/=np.max(moving_volume,axis=(1,2),keepdims=True)
+        fixed_volume=(fixed_volume-np.min(fixed_volume,axis=(1,2),keepdims=True))/np.max(fixed_volume,axis=(1,2),keepdims=True)
+        moving_volume=(moving_volume-np.min(moving_volume,axis=(1,2),keepdims=True))/np.max(moving_volume,axis=(1,2),keepdims=True)
+
 
 
     # fix data
@@ -2069,28 +2074,42 @@ def format_input_voxelmorph(all_volumes,pad_amount,sl_down=5,sl_top=-5,normalize
 
     return fixed_volume,moving_volume
 
-def format_input_voxelmorph_3D(all_volumes,pad_amount,sl_down=5,sl_top=-5,normalize=True,all_groups_combination=False,exclude_zero_slices=True):
+def pad_to_multiple(x, offset=1,mult=16):
+    shape = np.array(x.shape[offset:])
+    new_shape = np.ceil(shape / mult).astype(int) * mult
+    print("New Shape {}".format(new_shape))
+    pad = []
+    for i in range(len(shape)):
+        total = new_shape[i] - shape[i]
+        pad.append((total//2, total-total//2))
+    pad=offset*[(0,0)]+pad
+    return pad
+
+def format_input_voxelmorph_3D(all_volumes,sl_down=5,sl_top=-5,pad=True,normalize=True,all_groups_combination=False):
     nb_gr=all_volumes.shape[0]
     nb_slices=all_volumes.shape[1]
 
     fixed_volume=[]
     moving_volume=[]
 
-    if exclude_zero_slices:
-        sl_down_non_zeros = 0
-        while not(np.any(all_volumes[:,sl_down_non_zeros])):
-            sl_down_non_zeros+=1
+    # if exclude_zero_slices:
+    #     sl_down_non_zeros = 0
+    #     while not(np.any(all_volumes[:,sl_down_non_zeros])):
+    #         sl_down_non_zeros+=1
 
-        sl_top_non_zeros=nb_slices
-        while not(np.any(all_volumes[:,sl_top_non_zeros-1])):
-            sl_top_non_zeros-=1
+    #     sl_top_non_zeros=nb_slices
+    #     while not(np.any(all_volumes[:,sl_top_non_zeros-1])):
+    #         sl_top_non_zeros-=1
 
 
-        sl_down=np.maximum(sl_down,sl_down_non_zeros)
-        sl_top=np.minimum(sl_top,sl_top_non_zeros)
+    #     sl_down=np.maximum(sl_down,sl_down_non_zeros)
+    #     sl_top=np.minimum(sl_top,sl_top_non_zeros)
     
     print(sl_down)
     print(sl_top)
+
+    if sl_top==0:
+        sl_top=nb_slices
 
     for gr in range(nb_gr-1):
         fixed_volume.append(all_volumes[gr,sl_down:sl_top])
@@ -2104,9 +2123,12 @@ def format_input_voxelmorph_3D(all_volumes,pad_amount,sl_down=5,sl_top=-5,normal
                 moving_volume.append(all_volumes[gr + shift, :])
             shift+=1
 
+    
 
     fixed_volume=np.array(fixed_volume)
     moving_volume=np.array(moving_volume)
+
+    
 
     #print(fixed_volume.shape)
     #print(moving_volume.shape)
@@ -2115,13 +2137,14 @@ def format_input_voxelmorph_3D(all_volumes,pad_amount,sl_down=5,sl_top=-5,normal
     #moving_volume=np.expand_dims(moving_volume,axis=0)
 
     if normalize:
-        fixed_volume/=np.max(fixed_volume,axis=(1,2,3),keepdims=True)
-        moving_volume/=np.max(moving_volume,axis=(1,2,3),keepdims=True)
+        fixed_volume=(fixed_volume-np.min(fixed_volume,axis=(1,2,3),keepdims=True))/np.max(fixed_volume,axis=(1,2,3),keepdims=True)
+        moving_volume=(moving_volume-np.min(moving_volume,axis=(1,2,3),keepdims=True))/np.max(moving_volume,axis=(1,2,3),keepdims=True)
 
-
-    # fix data
-    fixed_volume = np.pad(fixed_volume, pad_amount, 'constant')
-    moving_volume = np.pad(moving_volume, pad_amount, 'constant')
+    if pad:
+        pad_amount=pad_to_multiple(fixed_volume,mult=16,offset=1)
+        # fix data
+        fixed_volume = np.pad(fixed_volume, pad_amount, 'constant')
+        moving_volume = np.pad(moving_volume, pad_amount, 'constant')
 
     #x_train_fixed=copy(fixed_volume)
     #x_train_moving=copy(moving_volume)

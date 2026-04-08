@@ -16,7 +16,10 @@ from scipy import ndimage
 #from sklearn.decomposition import PCA
 from tqdm import tqdm
 from scipy.spatial import Voronoi,ConvexHull
+
+
 import pickle
+
 import twixtools
 import os
 #from utils_reco import calculate_displacement,correct_mvt_kdata_zero_filled
@@ -2570,7 +2573,7 @@ def undersampling_operator_singular(volumes,trajectory,b1_all_slices,density_adj
     npoint = trajectory.paramDict["npoint"]
 
     num_k_samples = traj.shape[0]
-    num_k_samples=1
+    # num_k_samples=1
     output_shape = (L0,) + size
     images_series_rebuilt = np.zeros(output_shape, dtype=np.complex128)
 
@@ -4025,7 +4028,9 @@ def build_dico_seqParams(filename,index=-1):
     geometry, is3D, orientation, offset = get_volume_geometry(hdr,index=index)
     
     protocol=hdr[index]["tProtocolName"]
+    sequence=hdr[index]["tSequenceFileName"]
     print(protocol)
+    print(sequence)
     
     if (protocol=="T1_mapping")or("raFin_1400Seg_1400Interleaved" in protocol)or("T1MAP" in protocol)or("customIR_Reco" in protocol)or("T1_MAP" in protocol):
         nb_segments=alFree[3]
@@ -4040,10 +4045,17 @@ def build_dico_seqParams(filename,index=-1):
         z_FOV = hdr[index]['sSliceArray.asSlice[0].dThickness']
         nb_part = hdr[index]['sKSpace.lPartitions']
         minTE = hdr[index]["alTE[0]"] / 1e3
-        echoSpacing = adFree[1]
+        if "raFin_3D_T1T2" in sequence:
+            echoSpacing = adFree[2]
+            invTime = adFree[1]
+
+        else:
+            echoSpacing = adFree[1]
+            invTime = adFree[0]
+        
         dTR = echoSpacing - minTE
         total_TR = hdr[index]["alTR[0]"] / 1e6
-        invTime = adFree[0]
+        
 
         if np.max(np.argwhere(alFree> 0)) >= 19:
             use_kushball_dll = True
@@ -5003,16 +5015,7 @@ def makevol(values, mask):
     return new
 
 
-def load_pickle(filename):
-    import pickle
 
-    with open(filename, "rb") as fp:
-        return pickle.load(fp)
-    
-def save_pickle(filename,data):
-    import pickle
-    with open(filename, "wb") as fp:
-        pickle.dump(data, fp)
 
 
 def add_temporal_basis(dico,L0=None):

@@ -5,7 +5,7 @@ import tensorflow as tf
 import json
 assert tf.__version__.startswith('2.'), 'This tutorial assumes Tensorflow 2.0+'
 from copy import copy
-from mrfsim.utils_reco import unpad,format_input_voxelmorph,format_input_voxelmorph_3D,plot_deformation_map,apply_deformation_to_complex_volume
+from mrfsim.utils_reco import unpad,format_input_voxelmorph,format_input_voxelmorph_3D,plot_deformation_map,apply_deformation_to_complex_volume,pad_to_multiple
 from skimage.transform import resize
 
 print(tf.config.experimental.list_physical_devices("GPU"))
@@ -36,6 +36,8 @@ import machines as ma
 from machines import Toolbox
 import subprocess
 
+from scipy.ndimage import zoom,map_coordinates
+
 def get_total_memory_mb():
     result = subprocess.check_output(
         ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,nounits,noheader"]
@@ -43,7 +45,7 @@ def get_total_memory_mb():
     return int(result.decode("utf-8").strip().split("\n")[0])
 
 total_mem = get_total_memory_mb()
-fraction = 0.25
+fraction = 0.8
 
 gpus = tf.config.list_physical_devices("GPU")
 print("GPUs:", gpus)
@@ -63,6 +65,53 @@ DEFAULT_TRAIN_CONFIG="../config/config_train_voxelmorph.json"
 DEFAULT_TRAIN_CONFIG_3D="../config/config_train_voxelmorph_3D.json"
 # You should most often have this import together with all other imports at the top,
 # but we include here here explicitly to show where data comes from
+
+
+
+def upsample_flow_3D(flow, target_shape,order=1):
+    assert flow.ndim == 4 and flow.shape[-1] == 3
+
+    if flow.shape[:3] == target_shape:
+        return flow
+
+    scale = [t/s for t, s in zip(target_shape, flow.shape[:3])]
+
+    flow_up = np.stack([
+        zoom(flow[..., i], scale, order=order) for i in range(3)
+    ], axis=-1)
+
+    # scale displacement
+    for i in range(3):
+        flow_up[..., i] *= scale[i]
+
+    return flow_up
+
+
+def upsample_volume(vol, target_shape,order=1):
+    factors = [t/s for t, s in zip(target_shape, vol.shape)]
+    return zoom(vol, factors, order=order)
+
+def downsample_3D(vol, factor):
+    if factor is None or factor == 1:
+        return vol
+    return zoom(vol, (1/factor, 1/factor, 1/factor), order=1)
+
+
+def warp_flow_3D(flow, mapz, mapx, mapy):
+    """
+    Warp flow using current deformation map φ
+    """
+    coords = [mapz, mapx, mapy]
+
+    warped = np.zeros_like(flow)
+    for i in range(3):
+        warped[..., i] = map_coordinates(
+            flow[..., i],
+            coords,
+            order=1,
+            mode='nearest'
+        )
+    return warped
 
 def vxm_data_generator(x_data_fixed, x_data_moving, batch_size=32):
     """
@@ -411,141 +460,797 @@ def train_voxelmorph(filename_volumes,file_config_train,suffix,init_weights,reso
     return
 
 
+# @ma.machine()
+# @ma.parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
+# @ma.parameter("file_config_train",str,default=DEFAULT_TRAIN_CONFIG_3D,description="Config training")
+# @ma.parameter("suffix",str,default="",description="suffix")
+# @ma.parameter("init_weights",str,default=None,description="Weights initialization from .h5 file")
+# @ma.parameter("kept_bins",str,default=None,description="Bins to keep for training")
+# @ma.parameter("nepochs",int,default=None,description="Number of epochs (overwrites config)")
+# @ma.parameter("excluded",int,default=0,description="Excluded slices on both extremities")
+# @ma.parameter("downsample",int,default=1,description="Downsampling")
+# def train_voxelmorph_3D(filename_volumes,file_config_train,suffix,init_weights,kept_bins,nepochs,excluded,downsample):
+
+#     with open(file_config_train,"r") as f:
+#         config_train=json.load(f)
+
+#     all_volumes = np.abs(np.load(filename_volumes))
+#     print("Volumes shape {}".format(all_volumes.shape))
+#     all_volumes=all_volumes.astype("float32")
+
+#     if kept_bins is not None:
+#         kept_bins_list=np.array(str.split(kept_bins,",")).astype(int)
+#         print(kept_bins_list)
+#         all_volumes=all_volumes[kept_bins_list]
+    
+#     nb_gr,nb_slices,npoint,npoint=all_volumes.shape
+
+#     if nepochs is not None:
+#         config_train["nb_epochs"]=nepochs
+
+#     file_model=filename_volumes.split(".npy")[0]+"_vxm_model_weights_3D{}.h5".format(suffix)
+#     file_checkpoint="/".join(filename_volumes.split("/")[:-1])+"/model_checkpoint_3D.h5"
+#     print(file_checkpoint)
+#     run=wandb.init(
+#         project="project_test_3D",
+#         config=config_train
+#     )
+
+#     #pad_amount=config_train["padding"]
+#     loss = config_train["loss"]
+#     decay=config_train["lr_decay"]
+#     #pad_amount=tuple(tuple(l) for l in pad_amount)
+
+#     # #Finding the power of 2 "closest" and longer than  x dimension
+#     # n=all_volumes.shape[-1]
+#     # pad_1=2**(int(np.log2(n))+1)-n
+#     # pad_2= 2 ** int(np.log2(n) - 1) * 3 - n
+
+#     # if pad_2<0:
+#     #     pad=int(pad_1/2)
+#     # else:
+#     #     pad = int(pad_2 / 2)
+
+#     # n=all_volumes.shape[1]
+#     # pad_1=2**(int(np.log2(n))+1)-n
+#     # pad_2= 2 ** int(np.log2(n) - 1) * 3 - n
+
+#     # if pad_2<0:
+#     #     pad_z=int(pad_1/2)
+#     # else:
+#     #     pad_z = int(pad_2 / 2)
+
+#     # pad_amount = ((0,0),(pad_z,pad_z),(pad,pad), (pad,pad))
+#     # print(pad_amount)
+
+#     nb_features=config_train["nb_features"]
+#     # configure unet features
+#     #nb_features = [
+#     #    [256, 32, 32, 32],         # encoder features
+#     #    [32, 32, 32, 32, 32, 16]  # decoder features
+#     #]
+
+#     #nb_features = [
+#     #    [32, 64, 128, 128],         # encoder features
+#     #    [128, 128, 64, 64, 32, 16]  # decoder features
+#     #]
+
+#     optimizer=config_train["optimizer"] #"Adam"
+#     lambda_param = config_train["lambda"] # 0.05
+#     nb_epochs = config_train["nb_epochs"] # 200
+#     batch_size=config_train["batch_size"] # 16
+    
+#     lr=config_train["lr"]
+    
+
+#     if downsample != 1:
+#         all_volumes = np.array([downsample_3D(v, downsample) for v in all_volumes])
+
+#     x_train_fixed,x_train_moving=format_input_voxelmorph_3D(all_volumes,sl_down=excluded,sl_top=-excluded)
+#     # add channel
+    
+    
+
+
+
+#     # configure unet input shape (concatenation of moving and fixed images)
+#     inshape = x_train_fixed.shape[1:]
+#     print("Input shape {}".format(inshape))
+#     vxm_model = vxm.networks.VxmDense(inshape, nb_features, int_steps=7,int_downsize=1)
+
+#     # voxelmorph has a variety of custom loss classes
+
+#     if loss=="MSE":
+#         losses = [vxm.losses.MSE().loss, vxm.losses.Grad('l2').loss]
+#     elif loss == "NCC":
+#         losses = [vxm.losses.NCC(win=9).loss, vxm.losses.Grad('l2').loss]
+#         # losses = [vxm.losses.NCC().loss, vxm.losses.Grad('l2').loss]
+#     elif loss =="MI":
+#         losses = [vxm.losses.MutualInformation().loss, vxm.losses.Grad('l2').loss]
+#     else:
+#         raise ValueError("Loss should be either MSE or Mutual Information (MI)")
+
+#     loss_weights = [1, lambda_param]
+
+#     print("Compiling Model")
+#     vxm_model.compile(optimizer=optimizer, loss=losses, loss_weights=loss_weights)
+
+#     if lr is not None:
+#         backend.set_value(vxm_model.optimizer.learning_rate,lr)
+
+#     train_generator = vxm_data_generator_3D(x_train_fixed,x_train_moving,batch_size=batch_size)
+
+
+#     nb_examples=x_train_fixed.shape[0]
+
+    
+#     steps_per_epoch = int(nb_examples/batch_size)+1
+    
+
+#     if "min_lr" in config_train:
+#         min_lr=config_train["min_lr"]
+#     else:
+#         min_lr=0.0002
+
+
+#     curr_scheduler=lambda epoch,lr: scheduler(epoch,lr,decay,min_lr)
+#     Schedulecallback = tf.keras.callbacks.LearningRateScheduler(curr_scheduler)
+    
+#     callback_checkpoint=WandbModelCheckpoint(filepath=file_checkpoint,save_best_only=True,save_weights_only=True,monitor="vxm_dense_transformer_loss")
+
+
+#     if init_weights is not None:
+#         vxm_model.load_weights(init_weights)
+
+#     hist = vxm_model.fit_generator(train_generator, epochs=nb_epochs, steps_per_epoch=steps_per_epoch, verbose=2,callbacks=[Schedulecallback,WandbMetricsLogger(),callback_checkpoint])
+
+#     vxm_model.save_weights(file_model)
+
+#     run.finish()
+
+#     plt.figure()
+#     plt.plot(hist.epoch, hist.history["loss"], '.-')
+#     plt.ylabel('loss')
+#     plt.xlabel('epoch')
+#     plt.savefig(file_model.split(".h5")[0]+"_loss.jpg")
+
+
+# ── new loss class — place above the training function ───────────────────────
+class ChannelMagnitudeLoss:
+    """
+    Penalize magnitude of specific velocity channels.
+    Designed to match the vxm .loss callable interface.
+
+    suppressed_channels : list of channel indices to penalize
+    weights             : per-channel penalty weight (same length as suppressed_channels)
+    """
+    def __init__(self, suppressed_channels=(1, 2), weights=(10.0, 10.0)):
+        self.suppressed_channels = suppressed_channels
+        self.weights             = weights
+
+    def loss(self, _, y_pred):
+        total = tf.cast(0.0, tf.float32)
+        for ch, w in zip(self.suppressed_channels, self.weights):
+            total += w * tf.reduce_mean(tf.square(y_pred[..., ch]))
+        return total
+
+
+# @ma.machine()
+# @ma.parameter("filename_volumes", str,  default=None,                  description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
+# @ma.parameter("file_config_train", str, default=DEFAULT_TRAIN_CONFIG_3D, description="Config training")
+# @ma.parameter("suffix",            str,  default="",                    description="suffix")
+# @ma.parameter("init_weights",      str,  default=None,                  description="Weights initialization from .h5 file")
+# @ma.parameter("kept_bins",         str,  default=None,                  description="Bins to keep for training")
+# @ma.parameter("nepochs",           int,  default=None,                  description="Number of epochs (overwrites config)")
+# @ma.parameter("excluded",          int,  default=0,                     description="Excluded slices on both extremities")
+# @ma.parameter("downsample",        int,  default=1,                     description="Downsampling")
+# def train_voxelmorph_3D(filename_volumes, file_config_train, suffix, init_weights,
+#                         kept_bins, nepochs, excluded, downsample):
+
+#     with open(file_config_train, "r") as f:
+#         config_train = json.load(f)
+
+#     all_volumes = np.abs(np.load(filename_volumes)).astype("float32")
+#     print("Volumes shape {}".format(all_volumes.shape))
+
+#     if kept_bins is not None:
+#         kept_bins_list = np.array(str.split(kept_bins, ",")).astype(int)
+#         print(kept_bins_list)
+#         all_volumes = all_volumes[kept_bins_list]
+
+#     nb_gr, nb_slices, npoint, npoint = all_volumes.shape
+
+#     if nepochs is not None:
+#         config_train["nb_epochs"] = nepochs
+
+#     file_model      = filename_volumes.split(".npy")[0] + "_vxm_model_weights_3D{}.h5".format(suffix)
+#     file_checkpoint = "/".join(filename_volumes.split("/")[:-1]) + "/model_checkpoint_3D.h5"
+#     print(file_checkpoint)
+
+#     run = wandb.init(project="project_test_3D", config=config_train)
+
+#     # ── read config ───────────────────────────────────────────────────────────
+#     loss          = config_train["loss"]
+#     decay         = config_train["lr_decay"]
+#     nb_features   = config_train["nb_features"]
+#     optimizer     = config_train["optimizer"]
+#     lambda_param  = config_train["lambda"]
+#     nb_epochs     = config_train["nb_epochs"]
+#     batch_size    = config_train["batch_size"]
+#     lr            = config_train["lr"]
+#     min_lr        = config_train.get("min_lr", 0.0002)
+
+#     # ── channel magnitude loss config (optional keys in config_train) ─────────
+#     # Example entries in your JSON config:
+#     #   "use_channel_magnitude_loss": true,
+#     #   "channel_magnitude_suppressed": [1, 2],   <- channels to penalize
+#     #   "channel_magnitude_weights":    [10, 10], <- one weight per channel
+#     #   "lambda_channel":               1.0        <- global scale for this loss
+#     use_channel_loss         = config_train.get("use_channel_magnitude_loss", False)
+#     suppressed_channels      = config_train.get("channel_magnitude_suppressed", [1, 2])
+#     channel_magnitude_weights = config_train.get("channel_magnitude_weights",
+#                                                   [10.0] * len(suppressed_channels))
+#     lambda_channel           = config_train.get("lambda_channel", 1.0)
+#     ncc_win                  = config_train.get("ncc_win", 9)
+#     int_steps                = config_train.get("int_steps", 7)
+#     int_downsize                = config_train.get("int_downsize", 1)
+    
+
+#     # ── optional downsampling ─────────────────────────────────────────────────
+#     if downsample != 1:
+#         all_volumes = np.array([downsample_3D(v, downsample) for v in all_volumes])
+
+#     x_train_fixed, x_train_moving = format_input_voxelmorph_3D(
+#         all_volumes, sl_down=excluded, sl_top=-excluded
+#     )
+
+#     inshape = x_train_fixed.shape[1:]
+#     print("Input shape {}".format(inshape))
+
+#     vxm_model = vxm.networks.VxmDense(inshape, nb_features, int_steps=int_steps, int_downsize=int_downsize)
+
+#     # ── build velocity extractor so we can pass velocity to channel loss ───────
+#     # VoxelMorph model outputs: [moved_image, flow]
+#     # We need the velocity (pre-integration) for the channel magnitude loss.
+#     # Find VecInt layer and expose its input (= raw velocity).
+#     vecint_layer = next(
+#         (l for l in vxm_model.layers if isinstance(l, vxm.layers.VecInt)), None
+#     )
+#     if vecint_layer is None:
+#         raise ValueError("No VecInt layer found — check int_steps > 0")
+
+#     # extended model: outputs [moved, flow, velocity]
+#     # used only during compile/fit so the loss can receive the velocity tensor
+#     if use_channel_loss:
+#         extended_model = tf.keras.Model(
+#             inputs=vxm_model.inputs,
+#             outputs=[
+#                 vxm_model.outputs[0],   # moved image   → similarity loss
+#                 vxm_model.outputs[1],   # integrated flow → smoothness loss
+#                 vecint_layer.input,     # raw velocity   → channel magnitude loss
+#             ]
+#         )
+#     else:
+#         extended_model = vxm_model
+
+#     # ── losses ────────────────────────────────────────────────────────────────
+#     if loss == "MSE":
+#         sim_loss = vxm.losses.MSE().loss
+#     elif loss == "NCC":
+#         sim_loss = vxm.losses.NCC(win=ncc_win).loss
+#     elif loss == "MI":
+#         sim_loss = vxm.losses.MutualInformation().loss
+#     else:
+#         raise ValueError("Loss should be MSE, NCC or MI")
+
+#     smooth_loss = vxm.losses.Grad('l2').loss
+
+#     if use_channel_loss:
+#         losses = [
+#             sim_loss,                  # on moved image
+#             smooth_loss,               # on integrated flow
+#             ChannelMagnitudeLoss(      # on raw velocity
+#                 suppressed_channels=suppressed_channels,
+#                 weights=channel_magnitude_weights,
+#             ).loss,
+#         ]
+#         loss_weights = [1.0, lambda_param, lambda_channel]
+#     else:
+#         losses       = [sim_loss, smooth_loss]
+#         loss_weights = [1.0, lambda_param]
+
+#     print("Compiling model — losses: {}, weights: {}".format(
+#         [l.__self__.__class__.__name__ if hasattr(l,'__self__') else l.__qualname__
+#          for l in losses],
+#         loss_weights
+#     ))
+
+#     extended_model.compile(
+#         optimizer=optimizer,
+#         loss=losses,
+#         loss_weights=loss_weights
+#     )
+
+#     if lr is not None:
+#         backend.set_value(extended_model.optimizer.learning_rate, lr)
+
+#     # ── data generator ────────────────────────────────────────────────────────
+#     # When use_channel_loss=True the model has 3 outputs, so the generator
+#     # must yield 3 zero targets instead of 2.
+#     def vxm_data_generator_3D_extended(x_fixed, x_moving, batch_size=8,
+#                                         n_outputs=2):
+#         nb   = x_fixed.shape[0]
+#         zeros_shape_flow = x_fixed.shape[1:-1] + (3,)   # (Dz,Dx,Dy,3)
+#         while True:
+#             idx = np.random.randint(0, nb, size=batch_size)
+#             inputs  = [x_moving[idx], x_fixed[idx]]
+#             # target for similarity loss = fixed image
+#             # targets for flow / velocity losses = zeros (regularization)
+#             targets = [x_fixed[idx],
+#                        np.zeros((batch_size, *zeros_shape_flow), dtype=np.float32)]
+#             if n_outputs == 3:
+#                 targets.append(
+#                     np.zeros((batch_size, *zeros_shape_flow), dtype=np.float32)
+#                 )
+#             yield inputs, targets
+
+#     n_outputs     = 3 if use_channel_loss else 2
+#     nb_examples   = x_train_fixed.shape[0]
+#     steps_per_epoch = int(nb_examples / batch_size) + 1
+
+#     train_generator = vxm_data_generator_3D_extended(
+#         x_train_fixed, x_train_moving,
+#         batch_size=batch_size,
+#         n_outputs=n_outputs
+#     )
+
+#     # ── callbacks ─────────────────────────────────────────────────────────────
+#     curr_scheduler   = lambda epoch, lr: scheduler(epoch, lr, decay, min_lr)
+#     schedule_cb      = tf.keras.callbacks.LearningRateScheduler(curr_scheduler)
+
+#     # monitor the transformer (similarity) loss for checkpointing
+#     monitor_loss = "vxm_dense_transformer_loss"
+#     checkpoint_cb = WandbModelCheckpoint(
+#         filepath=file_checkpoint,
+#         save_best_only=True,
+#         save_weights_only=True,
+#         monitor=monitor_loss
+#     )
+
+#     # ── custom W&B callback to log individual loss components ─────────────────
+#     class LogLossComponents(tf.keras.callbacks.Callback):
+#         """Log each loss component to W&B under a readable name."""
+#         def __init__(self, use_channel_loss):
+#             super().__init__()
+#             self.use_channel_loss = use_channel_loss
+
+#         def on_epoch_end(self, epoch, logs=None):
+#             logs = logs or {}
+#             log_dict = {"epoch": epoch}
+
+#             # Keras names outputs as 'loss', then per-output losses
+#             # Keys depend on output layer names — print logs.keys() once to confirm
+#             for k, v in logs.items():
+#                 log_dict[k] = v
+            
+#             print(logs.keys())
+
+#             # add explicit readable keys if present
+#             key_map = {
+#                 "vxm_dense_transformer_loss":  "loss/similarity",
+#                 "vxm_dense_flow_loss":         "loss/smoothness",
+#             }
+#             if self.use_channel_loss:
+#                 # third output is velocity — key depends on VecInt layer name
+#                 key_map["vxm_dense_flow_1_loss"] = "loss/channel_magnitude"
+
+#             for keras_key, readable_key in key_map.items():
+#                 if keras_key in logs:
+#                     log_dict[readable_key] = logs[keras_key]
+
+#             wandb.log(log_dict)
+
+#     log_cb = LogLossComponents(use_channel_loss=use_channel_loss)
+
+#     if init_weights is not None:
+#         extended_model.load_weights(init_weights)
+
+#     # ── train ─────────────────────────────────────────────────────────────────
+#     hist = extended_model.fit_generator(
+#         train_generator,
+#         epochs=nb_epochs,
+#         steps_per_epoch=steps_per_epoch,
+#         verbose=2,
+#         callbacks=[schedule_cb, WandbMetricsLogger(), checkpoint_cb, log_cb]
+#     )
+
+#     # save weights — compatible with original vxm_model (shared weights)
+#     vxm_model.save_weights(file_model)
+
+#     run.finish()
+
+#     # ── loss plot ─────────────────────────────────────────────────────────────
+#     plt.figure()
+#     plt.plot(hist.epoch, hist.history["loss"], '.-', label="total")
+#     if use_channel_loss and "vec_int_loss" in hist.history:
+#         plt.plot(hist.epoch, hist.history["vec_int_loss"], '.-',
+#                  label="channel magnitude")
+#     plt.plot(hist.epoch,
+#              hist.history.get("vxm_dense_transformer_loss", []),
+#              '.-', label="similarity")
+#     plt.plot(hist.epoch,
+#              hist.history.get("vxm_dense_flow_loss", []),
+#              '.-', label="smoothness")
+#     plt.legend()
+#     plt.ylabel("loss")
+#     plt.xlabel("epoch")
+#     plt.savefig(file_model.split(".h5")[0] + "_loss.jpg")
+
 @ma.machine()
-@ma.parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
-@ma.parameter("file_config_train",str,default=DEFAULT_TRAIN_CONFIG_3D,description="Config training")
-@ma.parameter("suffix",str,default="",description="suffix")
-@ma.parameter("init_weights",str,default=None,description="Weights initialization from .h5 file")
-@ma.parameter("kept_bins",str,default=None,description="Bins to keep for training")
-def train_voxelmorph_3D(filename_volumes,file_config_train,suffix,init_weights,kept_bins):
+@ma.parameter("filename_volumes", str,  default=None,                  description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
+@ma.parameter("file_config_train", str, default=DEFAULT_TRAIN_CONFIG_3D, description="Config training")
+@ma.parameter("suffix",            str,  default="",                    description="suffix")
+@ma.parameter("init_weights",      str,  default=None,                  description="Weights initialization from .h5 file")
+@ma.parameter("kept_bins",         str,  default=None,                  description="Bins to keep for training")
+@ma.parameter("nepochs",           int,  default=None,                  description="Number of epochs (overwrites config)")
+@ma.parameter("excluded",          int,  default=0,                     description="Excluded slices on both extremities")
+@ma.parameter("downsample",        int,  default=1,                     description="Downsampling")
+def train_voxelmorph_3D(filename_volumes, file_config_train, suffix, init_weights,
+                        kept_bins, nepochs, excluded, downsample):
 
-    with open(file_config_train,"r") as f:
-        config_train=json.load(f)
+    with open(file_config_train, "r") as f:
+        config_train = json.load(f)
 
-    all_volumes = np.abs(np.load(filename_volumes))
+    all_volumes = np.abs(np.load(filename_volumes)).astype("float32")
     print("Volumes shape {}".format(all_volumes.shape))
-    all_volumes=all_volumes.astype("float32")
 
     if kept_bins is not None:
-        kept_bins_list=np.array(str.split(kept_bins,",")).astype(int)
+        kept_bins_list = np.array(str.split(kept_bins, ",")).astype(int)
         print(kept_bins_list)
-        all_volumes=all_volumes[kept_bins_list]
-    
-    nb_gr,nb_slices,npoint,npoint=all_volumes.shape
+        all_volumes = all_volumes[kept_bins_list]
 
-    file_model=filename_volumes.split(".npy")[0]+"_vxm_model_weights_3D{}.h5".format(suffix)
-    file_checkpoint="/".join(filename_volumes.split("/")[:-1])+"/model_checkpoint_3D.h5"
+    nb_gr, nb_slices, npoint, npoint = all_volumes.shape
+
+    if nepochs is not None:
+        config_train["nb_epochs"] = nepochs
+
+    file_model      = filename_volumes.split(".npy")[0] + "_vxm_model_weights_3D{}.h5".format(suffix)
+    file_checkpoint = "/".join(filename_volumes.split("/")[:-1]) + "/model_checkpoint_3D.h5"
     print(file_checkpoint)
-    run=wandb.init(
-        project=file_model.split("/")[-1],
-        config=config_train
+
+    run = wandb.init(project="project_test_3D", config=config_train)
+
+    # ── read config ───────────────────────────────────────────────────────────
+    loss             = config_train["loss"]
+    decay            = config_train["lr_decay"]
+    nb_features      = config_train["nb_features"]
+    optimizer        = config_train["optimizer"]
+    lambda_param     = config_train["lambda"]
+    nb_epochs        = config_train["nb_epochs"]
+    batch_size       = config_train["batch_size"]
+    lr               = config_train["lr"]
+    min_lr           = config_train.get("min_lr", 0.0002)
+    use_channel_loss          = config_train.get("use_channel_magnitude_loss", False)
+    suppressed_channels       = config_train.get("channel_magnitude_suppressed", [1, 2])
+    channel_magnitude_weights = config_train.get("channel_magnitude_weights",
+                                                  [10.0] * len(suppressed_channels))
+    lambda_channel   = config_train.get("lambda_channel", 1.0)
+    ncc_win          = config_train.get("ncc_win", 9)
+    int_steps        = config_train.get("int_steps", 7)
+    int_downsize     = config_train.get("int_downsize", 1)
+    log_images_every = config_train.get("log_images_every", 100)
+
+    # ── optional downsampling ─────────────────────────────────────────────────
+    if downsample != 1:
+        all_volumes = np.array([downsample_3D(v, downsample) for v in all_volumes])
+
+    x_train_fixed, x_train_moving = format_input_voxelmorph_3D(
+        all_volumes, sl_down=excluded, sl_top=-excluded
     )
 
-    #pad_amount=config_train["padding"]
-    loss = config_train["loss"]
-    decay=config_train["lr_decay"]
-    #pad_amount=tuple(tuple(l) for l in pad_amount)
-
-    #Finding the power of 2 "closest" and longer than  x dimension
-    n=all_volumes.shape[-1]
-    pad_1=2**(int(np.log2(n))+1)-n
-    pad_2= 2 ** int(np.log2(n) - 1) * 3 - n
-
-    if pad_2<0:
-        pad=int(pad_1/2)
-    else:
-        pad = int(pad_2 / 2)
-
-    n=all_volumes.shape[1]
-    pad_1=2**(int(np.log2(n))+1)-n
-    pad_2= 2 ** int(np.log2(n) - 1) * 3 - n
-
-    if pad_2<0:
-        pad_z=int(pad_1/2)
-    else:
-        pad_z = int(pad_2 / 2)
-
-    pad_amount = ((0,0),(pad_z,pad_z),(pad,pad), (pad,pad))
-    print(pad_amount)
-    nb_features=config_train["nb_features"]
-    # configure unet features
-    #nb_features = [
-    #    [256, 32, 32, 32],         # encoder features
-    #    [32, 32, 32, 32, 32, 16]  # decoder features
-    #]
-
-    #nb_features = [
-    #    [32, 64, 128, 128],         # encoder features
-    #    [128, 128, 64, 64, 32, 16]  # decoder features
-    #]
-
-    optimizer=config_train["optimizer"] #"Adam"
-    lambda_param = config_train["lambda"] # 0.05
-    nb_epochs = config_train["nb_epochs"] # 200
-    batch_size=config_train["batch_size"] # 16
-    
-    lr=config_train["lr"]
-    x_train_fixed,x_train_moving=format_input_voxelmorph_3D(all_volumes,pad_amount)
-
-    # configure unet input shape (concatenation of moving and fixed images)
     inshape = x_train_fixed.shape[1:]
-    print(inshape)
-    vxm_model = vxm.networks.VxmDense(inshape, nb_features, int_steps=0)
+    print("Input shape {}".format(inshape))
 
-    # voxelmorph has a variety of custom loss classes
+    # ── pick one fixed/moving pair for visual logging ─────────────────────────
+    # use the last training pair (most motion, most informative)
+    vis_fixed  = x_train_fixed[-1:]    # (1, Dz, Dx, Dy, 1)
+    vis_moving = x_train_moving[-1:]   # (1, Dz, Dx, Dy, 1)
 
-    if loss=="MSE":
-        losses = [vxm.losses.MSE().loss, vxm.losses.Grad('l2').loss]
-    elif loss == "NCC":
-        losses = [vxm.losses.NCC().loss, vxm.losses.Grad('l2').loss]
-    elif loss =="MI":
-        losses = [vxm.losses.MutualInformation().loss, vxm.losses.Grad('l2').loss]
+    # unpack spatial dims for slice indices
+    Dz, Dx, Dy = inshape[:3]
+    sl_z = Dz // 2
+    sl_x = Dx // 2
+    sl_y = Dy // 2
+
+    def _make_residual_figure(fixed_vol, moving_vol, registered_vol,
+                           sl_z, sl_x, sl_y):
+        """
+        fixed_vol, moving_vol, registered_vol: (Dz, Dx, Dy) numpy arrays
+        sl_z, sl_x, sl_y: slice indices for the three orientations
+        """
+        slices_fixed      = [fixed_vol[sl_z, :, :],
+                            fixed_vol[:, sl_x, :],
+                            fixed_vol[:, :, sl_y]]
+        slices_moving     = [moving_vol[sl_z, :, :],
+                            moving_vol[:, sl_x, :],
+                            moving_vol[:, :, sl_y]]
+        slices_registered = [registered_vol[sl_z, :, :],
+                            registered_vol[:, sl_x, :],
+                            registered_vol[:, :, sl_y]]
+
+        orient_labels = [f"Axial (z={sl_z})",
+                        f"Coronal (x={sl_x})",
+                        f"Sagittal (y={sl_y})"]
+
+        fig, axes = plt.subplots(3, 3, figsize=(12, 10))
+        fig.suptitle("Registration quality", fontsize=12, fontweight="bold")
+
+        for row, (s_fix, s_mov, s_reg, orient) in enumerate(
+            zip(slices_fixed, slices_moving, slices_registered, orient_labels)
+        ):
+            res_before = s_mov - s_fix
+            res_after  = s_reg - s_fix
+            vmax = max(np.abs(res_before).max(), np.abs(res_after).max()) + 1e-9
+
+            # col 0: moving − fixed
+            ax = axes[row, 0]
+            im = ax.imshow(res_before.T, cmap="coolwarm",
+                        vmin=-vmax, vmax=vmax, origin="lower", aspect="auto")
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            ax.set_title(f"Moving − Fixed\n{orient}", fontsize=8)
+            ax.axis("off")
+
+            # col 1: registered − fixed
+            ax = axes[row, 1]
+            im = ax.imshow(res_after.T, cmap="coolwarm",
+                        vmin=-vmax, vmax=vmax, origin="lower", aspect="auto")
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            ax.set_title(f"Registered − Fixed\n{orient}", fontsize=8)
+            ax.axis("off")
+
+            # col 2: registered image
+            ax = axes[row, 2]
+            im = ax.imshow(s_reg.T, cmap="gray",
+                        vmin=0, vmax=1, origin="lower", aspect="auto")
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            ax.set_title(f"Registered\n{orient}", fontsize=8)
+            ax.axis("off")
+
+        fig.tight_layout()
+        return fig
+
+    # ── model ─────────────────────────────────────────────────────────────────
+    vxm_model = vxm.networks.VxmDense(
+        inshape, nb_features, int_steps=int_steps, int_downsize=int_downsize
+    )
+
+    vecint_layer = next(
+        (l for l in vxm_model.layers if isinstance(l, vxm.layers.VecInt)), None
+    )
+    if vecint_layer is None:
+        raise ValueError("No VecInt layer found — check int_steps > 0")
+
+    if use_channel_loss:
+        extended_model = tf.keras.Model(
+            inputs=vxm_model.inputs,
+            outputs=[
+                vxm_model.outputs[0],
+                vxm_model.outputs[1],
+                vecint_layer.input,
+            ]
+        )
     else:
-        raise ValueError("Loss should be either MSE or Mutual Information (MI)")
+        extended_model = vxm_model
 
-    loss_weights = [1, lambda_param]
+    # ── losses ────────────────────────────────────────────────────────────────
+    if loss == "MSE":
+        sim_loss = vxm.losses.MSE().loss
+    elif loss == "NCC":
+        sim_loss = vxm.losses.NCC(win=ncc_win).loss
+    elif loss == "MI":
+        sim_loss = vxm.losses.MutualInformation().loss
+    else:
+        raise ValueError("Loss should be MSE, NCC or MI")
 
-    print("Compiling Model")
-    vxm_model.compile(optimizer=optimizer, loss=losses, loss_weights=loss_weights)
+    smooth_loss = vxm.losses.Grad('l2').loss
+
+    if use_channel_loss:
+        losses = [
+            sim_loss,
+            smooth_loss,
+            ChannelMagnitudeLoss(
+                suppressed_channels=suppressed_channels,
+                weights=channel_magnitude_weights,
+            ).loss,
+        ]
+        loss_weights = [1.0, lambda_param, lambda_channel]
+    else:
+        losses       = [sim_loss, smooth_loss]
+        loss_weights = [1.0, lambda_param]
+
+    print("Compiling model — losses: {}, weights: {}".format(
+        [l.__self__.__class__.__name__ if hasattr(l, '__self__') else l.__qualname__
+         for l in losses],
+        loss_weights
+    ))
+
+    extended_model.compile(
+        optimizer=optimizer,
+        loss=losses,
+        loss_weights=loss_weights
+    )
 
     if lr is not None:
-        backend.set_value(vxm_model.optimizer.learning_rate,lr)
+        backend.set_value(extended_model.optimizer.learning_rate, lr)
 
-    train_generator = vxm_data_generator_3D(x_train_fixed,x_train_moving,batch_size=batch_size)
+    # ── data generator ────────────────────────────────────────────────────────
+    def vxm_data_generator_3D_extended(x_fixed, x_moving, batch_size=8,
+                                        n_outputs=2):
+        nb = x_fixed.shape[0]
+        zeros_shape_flow = x_fixed.shape[1:-1] + (3,)
+        while True:
+            idx     = np.random.randint(0, nb, size=batch_size)
+            inputs  = [x_moving[idx], x_fixed[idx]]
+            targets = [x_fixed[idx],
+                       np.zeros((batch_size, *zeros_shape_flow), dtype=np.float32)]
+            if n_outputs == 3:
+                targets.append(
+                    np.zeros((batch_size, *zeros_shape_flow), dtype=np.float32)
+                )
+            yield inputs, targets
 
+    n_outputs       = 3 if use_channel_loss else 2
+    nb_examples     = x_train_fixed.shape[0]
+    steps_per_epoch = int(nb_examples / batch_size) + 1
 
-    nb_examples=x_train_fixed.shape[0]
+    train_generator = vxm_data_generator_3D_extended(
+        x_train_fixed, x_train_moving,
+        batch_size=batch_size,
+        n_outputs=n_outputs
+    )
 
-    
-    steps_per_epoch = int(nb_examples/batch_size)+1
-    
+    # ── callbacks ─────────────────────────────────────────────────────────────
+    curr_scheduler = lambda epoch, lr: scheduler(epoch, lr, decay, min_lr)
+    schedule_cb    = tf.keras.callbacks.LearningRateScheduler(curr_scheduler)
 
-    if "min_lr" in config_train:
-        min_lr=config_train["min_lr"]
-    else:
-        min_lr=0.0002
+    monitor_loss  = "vxm_dense_transformer_loss"
+    checkpoint_cb = WandbModelCheckpoint(
+        filepath=file_checkpoint,
+        save_best_only=True,
+        save_weights_only=True,
+        monitor=monitor_loss
+    )
 
+    class LogLossComponents(tf.keras.callbacks.Callback):
+        """Log loss components and periodic registration quality images to W&B."""
 
-    curr_scheduler=lambda epoch,lr: scheduler(epoch,lr,decay,min_lr)
-    Schedulecallback = tf.keras.callbacks.LearningRateScheduler(curr_scheduler)
-    
-    callback_checkpoint=WandbModelCheckpoint(filepath=file_checkpoint,save_best_only=True,save_weights_only=True,monitor="vxm_dense_transformer_loss")
+        def __init__(self, use_channel_loss, vis_fixed, vis_moving,
+                    log_images_every=100):
+            super().__init__()
+            self.use_channel_loss = use_channel_loss
+            self.vis_fixed        = vis_fixed
+            self.vis_moving       = vis_moving
+            self.log_images_every = log_images_every
 
+        def on_epoch_end(self, epoch, logs=None):
+            logs     = logs or {}
+            log_dict = {"epoch": epoch}
+
+            print(logs.keys())
+            for k, v in logs.items():
+                log_dict[k] = v
+
+            key_map = {
+                "vxm_dense_transformer_loss": "loss/similarity",
+                "vxm_dense_flow_loss":        "loss/smoothness",
+            }
+            if self.use_channel_loss:
+                key_map["vxm_dense_flow_1_loss"] = "loss/channel_magnitude"
+
+            for keras_key, readable_key in key_map.items():
+                if keras_key in logs:
+                    log_dict[readable_key] = logs[keras_key]
+
+            # ── image logging ─────────────────────────────────────────────────────
+            if (epoch + 1) % self.log_images_every == 0 or epoch == 0:
+                try:
+                    # run inference
+                    pred = vxm_model.predict(
+                        [self.vis_moving, self.vis_fixed], verbose=0
+                    )
+
+                    # pred[0] shape: (1, Dz, Dx, Dy, 1) for 3D
+                    #                (1, Dz, Dx, 1)      for 2D — shouldn't happen here
+                    print(f"[img log] pred[0].shape = {pred[0].shape}")
+                    print(f"[img log] vis_fixed.shape = {self.vis_fixed.shape}")
+                    print(f"[img log] vis_moving.shape = {self.vis_moving.shape}")
+
+                    # safely extract spatial volume — remove batch and channel dims
+                    # works for both (1,Dz,Dx,Dy,1) and unexpected shapes
+                    registered = np.squeeze(pred[0])           # (Dz, Dx, Dy)
+                    fixed_vol  = np.squeeze(self.vis_fixed)    # (Dz, Dx, Dy)
+                    moving_vol = np.squeeze(self.vis_moving)   # (Dz, Dx, Dy)
+
+                    print(f"[img log] squeezed shapes: "
+                        f"fixed={fixed_vol.shape} "
+                        f"moving={moving_vol.shape} "
+                        f"registered={registered.shape}")
+
+                    # guard: only log if we got 3D volumes
+                    if fixed_vol.ndim != 3:
+                        print(f"[img log] WARNING: expected 3D volume after squeeze, "
+                            f"got {fixed_vol.ndim}D — skipping image log")
+                        wandb.log(log_dict)
+                        return
+
+                    Dz, Dx, Dy = fixed_vol.shape
+                    sl_z = Dz // 2
+                    sl_x = Dx // 2
+                    sl_y = Dy // 2
+
+                    fig = _make_residual_figure(
+                        fixed_vol, moving_vol, registered,
+                        sl_z, sl_x, sl_y
+                    )
+
+                    log_dict["registration/residuals"] = wandb.Image(
+                        fig,
+                        caption=f"Epoch {epoch + 1} — residuals & registered slices"
+                    )
+                    plt.close(fig)
+
+                    mae_before = float(np.abs(moving_vol - fixed_vol).mean())
+                    mae_after  = float(np.abs(registered  - fixed_vol).mean())
+                    log_dict["registration/mae_before"] = mae_before
+                    log_dict["registration/mae_after"]  = mae_after
+                    log_dict["registration/mae_ratio"]  = mae_after / (mae_before + 1e-9)
+
+                except Exception as e:
+                    # never crash training because of logging
+                    print(f"[img log] ERROR at epoch {epoch + 1}: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+            wandb.log(log_dict)
+
+    log_cb = LogLossComponents(
+        use_channel_loss  = use_channel_loss,
+        vis_fixed         = vis_fixed,
+        vis_moving        = vis_moving,
+        log_images_every  = log_images_every,
+    )
 
     if init_weights is not None:
-        vxm_model.load_weights(init_weights)
+        extended_model.load_weights(init_weights)
 
-    hist = vxm_model.fit_generator(train_generator, epochs=nb_epochs, steps_per_epoch=steps_per_epoch, verbose=2,callbacks=[Schedulecallback,WandbMetricsLogger(),callback_checkpoint])
+    # ── train ─────────────────────────────────────────────────────────────────
+    hist = extended_model.fit_generator(
+        train_generator,
+        epochs          = nb_epochs,
+        steps_per_epoch = steps_per_epoch,
+        verbose         = 2,
+        callbacks       = [schedule_cb, WandbMetricsLogger(), checkpoint_cb, log_cb]
+    )
 
     vxm_model.save_weights(file_model)
-
     run.finish()
 
+    # ── loss plot ─────────────────────────────────────────────────────────────
     plt.figure()
-    plt.plot(hist.epoch, hist.history["loss"], '.-')
-    plt.ylabel('loss')
-    plt.xlabel('epoch')
-    plt.savefig(file_model.split(".h5")[0]+"_loss.jpg")
+    plt.plot(hist.epoch, hist.history["loss"], '.-', label="total")
+    if use_channel_loss and "vxm_dense_flow_1_loss" in hist.history:
+        plt.plot(hist.epoch, hist.history["vxm_dense_flow_1_loss"], '.-',
+                 label="channel magnitude")
+    plt.plot(hist.epoch,
+             hist.history.get("vxm_dense_transformer_loss", []),
+             '.-', label="similarity")
+    plt.plot(hist.epoch,
+             hist.history.get("vxm_dense_flow_loss", []),
+             '.-', label="smoothness")
+    plt.legend()
+    plt.ylabel("loss")
+    plt.xlabel("epoch")
+    plt.savefig(file_model.split(".h5")[0] + "_loss.jpg")
 
 
 
@@ -597,6 +1302,13 @@ def train_voxelmorph_torchio(filename_volumes,file_config_train,suffix,init_weig
     #    [32, 64, 128, 128],         # encoder features
     #    [128, 128, 64, 64, 32, 16]  # decoder features
     #]
+
+    
+    #  "nb_features": [
+    #      [64, 128, 256, 256, 256],
+    #      [256, 256, 256, 128, 128, 64, 32, 16]
+    #        ],
+
 
     optimizer=config_train["optimizer"] #"Adam"
     lambda_param = config_train["lambda"] # 0.05
@@ -1223,18 +1935,99 @@ def apply_deformation_map(filename_volumes,file_deformation,axis):
 
     return
 
+# @ma.machine()
+# @ma.parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
+# @ma.parameter("file_model",str,default=None,description="Trained Model weights")
+# @ma.parameter("file_config_train",str,default=DEFAULT_TRAIN_CONFIG_3D,description="Config training")
+# @ma.parameter("file_deformation",str,default=None,description="Initial deformation if doing multiple pass of registration algo")
+# @ma.parameter("niter",int,default=1,description="Number of iterations for registration")
+# @ma.parameter("excluded",int,default=0,description="Excluded slices on both extremities")
+# @ma.parameter("downsample",int,default=1,description="Downsampling input")
+# def register_allbins_to_baseline_3D(filename_volumes,file_model,file_config_train,niter,file_deformation,excluded,downsample):
+
+#     with open(file_config_train,"r") as f:
+#         config_train=json.load(f)
+
+#     all_volumes_full = np.abs(np.load(filename_volumes))
+#     filename_registered_volumes=filename_volumes.split(".npy")[0]+"_registered_3D.npy"
+#     filename_deformation = filename_volumes.split(".npy")[0] + "_deformation_map_3D.npy"
+
+#     if file_deformation is not None:
+#         deformation_map=np.load(file_deformation)
+#     else:
+#         deformation_map=None
+
+#     print("Volumes shape {}".format(all_volumes_full.shape))
+#     all_volumes_full=all_volumes_full.astype("float32")
+#     nb_gr=all_volumes_full.shape[0]
+    
+    
+
+#     if excluded >0:
+#         all_volumes_full=all_volumes_full[:,excluded:-excluded]
+    
+
+#     if downsample != 1:
+#         all_volumes = np.array([downsample_3D(v, downsample)
+#             for v in all_volumes_full
+#         ])
+#     else:
+#         all_volumes = copy(all_volumes_full)
+
+#     print(all_volumes.shape)
+#     pad_amount=pad_to_multiple(all_volumes[0],mult=16,offset=0)
+#     print(pad_amount)
+
+    
+
+#     nb_features=config_train["nb_features"]
+#     inshape=np.pad(all_volumes[0],pad_amount,mode="constant").shape
+#     #print(inshape)
+#     #print(inshape)
+#     vxm_model=vxm.networks.VxmDense(inshape, nb_features, int_steps=7)
+#     vxm_model.load_weights(file_model)
+    
+#     registered_volumes=copy(all_volumes)
+#     mapxbase_all=np.zeros_like(all_volumes_full)
+#     mapybase_all = np.zeros_like(all_volumes_full)
+#     mapzbase_all = np.zeros_like(all_volumes_full)
+#     i=0
+#     while i<niter:
+#         print("Registration for iter {}".format(i+1))
+#         for gr in range(nb_gr):
+#             registered_volumes[gr],mapzbase_all[gr],mapxbase_all[gr],mapybase_all[gr]=register_motionbin_3D(vxm_model,all_volumes,gr,pad_amount,deformation_map,full_shape=all_volumes_full.shape[1:])
+
+#         all_volumes=copy(registered_volumes)
+#         deformation_map=np.stack([mapzbase_all,mapxbase_all,mapybase_all],axis=0)
+#         print(deformation_map.shape)
+#         i+=1
+
+#     if downsample != 1:
+#         registered_volumes = np.array([
+#             upsample_volume(v, all_volumes_full.shape[1:],order=2)
+#             for v in registered_volumes
+#         ])
+
+#     print(registered_volumes.shape)
+#     np.save(filename_registered_volumes,registered_volumes)
+#     np.save(filename_deformation, deformation_map)
+    
+
+
 @ma.machine()
 @ma.parameter("filename_volumes",str,default=None,description="Volumes for all motion phases nb_motion x nb_slices x npoint_x x npoint_y")
 @ma.parameter("file_model",str,default=None,description="Trained Model weights")
 @ma.parameter("file_config_train",str,default=DEFAULT_TRAIN_CONFIG_3D,description="Config training")
 @ma.parameter("file_deformation",str,default=None,description="Initial deformation if doing multiple pass of registration algo")
 @ma.parameter("niter",int,default=1,description="Number of iterations for registration")
-def register_allbins_to_baseline_3D(filename_volumes,file_model,file_config_train,niter,file_deformation):
+@ma.parameter("excluded",int,default=0,description="Excluded slices on both extremities")
+@ma.parameter("downsample",int,default=1,description="Downsampling input")
+def register_allbins_to_baseline_3D(filename_volumes,file_model,file_config_train,niter,file_deformation,excluded,downsample):
 
     with open(file_config_train,"r") as f:
         config_train=json.load(f)
 
-    all_volumes = np.abs(np.load(filename_volumes))
+    all_volumes_full = np.abs(np.load(filename_volumes))
     filename_registered_volumes=filename_volumes.split(".npy")[0]+"_registered_3D.npy"
     filename_deformation = filename_volumes.split(".npy")[0] + "_deformation_map_3D.npy"
 
@@ -1243,63 +2036,63 @@ def register_allbins_to_baseline_3D(filename_volumes,file_model,file_config_trai
     else:
         deformation_map=None
 
-    print("Volumes shape {}".format(all_volumes.shape))
-    all_volumes=all_volumes.astype("float32")
-    nb_gr=all_volumes.shape[0]
+    print("Volumes shape {}".format(all_volumes_full.shape))
+    all_volumes_full=all_volumes_full.astype("float32")
+    nb_gr=all_volumes_full.shape[0]
     
     
-    
-    #pad_amount=config_train["padding"]
-    #pad_amount=tuple(tuple(l) for l in pad_amount)
-    n = all_volumes.shape[-1]
-    pad_1 = 2 ** (int(np.log2(n)) + 1) - n
-    pad_2 = 2 ** int(np.log2(n) - 1) * 3 - n
 
-    if pad_2 < 0:
-        pad = int(pad_1 / 2)
+    if excluded >0:
+        all_volumes_full=all_volumes_full[:,excluded:-excluded]
+    
+
+    if downsample != 1:
+        all_volumes = np.array([downsample_3D(v, downsample)
+            for v in all_volumes_full
+        ])
     else:
-        pad = int(pad_2 / 2)
+        all_volumes = copy(all_volumes_full)
 
-    n = all_volumes.shape[1]
-
-    pad_1 = 2 ** (int(np.log2(n)) + 1) - n
-    pad_2 = 2 ** int(np.log2(n) - 1) * 3 - n
-
-    if pad_2 < 0:
-        pad_z = int(pad_1 / 2)
-    else:
-        pad_z = int(pad_2 / 2)
-
-    if (2 ** (int(np.log2(n)))-n)==0:
-        pad_z=0
-
-    pad_amount = ((pad_z, pad_z), (pad, pad), (pad, pad))
+    print(all_volumes.shape)
+    pad_amount=pad_to_multiple(all_volumes[0],mult=16,offset=0)
     print(pad_amount)
+
+    
 
     nb_features=config_train["nb_features"]
     inshape=np.pad(all_volumes[0],pad_amount,mode="constant").shape
     #print(inshape)
     #print(inshape)
-    vxm_model=vxm.networks.VxmDense(inshape, nb_features, int_steps=0)
+    vxm_model=vxm.networks.VxmDense(inshape, nb_features, int_steps=7)#,int_downsize=1)
     vxm_model.load_weights(file_model)
     
     registered_volumes=copy(all_volumes)
-    mapxbase_all=np.zeros_like(all_volumes)
-    mapybase_all = np.zeros_like(all_volumes)
-    mapzbase_all = np.zeros_like(all_volumes)
+    flow_all = np.zeros((nb_gr, *all_volumes_full.shape[1:], 3), dtype=np.float32)
     i=0
     while i<niter:
         print("Registration for iter {}".format(i+1))
         for gr in range(nb_gr):
-            registered_volumes[gr],mapzbase_all[gr],mapxbase_all[gr],mapybase_all[gr]=register_motionbin_3D(vxm_model,all_volumes,gr,pad_amount,deformation_map)
+            registered_volumes[gr], flow_all[gr] = register_motionbin_3D(
+                                                    vxm_model, all_volumes, gr, pad_amount,
+                                                    deformation_map, full_shape=all_volumes_full.shape[1:]
+                                                )
 
         all_volumes=copy(registered_volumes)
-        deformation_map=np.stack([mapzbase_all,mapxbase_all,mapybase_all],axis=0)
+        deformation_map=flow_all
         print(deformation_map.shape)
         i+=1
+
+    if downsample != 1:
+        registered_volumes = np.array([
+            upsample_volume(v, all_volumes_full.shape[1:],order=2)
+            for v in registered_volumes
+        ])
+
+    print(registered_volumes.shape)
     np.save(filename_registered_volumes,registered_volumes)
-    np.save(filename_deformation, deformation_map)
-    
+    np.save(filename_deformation, flow_all)
+
+
 
 def register_motionbin(vxm_model,all_volumes,gr,pad_amount,deformation_map=None):
     curr_gr=gr
@@ -1360,52 +2153,141 @@ def register_motionbin(vxm_model,all_volumes,gr,pad_amount,deformation_map=None)
     return unpadded_moving_volume,mapx_base,mapy_base
 
 
-def register_motionbin_3D(vxm_model,all_volumes,gr,pad_amount,deformation_map=None):
-    curr_gr=gr
-    moving_volume=np.pad(all_volumes[curr_gr],pad_amount,mode="constant")
-    nb_slices=all_volumes.shape[1]
+# def register_motionbin_3D(vxm_model,all_volumes,gr,pad_amount,deformation_map=None,full_shape=None):
+#     curr_gr=gr
+#     moving_volume=np.pad(all_volumes[curr_gr],pad_amount,mode="constant")
+#     nb_slices=all_volumes.shape[1]
 
-    #print(all_volumes.shape)
+    
 
-    if deformation_map is None:
-        mapz_base,mapx_base, mapy_base = np.meshgrid(np.arange(all_volumes.shape[1]),np.arange(all_volumes.shape[2]), np.arange(all_volumes.shape[3]),indexing="ij")
+
+#     print(all_volumes.shape)
+#     print(full_shape)
+#     if deformation_map is None:
+#         # mapz_base,mapx_base, mapy_base = np.meshgrid(np.arange(all_volumes.shape[1]),np.arange(all_volumes.shape[2]), np.arange(all_volumes.shape[3]),indexing="ij")
+#         Dz, Dx, Dy = full_shape
+
+#         mapz_base, mapx_base, mapy_base = np.meshgrid(
+#             np.arange(Dz), np.arange(Dx), np.arange(Dy), indexing="ij"
+#         )
+            
+#     else:
+#         #print("Applying existing deformation map")
+#         mapz_base=deformation_map[0,gr]
+#         mapx_base=deformation_map[1,gr]
+#         mapy_base=deformation_map[2,gr]
+
+#     # print("mapx_base shape: {}".format(mapx_base.shape))
+#     # print("mapy_base shape: {}".format(mapy_base.shape))
+#     # print("mapz_base shape: {}".format(mapz_base.shape))
+    
+#     while curr_gr>0:
+#         # print("curr_gr {}".format(curr_gr))
+#         # print("all_volumes[curr_gr-1].shape {}".format(all_volumes[curr_gr-1].shape))
+#         # print("moving_volume.shape {}".format(moving_volume.shape))
+#         input=np.stack([np.pad(all_volumes[curr_gr-1],pad_amount,mode="constant"),moving_volume],axis=0)
+#         #print(input.shape)
+#         x_val_fixed,x_val_moving=format_input_voxelmorph_3D(input,pad=False,sl_down=0,sl_top=nb_slices)
+#         #print(x_val_fixed.shape)
+#         val_input=[x_val_moving,x_val_fixed]
+#         #print(val_input.shape)
+
+#         val_pred=vxm_model.predict(val_input)
+#         moving_volume=val_pred[0][0,:,:,:,0]
+#         flow=val_pred[1][0]
+#         print(f"flow gr {gr} curr_gr {curr_gr} shape {flow.shape}")
+#         np.save(f"flow_gr{gr}curr_gr{curr_gr}.npy",flow)
+#         flow=upsample_flow_3D(flow,moving_volume.shape)
+#         # print("Moving volume shape after registration {}".format(moving_volume.shape))
+#         # print("flowshape {}".format(flow.shape))
+#         flow[...,0]=unpad(flow[...,0],pad_amount)
+#         flow[...,1]=unpad(flow[...,1],pad_amount)
+#         flow[...,2]=unpad(flow[...,2],pad_amount)
+#         flow=upsample_flow_3D(flow,full_shape)
+#         # print("flowshape after upsample and unpad {}".format(flow.shape))
+#         flow=warp_flow_3D(flow,mapz_base,mapx_base,mapy_base)
+
+#         mapz_base=mapz_base+flow[...,0]
+#         mapx_base=mapx_base+flow[...,1]
+#         mapy_base=mapy_base+flow[...,2]
+#         curr_gr=curr_gr-1
         
+#     #print("Moving volume shape {}:".format(moving_volume.shape))
+#     return unpad(moving_volume,pad_amount),mapz_base,mapx_base,mapy_base
+
+def register_motionbin_3D(vxm_model, all_volumes, gr, pad_amount,
+                         deformation_map=None, full_shape=None):
+
+    curr_gr = gr
+    moving_volume = np.pad(all_volumes[curr_gr], pad_amount, mode="constant")
+    nb_slices = all_volumes.shape[1]
+
+    Dz, Dx, Dy = full_shape
+
+    # --- initialize total flow ---
+    if deformation_map is None:
+        total_flow = np.zeros((Dz, Dx, Dy, 3), dtype=np.float32)
     else:
-        #print("Applying existing deformation map")
-        mapz_base=deformation_map[0,gr]
-        mapx_base=deformation_map[1,gr]
-        mapy_base=deformation_map[2,gr]
+        total_flow = deformation_map[gr].copy()  # now directly a flow
 
-    #print("mapx_base shape: {}".format(mapx_base.shape))
-    #print("mapy_base shape: {}".format(mapy_base.shape))
-    #print("mapz_base shape: {}".format(mapz_base.shape))
-    #print(mapx_base.shape)
-    while curr_gr>0:
-        #print("curr_gr {}".format(curr_gr))
-        #print(all_volumes[curr_gr-1].shape)
-        #print(moving_volume.shape)
-        #print("all_volumes[curr_gr-1].shape {}".format(all_volumes[curr_gr-1].shape))
-        #print("moving_volume.shape {}".format(moving_volume.shape))
-        input=np.stack([np.pad(all_volumes[curr_gr-1],pad_amount,mode="constant"),moving_volume],axis=0)
-        #print(input.shape)
-        x_val_fixed,x_val_moving=format_input_voxelmorph_3D(input,((0,0),(0,0),(0,0),(0,0)),sl_down=0,sl_top=nb_slices)
-        #print(x_val_fixed.shape)
-        val_input=[x_val_moving,x_val_fixed]
-        #print(val_input.shape)
+    while curr_gr > 0:
 
-        val_pred=vxm_model.predict(val_input)
-        moving_volume=val_pred[0][0,:,:,:,0]
-        #print("Moving volume shape after registration {}".format(moving_volume.shape))
-        #print("val_pred shape {}".format(val_pred[1][:,:,:].shape))
-        mapz_base=mapz_base+unpad(val_pred[1][0,:,:,:,1],pad_amount)
-        mapx_base=mapx_base+unpad(val_pred[1][0,:,:,:,0],pad_amount)
-        mapy_base=mapy_base+unpad(val_pred[1][0,:,:,:,2],pad_amount)
+        input = np.stack([
+            np.pad(all_volumes[curr_gr-1], pad_amount, mode="constant"),
+            moving_volume
+        ], axis=0)
 
-        curr_gr=curr_gr-1
-    #print("Moving volume shape {}:".format(moving_volume.shape))
-    return unpad(moving_volume,pad_amount),mapz_base,mapx_base,mapy_base
+        x_val_fixed, x_val_moving = format_input_voxelmorph_3D(
+            input, pad=False, sl_down=0, sl_top=nb_slices
+        )
+
+        val_pred = vxm_model.predict([x_val_moving, x_val_fixed])
+
+        moving_volume = val_pred[0][0, :, :, :, 0]
+        flow = val_pred[1][0]
+        print(f"Flow vxm output shape {flow.shape}")
+        
+        print(f"volume vxm output shape {moving_volume.shape}")
+        # --- process flow ---
+        flow = upsample_flow_3D(flow, moving_volume.shape)
+
+        flow[..., 0] = unpad(flow[..., 0], pad_amount)
+        flow[..., 1] = unpad(flow[..., 1], pad_amount)
+        flow[..., 2] = unpad(flow[..., 2], pad_amount)
+
+        print(f"Flow shape after unpadding {flow.shape}")
+
+        flow = upsample_flow_3D(flow, full_shape)
+
+        print(f"Flow shape after upsampling {flow.shape}")
+
+        # --- IMPORTANT: compose flows ---
+        # flow = warp_flow_3D(
+        #     flow,
+        #     total_flow[..., 0] + np.arange(Dz)[:, None, None],
+        #     total_flow[..., 1] + np.arange(Dx)[None, :, None],
+        #     total_flow[..., 2] + np.arange(Dy)[None, None, :]
+        # )
+
+        coords_z = np.arange(Dz)[:, None, None] + total_flow[..., 0]
+        coords_x = np.arange(Dx)[None, :, None] + total_flow[..., 1]
+        coords_y = np.arange(Dy)[None, None, :] + total_flow[..., 2]
+
+        total_flow = warp_flow_3D(flow, coords_z, coords_x, coords_y) + total_flow
 
 
+        # coords_z = np.arange(Dz)[:, None, None] + flow[..., 0]
+        # coords_x = np.arange(Dx)[None, :, None] + flow[..., 1]
+        # coords_y = np.arange(Dy)[None, None, :] + flow[..., 2]
+
+        # warped_total = warp_flow_3D(total_flow, coords_z, coords_x, coords_y)
+        # total_flow   = warped_total + flow
+
+        # total_flow = total_flow + flow
+
+        curr_gr -= 1
+
+    return unpad(moving_volume, pad_amount), total_flow
 
 
 def scheduler(epoch, lr,decay=0.005,min_lr=None,decay_start=20):
