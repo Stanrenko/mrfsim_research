@@ -30,32 +30,33 @@ SIMUS=1
 US=1
 
 
-#Extracting k-space and navigator data
-echo "######################################################"
-echo "Extracting k-space and navigator data"
-python scripts/script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX} #--nb-rep 40 #--dens-adj False
+# #Extracting k-space and navigator data
+# echo "######################################################"
+# echo "Extracting k-space and navigator data"
+# python scripts/script_recoInVivo_3D_machines.py build_kdata --filename $1.dat --index ${INDEX} #--nb-rep 40 #--dens-adj False
 
-# rm $1.npy
-rm $1.dat
+# # rm $1.npy
+# # rm $1.dat
 
 
-# Coil compression
-echo "######################################################"
-echo "Coil Compression $NCOMP virtual coils"
-python scripts/script_recoInVivo_3D_machines.py coil_compression_bart --filename-kdata $1_kdata.npy --n-comp $NCOMP --spoke-start 400 --filename-seqParams $1_seqParams.pkl --lowmem True
+# # Coil compression
+# echo "######################################################"
+# echo "Coil Compression $NCOMP virtual coils"
+# python scripts/script_recoInVivo_3D_machines.py coil_compression_bart --filename-kdata $1_kdata.npy --n-comp $NCOMP --spoke-start 400 --filename-seqParams $1_seqParams.pkl --lowmem True
+
+# # exit
+
+# rm $1_kdata.npy
+
+# # #Rebuild singular volumes for all bins
+# echo "######################################################"
+# echo "Rebuilding singular volumes"
+
+# python scripts/script_recoInVivo_3D_machines.py build_volumes_singular --filename-kdata $1_bart${NCOMP}_kdata.npy --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --filename-seqParams $1_seqParams.pkl --L0 $NSING --dictfile $2 --useGPU False
 
 # exit
 
-rm $1_kdata.npy
-
-# #Rebuild singular volumes for all bins
-echo "######################################################"
-echo "Rebuilding singular volumes"
-
-python scripts/script_recoInVivo_3D_machines.py build_volumes_singular --filename-kdata $1_bart${NCOMP}_kdata.npy --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --filename-seqParams $1_seqParams.pkl --L0 $NSING --dictfile $2 --useGPU False
-
-
-python scripts/script_recoInVivo_3D_machines.py build_volumes_iterative --filename-volume $1_bart${NCOMP}_volumes_singular.npy  --niter $NITER  --use-wavelet True --lambda-wav 1e-11 --mu 1 --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --filename-seqParams $1_seqParams.pkl #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
+# python scripts/script_recoInVivo_3D_machines.py build_volumes_iterative --filename-volume $1_bart${NCOMP}_volumes_singular.npy  --niter $NITER  --use-wavelet True --lambda-wav 1e-11 --mu 1 --filename-b1 $1_bart${NCOMP}_b12Dplus1_${NCOMP}.npy --filename-seqParams $1_seqParams.pkl #--filename-b1 data/InVivo/3D/patient.003.v19/meas_MID00088_FID70345_raFin_3D_tra_0_8x0_8x3mm_FULL_new_mrf_us2_b12Dplus1_12.npy
 
 
 

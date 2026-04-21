@@ -4,7 +4,11 @@ try:
 except:
     pass
 
-import voxelmorph as vxm
+try:
+    import voxelmorph as vxm
+    import neurite as ne
+except:
+    pass
 import numpy as np
 from scipy.signal import savgol_filter
 from statsmodels.nonparametric.smoothers_lowess import lowess
@@ -37,7 +41,7 @@ try:
     from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
 except:
     pass
-import neurite as ne
+
 from skimage.transform import resize
 from numpy.lib import stride_tricks
 import dask.array as da

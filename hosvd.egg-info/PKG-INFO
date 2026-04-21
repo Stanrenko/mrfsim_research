@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
-Name: mrfsim
+Name: hosvd
 Version: 0.1.dev1
-Summary: MRF tools for 2D and 3D MRF simulations and reconstructions (including motion correction, dictionary generation, parameter mapping) for free-breathing and whole-body applications
+Summary: LLR-HOSVD denoising and HD-PROST proximal operator for iterative MRF reconstruction (ADMM-based)
 Requires-Python: >=3.9
 Requires-Dist: numpy<2.0,>=1.24
 Requires-Dist: dask

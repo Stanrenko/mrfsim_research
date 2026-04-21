@@ -31,6 +31,7 @@ import glob
 
 import sys
 os.environ['PATH'] = os.environ['TOOLBOX_PATH'] + ":" + os.environ['PATH']
+os.environ["BART_TOOLBOX_PATH"] = os.environ['TOOLBOX_PATH']
 sys.path.append(os.environ['TOOLBOX_PATH'] + "/python/")
 import cfl
 from bart import bart
@@ -4345,6 +4346,401 @@ def build_volumes_iterative(filename_volume, filename_b1,filename_weights,filena
     return
 
 @ma.machine()
+@ma.parameter("filename_volume",    str,           default=None,       description="MRF raw data")
+@ma.parameter("filename_b1",        str,           default=None,       description="B1")
+@ma.parameter("filename_weights",   str,           default=None,       description="Undersampling weights")
+@ma.parameter("filename_seqParams", str,           default=None,       description="Sequence parameters")
+@ma.parameter("mu",                 float,         default=1,          description="Gradient step size")
+@ma.parameter("mu_TV",              float,         default=1,          description="Spatial TV regularization weight")
+@ma.parameter("lambda_wav",         float,         default=0.5e-5,     description="Lambda wavelet")
+@ma.parameter("lambda_LLR",         float,         default=0.0005,     description="Lambda LLR")
+@ma.parameter("niter",              int,           default=None,       description="Number of iterations")
+@ma.parameter("suffix",             str,           default="",         description="Suffix")
+@ma.parameter("gamma",              float,         default=None,       description="Gamma correction")
+@ma.parameter("dens_adj",           bool,          default=True,       description="Radial density adjustment")
+@ma.parameter("block",              str,           default="2,10,10",  description="Block size for LLR")
+@ma.parameter("reg_mode",           ma.Choice(["TV", "wavelet", "LLR", "PROST"]),
+                                                   default="TV",       description="Regularisation mode")
+# ADMM / PROST parameters
+@ma.parameter("hd_lambda",                float,         default=1.0,        description="ADMM penalty (PROST)")
+@ma.parameter("n_inner",            int,           default=1,          description="Gradient steps per x-update (PROST)")
+@ma.parameter("hd_patch_size",      int,           default=5,          description="HD-PROST patch size")
+@ma.parameter("hd_search_radius",   int,           default=10,         description="HD-PROST search radius")
+@ma.parameter("hd_max_patches",     int,           default=20,         description="HD-PROST max patches")
+@ma.parameter("hd_sliding_window",  int,           default=3,          description="HD-PROST sliding window")
+@ma.parameter("hd_backend",         ma.Choice(["kdtree","faiss_cpu","faiss_gpu"]),          default="faiss_gpu",      description="HD-PROST backend")
+
+def build_volumes_iterative_v2(filename_volume, filename_b1, filename_weights,
+                             filename_seqParams, mu, mu_TV, niter, gamma,
+                             suffix, dens_adj, reg_mode,
+                             lambda_wav, lambda_LLR, block,
+                             hd_lambda, n_inner,
+                             hd_patch_size, hd_search_radius, hd_max_patches,
+                             hd_sliding_window,
+                             hd_backend):
+
+    # -----------------------------------------------------------------------
+    # Validate reg_mode early so we fail before any expensive loading
+    # -----------------------------------------------------------------------
+    VALID_MODES = ["TV", "wavelet", "LLR", "PROST"]
+    if reg_mode not in VALID_MODES:
+        raise ValueError(
+            f"reg_mode={reg_mode!r} is not valid. "
+            f"Choose one of {VALID_MODES}.")
+
+    # -----------------------------------------------------------------------
+    # Output filename
+    # -----------------------------------------------------------------------
+    filename_target = filename_volume.split(".npy")[0] + "_denoised{}.npy".format(suffix)
+    if gamma is not None:
+        filename_target = (filename_target.split(".npy")[0]
+                           + "_gamma_{}.npy".format(str(gamma).replace(".", "_")))
+    print(filename_target)
+
+    # -----------------------------------------------------------------------
+    # Load data
+    # -----------------------------------------------------------------------
+    weights_TV = np.array([1.0, 0.2, 0.2])
+    weights_TV /= np.sum(weights_TV)
+
+    print("Loading Volumes")
+    volumes = np.load(filename_volume).astype("complex64")
+
+    b1_all_slices_2Dplus1_pca = np.load(filename_b1)
+    incoherent = False
+
+
+    with open(filename_seqParams, "rb") as f:
+        dico_seqParams = pickle.load(f)
+    print(dico_seqParams)
+
+    use_navigator_dll = dico_seqParams["use_navigator_dll"]
+    use_kushball_dll  = dico_seqParams.get("use_kushball_dll", False)
+
+    if use_kushball_dll:
+        meas_sampling_mode = dico_seqParams["alFree"][16]
+    elif use_navigator_dll:
+        meas_sampling_mode = dico_seqParams["alFree"][15]
+    else:
+        meas_sampling_mode = dico_seqParams["alFree"][12]
+
+    nb_gating_spokes    = dico_seqParams["alFree"][6]
+    undersampling_factor = dico_seqParams["alFree"][9]
+    nb_segments          = dico_seqParams["alFree"][4]
+    nb_slices            = int(dico_seqParams["nb_part"])
+
+    if meas_sampling_mode == 1:
+        incoherent = False
+        mode       = None
+    elif meas_sampling_mode == 2:
+        incoherent = True
+        mode       = "old"
+    elif meas_sampling_mode == 3:
+        incoherent = True
+        mode       = "new"
+    elif meas_sampling_mode == 4:
+        incoherent = True
+        mode       = "Kushball"
+    else:
+        raise ValueError(f"Unknown meas_sampling_mode={meas_sampling_mode}")
+
+    if filename_weights is not None:
+        print("Applying weights mask to k-space")
+        weights = np.load(filename_weights)
+    else:
+        weights = 1
+
+    print("Volumes shape {}".format(volumes.shape))
+
+    npoint = 2 * volumes.shape[-1]
+    nbins  = volumes.shape[0]
+
+    # -----------------------------------------------------------------------
+    # Build trajectory
+    # -----------------------------------------------------------------------
+    if not incoherent:
+        radial_traj = Radial(total_nspokes=nb_segments, npoint=npoint)
+
+    elif mode == "Kushball":
+        nb_part = int(dico_seqParams["alFree"][12])
+        radial_traj = Radial3D(total_nspokes=nb_segments, npoint=npoint,
+                               nb_slices=nb_part,
+                               undersampling_factor=undersampling_factor,
+                               incoherent=incoherent, mode=mode)
+    else:
+        radial_traj = Radial3D(total_nspokes=nb_segments, npoint=npoint,
+                               nb_slices=nb_slices,
+                               undersampling_factor=undersampling_factor,
+                               incoherent=incoherent, mode=mode)
+
+        cond_us = np.zeros((nb_slices, nb_segments)).reshape((nb_slices, -1, 8))
+        curr_start = 0
+        for sl in range(nb_slices):
+            cond_us[sl, curr_start::undersampling_factor, :] = 1
+            curr_start = (curr_start + 1) % undersampling_factor
+        cond_us   = cond_us.flatten()
+        included_spokes = (cond_us > 0)
+
+        radial_traj_allspokes = Radial3D(total_nspokes=nb_segments,
+                                         undersampling_factor=1, npoint=npoint,
+                                         nb_slices=nb_slices,
+                                         incoherent=incoherent, mode=mode)
+
+        from mrfsim.utils_reco import correct_mvt_kdata_zero_filled
+        weights, retained_timesteps = correct_mvt_kdata_zero_filled(
+            radial_traj_allspokes, included_spokes, 1)
+
+        weights = weights.reshape(1, -1, 8, nb_slices)
+        import math
+        nb_rep     = math.ceil(nb_slices / undersampling_factor)
+        weights_us = np.zeros(shape=(1, 175, 8, nb_rep), dtype=weights.dtype)
+        shift      = 0
+        for sl in range(nb_slices):
+            if int(sl / undersampling_factor) < nb_rep:
+                weights_us[:, shift::undersampling_factor, :, int(sl / undersampling_factor)] = \
+                    weights[:, shift::undersampling_factor, :, sl]
+                shift = (shift + 1) % undersampling_factor
+        weights_us = weights_us.reshape(1, -1, nb_rep)[..., None]
+        weights    = weights_us
+
+    # -----------------------------------------------------------------------
+    # Common initialisation
+    # -----------------------------------------------------------------------
+    volumes0 = copy(volumes)      # A^H W d  — reference, never modified
+    volumes  = mu * volumes0      # initial estimate x_0
+
+    # -----------------------------------------------------------------------
+    # Regularisation dispatch
+    # -----------------------------------------------------------------------
+
+    if reg_mode == "wavelet":
+        # -------------------------------------------------------------------
+        # FISTA + wavelet soft-thresholding
+        # -------------------------------------------------------------------
+        wav_level = None
+        wav_type  = "db4"
+        axes      = (2, 3)
+        lambd     = lambda_wav
+
+        alpha_denoised  = []
+        vol_denoised_log = [volumes.copy()]
+
+        coefs        = pywt.wavedecn(volumes, wav_type, level=wav_level,
+                                     mode="periodization", axes=axes)
+        u, slices    = pywt.coeffs_to_array(coefs, axes=axes)
+        u0           = u.copy()
+        y            = u.copy()
+        t            = 1.0
+        u            = pywt.threshold(y, lambd * mu)
+        print("Non zero percentage: {:.3%}".format(
+            np.count_nonzero(u) / np.prod(u.shape)))
+
+        vol_denoised_log.append(
+            pywt.waverecn(pywt.array_to_coeffs(u, slices),
+                          wav_type, mode="periodization", axes=axes))
+
+        t_next = 0.5 * (1 + np.sqrt(1 + 4 * t**2))
+        y      = u.copy()
+        t      = t_next
+
+        for i in range(niter):
+            u_prev = u.copy()
+            x      = pywt.waverecn(pywt.array_to_coeffs(y, slices),
+                                    wav_type, mode="periodization", axes=axes)
+            print("x.shape : {}".format(x.shape))
+
+            if not incoherent:
+                volumesi = undersampling_operator_singular_new(
+                    x, radial_traj, b1_all_slices_2Dplus1_pca,
+                    weights=weights, density_adj=dens_adj)
+            else:
+                volumesi = undersampling_operator_singular(
+                    x, radial_traj, b1_all_slices_2Dplus1_pca,
+                    density_adj=dens_adj, weights=weights)
+
+            print("volumesi.shape : {}".format(volumesi.shape))
+            coefs        = pywt.wavedecn(volumesi, wav_type, level=wav_level,
+                                         mode="periodization", axes=axes)
+            grad_y, slices = pywt.coeffs_to_array(coefs, axes=axes)
+            grad  = grad_y - u0 / mu
+            y     = y - mu * grad
+            u     = pywt.threshold(y, lambd * mu)
+            print("Non zero percentage: {:.3%}".format(
+                np.count_nonzero(u) / np.prod(u.shape)))
+
+            t_next = 0.5 * (1 + np.sqrt(1 + 4 * t**2))
+            y      = u + (t - 1) / t_next * (u - u_prev)
+            t      = t_next
+
+            if i % 1 == 0:
+                vol_denoised_log.append(
+                    pywt.waverecn(pywt.array_to_coeffs(u, slices),
+                                  wav_type, mode="periodization", axes=axes))
+
+        vol_denoised_log = np.array(vol_denoised_log)
+        fname_intermediate = (filename_volume.split("_volumes_allbins.npy")[0]
+                              + "_volume_denoised_{}.npy".format(suffix))
+        np.save(fname_intermediate, vol_denoised_log)
+
+        alpha_denoised = np.array([u])
+        volumes = np.array([
+            pywt.waverecn(pywt.array_to_coeffs(alpha, slices),
+                          wav_type, mode="periodization", axes=axes)
+            for alpha in alpha_denoised
+        ]).squeeze()
+
+    elif reg_mode == "LLR":
+        # -------------------------------------------------------------------
+        # FISTA + Locally Low-Rank (LLR) proximal step
+        # -------------------------------------------------------------------
+        blck = np.array(block.split(",")).astype(int)
+
+        volumes_denoised = []
+        u  = mu * volumes.copy()
+        u0 = volumes.copy()
+        y  = u.copy()
+        t  = 1.0
+
+        if u.ndim == len(blck) + 1:
+            blck = np.array([u.shape[0]] + list(blck))
+
+        strd      = blck
+        threshold = lambda_LLR * mu
+        print("blck:", blck)
+        print("u.shape:", u.shape)
+
+        u = proj_LLR(u.squeeze(), strd, blck, threshold)
+        print("u.shape after LLR:", u.shape)
+
+        t_next = 0.5 * (1 + np.sqrt(1 + 4 * t**2))
+        y      = u.copy()
+        t      = t_next
+
+        for i in range(niter):
+            u_prev = u.copy()
+            if u.ndim == 3:
+                u = np.expand_dims(u, axis=0)
+
+            if not incoherent:
+                volumesi = undersampling_operator_singular_new(
+                    u, radial_traj, b1_all_slices_2Dplus1_pca,
+                    weights=weights, density_adj=dens_adj)
+            else:
+                volumesi = undersampling_operator_singular(
+                    u, radial_traj, b1_all_slices_2Dplus1_pca,
+                    density_adj=dens_adj)
+
+            grad = volumesi - u0 / mu
+            y    = y - mu * grad
+            u    = proj_LLR(y.squeeze(), strd, blck, threshold)
+
+            t_next = 0.5 * (1 + np.sqrt(1 + 4 * t**2))
+            y      = u + (t - 1) / t_next * (u - u_prev)
+            t      = t_next
+
+        volumes_denoised.append(u)
+        volumes = np.array(volumes_denoised).squeeze()
+
+    elif reg_mode == "PROST":
+        # -------------------------------------------------------------------
+        # ADMM + HD-PROST (LLR-HOSVD) proximal denoising
+        # -------------------------------------------------------------------
+        from mrfsim.utils_mrf import admm_hd_prost
+
+        volumes, vol_denoised_log = admm_hd_prost(
+            volumes0       = volumes0,
+            weights        = weights,
+            radial_traj    = radial_traj,
+            b1             = b1_all_slices_2Dplus1_pca,
+            dens_adj       = dens_adj,
+            incoherent     = incoherent,
+            mu             = mu,
+            lam            = hd_lambda,
+            niter          = niter,
+            n_inner        = n_inner,
+            patch_size     = hd_patch_size,
+            search_radius  = hd_search_radius,
+            max_patches    = hd_max_patches,
+            sliding_window = hd_sliding_window,
+            search_backend = hd_backend,
+        )
+
+    elif reg_mode == "TV":
+        # -------------------------------------------------------------------
+        # Gradient descent + spatial TV  (original behaviour)
+        # -------------------------------------------------------------------
+        vol_denoised_log = []
+
+        for i in tqdm(range(niter)):
+            print("Correcting volumes for iteration {}".format(i))
+            all_grad_norm = 0
+
+            for gr in tqdm(range(nbins)):
+                if not incoherent:
+                    volumesi = undersampling_operator_singular_new(
+                        volumes[gr], radial_traj, b1_all_slices_2Dplus1_pca,
+                        weights=all_weights[gr], density_adj=dens_adj)
+                else:
+                    volumesi = undersampling_operator_singular(
+                        volumes[gr], radial_traj, b1_all_slices_2Dplus1_pca,
+                        weights=all_weights[gr], density_adj=dens_adj)
+
+                grad      = volumesi - volumes0[gr]
+                grad_norm = np.linalg.norm(grad)
+                all_grad_norm += grad_norm**2
+                print("grad norm {}".format(grad_norm))
+
+                if (mu_TV is not None) and (mu_TV != 0):
+                    print("Applying TV regularization")
+                    grad_TV = np.zeros_like(volumes[gr])
+                    for ts in tqdm(range(ntimesteps)):
+                        for ind_w, w in enumerate(weights_TV):
+                            if w > 0:
+                                grad_TV[ts] += w * grad_J_TV(
+                                    volumes[gr, ts], ind_w,
+                                    is_weighted=False, shift=0)
+                    grad_TV_norm = np.linalg.norm(grad_TV)
+                    print("grad_TV_norm {}".format(grad_TV_norm))
+                    volumes[gr] -= mu * (grad + mu_TV * grad_norm / grad_TV_norm * grad_TV)
+                    del grad_TV
+                else:
+                    volumes[gr] -= mu * grad
+                del grad
+
+            all_grad_norm = np.sqrt(all_grad_norm)
+            if (mu_bins is not None) and (mu_bins != 0):
+                grad_TV_bins      = grad_J_TV(volumes, 0, is_weighted=False, shift=0)
+                grad_TV_bins_norm = np.linalg.norm(grad_TV_bins)
+                print("grad_TV_bins norm {}".format(grad_TV_bins_norm))
+                volumes -= mu * mu_bins * all_grad_norm / grad_TV_bins_norm * grad_TV_bins
+                del grad_TV_bins
+
+            if i % 5 == 0:
+                fname = (filename_volume.split("_volumes_allbins.npy")[0]
+                         + "_volumes_allbins_denoised_it{}{}.npy".format(i, suffix))
+                np.save(fname, volumes)
+
+            vol_denoised_log.append(volumes.copy())
+
+    else:
+        # Should never be reached given the early validation above
+        raise ValueError(
+            f"Unexpected reg_mode={reg_mode!r}. Valid choices: {VALID_MODES}")
+
+    # -----------------------------------------------------------------------
+    # Post-processing and save
+    # -----------------------------------------------------------------------
+    volumes = np.squeeze(volumes)
+
+    if gamma is not None:
+        for gr in range(volumes.shape[0]):
+            volumes[gr] = gamma_transform(volumes[gr], gamma)
+
+    np.save(filename_target, volumes)
+
+    return
+
+@ma.machine()
 @ma.parameter("filename_volume", str, default=None, description="MRF raw data")
 @ma.parameter("filename_b1", str, default=None, description="B1")
 @ma.parameter("filename_weights", str, default=None, description="Motion bin weights")
@@ -5350,6 +5746,7 @@ toolbox.add_program("build_volumes_singular_allbins_3D_BART", build_volumes_sing
 toolbox.add_program("build_volumes_singular_allbins_3D_BART_v2", build_volumes_singular_allbins_3D_BART_v2)
 toolbox.add_program("build_volumes_singular_allbins_3D_BART_inv", build_volumes_singular_allbins_3D_BART_inv)
 toolbox.add_program("build_volumes_iterative", build_volumes_iterative)
+toolbox.add_program("build_volumes_iterative_v2", build_volumes_iterative_v2)
 toolbox.add_program("generate_dixon_volumes_for_segmentation", generate_dixon_volumes_for_segmentation)
 toolbox.add_program("generate_mask_roi_from_segmentation", generate_mask_roi_from_segmentation)
 toolbox.add_program("getROIresults", getROIresults)

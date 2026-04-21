@@ -2552,75 +2552,232 @@ def simulate_radial_undersampled_singular_images_multi(kdata, trajectory, size, 
 
     return images_series_rebuilt
 
-def undersampling_operator_singular(volumes,trajectory,b1_all_slices,density_adj=True,weights=None):
-    """
-    returns A.H @ W @ A @ volumes where A=F Fourier + sampling operator and W correspond to radial density adjustment
-    """
+# def undersampling_operator_singular(volumes,trajectory,b1_all_slices,density_adj=True,weights=None):
+#     """
+#     returns A.H @ W @ A @ volumes where A=F Fourier + sampling operator and W correspond to radial density adjustment
+#     """
 
-    L0=volumes.shape[0]
-    size=volumes.shape[1:]
-    nb_slices=size[0]
-    nb_channels=b1_all_slices.shape[0]
+#     L0=volumes.shape[0]
+#     size=volumes.shape[1:]
+#     nb_slices=size[0]
+#     nb_channels=b1_all_slices.shape[0]
     
-    mode=trajectory.paramDict["mode"]
+#     mode=trajectory.paramDict["mode"]
 
-    # nb_allspokes = trajectory.paramDict["total_nspokes"]
-    traj = trajectory.get_traj()
-    traj = traj.reshape(-1, 3).astype("float32")
-    npoint = trajectory.paramDict["npoint"]
+#     # nb_allspokes = trajectory.paramDict["total_nspokes"]
+#     traj = trajectory.get_traj()
+#     # traj = trajectory.get_traj_for_reconstruction(1).reshape(-1, 3)
+#     traj = traj.reshape(-1, 3)
+    
+#     if volumes.dtype == "complex64":
+#         traj=traj.astype("float32")
+#         b1_all_slices=b1_all_slices.astype("complex64")
 
-    num_k_samples = traj.shape[0]
-    num_k_samples=1
-    output_shape = (L0,) + size
-    images_series_rebuilt = np.zeros(output_shape, dtype=np.complex128)
+#     npoint = trajectory.paramDict["npoint"]
+#     # print(f"traj total points : {traj.shape[0]}")
+#     # print(f"nb_allspokes      : {traj.shape[0] // npoint}")
+#     # print(f"weights[0].shape  : {weights[0].shape}")
+#     # print(f"weights[0].size   : {weights[0].size}")
 
-    for k in tqdm(range(nb_channels)):
+#     num_k_samples = traj.shape[0]
+#     # num_k_samples=1
+#     output_shape = (L0,) + size
+#     images_series_rebuilt = np.zeros(output_shape, dtype=volumes.dtype)
 
-        curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
-        # print(curr_volumes.shape)
-        curr_kdata = finufft.nufft3d2(asca(traj[:, 2]), asca(traj[:, 0]), asca(traj[:, 1]), curr_volumes.reshape((L0*nb_slices,)+size[1:]))
-        # print(curr_kdata.shape)
-        curr_kdata=curr_kdata.reshape(L0,-1,npoint)
+#     for k in tqdm(range(nb_channels)):
 
-        if density_adj:
-            if mode=="Kushball":
+#         curr_volumes = volumes * np.expand_dims(b1_all_slices[k], axis=0)
+#         # print(curr_volumes.shape)
+#         curr_kdata = finufft.nufft3d2(asca(traj[:, 2]), asca(traj[:, 0]), asca(traj[:, 1]), curr_volumes.reshape((L0,)+size[:]))
+#         print(curr_kdata.shape)
+#         curr_kdata=curr_kdata.reshape(L0,-1,npoint)
+#         print("curr_kdata: {}".format(curr_kdata.shape))
 
-                curr_kdata=curr_kdata.reshape(L0,-1,npoint)
-                density = np.abs(np.linspace(-1, 1, npoint))
-                density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
-                curr_kdata *= density**2
+#         if density_adj:
+#             if mode=="Kushball":
+
+#                 curr_kdata=curr_kdata.reshape(L0,-1,npoint)
+#                 density = np.abs(np.linspace(-1, 1, npoint))
+#                 density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+#                 curr_kdata *= density**2
 
 
-                # curr_kdata=curr_kdata.reshape(L0,nb_allspokes,nb_slices,-1)
-                # # phi1 = 0.4656
-                # phi = np.arccos(np.mod(np.arange(nb_allspokes * nb_slices) * phi1, 1))
-                # curr_kdata *= np.sin(phi.reshape(nb_slices, nb_allspokes).T[None, :, :, None])
+#                 # curr_kdata=curr_kdata.reshape(L0,nb_allspokes,nb_slices,-1)
+#                 # # phi1 = 0.4656
+#                 # phi = np.arccos(np.mod(np.arange(nb_allspokes * nb_slices) * phi1, 1))
+#                 # curr_kdata *= np.sin(phi.reshape(nb_slices, nb_allspokes).T[None, :, :, None])
 
-                # curr_kdata=curr_kdata.reshape(L0,-1,npoint)
+#                 # curr_kdata=curr_kdata.reshape(L0,-1,npoint)
                 
 
-            else:
-                curr_kdata=curr_kdata.reshape(L0,-1,npoint)
-                density = np.abs(np.linspace(-1, 1, npoint))
-                density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
-                curr_kdata*=density
+#             else:
+#                 curr_kdata=curr_kdata.reshape(L0,-1,npoint)
+#                 density = np.abs(np.linspace(-1, 1, npoint))
+#                 density = np.expand_dims(density, tuple(range(curr_kdata.ndim - 1)))
+#                 curr_kdata*=density
 
 
-        if weights is not None:
-            weights = weights.reshape(1, -1, 1)
-            curr_kdata *= weights
+#         if weights is not None and not(type(weights)==int):
+#             weights = weights.reshape(1, -1, 1)
+#             curr_kdata *= weights
 
 
-        curr_kdata = curr_kdata.reshape(L0, -1)
-        #np.save("kdata_test.npy",curr_kdata)
+#         curr_kdata = curr_kdata.reshape(L0, -1)
+#         #np.save("kdata_test.npy",curr_kdata)
+#         # print("traj.shape: {}".format(traj.shape))
+#         # print("curr_kdata.shape: {}".format(curr_kdata.shape))
+#         # print("size: {}".format(size))
 
-        fk = finufft.nufft3d1(asca(traj[:, 2]), asca(traj[:, 0]), asca(traj[:, 1]), curr_kdata.squeeze(), size)
-        print(fk.shape)
-        images_series_rebuilt += b1_all_slices[k].conj()[None,:]* fk.reshape((L0,)+size)
+#         fk = finufft.nufft3d1(asca(traj[:, 2]), asca(traj[:, 0]), asca(traj[:, 1]), curr_kdata.squeeze(), size)
+#         # print(fk.shape)
+#         images_series_rebuilt += b1_all_slices[k].conj()[None,:]* fk.reshape((L0,)+size)
 
-    images_series_rebuilt /= num_k_samples
+#     images_series_rebuilt /= num_k_samples
 
-    return images_series_rebuilt.squeeze()
+#     return images_series_rebuilt.squeeze()
+
+
+
+# def undersampling_operator_singular(volumes, trajectory, b1_all_slices,
+#                                      density_adj=True, weights=None):
+#     """
+#     Returns A^H W A volumes.
+#     Uses batched FINUFFT (n_trans=L0) to eliminate the L0 loop.
+#     """
+#     L0          = volumes.shape[0]
+#     size        = volumes.shape[1:]          # (nz, ny, nx)
+#     nb_channels = b1_all_slices.shape[0]
+#     mode        = trajectory.paramDict["mode"]
+#     npoint      = trajectory.paramDict["npoint"]
+
+#     traj = trajectory.get_traj_for_reconstruction(1).reshape(-1, 3)
+
+#     if volumes.dtype == np.complex64:
+#         traj          = traj.astype("float32")
+#         b1_all_slices = b1_all_slices.astype("complex64")
+
+#     num_k_samples = traj.shape[0]
+
+#     # pre-compute density and weights once outside channel loop
+#     if density_adj:
+#         density = np.abs(np.linspace(-1, 1, npoint, dtype=traj.dtype))
+#         if mode == "Kushball":
+#             dens_w = density**2                  # (npoint,)
+#         else:
+#             dens_w = density                     # (npoint,)
+#         # reshape to broadcast: (1, nb_spokes, npoint)
+#         dens_w = dens_w[None, None, :]
+#     else:
+#         dens_w = None
+
+#     if weights is not None and not isinstance(weights, int):
+#         # weights[gr]: (1, nb_segments, nb_rep, 1) -> (1, nb_spokes, 1)
+#         w = weights.reshape(1, -1, 1).astype(traj.dtype)
+#     else:
+#         w = None
+
+#     output_shape   = (L0,) + size
+#     images_rebuilt = np.zeros(output_shape, dtype=volumes.dtype)
+
+#     for k in tqdm(range(nb_channels)):
+
+#         # coil-weighted volumes: (L0, nz, ny, nx) — C-contiguous required
+#         curr_volumes = np.ascontiguousarray(
+#             volumes * np.expand_dims(b1_all_slices[k], axis=0))
+
+#         # ---- batched forward NUFFT: (L0, nz, ny, nx) -> (L0, num_k_pts) ----
+#         curr_kdata = finufft.nufft3d2(
+#             asca(traj[:, 2]), asca(traj[:, 0]), asca(traj[:, 1]),
+#             curr_volumes,
+#             isign=-1, eps=1e-6
+#         ).reshape(L0, -1, npoint)
+
+#         # ---- density compensation ----
+#         if dens_w is not None:
+#             curr_kdata *= dens_w
+
+#         # ---- bin weights ----
+#         if w is not None:
+#             curr_kdata *= w
+
+#         # ---- batched adjoint NUFFT: (L0, num_k_pts) -> (L0, nz, ny, nx) ----
+#         curr_kdata = np.ascontiguousarray(curr_kdata.reshape(L0, -1))
+#         fk = finufft.nufft3d1(
+#             asca(traj[:, 2]), asca(traj[:, 0]), asca(traj[:, 1]),
+#             curr_kdata,
+#             size,
+#             isign=1, eps=1e-6
+#         )
+
+#         images_rebuilt += b1_all_slices[k].conj()[None, :] * fk.reshape(output_shape)
+
+#     images_rebuilt /= num_k_samples
+#     return images_rebuilt.squeeze()
+
+
+def undersampling_operator_singular(volumes, trajectory, b1_all_slices,
+                                     density_adj=True, weights=None,eps=1e-3):
+    L0          = volumes.shape[0]
+    size        = volumes.shape[1:]
+    nb_channels = b1_all_slices.shape[0]
+    mode        = trajectory.paramDict["mode"]
+    npoint      = trajectory.paramDict["npoint"]
+
+    traj = trajectory.get_traj_for_reconstruction(1).reshape(-1, 3)
+
+    if volumes.dtype == np.complex64:
+        traj          = traj.astype("float32")
+        b1_all_slices = b1_all_slices.astype("complex64")
+
+    # ---- sparse trajectory: remove zero-weighted spokes ----
+    if weights is not None and not isinstance(weights, int):
+        w_flat         = weights.reshape(-1)              # (nb_allspokes * nb_part,)
+        nonzero_spokes = w_flat > 0                       # bool mask over spokes
+        nonzero_pts    = np.repeat(nonzero_spokes, npoint) # expand to points
+        traj           = traj[nonzero_pts]
+        w_sparse       = w_flat[nonzero_spokes].astype(traj.dtype)  # (n_nonzero_spokes,)
+        num_k_samples  = traj.shape[0]
+        w = w_sparse.reshape(1, -1, 1)
+    else:
+        num_k_samples = traj.shape[0]
+        w = None
+
+    dtype = "complex64" if volumes.dtype == np.complex64 else "complex128"
+
+    # ---- build plans on sparse trajectory ----
+    plan_fwd = finufft.Plan(2, size, n_trans=L0, isign=-1, eps=eps, dtype=dtype)
+    plan_adj = finufft.Plan(1, size, n_trans=L0, isign=+1, eps=eps, dtype=dtype)
+    plan_fwd.setpts(asca(traj[:, 2]), asca(traj[:, 0]), asca(traj[:, 1]))
+    plan_adj.setpts(asca(traj[:, 2]), asca(traj[:, 0]), asca(traj[:, 1]))
+
+    # ---- density weights ----
+    if density_adj:
+        density = np.abs(np.linspace(-1, 1, npoint, dtype=traj.dtype))
+        dens_w  = (density**2 if mode == "Kushball" else density)[None, None, :]
+    else:
+        dens_w = None
+
+    output_shape   = (L0,) + size
+    images_rebuilt = np.zeros(output_shape, dtype=volumes.dtype)
+
+    for k in tqdm(range(nb_channels)):
+        curr_volumes = np.ascontiguousarray(
+            volumes * np.expand_dims(b1_all_slices[k], axis=0))
+
+        curr_kdata = plan_fwd.execute(curr_volumes).reshape(L0, -1, npoint)
+
+        if dens_w is not None:
+            curr_kdata *= dens_w
+        if w is not None:
+            curr_kdata *= w
+
+        curr_kdata = np.ascontiguousarray(curr_kdata.reshape(L0, -1))
+        fk = plan_adj.execute(curr_kdata).reshape(output_shape)
+
+        images_rebuilt += b1_all_slices[k].conj()[None, :] * fk
+
+    images_rebuilt /= num_k_samples
+    return images_rebuilt.squeeze()
 
 
 def undersampling_operator_singular_new(volumes,trajectory,b1_all_slices=None,ntimesteps=175,density_adj=True,weights=None,retained_timesteps=None):
@@ -2641,7 +2798,7 @@ def undersampling_operator_singular_new(volumes,trajectory,b1_all_slices=None,nt
 
     nb_slices=size[0]
 
-    print("Nb channels {}".format(nb_channels))
+    # print("Nb channels {}".format(nb_channels))
 
     #nb_allspokes = trajectory.paramDict["total_nspokes"]
 
@@ -2673,7 +2830,7 @@ def undersampling_operator_singular_new(volumes,trajectory,b1_all_slices=None,nt
 
     if (weights is not None) and not(type(weights)==int):
         weights = np.expand_dims(weights, axis=(0, -1))
-        print(weights.shape)
+        # print(weights.shape)
         
 
     
@@ -2688,7 +2845,7 @@ def undersampling_operator_singular_new(volumes,trajectory,b1_all_slices=None,nt
             np.fft.ifftshift(curr_volumes, axes=1),
             axis=1,workers=24), axes=1).astype("complex64")
         #curr_kdata=np.zeros((L0,nb_slices,traj.shape[0]), dtype="complex64")
-        print(curr_kdata_slice.shape)
+        # print(curr_kdata_slice.shape)
         curr_kdata = finufft.nufft2d2(asca(traj[:, 0]),asca(traj[:, 1]),curr_kdata_slice.reshape((L0*nb_slices,)+size[1:])).reshape(L0,nb_slices,-1)
         #print(curr_kdata.shape)
         if density_adj:
@@ -5050,3 +5207,227 @@ def compress_dictionary(dico,phi,L0):
     dico["mrfdict_light_L0{}".format(L0)]=(array_water_light_projected,array_fat_light_projected,keys_light)
     dico["mrfdict_L0{}".format(L0)]=(array_water_projected,array_fat_projected,keys)
     return dico
+"""
+ADMM with HD-PROST (LLR-HOSVD) denoising for iterative MRF reconstruction.
+
+ADMM splitting:
+    min_x  (1/2)||AHA x - b||^2  +  lambda * ||x||_*   (nuclear norm via HOSVD)
+    s.t.   x = z
+
+    x-update : x <- x - mu * ( (AHA(x) - b) + (1/lam)*(x - z + u) )
+    z-update : z <- prox_{lam * ||.||_*}(x + u)   [HOSVD soft-SV thresholding]
+    u-update : u <- u + x - z
+
+volumes shape : (L0, nz, ny, nx)  — no bin axis
+"""
+
+import numpy as np
+from tqdm import tqdm
+
+
+# ---------------------------------------------------------------------------
+# Undersampling operator dispatcher
+# ---------------------------------------------------------------------------
+
+def _apply_undersampling(vol, radial_traj, b1, weights, dens_adj, incoherent):
+    """
+    vol : (L0, nz, ny, nx)  ->  AHA(vol) of same shape.
+    Uses undersampling_operator_singular[_new] from the calling scope (globals).
+    """
+    if not incoherent:
+        return undersampling_operator_singular_new(
+            vol, radial_traj, b1, weights=weights, density_adj=dens_adj)
+    else:
+        return undersampling_operator_singular(
+            vol, radial_traj, b1, weights=weights, density_adj=dens_adj)
+
+def _truncated_hosvd_soft(tensor, lam):
+    if any(d == 0 for d in tensor.shape):
+        return np.zeros_like(tensor)
+
+    Us = []
+
+    for mode in range(3):
+        unfolding = np.moveaxis(tensor, mode, 0).reshape(tensor.shape[mode], -1)
+        U, sv, _  = np.linalg.svd(unfolding, full_matrices=False)
+
+        # soft threshold: zero out columns of U whose sv is below lam*sv[0]
+        # equivalent to multiplying each column by max(1 - lam*sv[0]/sv_i, 0)
+        scale = np.maximum(1.0 - lam * sv[0] / (sv + 1e-10), 0.0)
+        U_scaled = U * scale[None, :]      # broadcast over rows of U
+
+        Us.append(U_scaled)
+
+    # ---- core = tensor x_0 U_0^H x_1 U_1^H x_2 U_2^H ----
+    core = tensor.copy()
+    for mode, U in enumerate(Us):
+        unf    = np.moveaxis(core, mode, 0).reshape(core.shape[mode], -1)
+        core_m = U.conj().T @ unf
+        other_dims = tuple(core.shape[m] for m in range(core.ndim) if m != mode)
+        core = np.moveaxis(core_m.reshape((core_m.shape[0],) + other_dims), 0, mode)
+
+    # ---- recon = core x_0 U_0 x_1 U_1 x_2 U_2 ----
+    recon = core.copy()
+    for mode, U in enumerate(Us):
+        unf   = np.moveaxis(recon, mode, 0).reshape(recon.shape[mode], -1)
+        rec_m = U @ unf
+        other_dims = tuple(recon.shape[m] for m in range(recon.ndim) if m != mode)
+        recon = np.moveaxis(rec_m.reshape((rec_m.shape[0],) + other_dims), 0, mode)
+
+    return recon.astype(tensor.dtype)
+
+
+# ---------------------------------------------------------------------------
+# HD-PROST proximal step
+# ---------------------------------------------------------------------------
+
+def _prox_hd_prost(v, lam,
+                   patch_size=4, search_radius=10, max_patches=20,
+                   sliding_window=2,
+                   search_backend='kdtree', faiss_gpu_id=0,
+                   mask=None):
+    """
+    prox_{lam * ||.||_*}(v)  via patch-based HOSVD soft-SV thresholding.
+
+    v   : (L0, nz, ny, nx)
+    lam : soft threshold — same scale as lambda_prost in build_volumes_iterative
+
+    Returns denoised volume of same shape.
+    """
+    from mrfsim.reco_prost_gpu_v3 import (_extract_patches_3d, _build_groups,
+                                   _dilate_mask_for_patches,
+                                   _filter_centers_by_mask)
+
+    L0   = v.shape[0]
+    size = v.shape[1:]          # (nz, ny, nx)
+    nz, ny, nx = size
+    sx   = min(patch_size, nz)
+    sy   = min(patch_size, ny)
+    sz   = min(patch_size, nx)
+
+    patches, centers, _ = _extract_patches_3d(v, patch_size, step=sliding_window)
+
+    if mask is not None:
+        dilated = _dilate_mask_for_patches(mask, patch_size)
+        keep    = _filter_centers_by_mask(centers, dilated)
+        patches = patches[keep]
+        centers = centers[keep]
+
+    n_patches   = patches.shape[0]
+    N_actual    = sx * sy * sz
+    patches_vec = patches.reshape(n_patches, L0 * N_actual)
+
+    groups, k_actual = _build_groups(
+        patches_vec, centers, search_radius, max_patches,
+        backend=search_backend, faiss_gpu_id=faiss_gpu_id)
+
+    accum  = np.zeros_like(v)
+    weight = np.zeros(size, dtype=np.float32)
+
+    for ref_idx in tqdm(range(n_patches), desc="HOSVD patches", leave=False):
+        K        = k_actual[ref_idx]
+        selected = groups[ref_idx, :K]
+        group    = patches[selected].reshape(K, L0, N_actual)
+        tensor   = group.transpose(1, 2, 0)          # (L0, N_actual, K)
+
+        tensor_den = _truncated_hosvd_soft(tensor, lam)
+
+        group_den = tensor_den.transpose(2, 0, 1).reshape(K, L0, sx, sy, sz)
+        for k_idx, patch_idx in enumerate(selected):
+            px, py, pz = (int(c) for c in centers[patch_idx])
+            accum[:, px:px+sx, py:py+sy, pz:pz+sz] += group_den[k_idx]
+            weight[px:px+sx, py:py+sy, pz:pz+sz]   += 1.0
+
+    weight = np.where(weight == 0, 1.0, weight)
+    result = accum / weight[None, :]
+
+    if mask is not None:
+        result[:, ~mask] = 0.0
+
+    print(f"  _prox_hd_prost output  |result|={np.linalg.norm(result):.3e}  "
+          f"|v - result|={np.linalg.norm(v - result):.3e}")
+    return result
+
+# ---------------------------------------------------------------------------
+# ADMM loop
+# ---------------------------------------------------------------------------
+
+def admm_hd_prost(volumes0, weights,
+                  radial_traj, b1, dens_adj, incoherent,
+                  mu=1.0, lam=0.1, niter=20, n_inner=1,
+                  patch_size=4, search_radius=10, max_patches=20,
+                  sliding_window=2,
+                  search_backend='kdtree', faiss_gpu_id=0,
+                  mask=None):
+    """
+    ADMM reconstruction with HD-PROST proximal denoising.
+
+    Parameters
+    ----------
+    volumes0      : (L0, nz, ny, nx)   RHS  A^H W d
+    weights       : array or 1         undersampling weights
+    radial_traj   : RadialTrajectory object
+    b1            : (nb_channels, nz, ny, nx)
+    dens_adj      : bool
+    incoherent    : bool
+    mu            : float   gradient step size for x-update  (< 1/||AHA||)
+    lam           : float   soft-SV threshold, relative to leading SV [0, 1]
+                            lambda_prost in build_volumes_iterative
+    niter         : int     ADMM iterations
+    n_inner       : int     gradient steps per x-update
+
+    Returns
+    -------
+    z                : (L0, nz, ny, nx)   reconstructed singular volumes
+    vol_denoised_log : list of (L0, nz, ny, nx) z-snapshots per iteration
+    """
+    x = volumes0.copy().astype(np.complex64)
+    z = x.copy()
+    u = np.zeros_like(x)
+
+    vol_denoised_log = [z.copy()]
+
+    for i in tqdm(range(niter), desc="ADMM iterations"):
+        print(f"\n=== ADMM iteration {i} ===")
+
+        # ---- x-update: data consistency + coupling toward z ----
+        for inner in range(n_inner):
+            Ax        = _apply_undersampling(
+                            x, radial_traj, b1, weights, dens_adj, incoherent)
+            Ax        = Ax.reshape(volumes0.shape)
+            grad_data = Ax - volumes0
+            grad_aug  = grad_data + (x - z + u)   # rho=1 in scaled ADMM
+            x         = x - mu * grad_aug
+
+            print(f"  x-update inner {inner}  "
+                  f"|grad_data|={np.linalg.norm(grad_data):.3e}  "
+                  f"|x-z|={np.linalg.norm(x - z):.3e}")
+
+        # ---- z-update: HD-PROST denoising of (x + u) ----
+        print("  z-update: HD-PROST soft-SV denoising ...")
+        z_prev = z.copy()
+        z      = _prox_hd_prost(
+                     x + u, lam=lam,
+                     patch_size=patch_size, search_radius=search_radius,
+                     max_patches=max_patches, sliding_window=sliding_window,
+                     search_backend=search_backend, faiss_gpu_id=faiss_gpu_id,
+                     mask=mask)
+
+        # ---- u-update: dual ascent ----
+        u = u + x - z
+
+        primal_res  = float(np.linalg.norm(x - z))
+        dual_res    = float(np.linalg.norm(z - z_prev))
+        u_norm      = float(np.linalg.norm(u))
+        x_norm      = float(np.linalg.norm(x))
+        z_norm      = float(np.linalg.norm(z))
+        xu_norm     = float(np.linalg.norm(x + u))   # input to prox
+        prox_change = float(np.linalg.norm(z - (x + u)))  # how much prox changed its input
+
+        print(f"  |x|={x_norm:.3e}  |z|={z_norm:.3e}  |u|={u_norm:.3e}")
+        print(f"  |x+u|={xu_norm:.3e}  prox_change={prox_change:.3e}")
+        print(f"  primal={primal_res:.3e}  dual={dual_res:.3e}")
+
+        vol_denoised_log.append(z.copy())
+
+    return z, vol_denoised_log
